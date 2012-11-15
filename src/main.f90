@@ -23,7 +23,7 @@ call run_DMETcalc()
     subroutine set_defaults()
         implicit none
 
-        tLR_DMET = .true.
+        tLR_DMET = .false.
         tConstructFullSchmidtBasis = .true. 
         tMFResponse = .false. 
         tHalfFill = .true. 
@@ -146,6 +146,8 @@ call run_DMETcalc()
                     else
                         call CalcEmbedding()
                     endif
+
+                    call writematrix(EmbeddedBasis,'EmbeddedBasis',.true.)
                     
                     !Now transform the 1 electron quantities into the embedded basis
                     !This should be exactly correct, i.e. we can now diagonalize the fock matrix in this basis
@@ -164,7 +166,7 @@ call run_DMETcalc()
                         call SolveDMETResponse()
                     endif
                     
-                    call stop_all('end','end')
+                    !call stop_all('end','end')
 
                     !Fit new potential
                     !vloc_change (global) is updated in here to reflect the optimal change
@@ -268,7 +270,7 @@ call run_DMETcalc()
         if(info.ne.0) call stop_all(t_r,'Diag failed')
         deallocate(work)
 
-        !call writevector(ProjOverlapEVals,'Projected overlap eigenvalues')
+        call writevector(ProjOverlapEVals,'Projected overlap eigenvalues')
 
         !We should only have nImp non-zero eigenvalues
         nbath = 0
