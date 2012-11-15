@@ -61,7 +61,7 @@ import sys
 #======================================================================
 # Local settings.
 
-PROGRAM_NAME='DMETHub.x'
+PROGRAM_NAME='LRDMET.x'
 
 (PROGRAM_STEM, PROGRAM_EXT) = os.path.splitext(PROGRAM_NAME)
 
