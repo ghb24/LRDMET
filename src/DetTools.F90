@@ -273,6 +273,92 @@ function gtid(gind) result(id)
     integer :: id
     id = (gind-1)/2 + 1
 end function gtid
+    
+!Get antisymmetrized integral in the spinorbital basis given by a set of spatial orbitals from the AO basis
+!This orbital transformation matrix is given by AOBasisTransform
+! < ex(1,1) ex(1,2) || ex(2,1) ex(2,2) >
+function GetHFAntisymInt_spinorb(ex,AOBasisTrans) result(HEl)
+    use const
+    use Globals, only: U, nSites
+    implicit none
+    integer, intent(in) :: ex(2,2)
+    real(dp), intent(in) :: AOBasisTrans(nSites,nSites)
+    real(dp) :: HEl,HEl_coul,HEl_exch
+    integer :: i,j,k,l,i_spat,j_spat,k_spat,l_spat,gtid,alpha
+
+    i = ex(1,1)
+    j = ex(1,2)
+    k = ex(2,1)
+    l = ex(2,2)
+    i_spat = gtid(i)
+    j_spat = gtid(j)
+    k_spat = gtid(k)
+    l_spat = gtid(l)
+
+    HEl_coul = 0.0_dp
+    HEl_exch = 0.0_dp
+
+    !First, calculate <ij|kl> if spin allowed
+    if((mod(i,2).eq.mod(k,2)).and.(mod(j,2).eq.mod(l,2))) then
+        !Integral is allowed
+        
+        do alpha = 1,nSites
+            HEl_coul = HEl_coul + AOBasisTrans(alpha,i_spat)*AOBasisTrans(alpha,j_spat)*    &
+                AOBasisTrans(alpha,k_spat)*AOBasisTrans(alpha,l_spat)
+        enddo
+        HEl_coul = HEl_coul * U
+    endif
+
+    !Now, the exchange component if spin allowed <i j | l k>
+    if((mod(i,2).eq.mod(l,2)).and.(mod(j,2).eq.mod(k,2))) then
+        !Integral is allowed. It will of course be the same as the coulomb term
+        do alpha = 1,nSites
+            HEl_exch = HEl_exch + AOBasisTrans(alpha,i_spat)*AOBasisTrans(alpha,j_spat)*    &
+                AOBasisTrans(alpha,k_spat)*AOBasisTrans(alpha,l_spat)
+        enddo
+        HEl_exch = HEl_exch * U
+    endif
+
+    HEl = HEl_coul - HEl_exch
+
+end function GetHFAntisymInt_spinorb
+
+!Get integral in the spinorbital basis given by a set of spatial orbitals from the AO basis
+!This orbital transformation matrix is given by AOBasisTransform
+! < ex(1,1) ex(1,2) || ex(2,1) ex(2,2) >
+function GetHFInt_spinorb(ex,AOBasisTrans) result(HEl)
+    use const
+    use Globals, only: U, nSites
+    implicit none
+    integer, intent(in) :: ex(2,2)
+    real(dp), intent(in) :: AOBasisTrans(nSites,nSites)
+    real(dp) :: HEl
+    integer :: i,j,k,l,i_spat,j_spat,k_spat,l_spat,gtid,alpha
+
+    i = ex(1,1)
+    j = ex(1,2)
+    k = ex(2,1)
+    l = ex(2,2)
+    i_spat = gtid(i)
+    j_spat = gtid(j)
+    k_spat = gtid(k)
+    l_spat = gtid(l)
+
+    HEl = 0.0_dp
+
+    !First, calculate <ij|kl> if spin allowed
+    if((mod(i,2).eq.mod(k,2)).and.(mod(j,2).eq.mod(l,2))) then
+        !Integral is allowed
+        
+        do alpha = 1,nSites
+            HEl = HEl + AOBasisTrans(alpha,i_spat)*AOBasisTrans(alpha,j_spat)*    &
+                AOBasisTrans(alpha,k_spat)*AOBasisTrans(alpha,l_spat)
+        enddo
+        HEl = HEl * U
+    endif
+
+end function GetHFInt_spinorb
+    
 
 ! Get the orbitals which are excited in going from I to J
 ! EX(1,*) are in I, and EX(2,*) are in J

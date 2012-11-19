@@ -169,6 +169,152 @@ module mat_tools
 
     end subroutine add_localpot
 
+    !Run a full HF, including mean-field on-site repulsion term in the fock matrix
+    !These are stored in FullHFOrbs and FullHFEnergies
+    subroutine run_true_hf()
+        implicit none
+        real(dp) :: HFEnergy,HEl,GetHFAntisymInt_spinorb,GetHFInt_spinorb,PDiff
+        real(dp), allocatable :: Work(:),OccOrbs_HF(:,:),PMatrix_old(:,:),PMatrix(:,:)
+        real(dp), allocatable :: fock(:,:)
+        integer :: i,lWork,info,ex(2,2),j
+        character(len=*), parameter :: t_r='run_hf'
+
+        write(6,"(A)") "Constructing full HF solution. DMET will start from core hamiltonian solution."
+
+        !Construct fock matrix
+        !The fock matrix is just the core hamiltonian (without the fitted potential) + diag(1/2 U * rdm(i,i)) on the diagonals
+        allocate(fock(nSites,nSites))
+        fock(:,:) = h0(:,:) !Core hamiltonian
+        do i=1,nSites
+            !Include the on-site repulsion
+            fock(i,i) = fock(i,i) + U * 0.5_dp * (NEl/real(nSites))
+        enddo
+        
+        if(allocated(FullHFOrbs)) then
+            deallocate(FullHFOrbs,FullHFEnergies)
+        endif
+        allocate(FullHFOrbs(nSites,nSites)) !The orbitals from the diagonalization of the fock matrix
+        allocate(FullHFEnergies(nSites))
+
+        !Now just diagonalise this fock matrix, rather than use diis
+        !First, diagonalize one-body hamiltonian
+        FullHFOrbs(:,:) = Fock(:,:)
+        FullHFEnergies(:) = 0.0_dp
+        allocate(Work(1))
+        lWork=-1
+        info=0
+        call dsyev('V','U',nSites,FullHFOrbs,nSites,FullHFEnergies,Work,lWork,info)
+        if(info.ne.0) call stop_all(t_r,'Workspace queiry failed')
+        lwork=int(work(1))+1
+        deallocate(work)
+        allocate(work(lwork))
+        call dsyev('V','U',nSites,FullHFOrbs,nSites,FullHFEnergies,Work,lWork,info)
+        if(info.ne.0) call stop_all(t_r,'Diag failed')
+        deallocate(work)
+
+        PDiff = 1.0_dp
+        allocate(OccOrbs_HF(nSites,nOcc))
+        OccOrbs_HF(:,:) = FullHFOrbs(:,1:nOcc)
+
+        allocate(PMatrix_old(nSites,nSites))
+        allocate(PMatrix(nSites,nSites))
+
+        !Calculate initial trial P matrix:
+        call dgemm('N','T',nSites,nSites,nOcc,1.0_dp,OccOrbs_HF,nSites,OccOrbs_HF,nSites,0.0_dp,PMatrix_old,nSites)
+!        call writevector(FullHFEnergies(1:10),'Initial HF eigenvalues')
+
+        do while(PDiff.gt.1.0e-8_dp)
+            FullHFOrbs(:,:) = h0(:,:)
+            do i=1,nSites
+                FullHFOrbs(i,i) = FullHFOrbs(i,i) + PMatrix_old(i,i)*U
+            enddo
+            FullHFEnergies(:) = 0.0_dp
+            allocate(Work(1))
+            lWork=-1
+            info=0
+            call dsyev('V','U',nSites,FullHFOrbs,nSites,FullHFEnergies,Work,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'Workspace queiry failed')
+            lwork=int(work(1))+1
+            deallocate(work)
+            allocate(work(lwork))
+            call dsyev('V','U',nSites,FullHFOrbs,nSites,FullHFEnergies,Work,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'Diag failed')
+            deallocate(work)
+        
+            OccOrbs_HF(:,:) = FullHFOrbs(:,1:nOcc)
+
+            !Create new PMatrix
+            call dgemm('N','T',nSites,nSites,nOcc,1.0_dp,OccOrbs_HF,nSites,OccOrbs_HF,nSites,0.0_dp,PMatrix,nSites)
+
+            PDiff = 0.0_dp
+            do i=1,nSites
+                do j=1,nSites
+                    PDiff = PDiff + abs(PMatrix(i,j)-PMatrix_old(i,j))
+                enddo
+            enddo
+            PMatrix_old(:,:) = PMatrix(:,:)
+!            write(6,*) "PDiff: ",PDiff
+!            call writevector(FullHFEnergies(1:10),'HF eigenvalues')
+        enddo
+        deallocate(PMatrix,PMatrix_old,OccOrbs_HF)
+            
+        write(6,*) "nOCC", nOcc
+        write(6,*) "*True* Fock eigenvalues around fermi level: "
+        do i=max(1,nOcc-3),nOcc
+            write(6,*) FullHFEnergies(i),"*"
+        enddo
+        do i=nOcc+1,min(nSites,nOcc+3)
+            write(6,*) FullHFEnergies(i)
+        enddo
+
+        !Now calculate HF energy:
+        HFEnergy = 0.0_dp
+        do i=1,nOcc
+            HFEnergy = HFEnergy + h0(i,i)*2.0_dp
+        enddo
+        do i=1,nel
+            do j=1,nel
+                ex(1,1) = i
+                ex(1,2) = j
+                ex(2,1) = i
+                ex(2,2) = j
+                HEl = GetHFAntisymInt_spinorb(ex,FullHFOrbs)
+
+                HFEnergy = HFEnergy + 0.5_dp*HEl 
+            enddo
+        enddo
+        write(6,*) "HF energy from core hamiltonian: ",HFEnergy
+
+        HFEnergy = 0.0_dp
+        do i=1,nOcc
+            HFEnergy = HFEnergy + 2.0_dp*FullHFEnergies(i)
+        enddo
+        write(6,*) "HFEnergy: ",HFEnergy
+        do i=1,nel
+            do j=1,nel
+                ex(1,1) = i
+                ex(1,2) = j
+                ex(2,1) = i
+                ex(2,2) = j
+                HEl = GetHFAntisymInt_spinorb(ex,FullHFOrbs)
+                HFEnergy = HFEnergy - HEl*0.5_dp
+!                HEl = GetHFInt_spinorb(ex,FullHFOrbs)
+!                HFEnergy = HFEnergy - 0.5_dp*HEl
+!
+!                ex(1,1) = i
+!                ex(1,2) = j
+!                ex(2,1) = j
+!                ex(2,2) = i
+!                HEl = GetHFInt_spinorb(ex,FullHFOrbs)
+!                HFEnergy = HFEnergy + 0.5_dp*HEl
+            enddo
+        enddo
+        write(6,*) "HF energy from fock eigenvalues: ",HFEnergy
+
+        deallocate(fock)
+
+    end subroutine run_true_hf
+
     !Run a HF calculation on the entire system. In this case, it just consists of just diagonalizing the system rather than iterative DIIS (add later)
     subroutine run_hf(it)
         implicit none

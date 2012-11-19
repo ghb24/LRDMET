@@ -27,7 +27,7 @@ call run_DMETcalc()
         tConstructFullSchmidtBasis = .true. 
         tMFResponse = .false. 
         tHalfFill = .true. 
-        nSites = 12  
+        nSites = 20  
         LatticeDim = 1
         nImp = 2
         StartU = 4.0_dp
@@ -43,6 +43,7 @@ call run_DMETcalc()
         Start_Omega = 0.0_dp
         End_Omega = 10.0_dp
         Omega_Step = 0.025_dp
+        tDumpFCIDUMP = .true.
 
     end subroutine set_defaults
 
@@ -121,6 +122,17 @@ call run_DMETcalc()
                     call DiagFullSystem()
                 endif
 
+                !Calculate full hf, including mean-field on-site repulsion (which is included in correlation potential in DMET
+                call run_true_hf()
+
+                if(tDumpFCIDUMP) then
+                    call DumpFCIDUMP()
+                endif
+
+                !Calculate single reference linear response - non-interacting, TDA and RPA
+                call SR_LinearResponse()
+
+                call stop_all(t_r,'end')
 
                 !At this point, we have h0, U and a set of system sites (the first nImp indices), as well as a local potential
                 do it=1,150
@@ -163,7 +175,7 @@ call run_DMETcalc()
                     call SolveSystem(.false.)
 
                     if(tLR_DMET) then
-                        call SolveDMETResponse()
+                        call MR_LinearResponse()
                     endif
                     
                     !call stop_all('end','end')
@@ -656,5 +668,59 @@ call run_DMETcalc()
         deallocate(temp,SminHalf)
 
     end subroutine CalcEmbedding
+
+    subroutine DumpFCIDUMP()
+        use utils, only: get_free_unit
+        implicit none
+        integer :: iunit,i,j,k,l,A,B,ex(2,2)
+        real(dp) :: hel,GetHFInt_spinorb
+
+        iunit = get_free_unit()
+        open(unit=iunit,file='FCIDUMP',status='unknown')
+        write(iunit,'(2A6,I3,A7,I3,A5,I2,A)') '&FCI ','NORB=',nSites,'NELEC=',NEl,',MS2=',0,','
+        WRITE(iunit,'(A9)',advance='no') 'ORBSYM='
+        do i=1,nSites
+            write(iunit,'(I1,A1)',advance='no') 1,','
+        enddo
+        write(iunit,*) ""
+        WRITE(iunit,'(A7,I1)') 'ISYM=',1
+        WRITE(iunit,'(A5)') '&END'
+        do i=1,nSites
+            do j=1,nSites
+                A=(i*(i-1))/2+j
+                DO k=1,nSites
+                    DO l=1,nSites
+                        B=(k*(k-1))/2+l
+
+                        IF(B.lt.A) CYCLE
+                        IF((i.lt.j).and.(k.lt.l)) CYCLE
+                        IF((i.gt.j).and.(k.lt.l)) CYCLE
+
+                        ex(1,1) = 2*i
+                        ex(1,2) = 2*k
+                        ex(2,1) = 2*j
+                        ex(2,2) = 2*l
+                        hel = GetHFInt_spinorb(ex,FullHFOrbs)
+                        if(abs(hel).gt.1.0e-8_dp) then
+                            WRITE(iunit,'(1X,G20.14,4I3)') hel,i,j,k,l
+                        endif
+                    enddo
+                enddo
+            enddo
+        enddo
+        do i=1,nSites
+            do j=1,i
+                if(abs(h0(i,j)).gt.1.0e-8_dp) then
+                    WRITE(iunit,'(1X,G20.14,4I3)') h0(i,j),i,j,0,0
+                endif
+            enddo
+        enddo
+        do i=1,nSites
+            WRITE(iunit,'(1X,G20.14,4I3)') FullHFEnergies(i),i,0,0,0
+        enddo
+        WRITE(iunit,'(1X,G20.14,4I3)') 0.0_dp,0,0,0,0
+        close(iunit)
+
+    end subroutine DumpFCIDUMP
 
 End Program RealHub

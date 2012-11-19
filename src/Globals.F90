@@ -35,6 +35,7 @@ module Globals
     real(dp) :: Start_Omega,End_Omega,Omega_Step    !Parameters for Omega sweep
     integer :: pertsite=1          !Site of the density perturbation
     real(dp) :: ZerothBathNorm  !Normalization of the original bath orbital (required for correct normalization in the linear response)
+    logical :: tDumpFCIDUMP
 
     integer , allocatable :: allowed_occs(:)   !The list of CS occupations for the mean-field solution
     real(dp) , allocatable :: v_loc(:,:)    !The local correlation potential over the impurity sites
@@ -42,6 +43,8 @@ module Globals
     real(dp) , allocatable :: h0v(:,:)      !The mean-field core hamiltonian with local correlation potential striped across it
     real(dp) , allocatable :: HFOrbs(:,:)   !The eigenvectors of the mean-field solution
     real(dp) , allocatable :: HFEnergies(:)    !The eigenvalues of the mean-field hamiltonian
+    real(dp) , allocatable :: FullHFOrbs(:,:)   !The true HF orbitals, including mean-field on site repulsion
+    real(dp) , allocatable :: FullHFEnergies(:)   !The true fock eigenvalues, including MF onsite repulsion
     real(dp) , allocatable :: MeanFieldDM(:,:) !The 1e density matrix in the AO basis from the mean-field calculation
     real(dp) , allocatable :: EmbeddedBasis(:,:)    !The embedded basis orbitals of bath + impurity
     real(dp) , allocatable :: FullSchmidtBasis(:,:) !The full schmidt basis including core + virtual orbtials. Ordered: core, imp, bath, virt

@@ -6,16 +6,58 @@ module LinearResponse
     implicit none
     contains
 
+    !This is the high level routine to work out how we want to do the linear response
+    !TODO:
+    !   Code up all of these options!
+    !   Really work out difference between non-interacting LR, TDA and RPA, and look at how quality changes in response functions as U increased
+    !   Look at difference in quality between TDA-type and RPA-type MCLR methods 
+    !   Look at difference in quality between full MCLR and the fully contracted type
+    !   Work out self-consistency condition to optimise both the full MCLR and the fully contracted type
+    !   Consider using different methods to obtain contraction coefficients in the fully contracted methods - TDA/RPA. Does this improve things?
+    !   Perhaps look at CC2 to get a deeper understanding
+    subroutine MR_LinearResponse()
+        implicit none
+
+        !Create contracted single excitation space using the non-interacting reference for the contractions
+        !The matrix is then created in a CI fashion
+!        call NonIntContracted_TDA_MCLR()
+
+        !Create contracted single excitation space using the non-interacting reference for the contractions
+        !The matrix is then created in an RPA fashion
+!        call NonIntContracted_RPA_MCLR()
+
+        !Full MCLR, creating excitations in a CI fashion, rather than with commutators. Should reduce to TDA in single reference limit
+        call TDA_MCLR()
+
+        !Full MCLR, with excitations and deexcitations. Should reduce to RPA in single reference limit
+!        call RPA_MCLR()
+
+    end subroutine MR_LinearResponse
+
+    !Run single reference linear response calculations, based on true HF calculation.
+    subroutine SR_LinearResponse()
+        implicit none
+        
+        !Single reference RPA
+        call RPA_LR()
+        !Single reference TDA
+!        call TDA_LR()
+        !Non-interacting linear response
+!        call NonInteractingLR()
+
+    end subroutine SR_LinearResponse
+
+
     !Solve the response equations in the basis of Psi^(0) + all single excits.
     !This is the basis of Psi^(0), the basis of internally contracted single excitations of it into
     !the virtual space, the basis of single excitations of the core into virtual space, and the basis
     !of single excitations of core into active space. This will all be constructed explicitly initially.
-    subroutine SolveDMETResponse()
+    subroutine TDA_MCLR()
         use DetToolsData, only: nFCIDet,FCIDetList
         implicit none
         integer :: nCoreVirt,nCoreActive,nActiveVirt,nLinearSystem,ierr,info
         integer :: i,j,CoreNEl,ind2,ind1,a,x,Ex(2),b
-        logical :: tSign,tSign_a,tSign_b
+        logical :: tSign_a,tSign_b
         integer, allocatable :: Pivots(:),RefCore(:),Excit1_a(:),Excit1_b(:)
         integer, allocatable :: Excit2_a(:),Excit2_b(:)
         real(dp), allocatable :: LinearSystem(:,:),temp(:,:),Overlap(:,:),Response(:)
@@ -401,7 +443,7 @@ module LinearResponse
         enddo
 
 
-    end subroutine SolveDMETResponse
+    end subroutine TDA_MCLR
 
     !Find the non-interacting perturbation, and project this operator into the schmidt basis of phi^0 + its virtual space
     subroutine FindSchmidtPert()
@@ -441,6 +483,515 @@ module LinearResponse
         !call writematrix(SchmidtPert,'Perturbation in schmidt basis',.true.)
 
     end subroutine FindSchmidtPert
+    
+    !Set up the RPA equations and solve them.
+    !Finally, create the density-density linear response function from the resulting excitations/deexcitations
+    !This is done in the spin-orbital space
+    subroutine RPA_LR()
+        use utils, only: get_free_unit
+        use matrixops, only: d_inv
+        implicit none
+        integer :: ov_space,virt_start,ierr,j,ex(2,2),ex2(2,2),n,i,m,nj_ind,mi_ind,info,lwork
+        integer :: m_spat,i_spat,StabilitySize,mu,gtid,j_spat,ai_ind,iunit,a,excit
+        real(dp) :: HEl1,HEl2,X_norm,Y_norm,norm,Energy_stab,DMEl1,DMEl2,Omega,ResponseFn
+        real(dp) :: GetHFAntisymInt_spinorb
+        real(dp), allocatable :: A_mat(:,:),B_mat(:,:),Stability(:,:),StabilityCopy(:,:),W(:),Work(:)
+        real(dp), allocatable :: S_half(:,:),temp(:,:),temp2(:,:),W2(:),X_stab(:,:),Y_stab(:,:)
+        real(dp), allocatable :: trans_moment(:),AOMO_Spin(:,:),DM(:,:)
+        character(len=*), parameter :: t_r='RPA_LR'
+
+        ov_space = 2*nOcc*(nSites-nOcc)
+        virt_start = (2*nOcc)+1
+        allocate(A_mat(ov_space,ov_space),stat=ierr)
+        allocate(B_mat(ov_space,ov_space),stat=ierr)
+        if(ierr.ne.0) call stop_all(t_r,'alloc error')
+        A_mat(:,:) = 0.0_dp
+        B_mat(:,:) = 0.0_dp
+
+        !First, construct A and B, which correspond to:
+        !  <HF| [a*_i a_m [H, a*_n a_j]] |HF> = A
+        ! -<HF| [a*_i a_m [H, a*_j a_n]] |HF> = B
+        do j=1,nel
+            ex(1,2) = j     !second index in integral
+            ex2(2,2) = j
+            do n=virt_start,2*nSites
+                if(mod(j,2).ne.mod(n,2)) cycle      !Only want same spin excitations for j and n
+                nj_ind = ov_space_spinind(n,j)
+                ex(2,2) = n !4th index in integral
+                ex2(1,2) = n
+                do i=1,nel
+                    ex(2,1) = i !3rd index in integral
+                    ex2(2,1) = i
+                    do m=virt_start,2*nSites
+                        if(mod(i,2).ne.mod(m,2)) cycle      !Only want same spin excitations for i and m
+                        mi_ind = ov_space_spinind(m,i)
+                        ex(1,1) = m !First index in integral
+                        ex2(1,1) = m
+
+                        !Calculate the antisymmetrized integral, < m j || i n > for A_mat and < m n || i j > for B_mat
+                        HEl1 = GetHFAntisymInt_spinorb(ex,FullHFOrbs)
+                        HEl2 = GetHFAntisymInt_spinorb(ex2,FullHFOrbs)
+                        A_mat(mi_ind,nj_ind) = HEl1
+                        B_mat(mi_ind,nj_ind) = HEl2
+                    enddo
+                enddo
+            enddo
+        enddo
+
+        !Now add the diagonal part to A
+        do i=1,nel
+            do m=virt_start,2*nSites
+                if(mod(i,2).ne.mod(m,2)) cycle  !Only want same spin excitations
+                mi_ind = ov_space_spinind(m,i)
+
+                m_spat = gtid(m)
+                i_spat = gtid(i)
+
+                A_mat(mi_ind,mi_ind) = A_mat(mi_ind,mi_ind) + (FullHFEnergies(m_spat)-FullHFEnergies(i_spat))
+            enddo
+        enddo
+
+        !Check that A is hermition and B is symmetric
+        do i=1,ov_space
+            do j=1,ov_space
+                if(abs(B_mat(i,j)-B_mat(j,i)).gt.1.0e-7_dp) then
+                    call stop_all(t_r,'B not symmetric')
+                endif
+                if(abs(A_mat(i,j)-A_mat(j,i)).gt.1.0e-7) then
+                    call stop_all(t_r,'A not hermitian')
+                endif
+            enddo
+        enddo
+
+        !Calculate here via direct diagonalization of the stability matrix
+        write(6,*) "Calculating RPA from stability matrix"
+        call flush(6)
+
+        !Stability = ( A  B  )
+        !            ( B* A* )
+        !Assume all integrals real to start with
+        StabilitySize=2*ov_space
+        allocate(Stability(StabilitySize,StabilitySize),stat=ierr)
+        Stability(:,:)=0.0_dp
+        Stability(1:ov_space,1:ov_space)=A_mat(1:ov_space,1:ov_space)
+        Stability(ov_space+1:StabilitySize,1:ov_space)=B_mat(1:ov_space,1:ov_space)
+        Stability(1:ov_space,ov_space+1:StabilitySize)=B_mat(1:ov_space,1:ov_space)
+        Stability(ov_space+1:StabilitySize,ov_space+1:StabilitySize)=A_mat(1:ov_space,1:ov_space)
+
+        !Now diagonalize
+        !Find optimal space
+        allocate(StabilityCopy(StabilitySize,StabilitySize))
+        StabilityCopy(:,:)=Stability(:,:)
+        allocate(W(StabilitySize),stat=ierr)    !Eigenvalues of stability matrix
+        allocate(Work(1))
+        if(ierr.ne.0) call stop_all(t_r,"alloc err")
+        W(:)=0.0_dp
+        lWork=-1
+        info=0
+        call dsyev('V','U',StabilitySize,Stability,StabilitySize,W,Work,lWork,info)
+        if(info.ne.0) call stop_all(t_r,'workspace query failed')
+        lwork=int(work(1))+1
+        deallocate(work)
+        allocate(work(lwork))
+        call dsyev('V','U',StabilitySize,Stability,StabilitySize,W,Work,lwork,info)
+        if (info.ne.0) call stop_all(t_r,"Diag failed")
+        deallocate(work)
+
+        do i=1,StabilitySize
+            if(W(i).lt.0.0_dp) then
+                write(6,*) i,W(i)
+                call stop_all(t_r,"HF solution not stable. Not local minimum. Recompute HF.")
+            endif
+        enddo
+        write(6,"(A)") "Stability matrix positive definite. HF solution is minimum. RPA stable"
+
+        !Now compute S^(1/2), and transform into original basis
+        allocate(S_half(StabilitySize,StabilitySize))
+        S_half(:,:)=0.0_dp
+        do i=1,StabilitySize
+            S_half(i,i)=sqrt(W(i))
+        enddo
+        allocate(temp(StabilitySize,StabilitySize))
+        call dgemm('n','n',StabilitySize,StabilitySize,StabilitySize,1.0_dp,Stability,StabilitySize,    &
+            S_half,StabilitySize,0.0_dp,temp,StabilitySize)
+        call dgemm('n','t',StabilitySize,StabilitySize,StabilitySize,1.0_dp,temp,StabilitySize,Stability,   &
+            StabilitySize,0.0_dp,S_half,StabilitySize)
+        !S_half is now S^1/2 in the original basis
+
+        !Check this by squaring it.
+        call dgemm('n','t',StabilitySize,StabilitySize,StabilitySize,1.0_dp,S_half,StabilitySize,S_half,    &
+            StabilitySize,0.0_dp,temp,StabilitySize)
+        do i=1,StabilitySize
+            do j=1,StabilitySize
+                if(abs(StabilityCopy(i,j)-temp(i,j)).gt.1.0e-7) then
+                    call stop_all(t_r,'S^1/2 not calculated correctly in original basis')
+                endif
+            enddo
+        enddo
+
+        temp(:,:)=0.0_dp
+        do i=1,ov_space
+            temp(i,i)=1.0_dp
+        enddo
+        do i=ov_space+1,StabilitySize
+            temp(i,i)=-1.0_dp
+        enddo
+        allocate(temp2(StabilitySize,StabilitySize))
+        call dgemm('n','n',StabilitySize,StabilitySize,StabilitySize,1.0_dp,S_half,StabilitySize,temp,  &
+            StabilitySize,0.0_dp,temp2,StabilitySize)
+        call dgemm('n','n',StabilitySize,StabilitySize,StabilitySize,1.0_dp,temp2,StabilitySize,S_half, &
+            StabilitySize,0.0_dp,temp,StabilitySize)
+        !Now diagonalize temp = S^(1/2) (1 0 \\ 0 -1 ) S^(1/2)
+
+        lWork=-1
+        allocate(W2(StabilitySize))
+        allocate(Work(1))
+        W2(:)=0.0_dp
+        call dsyev('V','U',StabilitySize,temp,StabilitySize,W2,Work,lWork,info)
+        if(info.ne.0) call stop_all(t_r,'workspace query failed')
+        lwork=int(work(1))+1
+        deallocate(work)
+        allocate(work(lwork))
+        call dsyev('V','U',StabilitySize,temp,StabilitySize,W2,Work,lwork,info)
+        if (info.ne.0) call stop_all(t_r,"Diag failed")
+        deallocate(work)
+!            call writevector(W2,'Excitation energies')
+        ! temp now holds the eigenvectors X~ Y~
+        ! W2 runs over StabilitySize eigenvalues (ov_space*2). Therefor we expect redundant pairs of +-W2, corresponding
+        ! to pairs of eigenvectors (X^v Y^v) and (X^v* Y^v*) (Same in real spaces).
+        do i=1,ov_space
+            !This they are listed in order of increasing eigenvalue, we should be able to easily check that they pair up
+            if(abs(W2(i)+W2(StabilitySize-i+1)).gt.1.0e-7_dp) then
+                write(6,*) i,StabilitySize-i+1, W2(i), W2(StabilitySize-i+1), abs(W2(i)-W2(StabilitySize-i+1))
+                call stop_all(t_r,"Excitation energy eigenvalues do not pair")
+            endif
+        enddo
+
+        !We actually have everything we need for the energy already now. However, calculate X and Y too.
+        !Now construct (X Y) = S^(-1/2) (X~ Y~)
+        !First get S^(-1/2) in the original basis
+        S_half(:,:)=0.0_dp
+        do i=1,StabilitySize
+            S_half(i,i)=-sqrt(W(i))
+        enddo
+        call dgemm('n','n',StabilitySize,StabilitySize,StabilitySize,1.0_dp,Stability,StabilitySize,S_half, &
+            StabilitySize,0.0_dp,temp2,StabilitySize)
+        call dgemm('n','t',StabilitySize,StabilitySize,StabilitySize,1.0_dp,temp2,StabilitySize,Stability,  &
+            StabilitySize,0.0_dp,S_half,StabilitySize)
+        !S_half is now S^(-1/2) in the original basis
+
+        !Now multiply S^(-1/2) (X~ y~)
+        call dgemm('n','n',StabilitySize,StabilitySize,StabilitySize,1.0_dp,S_half,StabilitySize,temp,  &
+            StabilitySize,0.0_dp,temp2,StabilitySize)
+
+        !Check that eigenvectors are also paired.
+        !Rotations among degenerate sets will screw this up though
+!            do i=1,ov_space
+!                write(6,*) "Eigenvectors: ",i,StabilitySize-i+1,W2(i),W2(StabilitySize-i+1)
+!                do j=1,StabilitySize
+!                    write(6,*) j,temp2(j,i),temp2(j,StabilitySize-i+1)
+!                enddo
+!            enddo
+!            call writematrix(temp2,'X Y // Y X',.true.)
+        !temp2 should now be a matrix of (Y X)
+!                                            (X Y)
+!           This is the other way round to normal, but due to the fact that our eigenvalues are ordered -ve -> +ve
+!           TODO: Are the signs of this matrix correct?
+        allocate(X_stab(ov_space,ov_space)) !First index is (m,i) compound index. Second is the eigenvector index.
+        allocate(Y_stab(ov_space,ov_space))
+        X_stab(:,:)=0.0_dp
+        Y_stab(:,:)=0.0_dp
+        !Put the eigenvectors corresponding to *positive* eigenvalues into the X_stab and Y_stab arrays.
+        X_stab(1:ov_space,1:ov_space)=temp2(1:ov_space,ov_space+1:StabilitySize)
+        Y_stab(1:ov_space,1:ov_space)=-temp2(ov_space+1:StabilitySize,ov_space+1:StabilitySize)
+        deallocate(temp2)
+
+        !Normalize the eigenvectors appropriately
+        do mu=1,ov_space
+            norm=0.0_dp
+            Y_norm = 0.0_dp
+            X_norm = 0.0_dp
+            do i=1,ov_space
+                norm = norm + X_stab(i,mu)*X_stab(i,mu) - Y_stab(i,mu)*Y_stab(i,mu)
+                Y_norm = Y_norm + Y_stab(i,mu)*Y_stab(i,mu)
+                X_norm = X_norm + X_stab(i,mu)*X_stab(i,mu)
+            enddo
+            if(norm.le.0.0_dp) then
+                write(6,*) "Norm^2 for vector ",mu," is: ",norm
+                call stop_all(t_r,'norm undefined')
+            endif
+            norm = sqrt(norm)
+            do i=1,ov_space
+                X_stab(i,mu) = X_stab(i,mu)/norm
+                Y_stab(i,mu) = Y_stab(i,mu)/norm
+            enddo
+            if(Y_norm.gt.X_norm/2.0_dp) then
+                write(6,*) "Warning: hole amplitudes large for excitation: ",mu,    &
+                    " Quasi-boson approximation breaking down."
+                write(6,*) "Norm of X component: ",X_norm
+                write(6,*) "Norm of Y component: ",Y_norm
+            endif
+        enddo
+!            call writematrix(X_stab,'X',.true.)
+
+        !Now check orthogonality 
+        !call Check_XY_orthogonality(X_stab,Y_stab)
+
+!            call writevector(W2,'Stab_eigenvalues')
+
+        !Now check that we satisfy the original RPA equations
+        !For the *positive* eigenvalue space (since we have extracted eigenvectors corresponding to this), check that:
+!           ( A B ) (X) = E_v(X )
+!           ( B A ) (Y)      (-Y)
+        deallocate(temp)
+        allocate(temp(StabilitySize,ov_space))
+        temp(1:ov_space,1:ov_space) = X_stab(:,:)
+        temp(ov_space+1:StabilitySize,1:ov_space) = Y_stab(:,:)
+        allocate(temp2(StabilitySize,ov_space))
+        call dgemm('n','n',StabilitySize,ov_space,StabilitySize,1.0_dp,StabilityCopy,StabilitySize,temp,    &
+            StabilitySize,0.0_dp,temp2,StabilitySize)
+        do i=1,ov_space
+            do j=1,ov_space
+                if(abs(temp2(j,i)-(W2(i+ov_space)*X_stab(j,i))).gt.1.0e-6_dp) then
+                    write(6,*) i,j,temp2(j,i),(W2(i+ov_space)*X_stab(j,i)),W2(i+ov_space)
+                    call stop_all(t_r,"RPA equations not satisfied for positive frequencies in X matrix")
+                endif
+            enddo
+        enddo
+        do i=1,ov_space
+            do j=1,ov_space
+                if(abs(temp2(j+ov_space,i)-(-W2(i+ov_space)*Y_stab(j,i))).gt.1.0e-6_dp) then
+                    write(6,*) i,j,temp2(j+ov_space,i),(-W2(i+ov_space)*Y_stab(j,i)),-W2(i+ov_space)
+                    call stop_all(t_r,"RPA equations not satisfied for positive frequencies in Y matrix")
+                endif
+            enddo
+        enddo
+        deallocate(temp,temp2)
+
+        !Is is also satisfied the other way around?
+        !Check that we also satisfy (still for the *positive* eigenvalues):
+!           ( A B ) (Y) = -E_v(Y )
+!           ( B A ) (X)       (-X)
+        allocate(temp(StabilitySize,ov_space))
+        temp(1:ov_space,1:ov_space) = Y_stab(:,:)
+        temp(ov_space+1:StabilitySize,1:ov_space) = X_stab(:,:)
+        allocate(temp2(StabilitySize,ov_space))
+        call dgemm('n','n',StabilitySize,ov_space,StabilitySize,1.0_dp,StabilityCopy,StabilitySize,temp,    &
+            StabilitySize,0.0_dp,temp2,StabilitySize)
+        do i=1,ov_space
+            do j=1,ov_space
+                if(abs(temp2(j,i)-(-W2(i+ov_space)*Y_stab(j,i))).gt.1.0e-6_dp) then
+                    call stop_all(t_r,"RPA equations not satisfied for negative frequencies in X matrix")
+                endif
+            enddo
+        enddo
+        do i=1,ov_space
+            do j=1,ov_space
+                if(abs(temp2(j+ov_space,i)-(W2(i+ov_space)*X_stab(j,i))).gt.1.0e-6_dp) then
+                    call stop_all(t_r,"RPA equations not satisfied for negative frequencies in Y matrix")
+                endif
+            enddo
+        enddo
+        deallocate(temp,temp2)
+        !TODO: Finally, check that we satisfy eq. 1 in the Scuseria paper for X and Y defined for positive eigenvalues...
+        do i=ov_space+1,StabilitySize
+            do j=1,StabilitySize
+                StabilityCopy(i,j)=-StabilityCopy(i,j)
+            enddo
+        enddo
+        !Stability copy is now (A B // -B -A)
+        allocate(temp(StabilitySize,ov_space))
+        allocate(temp2(StabilitySize,ov_space))
+        temp=0.0_dp
+        temp(1:ov_space,1:ov_space) = X_stab(:,:)
+        temp(ov_space+1:StabilitySize,1:ov_space) = Y_stab(:,:)
+        call dgemm('n','n',StabilitySize,ov_space,StabilitySize,1.0_dp,StabilityCopy,StabilitySize,temp,    &
+            StabilitySize,0.0_dp,temp2,StabilitySize)
+        do i=1,ov_space
+            do j=1,ov_space
+                if(abs(temp2(j,i)-(W2(i+ov_space)*X_stab(j,i))).gt.1.0e-7) then
+                    call stop_all(t_r,"RPA equations not satisfied for X")
+                endif
+            enddo
+        enddo
+        do i=1,ov_space
+            do j=ov_space+1,StabilitySize
+                if(abs(temp2(j,i)-(W2(i+ov_space)*Y_stab(j-ov_space,i))).gt.1.0e-7) then
+                    call stop_all(t_r,"RPA equations not satisfied for Y")
+                endif
+            enddo
+        enddo
+        deallocate(temp,temp2)
+
+        !Now calculate energy, in two different ways:
+        !1. -1/2 Tr[A] + 1/2 sum_v E_v(positive)
+        Energy_stab=0.0_dp
+        do i=1,ov_space
+            Energy_stab = Energy_stab + W2(ov_space+i) - A_mat(i,i)
+        enddo
+        Energy_stab = Energy_stab/2.0_dp
+
+        write(6,"(A,G25.10)") "Full RPA energy from stability analysis (plasmonic RPA-TDA excitation energies): ",  &
+            Energy_stab
+
+        Energy_stab = 0.0_dp
+        !E = 0.25 * Tr[BZ] where Z = Y X^-1
+
+        allocate(temp2(ov_space,ov_space))
+        temp2(:,:) = 0.0_dp
+        !Find X^-1 
+        call d_inv(X_stab,temp2)
+!            call writematrix(temp2,'X^-1',.true.)
+        allocate(temp(ov_space,ov_space))
+        !Find Z (temp)
+        call dgemm('n','n',ov_space,ov_space,ov_space,1.0_dp,Y_stab,ov_space,temp2,ov_space,0.0_dp,temp,ov_space)
+        !Find BZ (temp2)
+        call dgemm('n','n',ov_space,ov_space,ov_space,1.0_dp,B_mat,ov_space,temp,ov_space,0.0_dp,temp2,ov_space)
+        !Take trace of BZ
+        do i=1,ov_space
+            Energy_stab = Energy_stab + temp2(i,i)
+        enddo
+        Energy_stab = Energy_stab/2.0_dp
+        write(6,"(A,G25.10)") "Full RPA energy from stability analysis (Ring-CCD: 1/2 Tr[BZ]): ",Energy_stab
+
+        Energy_stab = 0.0_dp
+        do i=1,ov_space
+            Y_norm = 0.0_dp
+            do j=1,ov_space
+                Y_norm = Y_norm + Y_stab(j,i)**2
+            enddo
+            Energy_stab = Energy_stab - W2(i+ov_space)*Y_norm
+        enddo
+        write(6,"(A,G25.10)") "Full RPA energy from stability analysis (Y-matrix): ",Energy_stab
+
+        !Now, calculate the response functions for expectation value A and perturbation V
+        !This is (for positive frequencies):
+        !\sum_nu (<0|[A,Q_nu^+]|0><0|[Q_nu,V]|0> / (omega - W_nu)) - (<0|[V,Q_nu^+]|0><0|[Q_nu,A]|0> / (omega + W_nu))
+        !Calculate the transition moments first, for a density-density response at site pertsite 
+        allocate(trans_moment(ov_space))    
+        trans_moment(:) = 0.0_dp
+
+        !Construct an MO-AO orbital rotation matrix for spin-orbitals
+        allocate(AOMO_Spin(nSites*2,nSites*2))
+        AOMO_Spin(:,:) = 0.0_dp
+        do i=1,nSites*2
+            do j=1,nSites*2
+                i_spat = gtid(i)
+                j_spat = gtid(j)
+                AOMO_Spin(j,i) = FullHFOrbs(gtid(j),gtid(i))
+            enddo
+        enddo
+        allocate(DM(nSites*2,nSites*2))
+        deallocate(temp)
+        allocate(temp(nSites*2,nSites*2))
+
+        write(6,*) "Calculating RPA Transition moments..."
+        call flush(6)
+
+        !Calculate <|[V,Q_nu^+]|0><0|[Q_nu,V]|0> and store for each nu
+        do i=1,nel
+            do a=virt_start,2*nSites
+                if(mod(i,2).ne.mod(a,2)) cycle      !Only want same spin excitations 
+                ai_ind = ov_space_spinind(a,i)      !This is the index in the array
+
+                DM(:,:) = 0.0_dp
+                if(mod(i,2).eq.1) then
+                    !Alpha -> alpha transition.
+                    !Parity is -1
+                    DM(i,a) = -1.0_dp
+                else
+                    !Beta -> beta transition
+                    !Parity is 1
+                    DM(i,a) = 1.0_dp
+                endif
+                !Now, rotate this density matrix into the AO basis
+                call dgemm('n','n',nSites*2,nSites*2,nSites*2,1.0_dp,AOMO_Spin,nSites*2,DM,nSites*2,0.0_dp,temp,nSites*2)
+                call dgemm('n','t',nSites*2,nSites*2,nSites*2,1.0_dp,temp,nSites*2,AOMO_Spin,nSites*2,0.0_dp,DM,nSites*2)
+
+                !Extract the pertsite,pertsite component, and sum the two spins
+!                pertsite_alpha = pertsite*2 - 1
+!                pertsite_beta = pertsite*2 
+                DMEl1 = DM(pertsite*2-1,pertsite*2-1) + DM(pertsite*2,pertsite*2)
+
+                !Now do <D_i^a|a_a^+ a_i|D_0> element, which is the one on the other side
+                DM(:,:) = 0.0_dp
+                if(mod(i,2).eq.1) then
+                    DM(a,i) = -1.0_dp
+                else
+                    DM(i,a) = 1.0_dp
+                endif
+                !Now, rotate this density matrix into the AO basis
+                call dgemm('n','n',nSites*2,nSites*2,nSites*2,1.0_dp,AOMO_Spin,nSites*2,DM,nSites*2,0.0_dp,temp,nSites*2)
+                call dgemm('n','t',nSites*2,nSites*2,nSites*2,1.0_dp,temp,nSites*2,AOMO_Spin,nSites*2,0.0_dp,DM,nSites*2)
+
+                !Extract the pertsite,pertsite component, and sum the two spins
+                DMEl2 = DM(pertsite*2-1,pertsite*2-1) + DM(pertsite*2,pertsite*2)
+
+                do excit=1,ov_space
+                    trans_moment(excit) = trans_moment(excit) + ((X_stab(ai_ind,excit)*DMEl1 - Y_stab(ai_ind,excit)*DMEl2)*  &
+                        (X_stab(ai_ind,excit)*DMEl2 - Y_stab(ai_ind,excit)*DMEl1))
+                enddo
+            enddo
+        enddo
+        trans_moment(:) = trans_moment(:)*Lambda
+
+        iunit = get_free_unit()
+        open(unit=iunit,file='RPA_Transitions',status='unknown')
+        write(iunit,"(A)") "#Excitation     Transition_Frequency       Transition_Moment"
+        do i=1,ov_space
+            write(iunit,"(I8,2G22.12)") i,W2(ov_space+i),trans_moment(i)
+        enddo
+        close(iunit)
+
+        write(6,*) "Writing RPA linear response function to disk..."
+
+        open(unit=iunit,file='RPA_DDResponse',status='unknown')
+        write(iunit,"(A)") "# Frequency     DD_LinearResponse"
+
+        Omega = Start_Omega
+        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+
+            ResponseFn = 0.0_dp
+            do i=1,ov_space
+                ResponseFn = ResponseFn + ((trans_moment(i)/(Omega-W2(ov_space+i))) - (trans_moment(i)/(Omega+W2(ov_space+i))))
+            enddo
+            write(iunit,*) Omega,ResponseFn
+
+            Omega = Omega + Omega_Step
+
+        enddo
+        close(iunit)
+
+        deallocate(W2,W,temp,temp2,StabilityCopy,Stability,A_mat,B_Mat,trans_moment,S_half)
+        deallocate(X_stab,Y_stab,AOMO_Spin,DM)
+
+    end subroutine RPA_LR
+
+    !Only want to consider single excitation space, consisting of i -> a
+    !First list all alpha excitations, then beta excitations
+    !Within each spin-type, it is virtual fast
+    integer function ov_space_spinind(a,i)
+        implicit none
+        integer, intent(in) :: i,a
+        integer :: a_spat,i_spat,nVirt_spat,gtid
+
+        if(mod(i,2).ne.mod(a,2)) ov_space_spinind = -1  !*Should* be easy to see where this goes wrong
+
+        !Convert to spatial. Index the virtual excitations starting at 1
+        a_spat = gtid(a-NEl)    !Runs from 1 -> number of spatial virtual orbitals
+        i_spat = gtid(i)        !Runs from 1 -> nOcc
+        nVirt_spat = nSites - nOcc
+
+        if(mod(i,2).eq.1) then
+            !It is an alpha -> alpha transition
+            !These are indexed first
+            ov_space_spinind = (i_spat-1)*nVirt_spat + a_spat
+        else
+            !It is a beta -> beta transition
+            !Add on the entire set of alpha -> alpha transitions which come first
+            ov_space_spinind = (i_spat-1)*nVirt_spat + a_spat + (nVirt_spat*nOcc)
+        endif
+    end function ov_space_spinind
 
     !dPsi/dLambda for Static DD response (i.e. omega -> 0)
     subroutine StaticMF_DD()
