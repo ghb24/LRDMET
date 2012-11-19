@@ -173,9 +173,9 @@ module mat_tools
     !These are stored in FullHFOrbs and FullHFEnergies
     subroutine run_true_hf()
         implicit none
-        real(dp) :: HFEnergy,HEl,GetHFAntisymInt_spinorb,GetHFInt_spinorb,PDiff
+        real(dp) :: HFEnergy,HEl,GetHFAntisymInt_spinorb,PDiff,fockel
         real(dp), allocatable :: Work(:),OccOrbs_HF(:,:),PMatrix_old(:,:),PMatrix(:,:)
-        real(dp), allocatable :: fock(:,:)
+        real(dp), allocatable :: fock(:,:),temp(:,:),h0HF(:,:)
         integer :: i,lWork,info,ex(2,2),j
         character(len=*), parameter :: t_r='run_hf'
 
@@ -195,6 +195,7 @@ module mat_tools
         endif
         allocate(FullHFOrbs(nSites,nSites)) !The orbitals from the diagonalization of the fock matrix
         allocate(FullHFEnergies(nSites))
+        !call writematrix(fock,'fock',.true.)
 
         !Now just diagonalise this fock matrix, rather than use diis
         !First, diagonalize one-body hamiltonian
@@ -221,7 +222,7 @@ module mat_tools
 
         !Calculate initial trial P matrix:
         call dgemm('N','T',nSites,nSites,nOcc,1.0_dp,OccOrbs_HF,nSites,OccOrbs_HF,nSites,0.0_dp,PMatrix_old,nSites)
-!        call writevector(FullHFEnergies(1:10),'Initial HF eigenvalues')
+        !call writevector(FullHFEnergies(1:10),'Initial HF eigenvalues')
 
         do while(PDiff.gt.1.0e-8_dp)
             FullHFOrbs(:,:) = h0(:,:)
@@ -253,8 +254,8 @@ module mat_tools
                 enddo
             enddo
             PMatrix_old(:,:) = PMatrix(:,:)
-!            write(6,*) "PDiff: ",PDiff
-!            call writevector(FullHFEnergies(1:10),'HF eigenvalues')
+            !write(6,*) "PDiff: ",PDiff
+            !call writevector(FullHFEnergies(1:10),'HF eigenvalues')
         enddo
         deallocate(PMatrix,PMatrix_old,OccOrbs_HF)
             
@@ -267,10 +268,36 @@ module mat_tools
             write(6,*) FullHFEnergies(i)
         enddo
 
+        !Convert core hamiltonian into HF basis
+        allocate(temp(nSites,nSites))
+        allocate(h0HF(nSites,nSites))
+        call dgemm('t','n',nSites,nSites,nSites,1.0_dp,FullHFOrbs,nSites,h0,nSites,0.0_dp,temp,nSites)
+        call dgemm('n','n',nSites,nSites,nSites,1.0_dp,temp,nSites,FullHFOrbs,nSites,0.0_dp,h0HF,nSites)
+        deallocate(temp)
+
+        if(.true.) then
+            !Generate fock eigenvalues and see if they are the same
+            do i=1,nSites
+                fockel = h0HF(i,i)
+                do j=1,nel
+                    ex(1,1) = j
+                    ex(1,2) = i*2
+                    ex(2,1) = j
+                    ex(2,2) = i*2
+                    HEl = GetHFAntisymInt_spinorb(ex,FullHFOrbs)
+                    fockel = fockel + HEl
+                enddo
+                !write(6,*) "Fock eigenvalue calculated: ",i,fockel
+                if(abs(fockel-FullHFEnergies(i)).gt.1.0e-7_dp) then
+                    call stop_all(t_r,'HF solution not correct - fock eigenvalues do not agree')
+                endif
+            enddo
+        endif
+
         !Now calculate HF energy:
         HFEnergy = 0.0_dp
         do i=1,nOcc
-            HFEnergy = HFEnergy + h0(i,i)*2.0_dp
+            HFEnergy = HFEnergy + h0HF(i,i)*2.0_dp
         enddo
         do i=1,nel
             do j=1,nel
@@ -289,7 +316,6 @@ module mat_tools
         do i=1,nOcc
             HFEnergy = HFEnergy + 2.0_dp*FullHFEnergies(i)
         enddo
-        write(6,*) "HFEnergy: ",HFEnergy
         do i=1,nel
             do j=1,nel
                 ex(1,1) = i
@@ -298,20 +324,11 @@ module mat_tools
                 ex(2,2) = j
                 HEl = GetHFAntisymInt_spinorb(ex,FullHFOrbs)
                 HFEnergy = HFEnergy - HEl*0.5_dp
-!                HEl = GetHFInt_spinorb(ex,FullHFOrbs)
-!                HFEnergy = HFEnergy - 0.5_dp*HEl
-!
-!                ex(1,1) = i
-!                ex(1,2) = j
-!                ex(2,1) = j
-!                ex(2,2) = i
-!                HEl = GetHFInt_spinorb(ex,FullHFOrbs)
-!                HFEnergy = HFEnergy + 0.5_dp*HEl
             enddo
         enddo
         write(6,*) "HF energy from fock eigenvalues: ",HFEnergy
 
-        deallocate(fock)
+        deallocate(fock,h0HF)
 
     end subroutine run_true_hf
 

@@ -27,14 +27,14 @@ call run_DMETcalc()
         tConstructFullSchmidtBasis = .true. 
         tMFResponse = .false. 
         tHalfFill = .true. 
-        nSites = 20  
+        nSites = 12  
         LatticeDim = 1
         nImp = 2
         StartU = 4.0_dp
         EndU = 4.1_dp
         UStep = 0.2_dp
         tPeriodic = .false.
-        tAntiPeriodic = .true.
+        tAntiPeriodic = .true. 
         tRampDownOcc = .true.
         tDiagFullSystem = .false.
 !        tCompleteDiag = tMFResponse
