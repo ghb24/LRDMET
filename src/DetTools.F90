@@ -599,5 +599,270 @@ subroutine sort_int(arr, length)
     enddo
 end subroutine sort_int
 
+subroutine sort_real(arr, length)
+    ! sort needs auxiliary storage of length 2*log_2(n).
+    use errors, only: stop_all
+    use const
+    implicit none
+    integer, parameter :: nStackMax = 50
+    integer, parameter :: nInsertionSort = 7              
 
+    integer, intent(in) :: length
+    real(dp), intent(inout) :: arr(length)                         
+
+    ! Oh, how lovely it would be to be able to use push/pop and not need
+    ! to guess a size of the stack to start with       
+    integer :: stack(nStackMax), nstack 
+    integer :: pivot, lo, hi, n, i, j                                
+    ! n.b. This size statement is removed if type1 is scalar ...
+    real(dp) :: a               
+
+    ! Temporary variables for swapping  
+    real(dp) :: tmp1                                  
+    character(*), parameter :: this_routine = 'sort_real'        
+                                                                      
+    ! Initialise temporary variables if required      
+    
+    ! *** HACK ***                                                
+    ! Workaround for gfortran compiler bug
+    ! n.b. This will produce spurious warnings if run in valgrind, as
+    !      a is not initialised. Not a problem in optimised build.
+    ! if (custom_lt(a, a)) i = i
+    ! if (custom_gt(a, a)) i = i
+
+
+    ! The size of the array to sort. 
+    ! N.B. Use zero based indices. To obtain ! the entry into the actual 
+    ! array, multiply indices by nskip and add ! 1 (hence zero based)
+    ! **** See local macro srt_ind() ******
+    lo = lbound(arr, 1) - 1
+    n = (ubound(arr, 1) - lo -1) + 1
+    hi = lo + n - 1
+
+    nstack = 0
+    do while (.true.)
+        ! If the section/partition we are looking at is smaller than
+        ! nInsertSort then perform an insertion sort 
+        if (hi - lo < nInsertionSort) then
+            do j = lo + 1, hi
+                a = arr(srt_ind(j))
+                do i = j - 1, 0, -1
+                    if (arr(srt_ind(i)) < a) exit
+                    arr(srt_ind(i+1)) = arr(srt_ind(i))
+                enddo
+                arr(srt_ind(i+1)) = a
+            enddo
+
+            if (nstack == 0) exit
+            hi = stack(nstack)
+            lo = stack(nstack-1)
+            nstack = nstack - 2
+
+        ! Otherwise start partitioning with quicksort. 
+        else
+            ! Pick a partitioning element, and arrange such that
+            ! arr(lo) <= arr(lo+1) <= arr(hi) 
+            pivot = (lo + hi) / 2
+            tmp1 = arr(srt_ind(pivot))
+            arr(srt_ind(pivot)) = arr(srt_ind(lo + 1))
+            arr(srt_ind(lo + 1)) = tmp1
+
+            if (arr(srt_ind(lo)) > arr(srt_ind(hi))) then
+                tmp1 = arr(srt_ind(lo))
+                arr(srt_ind(lo)) = arr(srt_ind(hi))
+                arr(srt_ind(hi)) = tmp1
+            endif
+            if (arr(srt_ind(lo+1)) > arr(srt_ind(hi))) then
+                tmp1 = arr(srt_ind(lo+1))
+                arr(srt_ind(lo+1)) = arr(srt_ind(hi))
+                arr(srt_ind(hi)) = tmp1
+            endif
+            if (arr(srt_ind(lo)) > arr(srt_ind(lo+1))) then
+                tmp1 = arr(srt_ind(lo))
+                arr(srt_ind(lo)) = arr(srt_ind(lo+1))
+                arr(srt_ind(lo+1)) = tmp1
+            endif
+
+            i = lo + 1
+            j = hi
+            a = arr(srt_ind(lo + 1)) !! a is the pivot value
+            do while (.true.)
+                ! Scand down list to find element > a 
+                i = i + 1
+                do while (arr(srt_ind(i)) < a)
+                    i = i + 1
+                enddo
+
+                ! Scan down list to find element < a 
+                j = j - 1
+                do while (arr(srt_ind(j)) > a)
+                    j = j - 1
+                enddo
+
+                ! When the pointers crossed, partitioning is complete. 
+                if (j < i) exit
+                ! Swap the elements, so that all elements < a end up
+                ! in lower indexed variables. 
+                tmp1 = arr(srt_ind(i))
+                arr(srt_ind(i)) = arr(srt_ind(j))
+                arr(srt_ind(j)) = tmp1
+            enddo;
+
+            ! Insert partitioning element 
+            arr(srt_ind(lo + 1)) = arr(srt_ind(j))
+            arr(srt_ind(j)) = a
+            ! Push the larger of the partitioned sections onto the stack
+            ! of sections to look at later.
+            ! --> need fewest stack elements. 
+            nstack = nstack + 2
+            if (nstack > nStackMax) then
+                    call stop_all (this_routine, &
+                                    "parameter nStackMax too small")
+            endif
+            if (hi - i + 1 >= j - lo) then
+                stack(nstack) = hi
+                stack(nstack-1) = i
+                hi = j - 1
+            else
+                stack(nstack) = j - 1
+                stack(nstack-1) = lo
+                lo = i
+            endif
+        endif
+    enddo
+end subroutine sort_real
+
+subroutine sort_real2(arr, length, length2)
+    ! sort needs auxiliary storage of length 2*log_2(n).
+    use errors, only: stop_all
+    use const
+    implicit none
+    integer, parameter :: nStackMax = 50
+    integer, parameter :: nInsertionSort = 7              
+
+    integer, intent(in) :: length
+    integer, intent(in) :: length2
+    real(dp), intent(inout) :: arr(length,length2) 
+
+    ! Oh, how lovely it would be to be able to use push/pop and not need
+    ! to guess a size of the stack to start with       
+    integer :: stack(nStackMax), nstack 
+    integer :: pivot, lo, hi, n, i, j                                
+    ! n.b. This size statement is removed if type1 is scalar ...
+    real(dp) :: a(length2)
+
+    ! Temporary variables for swapping  
+    real(dp) :: tmp1(length2)                       
+    character(*), parameter :: this_routine = 'sort_real'        
+                                                                      
+    ! Initialise temporary variables if required      
+    
+    ! *** HACK ***                                                
+    ! Workaround for gfortran compiler bug
+    ! n.b. This will produce spurious warnings if run in valgrind, as
+    !      a is not initialised. Not a problem in optimised build.
+    ! if (custom_lt(a, a)) i = i
+    ! if (custom_gt(a, a)) i = i
+
+
+    ! The size of the array to sort. 
+    ! N.B. Use zero based indices. To obtain ! the entry into the actual 
+    ! array, multiply indices by nskip and add ! 1 (hence zero based)
+    ! **** See local macro srt_ind() ******
+    lo = lbound(arr, 1) - 1
+    n = (ubound(arr, 1) - lo -1) + 1
+    hi = lo + n - 1
+
+    nstack = 0
+    do while (.true.)
+        ! If the section/partition we are looking at is smaller than
+        ! nInsertSort then perform an insertion sort 
+        if (hi - lo < nInsertionSort) then
+            do j = lo + 1, hi
+                a = arr(srt_ind(j),:)
+                do i = j - 1, 0, -1
+                    if (arr(srt_ind(i),1) < a(1)) exit
+                    arr(srt_ind(i+1),:) = arr(srt_ind(i),:)
+                enddo
+                arr(srt_ind(i+1),:) = a(:)
+            enddo
+
+            if (nstack == 0) exit
+            hi = stack(nstack)
+            lo = stack(nstack-1)
+            nstack = nstack - 2
+
+        ! Otherwise start partitioning with quicksort. 
+        else
+            ! Pick a partitioning element, and arrange such that
+            ! arr(lo) <= arr(lo+1) <= arr(hi) 
+            pivot = (lo + hi) / 2
+            tmp1(:) = arr(srt_ind(pivot),:)
+            arr(srt_ind(pivot),:) = arr(srt_ind(lo + 1),:)
+            arr(srt_ind(lo + 1),:) = tmp1(:)
+
+            if (arr(srt_ind(lo),1) > arr(srt_ind(hi),1)) then
+                tmp1(:) = arr(srt_ind(lo),:)
+                arr(srt_ind(lo),:) = arr(srt_ind(hi),:)
+                arr(srt_ind(hi),:) = tmp1(:)
+            endif
+            if (arr(srt_ind(lo+1),1) > arr(srt_ind(hi),1)) then
+                tmp1(:) = arr(srt_ind(lo+1),:)
+                arr(srt_ind(lo+1),:) = arr(srt_ind(hi),:)
+                arr(srt_ind(hi),:) = tmp1(:)
+            endif
+            if (arr(srt_ind(lo),1) > arr(srt_ind(lo+1),1)) then
+                tmp1(:) = arr(srt_ind(lo),:)
+                arr(srt_ind(lo),:) = arr(srt_ind(lo+1),:)
+                arr(srt_ind(lo+1),:) = tmp1(:)
+            endif
+
+            i = lo + 1
+            j = hi
+            a(:) = arr(srt_ind(lo + 1),:) !! a is the pivot value
+            do while (.true.)
+                ! Scand down list to find element > a 
+                i = i + 1
+                do while (arr(srt_ind(i),1) < a(1))
+                    i = i + 1
+                enddo
+
+                ! Scan down list to find element < a 
+                j = j - 1
+                do while (arr(srt_ind(j),1) > a(1))
+                    j = j - 1
+                enddo
+
+                ! When the pointers crossed, partitioning is complete. 
+                if (j < i) exit
+                ! Swap the elements, so that all elements < a end up
+                ! in lower indexed variables. 
+                tmp1(:) = arr(srt_ind(i),:)
+                arr(srt_ind(i),:) = arr(srt_ind(j),:)
+                arr(srt_ind(j),:) = tmp1(:)
+            enddo;
+
+            ! Insert partitioning element 
+            arr(srt_ind(lo + 1),:) = arr(srt_ind(j),:)
+            arr(srt_ind(j),:) = a(:)
+            ! Push the larger of the partitioned sections onto the stack
+            ! of sections to look at later.
+            ! --> need fewest stack elements. 
+            nstack = nstack + 2
+            if (nstack > nStackMax) then
+                    call stop_all (this_routine, &
+                                    "parameter nStackMax too small")
+            endif
+            if (hi - i + 1 >= j - lo) then
+                stack(nstack) = hi
+                stack(nstack-1) = i
+                hi = j - 1
+            else
+                stack(nstack) = j - 1
+                stack(nstack-1) = lo
+                lo = i
+            endif
+        endif
+    enddo
+end subroutine sort_real2
 

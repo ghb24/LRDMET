@@ -27,11 +27,11 @@ call run_DMETcalc()
         tConstructFullSchmidtBasis = .true. 
         tMFResponse = .false. 
         tHalfFill = .true. 
-        nSites = 12  
+        nSites = 60  
         LatticeDim = 1
         nImp = 2
-        StartU = 4.0_dp
-        EndU = 4.1_dp
+        StartU = 1.0_dp
+        EndU = 1.1_dp
         UStep = 0.2_dp
         tPeriodic = .false.
         tAntiPeriodic = .true. 
@@ -41,8 +41,8 @@ call run_DMETcalc()
         tCompleteDiag = .true. 
         tGSFCI = .false. !.not.tMFResponse
         Start_Omega = 0.0_dp
-        End_Omega = 10.0_dp
-        Omega_Step = 0.025_dp
+        End_Omega = 5.0_dp
+        Omega_Step = 0.005_dp
         tDumpFCIDUMP = .true.
 
     end subroutine set_defaults
@@ -146,11 +146,6 @@ call run_DMETcalc()
                     !Now run a HF calculation by constructing and diagonalizing the fock matrix
                     !This will also return the RDM in the AO basis
                     call run_hf(it)
-
-                    if(tMFResponse) then
-                        !Calculate the non-interacting density-density linear response over a range of frequencies
-                        call non_interactingLR()
-                    endif
 
                     !Construct the embedded basis
                     if(tConstructFullSchmidtBasis) then

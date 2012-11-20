@@ -20,7 +20,7 @@ module LinearResponse
 
         !Create contracted single excitation space using the non-interacting reference for the contractions
         !The matrix is then created in a CI fashion
-!        call NonIntContracted_TDA_MCLR()
+        call NonIntContracted_TDA_MCLR()
 
         !Create contracted single excitation space using the non-interacting reference for the contractions
         !The matrix is then created in an RPA fashion
@@ -38,15 +38,63 @@ module LinearResponse
     subroutine SR_LinearResponse()
         implicit none
         
+        !Non-interacting linear response
+        call NonInteractingLR()
+        !Single reference TDA
+        call TDA_LR()
         !Single reference RPA
         call RPA_LR()
-        !Single reference TDA
-!        call TDA_LR()
-        !Non-interacting linear response
-!        call NonInteractingLR()
 
     end subroutine SR_LinearResponse
 
+    !Contract the basis of single excitations, by summing together all the uncontracted parts with the non-interacting LR coefficients
+    !This results in requiring the solution of a system which *only* scales with the size of the active hilbert space, not the lattice
+    subroutine NonIntContracted_TDA_MCLR()
+        implicit none
+
+!        write(6,*) "Calculating MR-TDA-LR system..."
+!        if(.not.tConstructFullSchmidtBasis) call stop_all(t_r,'To solve LR, must construct full schmidt basis')
+!        if(.not.tCompleteDiag) call stop_all(t_r,'To solve LR, must perform complete diag')
+!
+!        !First, find the non-interacting solution expressed in the schmidt basis
+!        call FindSchmidtPert()
+!
+!        !Calculate the size of the hamiltonian matrix
+!        !This is simply the normal active space size, plus 1 fully contracted core-virtual excitation,
+!        !plus 2*nImp fully contracted core-active excitation, and 2*nImp fully contracted active-virtual 
+!        !excitations
+!        nLinearSystem = nFCIDet+1+4*nImp
+!
+!        !Allocate memory for hmailtonian in this system:
+!        write(6,"(A,F14.6,A)") "Allocating memory for the LR hessian: ",real((nLinearSystem**2)*8,dp)/1048576.0_dp," Mb"
+!        allocate(LinearSystem(nLinearSystem,nLinearSystem),stat=ierr)
+!        if(ierr.ne.0) call stop_all(t_r,'Error allocating')
+!        LinearSystem = 0.0_dp
+!
+!        write(6,"(A)",advance='no') "Constructing hessian matrix..."
+!        
+!        !First, construct FCI space, in determinant basis
+!        !This is the first block
+!        do i=1,nFCIDet
+!            LinearSystem(i,i) = Spectrum(i) 
+!        enddo
+!        !Now transform this block back into the determinant basis
+!        allocate(temp(nFCIDet,nFCIDet))
+!        call DGEMM('N','N',nFCIDet,nFCIDet,nFCIDet,1.0_dp,FullHamil,nFCIDet,LinearSystem(1:nFCIDet,1:nFCIDet),  &
+!            nFCIDet,0.0_dp,temp,nFCIDet)
+!        call DGEMM('N','T',nFCIDet,nFCIDet,nFCIDet,1.0_dp,temp,nFCIDet,FullHamil,nFCIDet,0.0_dp,    &
+!            LinearSystem(1:nFCIDet,1:nFCIDet),nFCIDet)
+!        deallocate(temp)
+!        !Finally, subtract the ground state energy from the diagonals, since we want to offset it.
+!        do i=1,nFCIDet
+!            LinearSystem(i,i) = LinearSystem(i,i) - Spectrum(1)
+!        enddo
+
+        !TODO: Check here that this is the same as the original determinant basis
+
+        !Now, calculate the fully IC sum of all core-virtual excitations
+
+    end subroutine NonIntContracted_TDA_MCLR
 
     !Solve the response equations in the basis of Psi^(0) + all single excits.
     !This is the basis of Psi^(0), the basis of internally contracted single excitations of it into
@@ -463,12 +511,10 @@ module LinearResponse
         do i=1,nOcc
             do a=nOcc+1,nSites
                 EDiff = HFEnergies(a)-HFEnergies(i)
-                HFPertBasis(i,a) = HFOrbs(pertsite,i)*HFOrbs(pertsite,a)*Lambda*((1.0_dp/(EDiff-Omega))+(1.0_dp/(EDiff+Omega)))
+                HFPertBasis(i,a) = HFOrbs(pertsite,i)*HFOrbs(pertsite,a)*Lambda*(1.0_dp/(Omega-EDiff))
                 HFPertBasis(a,i) = HFPertBasis(i,a)
             enddo
         enddo
-
-        !write(6,*) "Mean-field DD response: ",Omega,MFDD_Response
 
         !write(6,*) "Transforming non-interacting response operator into full schmidt basis..."
 
@@ -483,6 +529,383 @@ module LinearResponse
         !call writematrix(SchmidtPert,'Perturbation in schmidt basis',.true.)
 
     end subroutine FindSchmidtPert
+
+    subroutine NonInteractingLR()
+        use utils, only: get_free_unit
+        implicit none
+        integer :: ov_space,virt_start,i,a,a_spat,i_spat,ai_ind,gtid,iunit
+        integer :: highbound
+        real(dp) :: Omega,EDiff,ResponseFn
+        real(dp), allocatable :: transitions(:,:)   !(ov_space,2)   !1 = transition frequencies, 2 = moments
+        !character(len=*), parameter :: t_r='NonInteractingLR'
+
+        write(6,*) "Calculating the non-interacting linear response function"
+
+        !First, just enumerate transitions
+        ov_space =2*nOcc*(nSites-nOcc)
+        virt_start = (2*nOcc)+1
+        allocate(transitions(ov_space,2))
+        transitions(:,:) = 0.0_dp
+        do i=1,nel
+            do a=virt_start,2*nSites
+                if(mod(i,2).ne.mod(a,2)) cycle      !Only want same spin excitations 
+                ai_ind = ov_space_spinind(a,i)
+                i_spat = gtid(i)
+                a_spat = gtid(a)
+
+                transitions(ai_ind,1) = FullHFEnergies(a_spat)-FullHFEnergies(i_spat)
+                !Now calculate the moment
+                transitions(ai_ind,2) = (FullHFOrbs(pertsite,i_spat)*FullHFOrbs(pertsite,a_spat))**2
+!                write(6,*) "i, a: ",i,a
+!                write(6,*) "moment: ",(FullHFOrbs(pertsite,i_spat)*FullHFOrbs(pertsite,a_spat))**2
+                !write(6,*) Transitions(ai_ind,1),Transitions(ai_ind,2)
+            enddo
+        enddo
+        call sort_real2(transitions,ov_space,2)
+
+        iunit = get_free_unit()
+        open(unit=iunit,file='NonInt_Transitions',status='unknown')
+        write(iunit,"(A)") "#Excitation     Transition_Frequency       Transition_Moment"
+        do i=1,ov_space
+            write(iunit,"(I8,2G22.12)") i,transitions(i,1),transitions(i,2)
+        enddo
+        close(iunit)
+        write(6,*) "First 10 non-interacting transition frequencies: "
+        highbound = min(ov_space,10)
+        call writevector(transitions(1:highbound,1),'transition frequencies')
+        deallocate(transitions)
+
+        write(6,*) "Writing non-interacting linear response function to disk..."
+
+        open(unit=iunit,file='NonInt_DDResponse',status='unknown')
+        write(iunit,"(A)") "# Frequency     DD_LinearResponse"
+
+        Omega = Start_Omega
+        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+
+            ResponseFn = 0.0_dp
+            do i=1,nel
+                do a=virt_start,2*nSites
+                    if(mod(i,2).ne.mod(a,2)) cycle      !Only want same spin excitations 
+                    i_spat = gtid(i)
+                    a_spat = gtid(a)
+
+                    EDiff = FullHFEnergies(a_spat)-FullHFEnergies(i_spat)
+                    ResponseFn = ResponseFn + ((FullHFOrbs(pertsite,a_spat)*FullHFOrbs(pertsite,i_spat))**2)/(Omega-EDiff)
+                    ResponseFn = ResponseFn - ((FullHFOrbs(pertsite,a_spat)*FullHFOrbs(pertsite,i_spat))**2)/(Omega+EDiff)
+                enddo
+            enddo
+            ResponseFn = ResponseFn*Lambda
+            write(iunit,*) Omega,ResponseFn
+
+            Omega = Omega + Omega_Step
+
+        enddo
+        close(iunit)
+
+    end subroutine NonInteractingLR
+
+    subroutine TDA_LR()
+        use utils, only: get_free_unit
+        use DetToolsData, only: tmat,umat
+        implicit none
+        integer :: ov_space,virt_start,ierr,i,j,n,m,nj_ind,mi_ind,ex(2,2),gtid
+        integer :: m_spat,i_spat,lwork,info,k,umatind,l,orbpairs,umatsize,ai_ind,a
+        integer :: state,iunit,a_spat,highbound
+        logical :: tSign
+        integer, allocatable :: detHF(:),detR(:),detL(:)
+        real(dp) :: HEl1,GetHFAntisymInt_spinorb,GetHFInt_spinorb,Omega,ResponseFn
+        real(dp), allocatable :: A_mat(:,:),W(:),Work(:),temp(:,:),Residues(:)
+        real(dp), allocatable :: DM(:,:),DM_conj(:,:),DM_AO(:,:),DM_AO_conj(:,:)
+        character(len=*), parameter :: t_r='TDA_LR'
+
+        write(6,*) "Calculating the linear response function via the Tamm-Dancoff approximation"
+
+        ov_space =2*nOcc*(nSites-nOcc)
+        virt_start = (2*nOcc)+1
+
+        if(.false.) then
+            !Temporarily create & store TMAT & UMAT
+            if(allocated(tmat)) deallocate(tmat)
+            if(allocated(umat)) deallocate(umat)
+            allocate(tmat(nSites,nSites))
+            allocate(temp(nSites,nSites))
+            call dgemm('t','n',nSites,nSites,nSites,1.0_dp,FullHFOrbs,nSites,h0,nSites,0.0_dp,temp,nSites)
+            call dgemm('n','n',nSites,nSites,nSites,1.0_dp,temp,nSites,FullHFOrbs,nSites,0.0_dp,tmat,nSites)
+            deallocate(temp)
+            OrbPairs = (nSites*(nSites+1))/2
+            umatsize = (OrbPairs*(OrbPairs+1))/2 
+            allocate(umat(umatsize))
+            do i=1,nSites
+                do j=1,nSites
+                    do k=1,nSites
+                        do l=1,nSites
+                            ex(1,1) = i*2
+                            ex(1,2) = j*2
+                            ex(2,1) = k*2
+                            ex(2,2) = l*2
+                            umat(umatind(i,j,k,l)) = GetHFInt_spinorb(ex,FullHFOrbs)
+                        enddo
+                    enddo
+                enddo
+            enddo
+
+            !calculate matrix brute force to check it is right
+            allocate(A_mat(ov_space,ov_space),stat=ierr)    !This is the singles hamiltonian
+            if(ierr.ne.0) call stop_all(t_r,'alloc error')
+            A_mat(:,:) = 0.0_dp
+
+            allocate(detL(nel))
+            allocate(detR(nel))
+            allocate(detHF(nel))
+            do k=1,nel
+                detHF(k) = k
+            enddo
+
+            do j=1,nel
+                do n=virt_start,2*nSites
+                    if(mod(j,2).ne.mod(n,2)) cycle      !Only want same spin excitations for j and n
+                    detL(:) = detHF(:)
+                    do k=1,nel
+                        if(detL(k).eq.j) then
+                            detL(k) = n
+                            exit
+                        endif
+                    enddo
+                    call sort_int(detL,nel)
+                    nj_ind = ov_space_spinind(n,j)
+
+                    do i=1,nel
+                        do m=virt_start,2*nSites
+                            if(mod(i,2).ne.mod(m,2)) cycle      !Only want same spin excitations for i and m
+                            detR(:) = detHF(:)
+                            do k=1,nel
+                                if(detR(k).eq.i) then
+                                    detR(k) = m
+                                    exit
+                                endif
+                            enddo
+                            call sort_int(detR,nel)
+                            mi_ind = ov_space_spinind(m,i)
+
+                            call GetHElement(detL,detR,nel,HEl1)
+                            A_mat(nj_ind,mi_ind) = HEl1
+                        enddo
+                    enddo
+                enddo
+            enddo
+
+            !Remove the HF energy from the diagonals
+            do i=1,ov_space
+                A_mat(i,i) = A_mat(i,i) - HFEnergy
+            enddo
+
+            !Check that A is hermition 
+            do i=1,ov_space
+                do j=1,ov_space
+                    if(abs(A_mat(i,j)-A_mat(j,i)).gt.1.0e-7) then
+                        call stop_all(t_r,'A not hermitian')
+                    endif
+                enddo
+            enddo
+
+            !Diagonalize A
+            allocate(Work(1))
+            if(ierr.ne.0) call stop_all(t_r,"alloc err")
+            allocate(W(ov_space))
+            W(:)=0.0_dp
+            lWork=-1
+            info=0
+            call dsyev('V','U',ov_space,A_mat,ov_space,W,Work,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'workspace query failed')
+            lwork=int(work(1))+1
+            deallocate(work)
+            allocate(work(lwork))
+            call dsyev('V','U',ov_space,A_mat,ov_space,W,Work,lwork,info)
+            if (info.ne.0) call stop_all(t_r,"Diag failed")
+            deallocate(work)
+
+            write(6,*) "The first 10 transition frequencies are: "
+            highbound = min(ov_space,10)
+            call writevector(W(1:highbound),'Transition frequencies')
+
+            deallocate(A_Mat,W,umat,tmat,detL,detR,detHF)
+
+        endif
+        
+        allocate(A_mat(ov_space,ov_space),stat=ierr)    !This is the singles hamiltonian
+        if(ierr.ne.0) call stop_all(t_r,'alloc error')
+        A_mat(:,:) = 0.0_dp
+
+        !First, construct A and B, which correspond to:
+        !  <HF| [a*_i a_m [H, a*_n a_j]] |HF> = A
+        do j=1,nel
+            ex(1,2) = j     !second index in integral
+            do n=virt_start,2*nSites
+                if(mod(j,2).ne.mod(n,2)) cycle      !Only want same spin excitations for j and n
+                nj_ind = ov_space_spinind(n,j)
+                ex(2,2) = n !4th index in integral
+                do i=1,nel
+                    ex(2,1) = i !3rd index in integral
+                    do m=virt_start,2*nSites
+                        if(mod(i,2).ne.mod(m,2)) cycle      !Only want same spin excitations for i and m
+                        mi_ind = ov_space_spinind(m,i)
+                        ex(1,1) = m !First index in integral
+
+                        !Calculate the antisymmetrized integral, < m j || i n > for A_mat and < m n || i j > for B_mat
+                        HEl1 = GetHFAntisymInt_spinorb(ex,FullHFOrbs)
+                        A_mat(mi_ind,nj_ind) = HEl1
+                    enddo
+                enddo
+            enddo
+        enddo
+
+        !Now add the diagonal part to A
+        do i=1,nel
+            do m=virt_start,2*nSites
+                if(mod(i,2).ne.mod(m,2)) cycle  !Only want same spin excitations
+                mi_ind = ov_space_spinind(m,i)
+
+                m_spat = gtid(m)
+                i_spat = gtid(i)
+
+                A_mat(mi_ind,mi_ind) = A_mat(mi_ind,mi_ind) + (FullHFEnergies(m_spat)-FullHFEnergies(i_spat))
+            enddo
+        enddo
+
+        !Check that A is hermition 
+        do i=1,ov_space
+            do j=1,ov_space
+                if(abs(A_mat(i,j)-A_mat(j,i)).gt.1.0e-7) then
+                    call stop_all(t_r,'A not hermitian')
+                endif
+            enddo
+        enddo
+
+        !Diagonalize A
+        allocate(Work(1))
+        if(ierr.ne.0) call stop_all(t_r,"alloc err")
+        allocate(W(ov_space))
+        W(:)=0.0_dp
+        lWork=-1
+        info=0
+        call dsyev('V','U',ov_space,A_mat,ov_space,W,Work,lWork,info)
+        if(info.ne.0) call stop_all(t_r,'workspace query failed')
+        lwork=int(work(1))+1
+        deallocate(work)
+        allocate(work(lwork))
+        call dsyev('V','U',ov_space,A_mat,ov_space,W,Work,lwork,info)
+        if (info.ne.0) call stop_all(t_r,"Diag failed")
+        deallocate(work)
+
+        write(6,*) "The first 10 transition frequencies are: "
+        highbound = min(ov_space,10)
+        call writevector(W(1:highbound),'Transition frequencies')
+        write(6,*) "Calculating TDA Transition moments..."
+        call flush(6)
+
+        !call writematrix(A_mat,'evecs',.true.)
+
+        !We now have our eigenvalues and eigenvectors. Calculate the response functions
+        !First, calculate the residues
+        allocate(Residues(ov_space))
+        Residues(:) = 0.0_dp
+        allocate(DM(nSites,nSites))
+        allocate(DM_conj(nSites,nSites))
+        allocate(DM_AO(nSites,nSites))
+        allocate(DM_AO_conj(nSites,nSites))
+        allocate(detL(nel))
+        allocate(detHF(nel))
+        do k=1,nel
+            detHF(k) = k
+        enddo
+        allocate(temp(nSites,nSites))
+
+        do i=1,nel
+            do a=virt_start,2*nSites
+                if(mod(i,2).ne.mod(a,2)) cycle  !Only want same spin excitations
+                ai_ind = ov_space_spinind(a,i)
+                detL(:) = detHF(:)
+                do k=1,nel
+                    if(detL(k).eq.i) then
+                        detL(k) = a
+                    endif
+                enddo
+                call sort_int(detL(:),nel)
+                i_spat = gtid(i)
+                a_spat = gtid(a)
+
+                !Calculate permutation
+                ex(1,1) = 1
+                call GetExcitation(detL,detHF,nel,ex,tSign)
+
+                DM(:,:) = 0.0_dp
+                DM_conj(:,:) = 0.0_dp
+                if(tSign) then
+                    DM(a_spat,i_spat) = -1.0_dp
+                    DM_conj(i_spat,a_spat) = -1.0_dp
+                else
+                    DM(a_spat,i_spat) = 1.0_dp
+                    DM_conj(i_spat,a_spat) = 1.0_dp
+                endif
+
+                !Transfer to AO basis
+                call dgemm('n','n',nSites,nSites,nSites,1.0_dp,FullHFOrbs,nSites,DM,nSites,0.0_dp,temp,nSites)
+                call dgemm('n','t',nSites,nSites,nSites,1.0_dp,temp,nSites,FullHFOrbs,nSites,0.0_dp,DM_AO,nSites)
+                !Do it also for the conjugate density matrix
+                call dgemm('n','n',nSites,nSites,nSites,1.0_dp,FullHFOrbs,nSites,DM_conj,nSites,0.0_dp,temp,nSites)
+                call dgemm('n','t',nSites,nSites,nSites,1.0_dp,temp,nSites,FullHFOrbs,nSites,0.0_dp,DM_AO_conj,nSites)
+
+                !Extract pertsite,pertsite component
+                !Now run over all states
+                do state=1,ov_space
+                    Residues(state) = Residues(state) + DM_AO(pertsite,pertsite)*DM_AO_conj(pertsite,pertsite)* &
+                        A_mat(ai_ind,state)*A_mat(ai_ind,state)
+!                    if(abs(A_mat(ai_ind,state)).gt.0.5_dp) then
+!                        write(6,*) "i, a: ",i,a
+!                        write(6,*) "moment: ",(FullHFOrbs(pertsite,i_spat)*FullHFOrbs(pertsite,a_spat))**2
+!                        write(6,*) "Actually: ",DM_AO(pertsite,pertsite)*DM_AO_conj(pertsite,pertsite)
+!                        write(6,*) "coefficient: ",A_mat(ai_ind,state)
+!                        write(6,*) "ai_ind: ",ai_ind
+!                        write(6,*) DM_AO(pertsite,pertsite),DM_AO_conj(pertsite,pertsite)
+!                        write(6,*) FullHFOrbs(pertsite,i_spat)*FullHFOrbs(pertsite,a_spat)
+!                    endif
+                enddo
+            enddo
+        enddo
+        deallocate(detHF,detL,temp,DM,DM_conj,DM_AO,DM_AO_conj)
+        Residues(:) = Residues(:)*Lambda
+        
+        iunit = get_free_unit()
+        open(unit=iunit,file='TDA_Transitions',status='unknown')
+        write(iunit,"(A)") "#Excitation     Transition_Frequency       Transition_Moment"
+        do i=1,ov_space
+            write(iunit,"(I8,2G22.12)") i,W(i),Residues(i)
+        enddo
+        close(iunit)
+
+        write(6,*) "Writing TDA linear response function to disk..."
+
+        open(unit=iunit,file='TDA_DDResponse',status='unknown')
+        write(iunit,"(A)") "# Frequency     DD_LinearResponse"
+
+        Omega = Start_Omega
+        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+
+            ResponseFn = 0.0_dp
+            do i=1,ov_space
+                ResponseFn = ResponseFn + ((Residues(i)/(Omega-W(i))) - (Residues(i)/(Omega+W(i))))
+            enddo
+            write(iunit,*) Omega,ResponseFn
+
+            Omega = Omega + Omega_Step
+
+        enddo
+        close(iunit)
+
+        deallocate(A_Mat,W,Residues)
+
+    end subroutine TDA_LR
     
     !Set up the RPA equations and solve them.
     !Finally, create the density-density linear response function from the resulting excitations/deexcitations
@@ -492,7 +915,7 @@ module LinearResponse
         use matrixops, only: d_inv
         implicit none
         integer :: ov_space,virt_start,ierr,j,ex(2,2),ex2(2,2),n,i,m,nj_ind,mi_ind,info,lwork
-        integer :: m_spat,i_spat,StabilitySize,mu,gtid,j_spat,ai_ind,iunit,a,excit
+        integer :: m_spat,i_spat,StabilitySize,mu,gtid,j_spat,ai_ind,iunit,a,excit,highbound
         real(dp) :: HEl1,HEl2,X_norm,Y_norm,norm,Energy_stab,DMEl1,DMEl2,Omega,ResponseFn
         real(dp) :: GetHFAntisymInt_spinorb
         real(dp), allocatable :: A_mat(:,:),B_mat(:,:),Stability(:,:),StabilityCopy(:,:),W(:),Work(:)
@@ -929,7 +1352,7 @@ module LinearResponse
 
                 do excit=1,ov_space
                     trans_moment(excit) = trans_moment(excit) + ((X_stab(ai_ind,excit)*DMEl1 - Y_stab(ai_ind,excit)*DMEl2)*  &
-                        (X_stab(ai_ind,excit)*DMEl2 - Y_stab(ai_ind,excit)*DMEl1))
+                        (X_stab(ai_ind,excit)*DMEl2 - Y_stab(ai_ind,excit)*DMEl1))/4.0_dp   !Divide by 4 since each commutator is /2
                 enddo
             enddo
         enddo
@@ -942,6 +1365,9 @@ module LinearResponse
             write(iunit,"(I8,2G22.12)") i,W2(ov_space+i),trans_moment(i)
         enddo
         close(iunit)
+        write(6,*) "First 10 RPA transition frequencies: "
+        highbound = min(ov_space,10)
+        call writevector(W2(ov_space+1:ov_space+highbound),'transition frequencies')
 
         write(6,*) "Writing RPA linear response function to disk..."
 

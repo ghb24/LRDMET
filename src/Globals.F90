@@ -37,6 +37,8 @@ module Globals
     real(dp) :: ZerothBathNorm  !Normalization of the original bath orbital (required for correct normalization in the linear response)
     logical :: tDumpFCIDUMP
 
+    real(dp) :: HFEnergy    !Calculated HF energy
+
     integer , allocatable :: allowed_occs(:)   !The list of CS occupations for the mean-field solution
     real(dp) , allocatable :: v_loc(:,:)    !The local correlation potential over the impurity sites
     real(dp) , allocatable :: h0(:,:)       !The mean-field core hamiltonian

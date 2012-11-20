@@ -173,7 +173,7 @@ module mat_tools
     !These are stored in FullHFOrbs and FullHFEnergies
     subroutine run_true_hf()
         implicit none
-        real(dp) :: HFEnergy,HEl,GetHFAntisymInt_spinorb,PDiff,fockel
+        real(dp) :: HEl,GetHFAntisymInt_spinorb,PDiff,fockel
         real(dp), allocatable :: Work(:),OccOrbs_HF(:,:),PMatrix_old(:,:),PMatrix(:,:)
         real(dp), allocatable :: fock(:,:),temp(:,:),h0HF(:,:)
         integer :: i,lWork,info,ex(2,2),j
