@@ -30,7 +30,7 @@ module Globals
     logical :: tMFResponse      !Calculate mean-field response
     logical :: tLR_DMET     !Attempt linear response based on partitioning of the perturbation into the schmidt basis of phi^0
     logical :: tCompleteDiag    !Complete rather than iterative diagonalization of the embedded system
-    real(dp) :: Omega=1.0_dp           !Perturbation frequency
+!    real(dp) :: Omega=1.0_dp           !Perturbation frequency
     real(dp) :: Lambda=1.0_dp          !Strength of perturbation
     real(dp) :: Start_Omega,End_Omega,Omega_Step    !Parameters for Omega sweep
     integer :: pertsite=1          !Site of the density perturbation

@@ -59,179 +59,12 @@ module LinearResponse
         real(dp), allocatable :: LinearSystem(:,:),temp(:,:),Work(:),W(:),Residues(:)
         real(dp), allocatable :: RDM1(:,:),RDM2(:,:)
         character(len=*), parameter :: t_r='NonIntContracted_TDA_MCLR'
+        logical, parameter :: tNonIntTest = .true. 
 
         write(6,*) "Calculating non-interacting IC MR-TDA LR system..."
         if(.not.tConstructFullSchmidtBasis) call stop_all(t_r,'To solve LR, must construct full schmidt basis')
         if(.not.tCompleteDiag) call stop_all(t_r,'To solve LR, must perform complete diag')
-
-        !First, find the non-interacting solution expressed in the schmidt basis
-        call FindSchmidtPert()
-
-        !Calculate the size of the hamiltonian matrix
-        !This is simply the normal active space size, plus 1 fully contracted core-virtual excitation,
-        !plus 2*nImp fully contracted core-active excitation, and 2*nImp fully contracted active-virtual 
-        !excitations
-        nLinearSystem = nFCIDet+1 !+4*nImp just initially, do without the semi-internal excitations
-
-        !Allocate memory for hmailtonian in this system:
-        write(6,"(A,F14.6,A)") "Allocating memory for the LR hessian: ",real((nLinearSystem**2)*8,dp)/1048576.0_dp," Mb"
-        allocate(LinearSystem(nLinearSystem,nLinearSystem),stat=ierr)
-        if(ierr.ne.0) call stop_all(t_r,'Error allocating')
-        LinearSystem = 0.0_dp
-
-        write(6,"(A)",advance='no') "Constructing hessian matrix..."
         
-        !First, construct FCI space, in determinant basis
-        !This is the first block
-        do i=1,nFCIDet
-            LinearSystem(i,i) = Spectrum(i) 
-        enddo
-        !Now transform this block back into the determinant basis
-        allocate(temp(nFCIDet,nFCIDet))
-        call DGEMM('N','N',nFCIDet,nFCIDet,nFCIDet,1.0_dp,FullHamil,nFCIDet,LinearSystem(1:nFCIDet,1:nFCIDet),  &
-            nFCIDet,0.0_dp,temp,nFCIDet)
-        call DGEMM('N','T',nFCIDet,nFCIDet,nFCIDet,1.0_dp,temp,nFCIDet,FullHamil,nFCIDet,0.0_dp,    &
-            LinearSystem(1:nFCIDet,1:nFCIDet),nFCIDet)
-        deallocate(temp)
-        !Finally, subtract the ground state energy from the diagonals, since we want to offset it.
-        !Do we just want to offset it, or do we want to completely remove the state, ie subtract E0 * C_i C_j from all elements?
-!        do i=1,nFCIDet
-!            LinearSystem(i,i) = LinearSystem(i,i) - Spectrum(1)
-!        enddo
-!       This is done later, since we want to be able to use the raw hamiltonian in the mean time
-
-        !Now, calculate the fully IC sum of all core-virtual excitations
-        !The diagonal hamiltonian matrix element is given by: G_ai G_bi F_ab - G_ai G_aj F_ij
-        !There is no coupling to the active space via the mean-field hamiltonian, since we cant have just a single active space index
-        !The contracted excitation in orthogonal to the FCI space uncontracted determinants (since cores are always orthogonal), but 
-        !the contracted function itself is not normalized. Find the normalization, and renomalize all its contributions.
-        CoreVirtualNorm = 0.0_dp
-        do i=1,nOcc-nImp
-            do a=nOcc+nImp+1,nSites
-                CoreVirtualNorm = CoreVirtualNorm + SchmidtPert(i,a)*SchmidtPert(a,i)
-            enddo
-        enddo
-        CoreVirtualNorm = CoreVirtualNorm * 2.0_dp
-        write(6,*) "Fully contracted core-virtual excitations have a normalization of: ",CoreVirtualNorm
-        !Anything involving this function should come with a 1/sqrt(CoreVirtualNorm) in front of it
-        do i=1,nOcc-nImp
-            do j=1,nOcc-nImp
-                do a=nOcc+nImp+1,nSites
-                    LinearSystem(nFCIDet+1,nFCIDet+1) = LinearSystem(nFCIDet+1,nFCIDet+1) -     &
-                        SchmidtPert(a,i)*SchmidtPert(a,j)*FockSchmidt(i,j)
-                enddo
-            enddo
-        enddo
-        do i=1,nOcc-nImp
-            do a=nOcc+nImp+1,nSites
-                do b=nOcc+nImp+1,nSites
-                    LinearSystem(nFCIDet+1,nFCIDet+1) = LinearSystem(nFCIDet+1,nFCIDet+1) +     &
-                        SchmidtPert(a,i)*SchmidtPert(b,i)*FockSchmidt(a,b)
-                enddo
-            enddo
-        enddo
-        LinearSystem(nFCIDet+1,nFCIDet+1) = LinearSystem(nFCIDet+1,nFCIDet+1)*2.0_dp/CoreVirtualNorm    !for the other spin type.
-        write(6,*) "Diagonal hamiltonian contribution from fully contracted core-virtual function: ",   &
-            LinearSystem(nFCIDet+1,nFCIDet+1)
-        !We are not going to add on the active space energy, since we assume that we have offset the hamiltonian by the 
-        !zeroth order energy.
-
-        !Now, we need to define the coupling to the uncontracted determinant space.
-        !We first want to calculate <core|F|\sum_{ia}G_{ai}a_a^+a_i core>
-        !The F_ai component must match the G_ai one to be non-zero
-        !Therefore we know that this is \sum_ia F_ia G_ai
-        CoreCoupling = 0.0_dp
-        do i=1,nOcc-nImp
-            do a=nOcc+nImp+1,nSites
-                CoreCoupling = CoreCoupling + FockSchmidt(i,a)*SchmidtPert(a,i)
-            enddo
-        enddo
-        CoreCoupling = CoreCoupling * 2.0_dp    !For the other spin type.
-        !Now we need to include the contribution from \sum_k C_k <D_j|H|0>
-        do i=1,nFCIDet
-            do j=1,nFCIDet
-                LinearSystem(i,nFCIDet+1) = LinearSystem(i,nFCIDet+1) + LinearSystem(j,i)*FullHamil(j,1)
-            enddo
-            LinearSystem(i,nFCIDet+1) = LinearSystem(i,nFCIDet+1) + CoreCoupling    !Add core coupling contribution
-            LinearSystem(i,nFCIDet+1) = LinearSystem(i,nFCIDet+1)/sqrt(CoreVirtualNorm) !Normalise IC single excits
-            LinearSystem(nFCIDet+1,i) = LinearSystem(i,nFCIDet+1)   !Hermiticity
-        enddo
-
-        !Now for the semi-internal excitations
-
-        !Is there an overlap matrix we need?
-        !call writematrix(SchmidtPert,'SchmidtPert',.true.)
-        
-        !Only now do we remove the ground state from the FCI space
-        do i=1,nFCIDet
-            do j=1,nFCIDet
-                LinearSystem(j,i) = LinearSystem(j,i) - Spectrum(1)*FullHamil(i,1)*FullHamil(j,1)
-            enddo
-        enddo
-
-        !Now we have the full hamiltonian. Diagonalize this fully
-        allocate(Work(1))
-        if(ierr.ne.0) call stop_all(t_r,"alloc err")
-        allocate(W(nLinearSystem))
-        W(:)=0.0_dp
-        lWork=-1
-        info=0
-        call dsyev('V','U',nLinearSystem,LinearSystem,nLinearSystem,W,Work,lWork,info)
-        if(info.ne.0) call stop_all(t_r,'workspace query failed')
-        lwork=int(work(1))+1
-        deallocate(work)
-        allocate(work(lwork))
-        call dsyev('V','U',nLinearSystem,LinearSystem,nLinearSystem,W,Work,lWork,info)
-        if (info.ne.0) call stop_all(t_r,"Diag failed")
-        deallocate(work)
-        
-        write(6,*) "First 10 MR-TDA-LR transition frequencies: "
-        highbound = min(nLinearSystem,100)
-        call writevector(W(1:highbound),'transition frequencies')
-
-        write(6,*) "Calculating residues: "
-
-        !Now find the transition moments
-        allocate(RDM1(nSites,nSites))
-        allocate(RDM2(nSites,nSites))
-        allocate(Residues(nLinearSystem))
-        Residues(:) = 0.0_dp
-
-        do n=1,nLinearSystem    !loop over states
-            !First, find the transition RDM between the ground FCI state, and state n
-            call Calc1RDM(FullHamil(:,1),LinearSystem(1:nFCIDet,n),RDM1)
-            !...and then vice versa
-            call Calc1RDM(LinearSystem(1:nFCIDet,n),FullHamil(:,1),RDM2)
-
-            !Now add to the 1RDM the conributions from the fully IC core-active excitations
-            do i=1,nOcc-nImp
-                do a=nOcc+nImp+1,nSites
-
-                    RDM1(i,a) = RDM1(i,a) + 2.0_dp*LinearSystem(nFCIDet+1,n)*SchmidtPert(a,i)/sqrt(CoreVirtualNorm)
-                    RDM1(a,i) = RDM1(a,i) + 2.0_dp*LinearSystem(nFCIDet+1,n)*SchmidtPert(a,i)/sqrt(CoreVirtualNorm)
-
-                    RDM2(i,a) = RDM2(i,a) + 2.0_dp*LinearSystem(nFCIDet+1,n)*SchmidtPert(a,i)/sqrt(CoreVirtualNorm)
-                    RDM2(a,i) = RDM2(a,i) + 2.0_dp*LinearSystem(nFCIDet+1,n)*SchmidtPert(a,i)/sqrt(CoreVirtualNorm)
-
-                enddo
-            enddo
-
-            !Now, calculate the (pertsite,pertsite) component of this in the AO basis
-            Res1 = 0.0_dp
-            Res2 = 0.0_dp
-            do i = 1,nSites
-                do j = 1,nSites
-                    Res1 = Res1 + FullSchmidtBasis(pertsite,i)*RDM1(i,j)*FullSchmidtBasis(pertsite,j)
-                    Res2 = Res2 + FullSchmidtBasis(pertsite,i)*RDM2(i,j)*FullSchmidtBasis(pertsite,j)
-                enddo
-            enddo
-
-            write(6,*) "Residues for state: ",n,Res1,Res2
-            Residues(n) = Res1*Res2*Lambda
-        enddo
-
-        write(6,*) "Writing IC-MR-TDA linear response function to disk..."
-
         iunit = get_free_unit()
         open(unit=iunit,file='IC-TDA_DDResponse',status='unknown')
         write(iunit,"(A)") "# Frequency     DD_LinearResponse"
@@ -239,19 +72,203 @@ module LinearResponse
         Omega = Start_Omega
         do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
 
+            write(6,*) "Calculating linear response for frequency: ",Omega
+
+            !First, find the non-interacting solution expressed in the schmidt basis
+            call FindSchmidtPert(tNonIntTest,Omega)
+
+            !Calculate the size of the hamiltonian matrix
+            !This is simply the normal active space size, plus 1 fully contracted core-virtual excitation,
+            !plus 2*nImp fully contracted core-active excitation, and 2*nImp fully contracted active-virtual 
+            !excitations
+            nLinearSystem = nFCIDet+1 !+4*nImp just initially, do without the semi-internal excitations
+
+            !Test that we reduce to the non-interacting limit
+            if(tNonIntTest) then
+                nLinearSystem = 1
+                nFCIDet = 0
+                nImp = 0
+            endif
+
+            !Allocate memory for hmailtonian in this system:
+            write(6,"(A,F14.6,A)") "Allocating memory for the LR hessian: ",real((nLinearSystem**2)*8,dp)/1048576.0_dp," Mb"
+            allocate(LinearSystem(nLinearSystem,nLinearSystem),stat=ierr)
+            if(ierr.ne.0) call stop_all(t_r,'Error allocating')
+            LinearSystem = 0.0_dp
+
+            write(6,"(A)",advance='no') "Constructing hessian matrix..."
+            
+            !First, construct FCI space, in determinant basis
+            !This is the first block
+            do i=1,nFCIDet
+                LinearSystem(i,i) = Spectrum(i) 
+            enddo
+            !Now transform this block back into the determinant basis
+            allocate(temp(nFCIDet,nFCIDet))
+            if(.not.tNonIntTest) then
+                call DGEMM('N','N',nFCIDet,nFCIDet,nFCIDet,1.0_dp,FullHamil,nFCIDet,LinearSystem(1:nFCIDet,1:nFCIDet),  &
+                    nFCIDet,0.0_dp,temp,nFCIDet)
+                call DGEMM('N','T',nFCIDet,nFCIDet,nFCIDet,1.0_dp,temp,nFCIDet,FullHamil,nFCIDet,0.0_dp,    &
+                    LinearSystem(1:nFCIDet,1:nFCIDet),nFCIDet)
+            endif
+            deallocate(temp)
+            !Finally, subtract the ground state energy from the diagonals, since we want to offset it.
+            !Do we just want to offset it, or do we want to completely remove the state, ie subtract E0 * C_i C_j from all elements?
+    !        do i=1,nFCIDet
+    !            LinearSystem(i,i) = LinearSystem(i,i) - Spectrum(1)
+    !        enddo
+    !       This is done later, since we want to be able to use the raw hamiltonian in the mean time
+
+            !Now, calculate the fully IC sum of all core-virtual excitations
+            !The diagonal hamiltonian matrix element is given by: G_ai G_bi F_ab - G_ai G_aj F_ij
+            !There is no coupling to the active space via the mean-field hamiltonian, since we cant have just a single active space index
+            !The contracted excitation in orthogonal to the FCI space uncontracted determinants (since cores are always orthogonal), but 
+            !the contracted function itself is not normalized. Find the normalization, and renomalize all its contributions.
+            CoreVirtualNorm = 0.0_dp
+            do i=1,nOcc-nImp
+                do a=nOcc+nImp+1,nSites
+                    CoreVirtualNorm = CoreVirtualNorm + SchmidtPert(i,a)*SchmidtPert(a,i)
+                enddo
+            enddo
+            CoreVirtualNorm = CoreVirtualNorm * 2.0_dp
+            write(6,*) "Fully contracted core-virtual excitations have a normalization of: ",CoreVirtualNorm
+            !Anything involving this function should come with a 1/sqrt(CoreVirtualNorm) in front of it
+            do i=1,nOcc-nImp
+                do j=1,nOcc-nImp
+                    do a=nOcc+nImp+1,nSites
+                        LinearSystem(nFCIDet+1,nFCIDet+1) = LinearSystem(nFCIDet+1,nFCIDet+1) -     &
+                            SchmidtPert(a,i)*SchmidtPert(a,j)*FockSchmidt(i,j)
+                    enddo
+                enddo
+            enddo
+            do i=1,nOcc-nImp
+                do a=nOcc+nImp+1,nSites
+                    do b=nOcc+nImp+1,nSites
+                        LinearSystem(nFCIDet+1,nFCIDet+1) = LinearSystem(nFCIDet+1,nFCIDet+1) +     &
+                            SchmidtPert(a,i)*SchmidtPert(b,i)*FockSchmidt(a,b)
+                    enddo
+                enddo
+            enddo
+            LinearSystem(nFCIDet+1,nFCIDet+1) = LinearSystem(nFCIDet+1,nFCIDet+1)*2.0_dp/CoreVirtualNorm    !for the other spin type.
+            write(6,*) "Diagonal hamiltonian contribution from fully contracted core-virtual function: ",   &
+                LinearSystem(nFCIDet+1,nFCIDet+1)
+            !We are not going to add on the active space energy, since we assume that we have offset the hamiltonian by the 
+            !zeroth order energy.
+
+            !Now, we need to define the coupling to the uncontracted determinant space.
+            !We first want to calculate <core|F|\sum_{ia}G_{ai}a_a^+a_i core>
+            !The F_ai component must match the G_ai one to be non-zero
+            !Therefore we know that this is \sum_ia F_ia G_ai
+            CoreCoupling = 0.0_dp
+            do i=1,nOcc-nImp
+                do a=nOcc+nImp+1,nSites
+                    CoreCoupling = CoreCoupling + FockSchmidt(i,a)*SchmidtPert(a,i)
+                enddo
+            enddo
+            CoreCoupling = CoreCoupling * 2.0_dp    !For the other spin type.
+            !Now we need to include the contribution from \sum_k C_k <D_j|H|0>
+            do i=1,nFCIDet
+                do j=1,nFCIDet
+                    LinearSystem(i,nFCIDet+1) = LinearSystem(i,nFCIDet+1) + LinearSystem(j,i)*FullHamil(j,1)
+                enddo
+                LinearSystem(i,nFCIDet+1) = LinearSystem(i,nFCIDet+1) + CoreCoupling    !Add core coupling contribution
+                LinearSystem(i,nFCIDet+1) = LinearSystem(i,nFCIDet+1)/sqrt(CoreVirtualNorm) !Normalise IC single excits
+                LinearSystem(nFCIDet+1,i) = LinearSystem(i,nFCIDet+1)   !Hermiticity
+            enddo
+
+            !Now for the semi-internal excitations
+
+            !Is there an overlap matrix we need?
+            !call writematrix(SchmidtPert,'SchmidtPert',.true.)
+            
+            !Only now do we remove the ground state from the FCI space
+            do i=1,nFCIDet
+                do j=1,nFCIDet
+                    LinearSystem(j,i) = LinearSystem(j,i) - Spectrum(1)*FullHamil(i,1)*FullHamil(j,1)
+                enddo
+            enddo
+
+            !Now we have the full hamiltonian. Diagonalize this fully
+            allocate(Work(1))
+            if(ierr.ne.0) call stop_all(t_r,"alloc err")
+            allocate(W(nLinearSystem))
+            W(:)=0.0_dp
+            lWork=-1
+            info=0
+            call dsyev('V','U',nLinearSystem,LinearSystem,nLinearSystem,W,Work,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'workspace query failed')
+            lwork=int(work(1))+1
+            deallocate(work)
+            allocate(work(lwork))
+            call dsyev('V','U',nLinearSystem,LinearSystem,nLinearSystem,W,Work,lWork,info)
+            if (info.ne.0) call stop_all(t_r,"Diag failed")
+            deallocate(work)
+            
+            write(6,*) "First 10 MR-TDA-LR transition frequencies: "
+            highbound = min(nLinearSystem,100)
+            call writevector(W(1:highbound),'transition frequencies')
+
+            write(6,*) "Calculating residues: "
+
+            !Now find the transition moments
+            allocate(RDM1(nSites,nSites))
+            allocate(RDM2(nSites,nSites))
+            allocate(Residues(nLinearSystem))
+            Residues(:) = 0.0_dp
+
+            do n=1,nLinearSystem    !loop over states
+                !First, find the transition RDM between the ground FCI state, and state n
+                call Calc1RDM(FullHamil(:,1),LinearSystem(1:nFCIDet,n),RDM1)
+                !...and then vice versa
+                call Calc1RDM(LinearSystem(1:nFCIDet,n),FullHamil(:,1),RDM2)
+
+                !Now add to the 1RDM the conributions from the fully IC core-active excitations
+                do i=1,nOcc-nImp
+                    do a=nOcc+nImp+1,nSites
+
+                        RDM1(i,a) = RDM1(i,a) + 2.0_dp*LinearSystem(nFCIDet+1,n)*SchmidtPert(a,i)/sqrt(CoreVirtualNorm)
+                        RDM1(a,i) = RDM1(a,i) + 2.0_dp*LinearSystem(nFCIDet+1,n)*SchmidtPert(a,i)/sqrt(CoreVirtualNorm)
+
+                        RDM2(i,a) = RDM2(i,a) + 2.0_dp*LinearSystem(nFCIDet+1,n)*SchmidtPert(a,i)/sqrt(CoreVirtualNorm)
+                        RDM2(a,i) = RDM2(a,i) + 2.0_dp*LinearSystem(nFCIDet+1,n)*SchmidtPert(a,i)/sqrt(CoreVirtualNorm)
+
+                    enddo
+                enddo
+
+                !Now, calculate the (pertsite,pertsite) component of this in the AO basis
+                Res1 = 0.0_dp
+                Res2 = 0.0_dp
+                do i = 1,nSites
+                    do j = 1,nSites
+                        Res1 = Res1 + FullSchmidtBasis(pertsite,i)*RDM1(i,j)*FullSchmidtBasis(pertsite,j)
+                        Res2 = Res2 + FullSchmidtBasis(pertsite,i)*RDM2(i,j)*FullSchmidtBasis(pertsite,j)
+                    enddo
+                enddo
+
+                write(6,*) "Residues for state: ",n,Res1,Res2
+                Residues(n) = Res1*Res2*Lambda
+            enddo
+
             ResponseFn = 0.0_dp
             do i=1,nLinearSystem
-                EDiff = W(i)-Spectrum(1)
+                if(tNonIntTest) then
+                    !What is zeroth order energy in the non-interacting case?
+                    EDiff = W(i)!???
+                else
+                    EDiff = W(i)-Spectrum(1)
+                endif
                 ResponseFn = ResponseFn + Residues(i)/(Omega-EDiff)
                 ResponseFn = ResponseFn - Residues(i)/(Omega+EDiff)
             enddo
             write(iunit,*) Omega,ResponseFn
 
             Omega = Omega + Omega_Step
+        
+            deallocate(Residues,W,LinearSystem,RDM1,RDM2)
 
-        enddo
+        enddo   !Enddo loop over omega
         close(iunit)
-        deallocate(Residues,W,LinearSystem,RDM1,RDM2)
+        if(tNonIntTest) call stop_all(t_r,'End of NonInt test')
 
     end subroutine NonIntContracted_TDA_MCLR
 
@@ -262,9 +279,11 @@ module LinearResponse
         implicit none
         real(dp), intent(in) :: Bra(nFCIDet),Ket(nFCIDet)
         real(dp), intent(out) :: RDM(nSites,nSites)
+        real(dp) :: trace
         integer :: nCore,i,j,ex(2),k,i_spat,a_spat,k_spat,IC,igetexcitlevel
         integer :: gtid
         logical :: tSign
+        character(len=*), parameter :: t_r='Calc1RDM'
 
         nCore = nOcc-nImp
 
@@ -291,6 +310,20 @@ module LinearResponse
                 endif
             enddo
         enddo
+        do i=1,nCore
+            RDM(i,i) = 2.0_dp
+        enddo
+
+        trace = 0.0_dp
+        do i=1,nOcc
+            trace = trace + RDM(i,i)
+        enddo
+        if(abs(trace-nel).gt.1.0e-7_dp) then
+            write(6,*) "trace: ",trace
+            write(6,*) "nel: ",nel
+            call stop_all(t_r,'Trace of 1RDM incorrect')
+        endif
+
 
     end subroutine Calc1RDM
 
@@ -692,10 +725,12 @@ module LinearResponse
     end subroutine TDA_MCLR
 
     !Find the non-interacting perturbation, and project this operator into the schmidt basis of phi^0 + its virtual space
-    subroutine FindSchmidtPert()
+    subroutine FindSchmidtPert(tNonIntTest,Omega)
         implicit none
+        logical, intent(in) :: tNonIntTest  !Test to return just the perturbation in the normal HF basis
         real(dp), allocatable :: HFPertBasis(:,:),temp(:,:)
         real(dp) :: EDiff
+        real(dp), intent(in) :: Omega
         integer :: a,i
         character(len=*), parameter :: t_r='FindSchmidtBasis'
 
@@ -733,8 +768,17 @@ module LinearResponse
         
         if(allocated(SchmidtPert)) deallocate(SchmidtPert)
         allocate(SchmidtPert(nSites,nSites))
-        call DGEMM('T','N',nSites,nSites,nSites,1.0_dp,HFtoSchmidtTransform,nSites,HFPertBasis,nSites,0.0_dp,temp,nSites)
-        call DGEMM('N','N',nSites,nSites,nSites,1.0_dp,temp,nSites,HFtoSchmidtTransform,nSites,0.0_dp,SchmidtPert,nSites)
+        if(tNonIntTest) then
+            SchmidtPert(:,:) = HFPertBasis(:,:)
+            FockSchmidt(:,:) = 0.0_dp
+            do i=1,nSites
+                FockSchmidt(i,i) = HFEnergies(i)
+            enddo
+            FullSchmidtBasis(:,:) = HFOrbs(:,:) 
+        else
+            call DGEMM('T','N',nSites,nSites,nSites,1.0_dp,HFtoSchmidtTransform,nSites,HFPertBasis,nSites,0.0_dp,temp,nSites)
+            call DGEMM('N','N',nSites,nSites,nSites,1.0_dp,temp,nSites,HFtoSchmidtTransform,nSites,0.0_dp,SchmidtPert,nSites)
+        endif
         deallocate(temp,HFPertBasis)
 
         !SchmidtPert is now the perturbation in the schmidt basis
@@ -1762,126 +1806,126 @@ module LinearResponse
     end subroutine non_interactingLR
 
                     
-    !Calculate density density response to perturbation of frequency omega at site pertsite 
-    subroutine calc_mf_dd_response()
-        implicit none
-        integer :: i,x,a,j
-        real(dp) :: CheckOrthog,DDOT    !,StepSize
-        real(dp) , allocatable :: temp(:,:),Pert(:,:),NormB0(:)
-        character(len=*) , parameter :: t_r='calc_mf_dd_response'
-
-        if(allocated(ResponseBasis)) deallocate(ResponseBasis)
-        allocate(ResponseBasis(nSites,2))
-
-        write(6,*) "Perturbation response for orbital: ",pertsite
-        write(6,*) "Frequency of perturbation: ",Omega
-        write(6,*) "Strength of perturbation: ",Lambda
-
-        if(nImp.gt.1) call stop_all(t_r,"Response not yet coded up for > 1 impurity site")
-
-        !The response operator is (\sum_{ia} V_ai |phi_a><psi_i| + V_ia|phi_i><phi_a|) / omega - (e_a-e_i)
-        !where V_ai = <phi_a|a_pertsite^+ a_pertsite|phi_i>
-
-        !The vector corresponding to this perturbation is calculated from the impurity to the environment sites
-        !Therefore, it is (c_imp,env_a)^(1) = <orb_imp| response operator | orb_env_a>
-
-
-        ResponseBasis(:,:) = 0.0_dp !Response over impurity sites = 0
-        do x=nImp+1,nSites
-            do i=1,nOcc
-                do a=nOcc+1,nSites
-                    !This is <phi_a| a_pertsite^+ a_pertsite |phi_i> * <imp|phi_a><phi_i|x>/omega-(e_a-e_i)
-                    ResponseBasis(x,2) = ResponseBasis(x,2) + (HFOrbs(pertsite,a)*HFOrbs(pertsite,i)*HFOrbs(1,a)*HFOrbs(x,i)/ &
-                        ((HFEnergies(a)-HFEnergies(i)) - omega))
-                    ResponseBasis(x,2) = ResponseBasis(x,2) + (HFOrbs(pertsite,i)*HFOrbs(pertsite,a)*HFOrbs(1,a)*HFOrbs(x,i)/ &
-                        ((HFEnergies(a)-HFEnergies(i)) + omega))
-                enddo
-            enddo
-        enddo
-
-        !Analytically calculate new bath orbital
-        !Renormalize the change in the first order bath orbital, so that it overall noramlized (to 1st order)
-        ResponseBasis(:,2) = ResponseBasis(:,2) / sqrt(ZerothBathNorm)
-
-!        !Add the newly normalized zeroth order orbital - do we need to do that if we just want the first-order change?
+!    !Calculate density density response to perturbation of frequency omega at site pertsite 
+!    subroutine calc_mf_dd_response()
+!        implicit none
+!        integer :: i,x,a,j
+!        real(dp) :: CheckOrthog,DDOT    !,StepSize
+!        real(dp) , allocatable :: temp(:,:),Pert(:,:),NormB0(:)
+!        character(len=*) , parameter :: t_r='calc_mf_dd_response'
 !
-!!        ResponseBasis(:,2) = ResponseBasis(:,2) + EmbeddedBasis(:,2)*   &
-!!            (1.0_dp - DDOT(nSites,EmbeddedBasis(:,2),1,ResponseBasis(:,2),1)/ZerothBathNorm)
+!        if(allocated(ResponseBasis)) deallocate(ResponseBasis)
+!        allocate(ResponseBasis(nSites,2))
+!
+!        write(6,*) "Perturbation response for orbital: ",pertsite
+!        write(6,*) "Frequency of perturbation: ",Omega
+!        write(6,*) "Strength of perturbation: ",Lambda
+!
+!        if(nImp.gt.1) call stop_all(t_r,"Response not yet coded up for > 1 impurity site")
+!
+!        !The response operator is (\sum_{ia} V_ai |phi_a><psi_i| + V_ia|phi_i><phi_a|) / omega - (e_a-e_i)
+!        !where V_ai = <phi_a|a_pertsite^+ a_pertsite|phi_i>
+!
+!        !The vector corresponding to this perturbation is calculated from the impurity to the environment sites
+!        !Therefore, it is (c_imp,env_a)^(1) = <orb_imp| response operator | orb_env_a>
 !
 !
+!        ResponseBasis(:,:) = 0.0_dp !Response over impurity sites = 0
+!        do x=nImp+1,nSites
+!            do i=1,nOcc
+!                do a=nOcc+1,nSites
+!                    !This is <phi_a| a_pertsite^+ a_pertsite |phi_i> * <imp|phi_a><phi_i|x>/omega-(e_a-e_i)
+!                    ResponseBasis(x,2) = ResponseBasis(x,2) + (HFOrbs(pertsite,a)*HFOrbs(pertsite,i)*HFOrbs(1,a)*HFOrbs(x,i)/ &
+!                        ((HFEnergies(a)-HFEnergies(i)) - omega))
+!                    ResponseBasis(x,2) = ResponseBasis(x,2) + (HFOrbs(pertsite,i)*HFOrbs(pertsite,a)*HFOrbs(1,a)*HFOrbs(x,i)/ &
+!                        ((HFEnergies(a)-HFEnergies(i)) + omega))
+!                enddo
+!            enddo
+!        enddo
 !
+!        !Analytically calculate new bath orbital
+!        !Renormalize the change in the first order bath orbital, so that it overall noramlized (to 1st order)
+!        ResponseBasis(:,2) = ResponseBasis(:,2) / sqrt(ZerothBathNorm)
 !
-!       !Numerically differentiate
-!        StepSize = 0.0001
+!!        !Add the newly normalized zeroth order orbital - do we need to do that if we just want the first-order change?
+!!
+!!!        ResponseBasis(:,2) = ResponseBasis(:,2) + EmbeddedBasis(:,2)*   &
+!!!            (1.0_dp - DDOT(nSites,EmbeddedBasis(:,2),1,ResponseBasis(:,2),1)/ZerothBathNorm)
+!!
+!!
+!!
+!!
+!!       !Numerically differentiate
+!!        StepSize = 0.0001
+!!
+!!        ResponseBasis(:,2) = ResponseBasis(:,2) * StepSize 
+!!
+!!        ResponseBasis(1:nSites,2) = ResponseBasis(1:nSites,2) + EmbeddedBasis(:,2)  !Add original bath orbital
+!!
+!!        ResponseBasis(1:nSites,2) = ResponseBasis(1:nSites,2) - EmbeddedBasis(:,2)
+!!        ResponseBasis(:,2) = ResponseBasis(:,2) / StepSize
 !
-!        ResponseBasis(:,2) = ResponseBasis(:,2) * StepSize 
+!        call writevector(ResponseBasis(:,2),'ResponseBasis')
 !
-!        ResponseBasis(1:nSites,2) = ResponseBasis(1:nSites,2) + EmbeddedBasis(:,2)  !Add original bath orbital
+!        CheckOrthog = DDOT(nSites,ResponseBasis(:,2),1,ResponseBasis(:,2),1)
+!        write(6,*) "norm: ",CheckOrthog
 !
-!        ResponseBasis(1:nSites,2) = ResponseBasis(1:nSites,2) - EmbeddedBasis(:,2)
-!        ResponseBasis(:,2) = ResponseBasis(:,2) / StepSize
-
-        call writevector(ResponseBasis(:,2),'ResponseBasis')
-
-        CheckOrthog = DDOT(nSites,ResponseBasis(:,2),1,ResponseBasis(:,2),1)
-        write(6,*) "norm: ",CheckOrthog
-
-        !ResponseBasis is now the bath orbital for first order change in the MF solution
-        !It should be orthogonal to the original bath orbital 
-        !However, since we have got a misture of the first and second order orbital in the solution, we have to project out the first
-        !order bath orbital from the original bath
-        !B^(0)/norm[B^(0)] * (1 - <B^(0)|B^(1)>/<B^(0)|B^(0)>
-        !We have to 'unnormalize' the states
-        CheckOrthog = DDOT(nSites,EmbeddedBasis(:,2)*sqrt(ZerothBathNorm),1,ResponseBasis(:,2)*sqrt(ZerothBathNorm),1)
-        CheckOrthog = 1.0_dp - CheckOrthog/ZerothBathNorm
-        allocate(NormB0(nSites))
-        NormB0(:) = EmbeddedBasis(:,2)*CheckOrthog
-        !only *now* can we correctly check for orthogonality
-        CheckOrthog = DDOT(nSites,NormB0(:),1,ResponseBasis,1)
-        write(6,*) "Projection against other bath: ",CheckOrthog
-        deallocate(NormB0)
-
-        !Add the impurity orbital to zero. We don't want to include impurity -> impurity or impurity -> bath^(0) coupling 
-        ResponseBasis(:,1) = 0.0_dp
-!        ResponseBasis(1,1) = 1.0_dp
-
-        !Now calculate the one-electron perturbations
-        !The standard 1-electron perturbation is 1/2 Lambda a_pertsite^+ a_pertsite.
-        !We calculate this first in the HF basis, and then transform into the zeroth-order embedding basis
-        if(allocated(Pert)) deallocate(Pert)
-        allocate(Pert(nSites,nSites))
-        allocate(temp(EmbSize,nSites))
-
-        if(allocated(Emb_Pert)) deallocate(Emb_Pert)
-        allocate(Emb_Pert(EmbSize,EmbSize))
-        if(allocated(Emb_h1)) deallocate(Emb_h1)
-        allocate(Emb_h1(EmbSize,EmbSize))
-
-        Pert(:,:) = 0.0_dp
-        do i=1,nSites
-            do j=1,nSites
-                Pert(i,j) = HFOrbs(pertsite,i)*HFOrbs(pertsite,j)
-            enddo
-        enddo
-        !Transform into embedding basis
-        call DGEMM('T','N',EmbSize,nSites,nSites,1.0_dp,EmbeddedBasis,nSites,Pert,nSites,0.0_dp,temp,EmbSize)
-        call DGEMM('N','N',EmbSize,EmbSize,nSites,1.0_dp,temp,EmbSize,EmbeddedBasis,nSites,0.0_dp,Emb_Pert,EmbSize)
-
-        !Now we need to calculate H^(1)
-        !Transform h0 into the embedding basis
-        !We want C^(1)T h0 C^(0) + C^(0)T h0 C^(1)
-        call DGEMM('T','N',EmbSize,nSites,nSites,1.0_dp,ResponseBasis,nSites,h0,nSites,0.0_dp,temp,EmbSize)
-        call DGEMM('N','N',EmbSize,EmbSize,nSites,1.0_dp,temp,EmbSize,EmbeddedBasis,nSites,0.0_dp,Emb_h1,EmbSize)
-
-        call DGEMM('T','N',EmbSize,nSites,nSites,1.0_dp,EmbeddedBasis,nSites,h0,nSites,0.0_dp,temp,EmbSize)
-        call DGEMM('N','N',EmbSize,EmbSize,nSites,1.0_dp,temp,EmbSize,ResponseBasis,nSites,1.0_dp,Emb_h1,EmbSize)
-
-        call writematrix(Emb_h1,'Emb_H1',.true.)
-
-        !We now have the perturbations delta H and V in the embedding basis.
-        deallocate(temp,Pert)
-
-    end subroutine calc_mf_dd_response
+!        !ResponseBasis is now the bath orbital for first order change in the MF solution
+!        !It should be orthogonal to the original bath orbital 
+!        !However, since we have got a misture of the first and second order orbital in the solution, we have to project out the first
+!        !order bath orbital from the original bath
+!        !B^(0)/norm[B^(0)] * (1 - <B^(0)|B^(1)>/<B^(0)|B^(0)>
+!        !We have to 'unnormalize' the states
+!        CheckOrthog = DDOT(nSites,EmbeddedBasis(:,2)*sqrt(ZerothBathNorm),1,ResponseBasis(:,2)*sqrt(ZerothBathNorm),1)
+!        CheckOrthog = 1.0_dp - CheckOrthog/ZerothBathNorm
+!        allocate(NormB0(nSites))
+!        NormB0(:) = EmbeddedBasis(:,2)*CheckOrthog
+!        !only *now* can we correctly check for orthogonality
+!        CheckOrthog = DDOT(nSites,NormB0(:),1,ResponseBasis,1)
+!        write(6,*) "Projection against other bath: ",CheckOrthog
+!        deallocate(NormB0)
+!
+!        !Add the impurity orbital to zero. We don't want to include impurity -> impurity or impurity -> bath^(0) coupling 
+!        ResponseBasis(:,1) = 0.0_dp
+!!        ResponseBasis(1,1) = 1.0_dp
+!
+!        !Now calculate the one-electron perturbations
+!        !The standard 1-electron perturbation is 1/2 Lambda a_pertsite^+ a_pertsite.
+!        !We calculate this first in the HF basis, and then transform into the zeroth-order embedding basis
+!        if(allocated(Pert)) deallocate(Pert)
+!        allocate(Pert(nSites,nSites))
+!        allocate(temp(EmbSize,nSites))
+!
+!        if(allocated(Emb_Pert)) deallocate(Emb_Pert)
+!        allocate(Emb_Pert(EmbSize,EmbSize))
+!        if(allocated(Emb_h1)) deallocate(Emb_h1)
+!        allocate(Emb_h1(EmbSize,EmbSize))
+!
+!        Pert(:,:) = 0.0_dp
+!        do i=1,nSites
+!            do j=1,nSites
+!                Pert(i,j) = HFOrbs(pertsite,i)*HFOrbs(pertsite,j)
+!            enddo
+!        enddo
+!        !Transform into embedding basis
+!        call DGEMM('T','N',EmbSize,nSites,nSites,1.0_dp,EmbeddedBasis,nSites,Pert,nSites,0.0_dp,temp,EmbSize)
+!        call DGEMM('N','N',EmbSize,EmbSize,nSites,1.0_dp,temp,EmbSize,EmbeddedBasis,nSites,0.0_dp,Emb_Pert,EmbSize)
+!
+!        !Now we need to calculate H^(1)
+!        !Transform h0 into the embedding basis
+!        !We want C^(1)T h0 C^(0) + C^(0)T h0 C^(1)
+!        call DGEMM('T','N',EmbSize,nSites,nSites,1.0_dp,ResponseBasis,nSites,h0,nSites,0.0_dp,temp,EmbSize)
+!        call DGEMM('N','N',EmbSize,EmbSize,nSites,1.0_dp,temp,EmbSize,EmbeddedBasis,nSites,0.0_dp,Emb_h1,EmbSize)
+!
+!        call DGEMM('T','N',EmbSize,nSites,nSites,1.0_dp,EmbeddedBasis,nSites,h0,nSites,0.0_dp,temp,EmbSize)
+!        call DGEMM('N','N',EmbSize,EmbSize,nSites,1.0_dp,temp,EmbSize,ResponseBasis,nSites,1.0_dp,Emb_h1,EmbSize)
+!
+!        call writematrix(Emb_h1,'Emb_H1',.true.)
+!
+!        !We now have the perturbations delta H and V in the embedding basis.
+!        deallocate(temp,Pert)
+!
+!    end subroutine calc_mf_dd_response
 
 !test schmidt decomposition
     subroutine test()

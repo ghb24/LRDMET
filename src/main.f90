@@ -680,6 +680,14 @@ call run_DMETcalc()
         implicit none
         integer :: iunit,i,j,k,l,A,B,ex(2,2)
         real(dp) :: hel,GetHFInt_spinorb
+        real(dp), allocatable :: temp(:,:),h0HF(:,:)
+        
+        !Calculate hopping matrix in MO basis
+        allocate(temp(nSites,nSites))
+        allocate(h0HF(nSites,nSites))
+        call dgemm('t','n',nSites,nSites,nSites,1.0_dp,FullHFOrbs,nSites,h0,nSites,0.0_dp,temp,nSites)
+        call dgemm('n','n',nSites,nSites,nSites,1.0_dp,temp,nSites,FullHFOrbs,nSites,0.0_dp,h0HF,nSites)
+        deallocate(temp)
 
         iunit = get_free_unit()
         open(unit=iunit,file='FCIDUMP',status='unknown')
@@ -698,9 +706,9 @@ call run_DMETcalc()
                     DO l=1,nSites
                         B=(k*(k-1))/2+l
 
-                        IF(B.lt.A) CYCLE
-                        IF((i.lt.j).and.(k.lt.l)) CYCLE
-                        IF((i.gt.j).and.(k.lt.l)) CYCLE
+                        !IF(B.lt.A) CYCLE
+                        !IF((i.lt.j).and.(k.lt.l)) CYCLE
+                        !IF((i.gt.j).and.(k.lt.l)) CYCLE
 
                         ex(1,1) = 2*i
                         ex(1,2) = 2*k
@@ -716,13 +724,37 @@ call run_DMETcalc()
         enddo
         do i=1,nSites
             do j=1,i
-                if(abs(h0(i,j)).gt.1.0e-8_dp) then
-                    WRITE(iunit,'(1X,G20.14,4I3)') h0(i,j),i,j,0,0
+                if(abs(h0HF(i,j)).gt.1.0e-8_dp) then
+                    WRITE(iunit,'(1X,G20.14,4I3)') h0HF(i,j),i,j,0,0
                 endif
             enddo
         enddo
         do i=1,nSites
             WRITE(iunit,'(1X,G20.14,4I3)') FullHFEnergies(i),i,0,0,0
+        enddo
+        WRITE(iunit,'(1X,G20.14,4I3)') 0.0_dp,0,0,0,0
+        close(iunit)
+        deallocate(h0HF)
+
+        !Now dump in the AO basis
+        open(unit=iunit,file='AO_FCIDUMP',status='unknown')
+        write(iunit,'(2A6,I3,A7,I3,A5,I2,A)') '&FCI ','NORB=',nSites,'NELEC=',NEl,',MS2=',0,','
+        WRITE(iunit,'(A9)',advance='no') 'ORBSYM='
+        do i=1,nSites
+            write(iunit,'(I1,A1)',advance='no') 1,','
+        enddo
+        write(iunit,*) ""
+        WRITE(iunit,'(A7,I1)') 'ISYM=',1
+        WRITE(iunit,'(A5)') '&END'
+        do i=1,nSites
+            write(iunit,'(1X,G20.14,4I3)') U,i,i,i,i
+        enddo
+        do i=1,nSites
+            do j=1,i
+                if(abs(h0(i,j)).gt.1.0e-8_dp) then
+                    WRITE(iunit,'(1X,G20.14,4I3)') h0(i,j),i,j,0,0
+                endif
+            enddo
         enddo
         WRITE(iunit,'(1X,G20.14,4I3)') 0.0_dp,0,0,0,0
         close(iunit)
