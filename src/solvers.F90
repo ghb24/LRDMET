@@ -554,6 +554,7 @@ module solvers
                 call GetHElement(FCIDetList(:,i),FCIDetList(:,j),Elec,FullHamil(i,j))
             enddo
         enddo
+        !call writematrix(FullHamil(1:nFCIDet,1:nFCIDet),'FCI hamil',.true.)
 
         !Diagonalize
         allocate(Work(1))

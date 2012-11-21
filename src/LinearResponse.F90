@@ -12,8 +12,9 @@ module LinearResponse
     !   Really work out difference between non-interacting LR, TDA and RPA, and look at how quality changes in response functions as U increased
     !   Look at difference in quality between TDA-type and RPA-type MCLR methods 
     !   Look at difference in quality between full MCLR and the fully contracted type
-    !   Work out self-consistency condition to optimise both the full MCLR and the fully contracted type
+    !   Work out self-consistency condition to optimise both the full MCLR and the fully contracted type - response of correlation potential?
     !   Consider using different methods to obtain contraction coefficients in the fully contracted methods - TDA/RPA. Does this improve things?
+    !   In the fully contracted case, should we split between impurity and environment, rather than embedded system and core? More semi-internal yuckiness...
     !   Perhaps look at CC2 to get a deeper understanding
     subroutine MR_LinearResponse()
         implicit none
@@ -27,7 +28,7 @@ module LinearResponse
 !        call NonIntContracted_RPA_MCLR()
 
         !Full MCLR, creating excitations in a CI fashion, rather than with commutators. Should reduce to TDA in single reference limit
-        call TDA_MCLR()
+!        call TDA_MCLR()
 
         !Full MCLR, with excitations and deexcitations. Should reduce to RPA in single reference limit
 !        call RPA_MCLR()
@@ -50,51 +51,248 @@ module LinearResponse
     !Contract the basis of single excitations, by summing together all the uncontracted parts with the non-interacting LR coefficients
     !This results in requiring the solution of a system which *only* scales with the size of the active hilbert space, not the lattice
     subroutine NonIntContracted_TDA_MCLR()
+        use utils, only: get_free_unit
+        use DetToolsData, only: nFCIDet
         implicit none
+        integer :: nLinearSystem,ierr,i,j,a,highbound,b,info,lwork,n,iunit
+        real(dp) :: CoreCoupling,CoreVirtualNorm,Omega,Res1,Res2,EDiff,ResponseFn 
+        real(dp), allocatable :: LinearSystem(:,:),temp(:,:),Work(:),W(:),Residues(:)
+        real(dp), allocatable :: RDM1(:,:),RDM2(:,:)
+        character(len=*), parameter :: t_r='NonIntContracted_TDA_MCLR'
 
-!        write(6,*) "Calculating MR-TDA-LR system..."
-!        if(.not.tConstructFullSchmidtBasis) call stop_all(t_r,'To solve LR, must construct full schmidt basis')
-!        if(.not.tCompleteDiag) call stop_all(t_r,'To solve LR, must perform complete diag')
-!
-!        !First, find the non-interacting solution expressed in the schmidt basis
-!        call FindSchmidtPert()
-!
-!        !Calculate the size of the hamiltonian matrix
-!        !This is simply the normal active space size, plus 1 fully contracted core-virtual excitation,
-!        !plus 2*nImp fully contracted core-active excitation, and 2*nImp fully contracted active-virtual 
-!        !excitations
-!        nLinearSystem = nFCIDet+1+4*nImp
-!
-!        !Allocate memory for hmailtonian in this system:
-!        write(6,"(A,F14.6,A)") "Allocating memory for the LR hessian: ",real((nLinearSystem**2)*8,dp)/1048576.0_dp," Mb"
-!        allocate(LinearSystem(nLinearSystem,nLinearSystem),stat=ierr)
-!        if(ierr.ne.0) call stop_all(t_r,'Error allocating')
-!        LinearSystem = 0.0_dp
-!
-!        write(6,"(A)",advance='no') "Constructing hessian matrix..."
-!        
-!        !First, construct FCI space, in determinant basis
-!        !This is the first block
-!        do i=1,nFCIDet
-!            LinearSystem(i,i) = Spectrum(i) 
-!        enddo
-!        !Now transform this block back into the determinant basis
-!        allocate(temp(nFCIDet,nFCIDet))
-!        call DGEMM('N','N',nFCIDet,nFCIDet,nFCIDet,1.0_dp,FullHamil,nFCIDet,LinearSystem(1:nFCIDet,1:nFCIDet),  &
-!            nFCIDet,0.0_dp,temp,nFCIDet)
-!        call DGEMM('N','T',nFCIDet,nFCIDet,nFCIDet,1.0_dp,temp,nFCIDet,FullHamil,nFCIDet,0.0_dp,    &
-!            LinearSystem(1:nFCIDet,1:nFCIDet),nFCIDet)
-!        deallocate(temp)
-!        !Finally, subtract the ground state energy from the diagonals, since we want to offset it.
+        write(6,*) "Calculating non-interacting IC MR-TDA LR system..."
+        if(.not.tConstructFullSchmidtBasis) call stop_all(t_r,'To solve LR, must construct full schmidt basis')
+        if(.not.tCompleteDiag) call stop_all(t_r,'To solve LR, must perform complete diag')
+
+        !First, find the non-interacting solution expressed in the schmidt basis
+        call FindSchmidtPert()
+
+        !Calculate the size of the hamiltonian matrix
+        !This is simply the normal active space size, plus 1 fully contracted core-virtual excitation,
+        !plus 2*nImp fully contracted core-active excitation, and 2*nImp fully contracted active-virtual 
+        !excitations
+        nLinearSystem = nFCIDet+1 !+4*nImp just initially, do without the semi-internal excitations
+
+        !Allocate memory for hmailtonian in this system:
+        write(6,"(A,F14.6,A)") "Allocating memory for the LR hessian: ",real((nLinearSystem**2)*8,dp)/1048576.0_dp," Mb"
+        allocate(LinearSystem(nLinearSystem,nLinearSystem),stat=ierr)
+        if(ierr.ne.0) call stop_all(t_r,'Error allocating')
+        LinearSystem = 0.0_dp
+
+        write(6,"(A)",advance='no') "Constructing hessian matrix..."
+        
+        !First, construct FCI space, in determinant basis
+        !This is the first block
+        do i=1,nFCIDet
+            LinearSystem(i,i) = Spectrum(i) 
+        enddo
+        !Now transform this block back into the determinant basis
+        allocate(temp(nFCIDet,nFCIDet))
+        call DGEMM('N','N',nFCIDet,nFCIDet,nFCIDet,1.0_dp,FullHamil,nFCIDet,LinearSystem(1:nFCIDet,1:nFCIDet),  &
+            nFCIDet,0.0_dp,temp,nFCIDet)
+        call DGEMM('N','T',nFCIDet,nFCIDet,nFCIDet,1.0_dp,temp,nFCIDet,FullHamil,nFCIDet,0.0_dp,    &
+            LinearSystem(1:nFCIDet,1:nFCIDet),nFCIDet)
+        deallocate(temp)
+        !Finally, subtract the ground state energy from the diagonals, since we want to offset it.
+        !Do we just want to offset it, or do we want to completely remove the state, ie subtract E0 * C_i C_j from all elements?
 !        do i=1,nFCIDet
 !            LinearSystem(i,i) = LinearSystem(i,i) - Spectrum(1)
 !        enddo
-
-        !TODO: Check here that this is the same as the original determinant basis
+!       This is done later, since we want to be able to use the raw hamiltonian in the mean time
 
         !Now, calculate the fully IC sum of all core-virtual excitations
+        !The diagonal hamiltonian matrix element is given by: G_ai G_bi F_ab - G_ai G_aj F_ij
+        !There is no coupling to the active space via the mean-field hamiltonian, since we cant have just a single active space index
+        !The contracted excitation in orthogonal to the FCI space uncontracted determinants (since cores are always orthogonal), but 
+        !the contracted function itself is not normalized. Find the normalization, and renomalize all its contributions.
+        CoreVirtualNorm = 0.0_dp
+        do i=1,nOcc-nImp
+            do a=nOcc+nImp+1,nSites
+                CoreVirtualNorm = CoreVirtualNorm + SchmidtPert(i,a)*SchmidtPert(a,i)
+            enddo
+        enddo
+        CoreVirtualNorm = CoreVirtualNorm * 2.0_dp
+        write(6,*) "Fully contracted core-virtual excitations have a normalization of: ",CoreVirtualNorm
+        !Anything involving this function should come with a 1/sqrt(CoreVirtualNorm) in front of it
+        do i=1,nOcc-nImp
+            do j=1,nOcc-nImp
+                do a=nOcc+nImp+1,nSites
+                    LinearSystem(nFCIDet+1,nFCIDet+1) = LinearSystem(nFCIDet+1,nFCIDet+1) -     &
+                        SchmidtPert(a,i)*SchmidtPert(a,j)*FockSchmidt(i,j)
+                enddo
+            enddo
+        enddo
+        do i=1,nOcc-nImp
+            do a=nOcc+nImp+1,nSites
+                do b=nOcc+nImp+1,nSites
+                    LinearSystem(nFCIDet+1,nFCIDet+1) = LinearSystem(nFCIDet+1,nFCIDet+1) +     &
+                        SchmidtPert(a,i)*SchmidtPert(b,i)*FockSchmidt(a,b)
+                enddo
+            enddo
+        enddo
+        LinearSystem(nFCIDet+1,nFCIDet+1) = LinearSystem(nFCIDet+1,nFCIDet+1)*2.0_dp/CoreVirtualNorm    !for the other spin type.
+        write(6,*) "Diagonal hamiltonian contribution from fully contracted core-virtual function: ",   &
+            LinearSystem(nFCIDet+1,nFCIDet+1)
+        !We are not going to add on the active space energy, since we assume that we have offset the hamiltonian by the 
+        !zeroth order energy.
+
+        !Now, we need to define the coupling to the uncontracted determinant space.
+        !We first want to calculate <core|F|\sum_{ia}G_{ai}a_a^+a_i core>
+        !The F_ai component must match the G_ai one to be non-zero
+        !Therefore we know that this is \sum_ia F_ia G_ai
+        CoreCoupling = 0.0_dp
+        do i=1,nOcc-nImp
+            do a=nOcc+nImp+1,nSites
+                CoreCoupling = CoreCoupling + FockSchmidt(i,a)*SchmidtPert(a,i)
+            enddo
+        enddo
+        CoreCoupling = CoreCoupling * 2.0_dp    !For the other spin type.
+        !Now we need to include the contribution from \sum_k C_k <D_j|H|0>
+        do i=1,nFCIDet
+            do j=1,nFCIDet
+                LinearSystem(i,nFCIDet+1) = LinearSystem(i,nFCIDet+1) + LinearSystem(j,i)*FullHamil(j,1)
+            enddo
+            LinearSystem(i,nFCIDet+1) = LinearSystem(i,nFCIDet+1) + CoreCoupling    !Add core coupling contribution
+            LinearSystem(i,nFCIDet+1) = LinearSystem(i,nFCIDet+1)/sqrt(CoreVirtualNorm) !Normalise IC single excits
+            LinearSystem(nFCIDet+1,i) = LinearSystem(i,nFCIDet+1)   !Hermiticity
+        enddo
+
+        !Now for the semi-internal excitations
+
+        !Is there an overlap matrix we need?
+        !call writematrix(SchmidtPert,'SchmidtPert',.true.)
+        
+        !Only now do we remove the ground state from the FCI space
+        do i=1,nFCIDet
+            do j=1,nFCIDet
+                LinearSystem(j,i) = LinearSystem(j,i) - Spectrum(1)*FullHamil(i,1)*FullHamil(j,1)
+            enddo
+        enddo
+
+        !Now we have the full hamiltonian. Diagonalize this fully
+        allocate(Work(1))
+        if(ierr.ne.0) call stop_all(t_r,"alloc err")
+        allocate(W(nLinearSystem))
+        W(:)=0.0_dp
+        lWork=-1
+        info=0
+        call dsyev('V','U',nLinearSystem,LinearSystem,nLinearSystem,W,Work,lWork,info)
+        if(info.ne.0) call stop_all(t_r,'workspace query failed')
+        lwork=int(work(1))+1
+        deallocate(work)
+        allocate(work(lwork))
+        call dsyev('V','U',nLinearSystem,LinearSystem,nLinearSystem,W,Work,lWork,info)
+        if (info.ne.0) call stop_all(t_r,"Diag failed")
+        deallocate(work)
+        
+        write(6,*) "First 10 MR-TDA-LR transition frequencies: "
+        highbound = min(nLinearSystem,100)
+        call writevector(W(1:highbound),'transition frequencies')
+
+        write(6,*) "Calculating residues: "
+
+        !Now find the transition moments
+        allocate(RDM1(nSites,nSites))
+        allocate(RDM2(nSites,nSites))
+        allocate(Residues(nLinearSystem))
+        Residues(:) = 0.0_dp
+
+        do n=1,nLinearSystem    !loop over states
+            !First, find the transition RDM between the ground FCI state, and state n
+            call Calc1RDM(FullHamil(:,1),LinearSystem(1:nFCIDet,n),RDM1)
+            !...and then vice versa
+            call Calc1RDM(LinearSystem(1:nFCIDet,n),FullHamil(:,1),RDM2)
+
+            !Now add to the 1RDM the conributions from the fully IC core-active excitations
+            do i=1,nOcc-nImp
+                do a=nOcc+nImp+1,nSites
+
+                    RDM1(i,a) = RDM1(i,a) + 2.0_dp*LinearSystem(nFCIDet+1,n)*SchmidtPert(a,i)/sqrt(CoreVirtualNorm)
+                    RDM1(a,i) = RDM1(a,i) + 2.0_dp*LinearSystem(nFCIDet+1,n)*SchmidtPert(a,i)/sqrt(CoreVirtualNorm)
+
+                    RDM2(i,a) = RDM2(i,a) + 2.0_dp*LinearSystem(nFCIDet+1,n)*SchmidtPert(a,i)/sqrt(CoreVirtualNorm)
+                    RDM2(a,i) = RDM2(a,i) + 2.0_dp*LinearSystem(nFCIDet+1,n)*SchmidtPert(a,i)/sqrt(CoreVirtualNorm)
+
+                enddo
+            enddo
+
+            !Now, calculate the (pertsite,pertsite) component of this in the AO basis
+            Res1 = 0.0_dp
+            Res2 = 0.0_dp
+            do i = 1,nSites
+                do j = 1,nSites
+                    Res1 = Res1 + FullSchmidtBasis(pertsite,i)*RDM1(i,j)*FullSchmidtBasis(pertsite,j)
+                    Res2 = Res2 + FullSchmidtBasis(pertsite,i)*RDM2(i,j)*FullSchmidtBasis(pertsite,j)
+                enddo
+            enddo
+
+            write(6,*) "Residues for state: ",n,Res1,Res2
+            Residues(n) = Res1*Res2*Lambda
+        enddo
+
+        write(6,*) "Writing IC-MR-TDA linear response function to disk..."
+
+        iunit = get_free_unit()
+        open(unit=iunit,file='IC-TDA_DDResponse',status='unknown')
+        write(iunit,"(A)") "# Frequency     DD_LinearResponse"
+
+        Omega = Start_Omega
+        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+
+            ResponseFn = 0.0_dp
+            do i=1,nLinearSystem
+                EDiff = W(i)-Spectrum(1)
+                ResponseFn = ResponseFn + Residues(i)/(Omega-EDiff)
+                ResponseFn = ResponseFn - Residues(i)/(Omega+EDiff)
+            enddo
+            write(iunit,*) Omega,ResponseFn
+
+            Omega = Omega + Omega_Step
+
+        enddo
+        close(iunit)
+        deallocate(Residues,W,LinearSystem,RDM1,RDM2)
 
     end subroutine NonIntContracted_TDA_MCLR
+
+    !Calculate the (transition) 1RDM.
+    !Do this very naively to start with.
+    subroutine Calc1RDM(Bra,Ket,RDM)
+        use DetToolsData, only: nFCIDet,FCIDetList
+        implicit none
+        real(dp), intent(in) :: Bra(nFCIDet),Ket(nFCIDet)
+        real(dp), intent(out) :: RDM(nSites,nSites)
+        integer :: nCore,i,j,ex(2),k,i_spat,a_spat,k_spat,IC,igetexcitlevel
+        integer :: gtid
+        logical :: tSign
+
+        nCore = nOcc-nImp
+
+        RDM(:,:) = 0.0_dp
+        do i=1,nFCIDet
+            do j=1,nFCIDet
+                IC = igetexcitlevel(FCIDetList(:,i),FCIDetList(:,j),elec)
+                if(IC.eq.1) then
+                    !Calculate parity
+                    ex(1) = 1
+                    call getexcitation(FCIDetList(:,i),FCIDetList(:,j),elec,ex,tSign)
+                    i_spat = gtid(ex(1)) + nCore
+                    a_spat = gtid(ex(2)) + nCore
+                    if(tSign) then
+                        RDM(i_spat,a_spat) = RDM(i_spat,a_spat) - Bra(i)*Ket(j)
+                    else
+                        RDM(i_spat,a_spat) = RDM(i_spat,a_spat) + Bra(i)*Ket(j)
+                    endif
+                elseif(IC.eq.0) then
+                    do k=1,elec
+                        k_spat = gtid(FCIDetList(k,i)) + nCore
+                        RDM(k_spat,k_spat) = RDM(k_spat,k_spat) + Bra(i)*Ket(i)
+                    enddo
+                endif
+            enddo
+        enddo
+
+    end subroutine Calc1RDM
 
     !Solve the response equations in the basis of Psi^(0) + all single excits.
     !This is the basis of Psi^(0), the basis of internally contracted single excitations of it into
@@ -516,13 +714,27 @@ module LinearResponse
             enddo
         enddo
 
+        !call writematrix(HFPertBasis,'Perturbation in HF basis',.true.)
         !write(6,*) "Transforming non-interacting response operator into full schmidt basis..."
 
         allocate(temp(nSites,nSites))
+        
+        !call DGEMM('N','T',nSites,nSites,nSites,1.0_dp,HFtoSchmidtTransform,nSites,HFtoSchmidtTransform,nSites,0.0_dp,temp,nSites)
+        !call writematrix(temp,'Test of unitarity of HF to Schmidt Transform',.true.)
+        !do i=1,nSites
+        !    do j=1,nSites
+        !        if((i.ne.j).and.(abs(temp(i,j)).gt.1.0e-7_dp)) then
+        !            call stop_all(t_r,'Transformation matrix not unitary')
+        !        elseif((i.eq.j).and.(abs(temp(i,j)-1.0_dp).gt.1.0e-7)) then
+        !            call stop_all(t_r,'Transformation matrix not unitary')
+        !        endif
+        !    enddo
+        !enddo
+        
         if(allocated(SchmidtPert)) deallocate(SchmidtPert)
         allocate(SchmidtPert(nSites,nSites))
         call DGEMM('T','N',nSites,nSites,nSites,1.0_dp,HFtoSchmidtTransform,nSites,HFPertBasis,nSites,0.0_dp,temp,nSites)
-        call DGEMM('N','N',nSites,nSites,nSites,1.0_dp,temp,nSites,HFPertBasis,nSites,0.0_dp,SchmidtPert,nSites)
+        call DGEMM('N','N',nSites,nSites,nSites,1.0_dp,temp,nSites,HFtoSchmidtTransform,nSites,0.0_dp,SchmidtPert,nSites)
         deallocate(temp,HFPertBasis)
 
         !SchmidtPert is now the perturbation in the schmidt basis

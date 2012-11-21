@@ -23,15 +23,15 @@ call run_DMETcalc()
     subroutine set_defaults()
         implicit none
 
-        tLR_DMET = .false.
-        tConstructFullSchmidtBasis = .true. 
+        tLR_DMET = .true. 
         tMFResponse = .false. 
+        tConstructFullSchmidtBasis = .true. 
         tHalfFill = .true. 
-        nSites = 60  
+        nSites = 12  
         LatticeDim = 1
-        nImp = 2
-        StartU = 1.0_dp
-        EndU = 1.1_dp
+        nImp = 1
+        StartU = 0.0_dp
+        EndU = 0.1_dp
         UStep = 0.2_dp
         tPeriodic = .false.
         tAntiPeriodic = .true. 
@@ -132,8 +132,6 @@ call run_DMETcalc()
                 !Calculate single reference linear response - non-interacting, TDA and RPA
                 call SR_LinearResponse()
 
-                call stop_all(t_r,'end')
-
                 !At this point, we have h0, U and a set of system sites (the first nImp indices), as well as a local potential
                 do it=1,150
 
@@ -173,7 +171,7 @@ call run_DMETcalc()
                         call MR_LinearResponse()
                     endif
                     
-                    !call stop_all('end','end')
+                    call stop_all('end','end')
 
                     !Fit new potential
                     !vloc_change (global) is updated in here to reflect the optimal change
@@ -447,10 +445,23 @@ call run_DMETcalc()
         allocate(HFtoSchmidtTransform(nSites,nSites))
         call DGEMM('T','N',nSites,nSites,nSites,1.0_dp,HFOrbs,nSites,FullSchmidtBasis,nSites,0.0_dp,HFtoSchmidtTransform,nSites)
 
+        allocate(temp(nSites,nSites))
+        !Check that this operator is unitary
+        !call DGEMM('N','T',nSites,nSites,nSites,1.0_dp,HFtoSchmidtTransform,nSites,HFtoSchmidtTransform,nSites,0.0_dp,temp,nSites)
+        !call writematrix(temp,'Test of unitarity of HF to Schmidt Transform',.true.)
+        !do i=1,nSites
+        !    do j=1,nSites
+        !        if((i.ne.j).and.(abs(temp(i,j)).gt.1.0e-7_dp)) then
+        !            call stop_all(t_r,'Transformation matrix not unitary')
+        !        elseif((i.eq.j).and.(abs(temp(i,j)-1.0_dp).gt.1.0e-7)) then
+        !            call stop_all(t_r,'Transformation matrix not unitary')
+        !        endif
+        !    enddo
+        !enddo
+
         !Use this to rotate the fock operator into this new basis
         if(allocated(FockSchmidt)) deallocate(FockSchmidt)
         allocate(FockSchmidt(nSites,nSites))
-        allocate(temp(nSites,nSites))
         !Set up FockSchmidt to temperarily to be the HF basis fock operator (i.e. diagonal)
         FockSchmidt(:,:) = 0.0_dp
         do i=1,nSites

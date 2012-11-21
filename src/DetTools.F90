@@ -48,10 +48,10 @@ subroutine GenDets(NEl,SpatOrbs)
         enddo
     enddo
 
-    write(6,*) "FCI determinant list: "
-    do i=1,nFCIDet
-        write(6,*) FCIDetList(:,i)
-    enddo
+!    write(6,*) "FCI determinant list: "
+!    do i=1,nFCIDet
+!        write(6,*) FCIDetList(:,i)
+!    enddo
 
 end subroutine GenDets
 
@@ -366,88 +366,88 @@ end function GetHFInt_spinorb
 !   TRUE means ODD.
 ! If there are too many excitations to fit, then we put -excitlevel in EX(1,1) and EX(2,1)
 ! EX(1,1) is the max number of excitations (passed in as a parameter)
-SUBROUTINE GETEXCITATION(NI,NJ,NEL,EX,TSIGN)
-    IMPLICIT NONE
-    INTEGER, intent(in) :: NEl,nI(NEl),nJ(NEl)
-    INTEGER, intent(out) :: EX(2,*)
-    LOGICAL, intent(out) :: tSign
-    INTEGER iMaxExcit
-    INTEGER I,J,IPAR
-    INTEGER IC1,IC2
-    iMaxExcit=EX(1,1)
-    EX(1:2,1:iMaxExcit)=0
-    IC1=0
-    IC2=0
-    I=1
-    J=1
-    IPAR=0
-!    CALL WRITEDET(6,NI,NEL,.TRUE.)
-!    CALL WRITEDET(6,NJ,NEL,.TRUE.)
-    DO WHILE(I.LE.NEL.AND.J.LE.NEL)
-!.. Differences from I to J
-!   WRITE(6,*) "GE",I,J
-        DO WHILE(I.LE.NEL)
-           if (NI(I) >= NJ(J)) exit
-           IC1=IC1+1
-           IF(IC1.LE.iMaxExcit) THEN
-              EX(1,IC1)=NI(I)
-              IPAR=IPAR+I
-           ENDIF
-           I=I+1
-        ENDDO
-!.. Differences from J to I
-        DO WHILE(I.LE.NEL.AND.J.LE.NEL)
-           if (NI(I) <= NJ(J)) exit
-           IC2=IC2+1
-           IF(IC2.LE.iMaxExcit) THEN
-              EX(2,IC2)=NJ(J)
-              IPAR=IPAR+J
-           ENDIF
-           J=J+1
-        ENDDO
-        IF(I.LE.NEL.AND.J.LE.NEL) then
-           if (NI(I) == NJ(J)) then
-               I=I+1
-               J=J+1
+subroutine getexcitation(ni,nj,nel,ex,tsign)
+    implicit none
+    integer, intent(in) :: nel,ni(nel),nj(nel)
+    integer, intent(inout) :: ex(2,*)
+    logical, intent(out) :: tsign
+    integer imaxexcit
+    integer i,j,ipar
+    integer ic1,ic2
+    imaxexcit=ex(1,1)
+    ex(1:2,1:imaxexcit)=0
+    ic1=0
+    ic2=0
+    i=1
+    j=1
+    ipar=0
+!    call writedet(6,ni,nel,.true.)
+!    call writedet(6,nj,nel,.true.)
+    do while(i.le.nel.and.j.le.nel)
+!.. differences from i to j
+!   write(6,*) "ge",i,j
+        do while(i.le.nel)
+           if (ni(i) >= nj(j)) exit
+           ic1=ic1+1
+           if(ic1.le.imaxexcit) then
+              ex(1,ic1)=ni(i)
+              ipar=ipar+i
            endif
-        ENDIF
-    ENDDO
-!.. Deal with remaining I
-    DO WHILE(I.LE.NEL)
-        IC1=IC1+1
-        IF(IC1.LE.iMaxExcit) THEN
-           IPAR=IPAR+I
-           EX(1,IC1)=NI(I)
-        ENDIF
-        I=I+1
-    ENDDO
-!.. Deal with remaining J
-    DO WHILE(J.LE.NEL)
-        IC2=IC2+1
-        IF(IC2.LE.iMaxExcit) THEN
-           EX(2,IC2)=NJ(J)
-           IPAR=IPAR+J
-        ENDIF
-        J=J+1
-    ENDDO
-    IF(iC1.GT.iMaxExcit) THEN
-!.. we actually needed more space.  Just list the excitation counts (-ve)
-       DO i=1,iMaxExcit
-          IF (i.EQ.1) THEN
-             EX(1,1)=-iC1
-             EX(2,1)=-iC2
-          ELSE
-             EX(1,i)=0
-             EX(2,i)=0
-          ENDIF
-       ENDDO
-    ELSEIF(iC1.EQ.0) THEN
-       EX(1,1)=0
-       EX(2,1)=0
-    ENDIF
-    TSIGN=BTEST(IPAR,0)
-    RETURN
-END
+           i=i+1
+        enddo
+!.. differences from j to i
+        do while(i.le.nel.and.j.le.nel)
+           if (ni(i) <= nj(j)) exit
+           ic2=ic2+1
+           if(ic2.le.imaxexcit) then
+              ex(2,ic2)=nj(j)
+              ipar=ipar+j
+           endif
+           j=j+1
+        enddo
+        if(i.le.nel.and.j.le.nel) then
+           if (ni(i) == nj(j)) then
+               i=i+1
+               j=j+1
+           endif
+        endif
+    enddo
+!.. deal with remaining i
+    do while(i.le.nel)
+        ic1=ic1+1
+        if(ic1.le.imaxexcit) then
+           ipar=ipar+i
+           ex(1,ic1)=ni(i)
+        endif
+        i=i+1
+    enddo
+!.. deal with remaining j
+    do while(j.le.nel)
+        ic2=ic2+1
+        if(ic2.le.imaxexcit) then
+           ex(2,ic2)=nj(j)
+           ipar=ipar+j
+        endif
+        j=j+1
+    enddo
+    if(ic1.gt.imaxexcit) then
+!.. we actually needed more space.  just list the excitation counts (-ve)
+       do i=1,imaxexcit
+          if (i.eq.1) then
+             ex(1,1)=-ic1
+             ex(2,1)=-ic2
+          else
+             ex(1,i)=0
+             ex(2,i)=0
+          endif
+       enddo
+    elseif(ic1.eq.0) then
+       ex(1,1)=0
+       ex(2,1)=0
+    endif
+    tsign=btest(ipar,0)
+    return
+end subroutine
 
 INTEGER FUNCTION IGETEXCITLEVEL(NI,NJ,NEL)
     IMPLICIT NONE
