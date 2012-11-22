@@ -130,8 +130,10 @@ module LinearResponse
                     CoreVirtualNorm = CoreVirtualNorm + SchmidtPert(i,a)*SchmidtPert(a,i)
                 enddo
             enddo
-            CoreVirtualNorm = CoreVirtualNorm * 2.0_dp
+            CoreVirtualNorm = CoreVirtualNorm * 2.0_dp  !Spin integration on both sides
             write(6,*) "Fully contracted core-virtual excitations have a normalization of: ",CoreVirtualNorm
+            !Strongly contracted function is defined as:
+            !   2/sqrt(Norm) |0> \sum_{ai(spat)} G_ai(w) a_a^+ a_i |core>
             !Anything involving this function should come with a 1/sqrt(CoreVirtualNorm) in front of it
             do i=1,nOcc-nImp
                 do j=1,nOcc-nImp
@@ -150,6 +152,7 @@ module LinearResponse
                 enddo
             enddo
             LinearSystem(nFCIDet+1,nFCIDet+1) = LinearSystem(nFCIDet+1,nFCIDet+1)*2.0_dp/CoreVirtualNorm    !for the other spin type.
+            !Factor of 8: 4 from original definition of function, and 2 from the spin integration
             write(6,*) "Diagonal hamiltonian contribution from fully contracted core-virtual function: ",   &
                 LinearSystem(nFCIDet+1,nFCIDet+1)
             !We are not going to add on the active space energy, since we assume that we have offset the hamiltonian by the 
@@ -217,10 +220,16 @@ module LinearResponse
             Residues(:) = 0.0_dp
 
             do n=1,nLinearSystem    !loop over states
-                !First, find the transition RDM between the ground FCI state, and state n
-                call Calc1RDM(FullHamil(:,1),LinearSystem(1:nFCIDet,n),RDM1)
-                !...and then vice versa
-                call Calc1RDM(LinearSystem(1:nFCIDet,n),FullHamil(:,1),RDM2)
+                if(.not.tNonIntTest) then
+                    !If we have no FCI space at all, we should not even have core contributions
+                    !First, find the transition RDM between the ground FCI state, and state n
+                    call Calc1RDM(FullHamil(:,1),LinearSystem(1:nFCIDet,n),RDM1)
+                    !...and then vice versa
+                    call Calc1RDM(LinearSystem(1:nFCIDet,n),FullHamil(:,1),RDM2)
+                else
+                    RDM1(:,:) = 0.0_dp
+                    RDM2(:,:) = 0.0_dp
+                endif
 
                 !Now add to the 1RDM the conributions from the fully IC core-active excitations
                 do i=1,nOcc-nImp
@@ -313,17 +322,16 @@ module LinearResponse
         do i=1,nCore
             RDM(i,i) = 2.0_dp
         enddo
-
-        trace = 0.0_dp
-        do i=1,nOcc
-            trace = trace + RDM(i,i)
-        enddo
-        if(abs(trace-nel).gt.1.0e-7_dp) then
-            write(6,*) "trace: ",trace
-            write(6,*) "nel: ",nel
-            call stop_all(t_r,'Trace of 1RDM incorrect')
-        endif
-
+!
+!        trace = 0.0_dp
+!        do i=1,nOcc
+!            trace = trace + RDM(i,i)
+!        enddo
+!        if(abs(trace-nel).gt.1.0e-7_dp) then
+!            write(6,*) "trace: ",trace
+!            write(6,*) "nel: ",nel
+!            call stop_all(t_r,'Trace of 1RDM incorrect')
+!        endif
 
     end subroutine Calc1RDM
 
@@ -733,6 +741,12 @@ module LinearResponse
         real(dp), intent(in) :: Omega
         integer :: a,i
         character(len=*), parameter :: t_r='FindSchmidtBasis'
+
+        if(tNonIntTest) then
+            !Screw everything up by ensuring that HFOrbs = FullHFOrbs (likewise for energy eigenvalues)
+            HFOrbs(:,:) = FullHFOrbs(:,:)
+            HFEnergies(:) = FullHFEnergies(:)
+        endif
 
         if(allocated(HFPertBasis)) deallocate(HFPertBasis)
         allocate(HFPertBasis(nSites,nSites))

@@ -24,8 +24,8 @@ call run_DMETcalc()
         implicit none
 
         tLR_DMET = .true. 
-        tMFResponse = .false. 
         tConstructFullSchmidtBasis = .true. 
+        tMFResponse = .false. 
         tHalfFill = .true. 
         nSites = 12  
         LatticeDim = 1
@@ -42,7 +42,7 @@ call run_DMETcalc()
         tGSFCI = .false. !.not.tMFResponse
         Start_Omega = 0.0_dp
         End_Omega = 5.0_dp
-        Omega_Step = 0.005_dp
+        Omega_Step = 0.001_dp
         tDumpFCIDUMP = .true.
 
     end subroutine set_defaults
