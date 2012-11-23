@@ -55,11 +55,13 @@ module LinearResponse
         use DetToolsData, only: nFCIDet
         implicit none
         integer :: nLinearSystem,ierr,i,j,a,highbound,b,info,lwork,n,iunit
+        integer :: i_spat,a_spat,gtid
         real(dp) :: CoreCoupling,CoreVirtualNorm,Omega,Res1,Res2,EDiff,ResponseFn 
+        real(dp) :: testham,testnorm
         real(dp), allocatable :: LinearSystem(:,:),temp(:,:),Work(:),W(:),Residues(:)
         real(dp), allocatable :: RDM1(:,:),RDM2(:,:)
         character(len=*), parameter :: t_r='NonIntContracted_TDA_MCLR'
-        logical, parameter :: tNonIntTest = .true. 
+        logical, parameter :: tNonIntTest = .false.
 
         write(6,*) "Calculating non-interacting IC MR-TDA LR system..."
         if(.not.tConstructFullSchmidtBasis) call stop_all(t_r,'To solve LR, must construct full schmidt basis')
@@ -112,12 +114,6 @@ module LinearResponse
                     LinearSystem(1:nFCIDet,1:nFCIDet),nFCIDet)
             endif
             deallocate(temp)
-            !Finally, subtract the ground state energy from the diagonals, since we want to offset it.
-            !Do we just want to offset it, or do we want to completely remove the state, ie subtract E0 * C_i C_j from all elements?
-    !        do i=1,nFCIDet
-    !            LinearSystem(i,i) = LinearSystem(i,i) - Spectrum(1)
-    !        enddo
-    !       This is done later, since we want to be able to use the raw hamiltonian in the mean time
 
             !Now, calculate the fully IC sum of all core-virtual excitations
             !The diagonal hamiltonian matrix element is given by: G_ai G_bi F_ab - G_ai G_aj F_ij
@@ -130,10 +126,10 @@ module LinearResponse
                     CoreVirtualNorm = CoreVirtualNorm + SchmidtPert(i,a)*SchmidtPert(a,i)
                 enddo
             enddo
-            CoreVirtualNorm = CoreVirtualNorm * 2.0_dp  !Spin integration on both sides
+            CoreVirtualNorm = CoreVirtualNorm * 2.0_dp  !Spin integration 
             write(6,*) "Fully contracted core-virtual excitations have a normalization of: ",CoreVirtualNorm
             !Strongly contracted function is defined as:
-            !   2/sqrt(Norm) |0> \sum_{ai(spat)} G_ai(w) a_a^+ a_i |core>
+            !   1/sqrt(Norm) |0> \sum_{ai(spat)} G_ai(w) a_a^+ a_i |core>
             !Anything involving this function should come with a 1/sqrt(CoreVirtualNorm) in front of it
             do i=1,nOcc-nImp
                 do j=1,nOcc-nImp
@@ -152,9 +148,34 @@ module LinearResponse
                 enddo
             enddo
             LinearSystem(nFCIDet+1,nFCIDet+1) = LinearSystem(nFCIDet+1,nFCIDet+1)*2.0_dp/CoreVirtualNorm    !for the other spin type.
-            !Factor of 8: 4 from original definition of function, and 2 from the spin integration
             write(6,*) "Diagonal hamiltonian contribution from fully contracted core-virtual function: ",   &
                 LinearSystem(nFCIDet+1,nFCIDet+1)
+            if(tNonIntTest) then
+                !Check that it gives what we expect
+                testham = 0.0_dp
+                testnorm = 0.0_dp
+                do i=1,nel
+                    do a=nel+1,nSites*2
+                        if(mod(i,2).ne.mod(a,2)) cycle
+                        i_spat = gtid(i)
+                        a_spat = gtid(a)
+                        testham = testham + SchmidtPert(a_spat,i_spat)*SchmidtPert(i_spat,a_spat)   &
+                            *(FullHFEnergies(a_spat)-FullHFEnergies(i_spat))
+                        testnorm = testnorm + SchmidtPert(a_spat,i_spat)*SchmidtPert(i_spat,a_spat)
+                    enddo
+                enddo
+                if(abs(testnorm-CoreVirtualNorm).gt.1.0e-7_dp) then
+                    write(6,*) "testnorm: ",testnorm
+                    write(6,*) "CoreVirtualNorm: ",CoreVirtualNorm
+                    !call stop_all(t_r,'non interacting test norm fail')
+                endif
+                testham = testham/testnorm
+                if(abs(testham-LinearSystem(nFCIDet+1,nFCIDet+1)).gt.1.0e-7_dp) then
+                    write(6,*) "testham ",testham
+                    write(6,*) "Ham matrix el: ",LinearSystem(nFCIDet+1,nFCIDet+1)
+                    call stop_all(t_r,'non interacting test hamiltonian fail')
+                endif
+            endif
             !We are not going to add on the active space energy, since we assume that we have offset the hamiltonian by the 
             !zeroth order energy.
 
@@ -189,6 +210,8 @@ module LinearResponse
                 do j=1,nFCIDet
                     LinearSystem(j,i) = LinearSystem(j,i) - Spectrum(1)*FullHamil(i,1)*FullHamil(j,1)
                 enddo
+                !Finally, subtract the ground state energy from the diagonals, since we want to offset it.
+                LinearSystem(i,i) = LinearSystem(i,i) - Spectrum(1)
             enddo
 
             !Now we have the full hamiltonian. Diagonalize this fully
@@ -235,10 +258,10 @@ module LinearResponse
                 do i=1,nOcc-nImp
                     do a=nOcc+nImp+1,nSites
 
-                        RDM1(i,a) = RDM1(i,a) + 2.0_dp*LinearSystem(nFCIDet+1,n)*SchmidtPert(a,i)/sqrt(CoreVirtualNorm)
-                        RDM1(a,i) = RDM1(a,i) + 2.0_dp*LinearSystem(nFCIDet+1,n)*SchmidtPert(a,i)/sqrt(CoreVirtualNorm)
+                        RDM1(i,a) = RDM1(i,a) + 2.0_dp*LinearSystem(nFCIDet+1,n)*SchmidtPert(i,a)/sqrt(CoreVirtualNorm)
+                        !RDM1(a,i) = RDM1(a,i) + 2.0_dp*LinearSystem(nFCIDet+1,n)*SchmidtPert(a,i)/sqrt(CoreVirtualNorm)
 
-                        RDM2(i,a) = RDM2(i,a) + 2.0_dp*LinearSystem(nFCIDet+1,n)*SchmidtPert(a,i)/sqrt(CoreVirtualNorm)
+                        !RDM2(i,a) = RDM2(i,a) + 2.0_dp*LinearSystem(nFCIDet+1,n)*SchmidtPert(a,i)/sqrt(CoreVirtualNorm)
                         RDM2(a,i) = RDM2(a,i) + 2.0_dp*LinearSystem(nFCIDet+1,n)*SchmidtPert(a,i)/sqrt(CoreVirtualNorm)
 
                     enddo
@@ -261,15 +284,64 @@ module LinearResponse
             ResponseFn = 0.0_dp
             do i=1,nLinearSystem
                 if(tNonIntTest) then
-                    !What is zeroth order energy in the non-interacting case?
-                    EDiff = W(i)!???
+                    EDiff = W(i)
                 else
-                    EDiff = W(i)-Spectrum(1)
+                    EDiff = W(i) !-Spectrum(1)
                 endif
                 ResponseFn = ResponseFn + Residues(i)/(Omega-EDiff)
                 ResponseFn = ResponseFn - Residues(i)/(Omega+EDiff)
             enddo
             write(iunit,*) Omega,ResponseFn
+
+            if(tNonIntTest) then
+                !Debug comparison info
+                if(abs(W(1)-testham).gt.1.0e-7_dp) then
+                    write(6,*) "testham: ",testham
+                    write(6,*) "Eigenvalue: ",W(1)
+                    call stop_all(t_r,'eigenvalue not as expected')
+                endif
+                testham = 0.0_dp
+                do i=1,nel
+                    do a=nel+1,nSites*2
+                        if(mod(i,2).ne.mod(a,2)) cycle
+                        i_spat = gtid(i)
+                        a_spat = gtid(a)
+
+                        testham = testham + ((FullHFOrbs(pertsite,i_spat)*FullHFOrbs(pertsite,a_spat))**2) / &
+                            ( (Omega**2/(FullHFEnergies(a_spat)-FullHFEnergies(i_spat))) - 2*Omega + &
+                                (FullHFEnergies(a_spat)-FullHFEnergies(i_spat)))
+
+                    enddo
+                enddo
+                testham = testham / testnorm
+                testham = Omega - testham
+                !write(6,*) "****",abs(testham-(Omega-EDiff)),abs(testham),abs(testham-(Omega-EDiff))/abs(testham)
+                if(abs(testham-(Omega-EDiff)).gt.1.0e-8_dp) then
+                    !write(6,*) "test denominator: ",testham
+                    !write(6,*) "Calculated Denominator: ",Omega-EDiff
+                    !call stop_all(t_r,'non interacting test denominator fail')
+                endif
+
+                testham = 0.0_dp
+                do i=1,nel
+                    do a=nel+1,nSites*2
+                        if(mod(i,2).ne.mod(a,2)) cycle
+                        i_spat = gtid(i)
+                        a_spat = gtid(a)
+
+                        testham = testham + ((FullHFOrbs(pertsite,i_spat)*FullHFOrbs(pertsite,a_spat))**2) / &
+                            (Omega - (FullHFEnergies(a_spat)-FullHFEnergies(i_spat)))
+
+                    enddo
+                enddo
+                testham = testham / sqrt(testnorm)
+                testham = testham*testham
+                if(abs(testham-Residues(1)).gt.1.0e-7_dp) then
+                    write(6,*) "test residue: ",testham
+                    write(6,*) "Calculated Residue: ",Residues(1)
+                    call stop_all(t_r,'non interacting test residue fail')
+                endif
+            endif
 
             Omega = Omega + Omega_Step
         
@@ -748,7 +820,6 @@ module LinearResponse
             HFEnergies(:) = FullHFEnergies(:)
         endif
 
-        if(allocated(HFPertBasis)) deallocate(HFPertBasis)
         allocate(HFPertBasis(nSites,nSites))
         HFPertBasis(:,:) = 0.0_dp
 

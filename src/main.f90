@@ -27,7 +27,7 @@ call run_DMETcalc()
         tConstructFullSchmidtBasis = .true. 
         tMFResponse = .false. 
         tHalfFill = .true. 
-        nSites = 12  
+        nSites = 32  
         LatticeDim = 1
         nImp = 1
         StartU = 0.0_dp
