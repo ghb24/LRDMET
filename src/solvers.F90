@@ -124,16 +124,16 @@ module solvers
                 enddo
                 close(iunit)
                 !We now have a matrix, but we want to change it to the format we want.
-                !HL_2RDM(i,j,k,l) = G_ij^kl = < k^+ l^+ j i >
+                !HL_2RDM(i,j,k,l) = G_ij^kl = < i^+ k^+ l j >
                 do i=1,EmbSize
                     do j=1,EmbSize
                         do k=1,EmbSize
                             do l=1,EmbSize
 
-                                HL_2RDM(i,j,k,l) = HL_2RDM(i,j,k,l) + HL_2RDM_temp(((j-1)*EmbSize)+k,((i-1)*EmbSize)+l)
+                                HL_2RDM(i,j,k,l) = HL_2RDM(i,j,k,l) + HL_2RDM_temp(((i-1)*EmbSize)+j,((k-1)*EmbSize)+l)
 
-                                if(j.eq.l) then
-                                    HL_2RDM(i,j,k,l) = HL_2RDM(i,j,k,l) - HL_1RDM(k,i)
+                                if(j.eq.k) then
+                                    HL_2RDM(i,j,k,l) = HL_2RDM(i,j,k,l) - HL_1RDM(i,l)
                                 endif
 
                             enddo
@@ -147,7 +147,6 @@ module solvers
         elseif(tCompleteDiag) then
             !Do a complete diagonalization
             !Do not need to write FCIDUMP, since would only read it back in...
-
             call CompleteDiag(tCreate2RDM)
         endif
 
@@ -227,7 +226,6 @@ module solvers
                     endif
                 enddo
             enddo
-
         endif
             
         !We only want to calculate the energy over the impurity site, along with the coupling to the bath.
@@ -743,7 +741,7 @@ module solvers
         implicit none
         real(dp) , intent(out) :: RDM(EmbSize,EmbSize,EmbSize,EmbSize)
         integer , intent(in) :: StateBra,StateKet
-        integer :: Ex(2,2),gtid,i,j,k,IC,iGetExcitLevel,kel,lel,l
+        integer :: Ex(2,2),gtid,i,j,k,IC,iGetExcitLevel,kel,lel,l,temp
         logical :: tSign
         character(len=*), parameter :: t_r='FindFull2RDM'
 
@@ -753,35 +751,61 @@ module solvers
             do j=1,nFCIDet
                 IC = iGetExcitLevel(FCIDetList(:,i),FCIDetList(:,j),Elec)
                 if(IC.eq.2) then
-                    !Connected by a single
+                    !Connected by a double
                     Ex(1,1) = 2
                     call GetExcitation(FCIDetList(:,i),FCIDetList(:,j),Elec,Ex,tSign)
+                    if(mod(Ex(1,1),2).ne.mod(Ex(1,2),2)) then
+                        !mixed spin excitation
+                        !We need to ensure the same electron have the same spin
+                        if(mod(Ex(1,1),2).ne.mod(Ex(2,1),2)) then
+                            !We need to switch a and b (or i and j)
+                            temp = Ex(2,2)
+                            Ex(2,2) = Ex(2,1)
+                            Ex(2,1) = temp
+                            tSign = .not.tSign
+                        endif
+                    endif
+                    if(gtid(Ex(1,1)).eq.1.and.gtid(Ex(2,1)).eq.1.and.gtid(Ex(1,2)).eq.2.and.gtid(Ex(2,2)).eq.2) then
+                        write(6,*) "contrib (11,22): ",i,j,tSign,FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                    endif
                     if(tSign) then
-                        RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(2,1))) =  &
-                            RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(2,1))) -  &
+                        RDM(gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2))) =  &
+                            RDM(gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2))) -  &
                             FullHamil(i,StateBra)*FullHamil(j,StateKet)
-                        RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,2)),gtid(Ex(2,1))) =  &
-                            RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,2)),gtid(Ex(2,1))) +  &
+                        RDM(gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1))) =  &
+                            RDM(gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1))) -  &
                             FullHamil(i,StateBra)*FullHamil(j,StateKet)
-                        RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,1)),gtid(Ex(2,2))) =  &
-                            RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,1)),gtid(Ex(2,2))) +  &
-                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
-                        RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(2,2))) =  &
-                            RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(2,2))) -  &
-                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
+!                        RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(2,1))) =  &
+!                            RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(2,1))) -  &
+!                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
+!                        RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,2)),gtid(Ex(2,1))) =  &
+!                            RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,2)),gtid(Ex(2,1))) +  &
+!                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
+!                        RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,1)),gtid(Ex(2,2))) =  &
+!                            RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,1)),gtid(Ex(2,2))) +  &
+!                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
+!                        RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(2,2))) =  &
+!                            RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(2,2))) -  &
+!                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
                     else
-                        RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(2,1))) =  &
-                            RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(2,1))) +  &
+                        RDM(gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2))) =  &
+                            RDM(gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2))) +  &
                             FullHamil(i,StateBra)*FullHamil(j,StateKet)
-                        RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,2)),gtid(Ex(2,1))) =  &
-                            RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,2)),gtid(Ex(2,1))) -  &
+                        RDM(gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1))) =  &
+                            RDM(gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1))) +  &
                             FullHamil(i,StateBra)*FullHamil(j,StateKet)
-                        RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,1)),gtid(Ex(2,2))) =  &
-                            RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,1)),gtid(Ex(2,2))) -  &
-                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
-                        RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(2,2))) =  &
-                            RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(2,2))) +  &
-                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
+!                        RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(2,1))) =  &
+!                            RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(2,1))) +  &
+!                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
+!                        RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,2)),gtid(Ex(2,1))) =  &
+!                            RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,2)),gtid(Ex(2,1))) -  &
+!                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
+!                        RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,1)),gtid(Ex(2,2))) =  &
+!                            RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,1)),gtid(Ex(2,2))) -  &
+!                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
+!                        RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(2,2))) =  &
+!                            RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(2,2))) +  &
+!                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
                     endif
                 elseif(IC.eq.1) then
                     !Connected by a single
@@ -789,33 +813,57 @@ module solvers
                     call GetExcitation(FCIDetList(:,i),FCIDetList(:,j),Elec,Ex,tSign)
                     do k=1,elec
                         kel = gtid(FCIDetList(k,i))
+
                         if(FCIDetList(k,i).ne.Ex(1,1)) then
+                            if(kel.eq.1.and.gtid(Ex(2,1)).eq.2.and.gtid(Ex(1,1)).gt.2) then
+                                write(6,*) "contrib (11,22): ",i,j,tSign,FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                            endif
                             if(tSign) then
-                                RDM(gtid(Ex(1,1)),kel,gtid(Ex(2,1)),kel) = &
-                                    RDM(gtid(Ex(1,1)),kel,gtid(Ex(2,1)),kel) - &
+                                !RDM(gtid(Ex(2,1)),kel,kel,gtid(Ex(1,1))) = &
+                                !    RDM(gtid(Ex(2,1)),kel,kel,gtid(Ex(1,1))) - &
+                                !    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) = &
+                                    RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) - &
                                     FullHamil(i,StateBra)*FullHamil(j,StateKet)
-                                RDM(kel,gtid(Ex(1,1)),gtid(Ex(2,1)),kel) = &
-                                    RDM(kel,gtid(Ex(1,1)),gtid(Ex(2,1)),kel) + &
+                                RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) = &
+                                    RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) - &
                                     FullHamil(i,StateBra)*FullHamil(j,StateKet)
-                                RDM(gtid(Ex(1,1)),kel,kel,gtid(Ex(2,1))) = &
-                                    RDM(gtid(Ex(1,1)),kel,kel,gtid(Ex(2,1))) + &
-                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
-                                RDM(kel,gtid(Ex(1,1)),kel,gtid(Ex(2,1))) = &
-                                    RDM(kel,gtid(Ex(1,1)),kel,gtid(Ex(2,1))) - &
-                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+
+!                                RDM(gtid(Ex(1,1)),kel,gtid(Ex(2,1)),kel) = &
+!                                    RDM(gtid(Ex(1,1)),kel,gtid(Ex(2,1)),kel) - &
+!                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+!                                RDM(kel,gtid(Ex(1,1)),gtid(Ex(2,1)),kel) = &
+!                                    RDM(kel,gtid(Ex(1,1)),gtid(Ex(2,1)),kel) + &
+!                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+!                                RDM(gtid(Ex(1,1)),kel,kel,gtid(Ex(2,1))) = &
+!                                    RDM(gtid(Ex(1,1)),kel,kel,gtid(Ex(2,1))) + &
+!                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+!                                RDM(kel,gtid(Ex(1,1)),kel,gtid(Ex(2,1))) = &
+!                                    RDM(kel,gtid(Ex(1,1)),kel,gtid(Ex(2,1))) - &
+!                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
                             else
-                                RDM(gtid(Ex(1,1)),kel,gtid(Ex(2,1)),kel) = &
-                                    RDM(gtid(Ex(1,1)),kel,gtid(Ex(2,1)),kel) + &
+                                !RDM(gtid(Ex(2,1)),kel,kel,gtid(Ex(1,1))) = &
+                                !    RDM(gtid(Ex(2,1)),kel,kel,gtid(Ex(1,1))) + &
+                                !    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) = &
+                                    RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) + &
                                     FullHamil(i,StateBra)*FullHamil(j,StateKet)
-                                RDM(kel,gtid(Ex(1,1)),gtid(Ex(2,1)),kel) = &
-                                    RDM(kel,gtid(Ex(1,1)),gtid(Ex(2,1)),kel) - &
+                                RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) = &
+                                    RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) + &
                                     FullHamil(i,StateBra)*FullHamil(j,StateKet)
-                                RDM(gtid(Ex(1,1)),kel,kel,gtid(Ex(2,1))) = &
-                                    RDM(gtid(Ex(1,1)),kel,kel,gtid(Ex(2,1))) - &
-                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
-                                RDM(kel,gtid(Ex(1,1)),kel,gtid(Ex(2,1))) = &
-                                    RDM(kel,gtid(Ex(1,1)),kel,gtid(Ex(2,1))) + &
-                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+!
+!                                RDM(gtid(Ex(1,1)),kel,gtid(Ex(2,1)),kel) = &
+!                                    RDM(gtid(Ex(1,1)),kel,gtid(Ex(2,1)),kel) + &
+!                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+!                                RDM(kel,gtid(Ex(1,1)),gtid(Ex(2,1)),kel) = &
+!                                    RDM(kel,gtid(Ex(1,1)),gtid(Ex(2,1)),kel) - &
+!                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+!                                RDM(gtid(Ex(1,1)),kel,kel,gtid(Ex(2,1))) = &
+!                                    RDM(gtid(Ex(1,1)),kel,kel,gtid(Ex(2,1))) - &
+!                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+!                                RDM(kel,gtid(Ex(1,1)),kel,gtid(Ex(2,1))) = &
+!                                    RDM(kel,gtid(Ex(1,1)),kel,gtid(Ex(2,1))) + &
+!                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
                             endif
                         endif
                     enddo
@@ -828,23 +876,11 @@ module solvers
                         do l=1,Elec
                             lel = gtid(FCIDetList(l,i))
                             if(FCIDetList(k,i).eq.FCIDetList(l,i)) cycle
-
-                            if(i.eq.1) then
-                                write(6,*) "i = 1, filling: ",k,l,k,l,FullHamil(i,StateBra)*FullHamil(j,StateKet)
-                                write(6,*) "i = 1, filling: ",l,k,k,l,-FullHamil(i,StateBra)*FullHamil(j,StateKet)
-                                write(6,*) "i = 1, filling: ",k,l,l,k,-FullHamil(i,StateBra)*FullHamil(j,StateKet)
-                                write(6,*) "i = 1, filling: ",l,k,l,k,FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                            if(kel.eq.1.and.lel.eq.2) then
+                                write(6,*) "contrib (11,22): ",i,FullHamil(i,StateBra)*FullHamil(j,StateKet)
                             endif
 
-
-                            if(mod(FCIDetList(k,i),2).eq.mod(FCIDetList(l,2))) then
-                                RDM(kel,lel,kel,lel) = RDM(kel,lel,kel,lel) + &
-                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
-                            RDM(lel,kel,kel,lel) = RDM(lel,kel,kel,lel) - &
-                                FullHamil(i,StateBra)*FullHamil(j,StateKet)
-                            RDM(kel,lel,lel,kel) = RDM(kel,lel,lel,kel) - &
-                                FullHamil(i,StateBra)*FullHamil(j,StateKet)
-                            RDM(lel,kel,lel,kel) = RDM(lel,kel,lel,kel) + &
+                            RDM(kel,kel,lel,lel) = RDM(kel,kel,lel,lel) + &
                                 FullHamil(i,StateBra)*FullHamil(j,StateKet)
 
                         enddo
@@ -854,49 +890,49 @@ module solvers
             enddo
         enddo
 
-        do i=1,EmbSize
-            do j=1,EmbSize
-                do k=1,EmbSize
-                    do l=1,EmbSize
-                        if(abs(RDM(i,j,k,l)+RDM(j,i,k,l)).gt.1.0e-7_dp) then
-                            write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
-                            write(6,*) "RDM(j,i,k,l): ",RDM(j,i,k,l)
-                            call stop_all(t_r,'2RDM not symmetric')
-                        endif
-                        if(abs(RDM(i,j,k,l)+RDM(i,j,l,k)).gt.1.0e-7_dp) then
-                            write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
-                            write(6,*) "RDM(i,j,l,k): ",RDM(i,j,l,k)
-                            call stop_all(t_r,'2RDM not symmetric')
-                        endif
-                        if(abs(RDM(i,j,k,l)-RDM(j,i,l,k)).gt.1.0e-7_dp) then
-                            write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
-                            write(6,*) "RDM(j,i,l,k): ",RDM(j,i,l,k)
-                            call stop_all(t_r,'2RDM not symmetric')
-                        endif
-                        if(abs(RDM(i,j,k,l)-RDM(k,l,i,j)).gt.1.0e-7_dp) then
-                            write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
-                            write(6,*) "RDM(k,l,i,j): ",RDM(k,l,i,j)
-                            call stop_all(t_r,'2RDM not symmetric')
-                        endif
-                        if(abs(RDM(i,j,k,l)+RDM(l,k,i,j)).gt.1.0e-7_dp) then
-                            write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
-                            write(6,*) "RDM(l,k,i,j): ",RDM(l,k,i,j)
-                            call stop_all(t_r,'2RDM not symmetric')
-                        endif
-                        if(abs(RDM(i,j,k,l)+RDM(k,l,j,i)).gt.1.0e-7_dp) then
-                            write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
-                            write(6,*) "RDM(k,l,j,i): ",RDM(k,l,j,i)
-                            call stop_all(t_r,'2RDM not symmetric')
-                        endif
-                        if(abs(RDM(i,j,k,l)-RDM(l,k,j,i)).gt.1.0e-7_dp) then
-                            write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
-                            write(6,*) "RDM(l,k,j,i): ",RDM(l,k,j,i)
-                            call stop_all(t_r,'2RDM not symmetric')
-                        endif
-                    enddo
-                enddo
-            enddo
-        enddo
+!        do i=1,EmbSize
+!            do j=1,EmbSize
+!                do k=1,EmbSize
+!                    do l=1,EmbSize
+!                        if(abs(RDM(i,j,k,l)+RDM(j,i,k,l)).gt.1.0e-7_dp) then
+!                            write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
+!                            write(6,*) "RDM(j,i,k,l): ",RDM(j,i,k,l)
+!                            call stop_all(t_r,'2RDM not symmetric')
+!                        endif
+!                        if(abs(RDM(i,j,k,l)+RDM(i,j,l,k)).gt.1.0e-7_dp) then
+!                            write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
+!                            write(6,*) "RDM(i,j,l,k): ",RDM(i,j,l,k)
+!                            call stop_all(t_r,'2RDM not symmetric')
+!                        endif
+!                        if(abs(RDM(i,j,k,l)-RDM(j,i,l,k)).gt.1.0e-7_dp) then
+!                            write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
+!                            write(6,*) "RDM(j,i,l,k): ",RDM(j,i,l,k)
+!                            call stop_all(t_r,'2RDM not symmetric')
+!                        endif
+!                        if(abs(RDM(i,j,k,l)-RDM(k,l,i,j)).gt.1.0e-7_dp) then
+!                            write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
+!                            write(6,*) "RDM(k,l,i,j): ",RDM(k,l,i,j)
+!                            call stop_all(t_r,'2RDM not symmetric')
+!                        endif
+!                        if(abs(RDM(i,j,k,l)+RDM(l,k,i,j)).gt.1.0e-7_dp) then
+!                            write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
+!                            write(6,*) "RDM(l,k,i,j): ",RDM(l,k,i,j)
+!                            call stop_all(t_r,'2RDM not symmetric')
+!                        endif
+!                        if(abs(RDM(i,j,k,l)+RDM(k,l,j,i)).gt.1.0e-7_dp) then
+!                            write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
+!                            write(6,*) "RDM(k,l,j,i): ",RDM(k,l,j,i)
+!                            call stop_all(t_r,'2RDM not symmetric')
+!                        endif
+!                        if(abs(RDM(i,j,k,l)-RDM(l,k,j,i)).gt.1.0e-7_dp) then
+!                            write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
+!                            write(6,*) "RDM(l,k,j,i): ",RDM(l,k,j,i)
+!                            call stop_all(t_r,'2RDM not symmetric')
+!                        endif
+!                    enddo
+!                enddo
+!            enddo
+!        enddo
 
     end subroutine FindFull2RDM
 
