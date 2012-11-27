@@ -185,6 +185,29 @@ module solvers
                 enddo
             enddo
 
+            do i=1,EmbSize
+                do j=1,EmbSize
+                    do k=1,EmbSize
+                        do l=1,EmbSize
+                            if(abs(RDM(i,j,k,l)-RDM(k,l,i,j)).gt.1.0e-7_dp) then
+                                write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
+                                write(6,*) "RDM(k,l,i,j): ",RDM(k,l,i,j)
+                                call stop_all(t_r,'2RDM not symmetric')
+                            endif
+                            if(abs(RDM(i,j,k,l)-RDM(j,i,l,k)).gt.1.0e-7_dp) then
+                                write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
+                                write(6,*) "RDM(j,i,l,k): ",RDM(j,i,l,k)
+                                call stop_all(t_r,'2RDM not symmetric')
+                            endif
+                            if(abs(RDM(i,j,k,l)-RDM(l,k,j,i)).gt.1.0e-7_dp) then
+                                write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
+                                write(6,*) "RDM(l,k,j,i): ",RDM(l,k,j,i)
+                                call stop_all(t_r,'2RDM not symmetric')
+                            endif
+                        enddo
+                    enddo
+                enddo
+            enddo
 
             !Check that 2RDM is correct by explicitly calculating the two-electron contribution to the FCI energy from the 2RDM
             !We only need to check the iiii components over the impurity sites ONLY
@@ -890,49 +913,6 @@ module solvers
             enddo
         enddo
 
-!        do i=1,EmbSize
-!            do j=1,EmbSize
-!                do k=1,EmbSize
-!                    do l=1,EmbSize
-!                        if(abs(RDM(i,j,k,l)+RDM(j,i,k,l)).gt.1.0e-7_dp) then
-!                            write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
-!                            write(6,*) "RDM(j,i,k,l): ",RDM(j,i,k,l)
-!                            call stop_all(t_r,'2RDM not symmetric')
-!                        endif
-!                        if(abs(RDM(i,j,k,l)+RDM(i,j,l,k)).gt.1.0e-7_dp) then
-!                            write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
-!                            write(6,*) "RDM(i,j,l,k): ",RDM(i,j,l,k)
-!                            call stop_all(t_r,'2RDM not symmetric')
-!                        endif
-!                        if(abs(RDM(i,j,k,l)-RDM(j,i,l,k)).gt.1.0e-7_dp) then
-!                            write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
-!                            write(6,*) "RDM(j,i,l,k): ",RDM(j,i,l,k)
-!                            call stop_all(t_r,'2RDM not symmetric')
-!                        endif
-!                        if(abs(RDM(i,j,k,l)-RDM(k,l,i,j)).gt.1.0e-7_dp) then
-!                            write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
-!                            write(6,*) "RDM(k,l,i,j): ",RDM(k,l,i,j)
-!                            call stop_all(t_r,'2RDM not symmetric')
-!                        endif
-!                        if(abs(RDM(i,j,k,l)+RDM(l,k,i,j)).gt.1.0e-7_dp) then
-!                            write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
-!                            write(6,*) "RDM(l,k,i,j): ",RDM(l,k,i,j)
-!                            call stop_all(t_r,'2RDM not symmetric')
-!                        endif
-!                        if(abs(RDM(i,j,k,l)+RDM(k,l,j,i)).gt.1.0e-7_dp) then
-!                            write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
-!                            write(6,*) "RDM(k,l,j,i): ",RDM(k,l,j,i)
-!                            call stop_all(t_r,'2RDM not symmetric')
-!                        endif
-!                        if(abs(RDM(i,j,k,l)-RDM(l,k,j,i)).gt.1.0e-7_dp) then
-!                            write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
-!                            write(6,*) "RDM(l,k,j,i): ",RDM(l,k,j,i)
-!                            call stop_all(t_r,'2RDM not symmetric')
-!                        endif
-!                    enddo
-!                enddo
-!            enddo
-!        enddo
 
     end subroutine FindFull2RDM
 
