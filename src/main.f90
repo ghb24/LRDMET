@@ -27,11 +27,11 @@ call run_DMETcalc()
         tConstructFullSchmidtBasis = .true. 
         tMFResponse = .false. 
         tHalfFill = .true. 
-        nSites = 32  
+        nSites = 12  
         LatticeDim = 1
         nImp = 1
-        StartU = 0.0_dp
-        EndU = 0.1_dp
+        StartU = 1.0_dp
+        EndU = 1.1_dp
         UStep = 0.2_dp
         tPeriodic = .false.
         tAntiPeriodic = .true. 
@@ -39,7 +39,7 @@ call run_DMETcalc()
         tDiagFullSystem = .false.
 !        tCompleteDiag = tMFResponse
         tCompleteDiag = .true. 
-        tGSFCI = .false. !.not.tMFResponse
+        tGSFCI = .not.tCompleteDiag 
         Start_Omega = 0.0_dp
         End_Omega = 5.0_dp
         Omega_Step = 0.001_dp
@@ -165,7 +165,7 @@ call run_DMETcalc()
 !                    endif
 
                     !Construct the two electron integrals in the system, and solve embedded system with high-level method
-                    call SolveSystem(.false.)
+                    call SolveSystem(.true.)
 
                     if(tLR_DMET) then
                         call MR_LinearResponse()

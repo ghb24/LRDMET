@@ -11,9 +11,10 @@ module solvers
     !tConverged means that the DMET is converged, and this is the last run, so calculate the 2RDM for other properties
     subroutine SolveSystem(tCreate2RDM)
         use utils, only: get_free_unit 
+        use DetToolsData, only: FCIDetList,nFCIDet
         implicit none
         logical, intent(in) :: tCreate2RDM
-        integer :: pSpaceDim,i,iunit,j!,Pivots(4),info
+        integer :: pSpaceDim,i,iunit,j,k,l!,Pivots(4),info
         character(len=256) :: cmd
         character(len=128) :: cmd3
         character(len=73) :: cmd2
@@ -22,6 +23,8 @@ module solvers
         real(dp) :: Emb_nElec!,DD_Response,ZerothH(4,4)
 !        real(dp), allocatable :: FullH1(:,:),LR_State(:)
 !        real(dp) ::DDOT,Overlap
+        real(dp) :: Check2eEnergy,trace
+        real(dp), allocatable :: HL_2RDM_temp(:,:)
         character(len=*), parameter :: t_r="SolveSystem"
 
         !Set the correlation potential to zero over the impurity, since we do not need to include the fitted potential over the 
@@ -106,12 +109,46 @@ module solvers
             close(iunit)
 !            call writematrix(HL_1RDM,'FCI 1RDM',.true.)
 
-            if(tCreate2RDM) call stop_all(t_r,"Work out how to read in 2RDM")
+            if(tCreate2RDM) then
+                write(6,*) "Creating 2RDM over impurity system..."
+                if(allocated(HL_2RDM)) deallocate(HL_2RDM)
+                allocate(HL_2RDM(EmbSize,EmbSize,EmbSize,EmbSize))  !< i^+ j^+ k l >
+                allocate(HL_2RDM_temp(EmbSize*EmbSize,EmbSize*EmbSize))  !< i^+ j k^+ l >
+                HL_2RDM(:,:,:,:) = 0.0_dp
+                HL_2RDM_temp(:,:) = 0.0_dp
+                iunit = get_free_unit()
+                open(iunit,file='FCI2RDM',status='old')
+                read(iunit,*) cmd   !First line is a header
+                do i=1,EmbSize*EmbSize
+                    read(iunit,*) HL_2RDM_temp(:,i)
+                enddo
+                close(iunit)
+                !We now have a matrix, but we want to change it to the format we want.
+                !HL_2RDM(i,j,k,l) = G_ij^kl = < k^+ l^+ j i >
+                do i=1,EmbSize
+                    do j=1,EmbSize
+                        do k=1,EmbSize
+                            do l=1,EmbSize
+
+                                HL_2RDM(i,j,k,l) = HL_2RDM(i,j,k,l) + HL_2RDM_temp(((j-1)*EmbSize)+k,((i-1)*EmbSize)+l)
+
+                                if(j.eq.l) then
+                                    HL_2RDM(i,j,k,l) = HL_2RDM(i,j,k,l) - HL_1RDM(k,i)
+                                endif
+
+                            enddo
+                        enddo
+                    enddo
+                enddo
+                deallocate(HL_2RDM_temp)
+
+            endif
+
         elseif(tCompleteDiag) then
             !Do a complete diagonalization
             !Do not need to write FCIDUMP, since would only read it back in...
 
-            call CompleteDiag()
+            call CompleteDiag(tCreate2RDM)
         endif
 
         call writematrix(HL_1RDM,'HL_1RDM',.true.)
@@ -128,6 +165,70 @@ module solvers
 
         !The two electron contribution to the embedded system energy is just the FCI result - the 1e energy
         Two_ElecE = HL_Energy - One_ElecE
+
+        if(tCreate2RDM) then
+
+            if(tCompleteDiag) then
+                write(6,*) "FCI determinant GS: "
+                do i=1,nFCIDet
+                    write(6,*) FCIDetList(:,i),FullHamil(i,1)
+                enddo
+            endif
+
+            !Write out the 2 electron RDM
+            do i=1,EmbSize
+                do j=1,EmbSize
+                    do k=1,EmbSize
+                        do l=1,EmbSize
+                            write(6,*) "RDM: ",i,j,k,l,HL_2RDM(i,j,k,l)
+                        enddo
+                    enddo
+                enddo
+            enddo
+
+
+            !Check that 2RDM is correct by explicitly calculating the two-electron contribution to the FCI energy from the 2RDM
+            !We only need to check the iiii components over the impurity sites ONLY
+            Check2eEnergy = 0.0_dp
+            do i=1,nImp
+                Check2eEnergy = Check2eEnergy + U*HL_2RDM(i,i,i,i)
+            enddo
+            Check2eEnergy = Check2eEnergy / 2.0_dp
+            if(abs(Check2eEnergy-Two_ElecE).gt.1.0e-7_dp) then
+                write(6,*) "Check2eEnergy: ",Check2eEnergy
+                write(6,*) "Two_ElecE: ",Two_ElecE
+                call stop_all(t_r,'2RDM calculated incorrectly')
+            endif
+
+            !Also check that trace condition is satisfied
+            trace = 0.0_dp
+            do i=1,EmbSize
+                do j=1,EmbSize
+                    trace = trace + HL_2RDM(i,j,j,i)
+                enddo
+            enddo
+            if(abs(trace-real(elec*(elec-1),dp)).gt.1.0e-8_dp) then
+                write(6,*) "trace: ",trace
+                write(6,*) "elec*(elec-1): ",elec*(elec-1)
+                call stop_all(t_r,'2RDM trace condition incorrect')
+            endif
+
+            !Now check that it reduced correctly down to the 1RDM
+            do i=1,EmbSize
+                do j=1,EmbSize
+                    trace = 0.0_dp
+                    do k=1,EmbSize
+                        trace = trace + HL_2RDM(i,k,k,j)
+                    enddo
+                    if(abs(trace-((elec-1)*HL_1RDM(i,j))).gt.1.0e-8_dp) then
+                        write(6,*) "Reduced 2RDM component: ",trace
+                        write(6,*) "(elec-1)*HL_1RDM(i,j): ",(elec-1)*HL_1RDM(i,j)
+                        call stop_all(t_r,'2RDM does not reduce to 1RDM appropriately')
+                    endif
+                enddo
+            enddo
+
+        endif
             
         !We only want to calculate the energy over the impurity site, along with the coupling to the bath.
         !Calculate one-electron energy contributions only over the impurity
@@ -508,9 +609,10 @@ module solvers
     end subroutine DiagFullSystem
 
 !Generate all determinants in the FCI space and do complete diagonalization
-    subroutine CompleteDiag()
+    subroutine CompleteDiag(tCreate2RDM)
         use DetToolsData
         implicit none
+        logical, intent(in) :: tCreate2RDM
         integer :: OrbPairs,UMatSize,umatind
         real(dp), allocatable :: work(:)
         integer :: lwork,info,i,j
@@ -581,6 +683,13 @@ module solvers
 
         call writematrix(HL_1RDM,'HL_1RDM',.true.)
 
+        if(tCreate2RDM) then
+            if(allocated(HL_2RDM)) deallocate(HL_2RDM)
+            allocate(HL_2RDM(EmbSize,EmbSize,EmbSize,EmbSize))
+            HL_2RDM(:,:,:,:) = 0.0_dp
+            call FindFull2RDM(1,1,HL_2RDM)
+        endif
+
     end subroutine CompleteDiag
 
     subroutine FindFull1RDM(StateBra,StateKet,RDM)
@@ -590,7 +699,7 @@ module solvers
         integer , intent(in) :: StateBra,StateKet
         integer :: Ex(2),gtid,i,j,k,IC,iGetExcitLevel
         logical :: tSign
-        character(len=*), parameter :: t_r='Error here'
+        character(len=*), parameter :: t_r='FindFull1RDM'
 
         RDM(:,:) = 0.0_dp
 
@@ -629,6 +738,167 @@ module solvers
 
     end subroutine FindFull1RDM
 
+    subroutine FindFull2RDM(StateBra,StateKet,RDM)
+        use DetToolsData, only: FCIDetList,nFCIDet
+        implicit none
+        real(dp) , intent(out) :: RDM(EmbSize,EmbSize,EmbSize,EmbSize)
+        integer , intent(in) :: StateBra,StateKet
+        integer :: Ex(2,2),gtid,i,j,k,IC,iGetExcitLevel,kel,lel,l
+        logical :: tSign
+        character(len=*), parameter :: t_r='FindFull2RDM'
+
+        RDM(:,:,:,:) = 0.0_dp
+
+        do i=1,nFCIDet
+            do j=1,nFCIDet
+                IC = iGetExcitLevel(FCIDetList(:,i),FCIDetList(:,j),Elec)
+                if(IC.eq.2) then
+                    !Connected by a single
+                    Ex(1,1) = 2
+                    call GetExcitation(FCIDetList(:,i),FCIDetList(:,j),Elec,Ex,tSign)
+                    if(tSign) then
+                        RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(2,1))) =  &
+                            RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(2,1))) -  &
+                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                        RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,2)),gtid(Ex(2,1))) =  &
+                            RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,2)),gtid(Ex(2,1))) +  &
+                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                        RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,1)),gtid(Ex(2,2))) =  &
+                            RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,1)),gtid(Ex(2,2))) +  &
+                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                        RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(2,2))) =  &
+                            RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(2,2))) -  &
+                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                    else
+                        RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(2,1))) =  &
+                            RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(2,1))) +  &
+                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                        RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,2)),gtid(Ex(2,1))) =  &
+                            RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,2)),gtid(Ex(2,1))) -  &
+                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                        RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,1)),gtid(Ex(2,2))) =  &
+                            RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,1)),gtid(Ex(2,2))) -  &
+                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                        RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(2,2))) =  &
+                            RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(2,2))) +  &
+                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                    endif
+                elseif(IC.eq.1) then
+                    !Connected by a single
+                    Ex(1,1) = 1
+                    call GetExcitation(FCIDetList(:,i),FCIDetList(:,j),Elec,Ex,tSign)
+                    do k=1,elec
+                        kel = gtid(FCIDetList(k,i))
+                        if(FCIDetList(k,i).ne.Ex(1,1)) then
+                            if(tSign) then
+                                RDM(gtid(Ex(1,1)),kel,gtid(Ex(2,1)),kel) = &
+                                    RDM(gtid(Ex(1,1)),kel,gtid(Ex(2,1)),kel) - &
+                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                RDM(kel,gtid(Ex(1,1)),gtid(Ex(2,1)),kel) = &
+                                    RDM(kel,gtid(Ex(1,1)),gtid(Ex(2,1)),kel) + &
+                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                RDM(gtid(Ex(1,1)),kel,kel,gtid(Ex(2,1))) = &
+                                    RDM(gtid(Ex(1,1)),kel,kel,gtid(Ex(2,1))) + &
+                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                RDM(kel,gtid(Ex(1,1)),kel,gtid(Ex(2,1))) = &
+                                    RDM(kel,gtid(Ex(1,1)),kel,gtid(Ex(2,1))) - &
+                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                            else
+                                RDM(gtid(Ex(1,1)),kel,gtid(Ex(2,1)),kel) = &
+                                    RDM(gtid(Ex(1,1)),kel,gtid(Ex(2,1)),kel) + &
+                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                RDM(kel,gtid(Ex(1,1)),gtid(Ex(2,1)),kel) = &
+                                    RDM(kel,gtid(Ex(1,1)),gtid(Ex(2,1)),kel) - &
+                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                RDM(gtid(Ex(1,1)),kel,kel,gtid(Ex(2,1))) = &
+                                    RDM(gtid(Ex(1,1)),kel,kel,gtid(Ex(2,1))) - &
+                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                RDM(kel,gtid(Ex(1,1)),kel,gtid(Ex(2,1))) = &
+                                    RDM(kel,gtid(Ex(1,1)),kel,gtid(Ex(2,1))) + &
+                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                            endif
+                        endif
+                    enddo
+                elseif(IC.eq.0) then
+                    !Same det
+                    Ex(1,1) = 0
+                    if(i.ne.j) call stop_all(t_r,'Error here')
+                    do k=1,Elec
+                        kel = gtid(FCIDetList(k,i))
+                        do l=1,Elec
+                            lel = gtid(FCIDetList(l,i))
+                            if(FCIDetList(k,i).eq.FCIDetList(l,i)) cycle
+
+                            if(i.eq.1) then
+                                write(6,*) "i = 1, filling: ",k,l,k,l,FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                write(6,*) "i = 1, filling: ",l,k,k,l,-FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                write(6,*) "i = 1, filling: ",k,l,l,k,-FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                write(6,*) "i = 1, filling: ",l,k,l,k,FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                            endif
+
+
+                            if(mod(FCIDetList(k,i),2).eq.mod(FCIDetList(l,2))) then
+                                RDM(kel,lel,kel,lel) = RDM(kel,lel,kel,lel) + &
+                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                            RDM(lel,kel,kel,lel) = RDM(lel,kel,kel,lel) - &
+                                FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                            RDM(kel,lel,lel,kel) = RDM(kel,lel,lel,kel) - &
+                                FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                            RDM(lel,kel,lel,kel) = RDM(lel,kel,lel,kel) + &
+                                FullHamil(i,StateBra)*FullHamil(j,StateKet)
+
+                        enddo
+                    enddo
+                endif
+
+            enddo
+        enddo
+
+        do i=1,EmbSize
+            do j=1,EmbSize
+                do k=1,EmbSize
+                    do l=1,EmbSize
+                        if(abs(RDM(i,j,k,l)+RDM(j,i,k,l)).gt.1.0e-7_dp) then
+                            write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
+                            write(6,*) "RDM(j,i,k,l): ",RDM(j,i,k,l)
+                            call stop_all(t_r,'2RDM not symmetric')
+                        endif
+                        if(abs(RDM(i,j,k,l)+RDM(i,j,l,k)).gt.1.0e-7_dp) then
+                            write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
+                            write(6,*) "RDM(i,j,l,k): ",RDM(i,j,l,k)
+                            call stop_all(t_r,'2RDM not symmetric')
+                        endif
+                        if(abs(RDM(i,j,k,l)-RDM(j,i,l,k)).gt.1.0e-7_dp) then
+                            write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
+                            write(6,*) "RDM(j,i,l,k): ",RDM(j,i,l,k)
+                            call stop_all(t_r,'2RDM not symmetric')
+                        endif
+                        if(abs(RDM(i,j,k,l)-RDM(k,l,i,j)).gt.1.0e-7_dp) then
+                            write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
+                            write(6,*) "RDM(k,l,i,j): ",RDM(k,l,i,j)
+                            call stop_all(t_r,'2RDM not symmetric')
+                        endif
+                        if(abs(RDM(i,j,k,l)+RDM(l,k,i,j)).gt.1.0e-7_dp) then
+                            write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
+                            write(6,*) "RDM(l,k,i,j): ",RDM(l,k,i,j)
+                            call stop_all(t_r,'2RDM not symmetric')
+                        endif
+                        if(abs(RDM(i,j,k,l)+RDM(k,l,j,i)).gt.1.0e-7_dp) then
+                            write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
+                            write(6,*) "RDM(k,l,j,i): ",RDM(k,l,j,i)
+                            call stop_all(t_r,'2RDM not symmetric')
+                        endif
+                        if(abs(RDM(i,j,k,l)-RDM(l,k,j,i)).gt.1.0e-7_dp) then
+                            write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
+                            write(6,*) "RDM(l,k,j,i): ",RDM(l,k,j,i)
+                            call stop_all(t_r,'2RDM not symmetric')
+                        endif
+                    enddo
+                enddo
+            enddo
+        enddo
+
+    end subroutine FindFull2RDM
 
     !This routine is horrifically written! Rewrite!
     subroutine CompleteDiag_old()

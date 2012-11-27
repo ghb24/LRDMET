@@ -57,7 +57,7 @@ module LinearResponse
         integer :: nLinearSystem,ierr,i,j,a,highbound,b,info,lwork,n,iunit
         integer :: i_spat,a_spat,gtid
         real(dp) :: CoreCoupling,CoreVirtualNorm,Omega,Res1,Res2,EDiff,ResponseFn 
-        real(dp) :: testham,testnorm
+        real(dp) :: testham,testnorm,trace
         real(dp), allocatable :: LinearSystem(:,:),temp(:,:),Work(:),W(:),Residues(:)
         real(dp), allocatable :: RDM1(:,:),RDM2(:,:)
         character(len=*), parameter :: t_r='NonIntContracted_TDA_MCLR'
@@ -70,6 +70,29 @@ module LinearResponse
         iunit = get_free_unit()
         open(unit=iunit,file='IC-TDA_DDResponse',status='unknown')
         write(iunit,"(A)") "# Frequency     DD_LinearResponse"
+        
+!        !Find full-space FCI 1RDM
+!        allocate(FCI_1RDM(nSites,nSites))
+!        call Calc1RDM(FullHamil(:,1),FullHamil(:,1),FCI_1RDM)
+!        do i=1,nImp*2
+!            do j=1,nImp*2
+!                if(abs(FCI_1RDM(i+nOcc-nImp,j+nOcc-nImp)-HL_1RDM(i,j)).gt.1.0e-7_dp) then
+!                    write(6,*) "FCI_1RDM: ",FCI_1RDM(i+nOcc-nImp,j+nOcc-nImp)
+!                    write(6,*) "HL_1RDM: ",HL_1RDM(i,j)
+!                    call stop_all(t_r,'1RDM not calculated correctly')
+!                endif
+!            enddo
+!        enddo
+!
+!        trace = 0.0_dp
+!        do i=1,nSites
+!            trace = trace + FCI_1RDM(i,i)
+!        enddo
+!        if(abs(trace-nel).gt.1.0e-7_dp) then
+!            write(6,*) "trace: ",trace
+!            write(6,*) "nel: ",nel
+!            call stop_all(t_r,'Trace of 1RDM incorrect')
+!        endif
 
         Omega = Start_Omega
         do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
@@ -83,7 +106,7 @@ module LinearResponse
             !This is simply the normal active space size, plus 1 fully contracted core-virtual excitation,
             !plus 2*nImp fully contracted core-active excitation, and 2*nImp fully contracted active-virtual 
             !excitations
-            nLinearSystem = nFCIDet+1 !+4*nImp just initially, do without the semi-internal excitations
+            nLinearSystem = nFCIDet+1+4*nImp !just initially, do without the semi-internal excitations
 
             !Test that we reduce to the non-interacting limit
             if(tNonIntTest) then
@@ -201,6 +224,18 @@ module LinearResponse
             enddo
 
             !Now for the semi-internal excitations
+            !First, creating a particle in the virtual manifold, for each annihilation in the active space
+!            do alpha=nOcc-nImp+1,nOcc+nImp
+!
+!                !First, find normalization for these functions
+!                norm = 0.0_dp
+!                do a=nOcc+nImp+1,nSites
+!                    norm = norm + SchmidtPert(a,alpha)*SchmidtPert(alpha,a)*FCI_1RDM(alpha,alpha)
+!                enddo
+
+                !Now the diagonal hamiltonian matrix element
+
+                    
 
             !Is there an overlap matrix we need?
             !call writematrix(SchmidtPert,'SchmidtPert',.true.)

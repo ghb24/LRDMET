@@ -63,6 +63,7 @@ module Globals
     real(dp) , allocatable :: Emb_h1(:,:)       !The response of the bath orbital to the perturbation in the embedding basis
     real(dp) , allocatable :: Emb_Pert(:,:)     !The perturbation in the embedding basis
     real(dp) , allocatable :: HL_1RDM(:,:)      !The high-level calculation of the 1RDM over the embedded system
+    real(dp) , allocatable :: HL_2RDM(:,:,:,:)  !The high-level calculation of the 2RDM over the embedded system
     real(dp) , allocatable :: Emb_Fock(:,:)     !The fock matrix in the embedded basis (h0 + v_loc (Emb_CorrPot) for hubbard)
     real(dp) , allocatable :: MFEmbOccs(:)      !The occupation numbers over the embedded system solved by the Emb_Fock
     real(dp) , allocatable :: vloc_change(:,:) !The change in the correlation potential over the impurity sites
