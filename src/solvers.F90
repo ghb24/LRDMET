@@ -226,7 +226,7 @@ module solvers
             trace = 0.0_dp
             do i=1,EmbSize
                 do j=1,EmbSize
-                    trace = trace + HL_2RDM(i,j,j,i)
+                    trace = trace + HL_2RDM(i,i,j,j)
                 enddo
             enddo
             if(abs(trace-real(elec*(elec-1),dp)).gt.1.0e-8_dp) then
@@ -240,7 +240,7 @@ module solvers
                 do j=1,EmbSize
                     trace = 0.0_dp
                     do k=1,EmbSize
-                        trace = trace + HL_2RDM(i,k,k,j)
+                        trace = trace + HL_2RDM(j,i,k,k)
                     enddo
                     if(abs(trace-((elec-1)*HL_1RDM(i,j))).gt.1.0e-8_dp) then
                         write(6,*) "Reduced 2RDM component: ",trace
