@@ -167,12 +167,12 @@ module solvers
 
         if(tCreate2RDM) then
 
-            if(tCompleteDiag) then
-                write(6,*) "FCI determinant GS: "
-                do i=1,nFCIDet
-                    write(6,*) FCIDetList(:,i),FullHamil(i,1)
-                enddo
-            endif
+            !if(tCompleteDiag) then
+            !    write(6,*) "FCI determinant GS: "
+            !    do i=1,nFCIDet
+            !        write(6,*) FCIDetList(:,i),FullHamil(i,1)
+            !    enddo
+            !endif
 
             !Write out the 2 electron RDM
             do i=1,EmbSize
@@ -250,6 +250,8 @@ module solvers
                 enddo
             enddo
         endif
+
+        call stop_all(t_r,'Finishing after 2RDM tests')
             
         !We only want to calculate the energy over the impurity site, along with the coupling to the bath.
         !Calculate one-electron energy contributions only over the impurity
@@ -788,9 +790,9 @@ module solvers
                             tSign = .not.tSign
                         endif
                     endif
-                    if(gtid(Ex(1,1)).eq.1.and.gtid(Ex(2,1)).eq.1.and.gtid(Ex(1,2)).eq.2.and.gtid(Ex(2,2)).eq.2) then
-                        write(6,*) "contrib (11,22): ",i,j,tSign,FullHamil(i,StateBra)*FullHamil(j,StateKet)
-                    endif
+                    !if(gtid(Ex(1,1)).eq.1.and.gtid(Ex(2,1)).eq.1.and.gtid(Ex(1,2)).eq.2.and.gtid(Ex(2,2)).eq.2) then
+                    !    write(6,*) "contrib (11,22): ",i,j,tSign,FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                    !endif
                     if(tSign) then
                         RDM(gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2))) =  &
                             RDM(gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2))) -  &
@@ -798,18 +800,6 @@ module solvers
                         RDM(gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1))) =  &
                             RDM(gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1))) -  &
                             FullHamil(i,StateBra)*FullHamil(j,StateKet)
-!                        RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(2,1))) =  &
-!                            RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(2,1))) -  &
-!                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
-!                        RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,2)),gtid(Ex(2,1))) =  &
-!                            RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,2)),gtid(Ex(2,1))) +  &
-!                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
-!                        RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,1)),gtid(Ex(2,2))) =  &
-!                            RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,1)),gtid(Ex(2,2))) +  &
-!                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
-!                        RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(2,2))) =  &
-!                            RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(2,2))) -  &
-!                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
                     else
                         RDM(gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2))) =  &
                             RDM(gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2))) +  &
@@ -817,18 +807,6 @@ module solvers
                         RDM(gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1))) =  &
                             RDM(gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1))) +  &
                             FullHamil(i,StateBra)*FullHamil(j,StateKet)
-!                        RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(2,1))) =  &
-!                            RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(2,1))) +  &
-!                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
-!                        RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,2)),gtid(Ex(2,1))) =  &
-!                            RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,2)),gtid(Ex(2,1))) -  &
-!                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
-!                        RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,1)),gtid(Ex(2,2))) =  &
-!                            RDM(gtid(Ex(1,1)),gtid(Ex(1,2)),gtid(Ex(2,1)),gtid(Ex(2,2))) -  &
-!                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
-!                        RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(2,2))) =  &
-!                            RDM(gtid(Ex(1,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(2,2))) +  &
-!                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
                     endif
                 elseif(IC.eq.1) then
                     !Connected by a single
@@ -838,36 +816,17 @@ module solvers
                         kel = gtid(FCIDetList(k,i))
 
                         if(FCIDetList(k,i).ne.Ex(1,1)) then
-                            if(kel.eq.1.and.gtid(Ex(2,1)).eq.2.and.gtid(Ex(1,1)).gt.2) then
-                                write(6,*) "contrib (11,22): ",i,j,tSign,FullHamil(i,StateBra)*FullHamil(j,StateKet)
-                            endif
+                            !if(kel.eq.1.and.gtid(Ex(2,1)).eq.2.and.gtid(Ex(1,1)).gt.2) then
+                            !    write(6,*) "contrib (11,22): ",i,j,tSign,FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                            !endif
                             if(tSign) then
-                                !RDM(gtid(Ex(2,1)),kel,kel,gtid(Ex(1,1))) = &
-                                !    RDM(gtid(Ex(2,1)),kel,kel,gtid(Ex(1,1))) - &
-                                !    FullHamil(i,StateBra)*FullHamil(j,StateKet)
                                 RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) = &
                                     RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) - &
                                     FullHamil(i,StateBra)*FullHamil(j,StateKet)
                                 RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) = &
                                     RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) - &
                                     FullHamil(i,StateBra)*FullHamil(j,StateKet)
-
-!                                RDM(gtid(Ex(1,1)),kel,gtid(Ex(2,1)),kel) = &
-!                                    RDM(gtid(Ex(1,1)),kel,gtid(Ex(2,1)),kel) - &
-!                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
-!                                RDM(kel,gtid(Ex(1,1)),gtid(Ex(2,1)),kel) = &
-!                                    RDM(kel,gtid(Ex(1,1)),gtid(Ex(2,1)),kel) + &
-!                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
-!                                RDM(gtid(Ex(1,1)),kel,kel,gtid(Ex(2,1))) = &
-!                                    RDM(gtid(Ex(1,1)),kel,kel,gtid(Ex(2,1))) + &
-!                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
-!                                RDM(kel,gtid(Ex(1,1)),kel,gtid(Ex(2,1))) = &
-!                                    RDM(kel,gtid(Ex(1,1)),kel,gtid(Ex(2,1))) - &
-!                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
                             else
-                                !RDM(gtid(Ex(2,1)),kel,kel,gtid(Ex(1,1))) = &
-                                !    RDM(gtid(Ex(2,1)),kel,kel,gtid(Ex(1,1))) + &
-                                !    FullHamil(i,StateBra)*FullHamil(j,StateKet)
                                 RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) = &
                                     RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) + &
                                     FullHamil(i,StateBra)*FullHamil(j,StateKet)
@@ -875,18 +834,6 @@ module solvers
                                     RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) + &
                                     FullHamil(i,StateBra)*FullHamil(j,StateKet)
 !
-!                                RDM(gtid(Ex(1,1)),kel,gtid(Ex(2,1)),kel) = &
-!                                    RDM(gtid(Ex(1,1)),kel,gtid(Ex(2,1)),kel) + &
-!                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
-!                                RDM(kel,gtid(Ex(1,1)),gtid(Ex(2,1)),kel) = &
-!                                    RDM(kel,gtid(Ex(1,1)),gtid(Ex(2,1)),kel) - &
-!                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
-!                                RDM(gtid(Ex(1,1)),kel,kel,gtid(Ex(2,1))) = &
-!                                    RDM(gtid(Ex(1,1)),kel,kel,gtid(Ex(2,1))) - &
-!                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
-!                                RDM(kel,gtid(Ex(1,1)),kel,gtid(Ex(2,1))) = &
-!                                    RDM(kel,gtid(Ex(1,1)),kel,gtid(Ex(2,1))) + &
-!                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
                             endif
                         endif
                     enddo
@@ -899,9 +846,9 @@ module solvers
                         do l=1,Elec
                             lel = gtid(FCIDetList(l,i))
                             if(FCIDetList(k,i).eq.FCIDetList(l,i)) cycle
-                            if(kel.eq.1.and.lel.eq.2) then
-                                write(6,*) "contrib (11,22): ",i,FullHamil(i,StateBra)*FullHamil(j,StateKet)
-                            endif
+                            !if(kel.eq.1.and.lel.eq.2) then
+                            !    write(6,*) "contrib (11,22): ",i,FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                            !endif
 
                             RDM(kel,kel,lel,lel) = RDM(kel,kel,lel,lel) + &
                                 FullHamil(i,StateBra)*FullHamil(j,StateKet)
