@@ -130,7 +130,7 @@ module solvers
                         do k=1,EmbSize
                             do l=1,EmbSize
 
-                                HL_2RDM(i,j,k,l) = HL_2RDM(i,j,k,l) + HL_2RDM_temp(((i-1)*EmbSize)+j,((k-1)*EmbSize)+l)
+                                HL_2RDM(i,j,k,l) = HL_2RDM(i,j,k,l) + HL_2RDM_temp(((k-1)*EmbSize)+l,((i-1)*EmbSize)+j)
 
                                 if(j.eq.k) then
                                     HL_2RDM(i,j,k,l) = HL_2RDM(i,j,k,l) - HL_1RDM(i,l)
@@ -189,19 +189,19 @@ module solvers
                 do j=1,EmbSize
                     do k=1,EmbSize
                         do l=1,EmbSize
-                            if(abs(RDM(i,j,k,l)-RDM(k,l,i,j)).gt.1.0e-7_dp) then
-                                write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
-                                write(6,*) "RDM(k,l,i,j): ",RDM(k,l,i,j)
+                            if(abs(HL_2RDM(i,j,k,l)-HL_2RDM(k,l,i,j)).gt.1.0e-7_dp) then
+                                write(6,*) "RDM(i,j,k,l): ",HL_2RDM(i,j,k,l)
+                                write(6,*) "RDM(k,l,i,j): ",HL_2RDM(k,l,i,j)
                                 call stop_all(t_r,'2RDM not symmetric')
                             endif
-                            if(abs(RDM(i,j,k,l)-RDM(j,i,l,k)).gt.1.0e-7_dp) then
-                                write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
-                                write(6,*) "RDM(j,i,l,k): ",RDM(j,i,l,k)
+                            if(abs(HL_2RDM(i,j,k,l)-HL_2RDM(j,i,l,k)).gt.1.0e-7_dp) then
+                                write(6,*) "RDM(i,j,k,l): ",HL_2RDM(i,j,k,l)
+                                write(6,*) "RDM(j,i,l,k): ",HL_2RDM(j,i,l,k)
                                 call stop_all(t_r,'2RDM not symmetric')
                             endif
-                            if(abs(RDM(i,j,k,l)-RDM(l,k,j,i)).gt.1.0e-7_dp) then
-                                write(6,*) "RDM(i,j,k,l): ",RDM(i,j,k,l)
-                                write(6,*) "RDM(l,k,j,i): ",RDM(l,k,j,i)
+                            if(abs(HL_2RDM(i,j,k,l)-HL_2RDM(l,k,j,i)).gt.1.0e-7_dp) then
+                                write(6,*) "RDM(i,j,k,l): ",HL_2RDM(i,j,k,l)
+                                write(6,*) "RDM(l,k,j,i): ",HL_2RDM(l,k,j,i)
                                 call stop_all(t_r,'2RDM not symmetric')
                             endif
                         enddo

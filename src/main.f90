@@ -29,7 +29,7 @@ call run_DMETcalc()
         tHalfFill = .true. 
         nSites = 12  
         LatticeDim = 1
-        nImp = 1
+        nImp = 2
         StartU = 1.0_dp
         EndU = 1.1_dp
         UStep = 0.2_dp
