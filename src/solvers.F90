@@ -741,7 +741,6 @@ module solvers
                     endif
                 elseif(IC.eq.0) then
                     !Same det
-                    Ex(1) = 0
                     if(i.ne.j) call stop_all(t_r,'Error here')
                     do k=1,Elec
                         RDM(gtid(FCIDetList(k,i)),gtid(FCIDetList(k,i))) = RDM(gtid(FCIDetList(k,i)),gtid(FCIDetList(k,i))) &

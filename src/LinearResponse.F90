@@ -71,29 +71,6 @@ module LinearResponse
         open(unit=iunit,file='IC-TDA_DDResponse',status='unknown')
         write(iunit,"(A)") "# Frequency     DD_LinearResponse"
         
-!        !Find full-space FCI 1RDM
-!        allocate(FCI_1RDM(nSites,nSites))
-!        call Calc1RDM(FullHamil(:,1),FullHamil(:,1),FCI_1RDM)
-!        do i=1,nImp*2
-!            do j=1,nImp*2
-!                if(abs(FCI_1RDM(i+nOcc-nImp,j+nOcc-nImp)-HL_1RDM(i,j)).gt.1.0e-7_dp) then
-!                    write(6,*) "FCI_1RDM: ",FCI_1RDM(i+nOcc-nImp,j+nOcc-nImp)
-!                    write(6,*) "HL_1RDM: ",HL_1RDM(i,j)
-!                    call stop_all(t_r,'1RDM not calculated correctly')
-!                endif
-!            enddo
-!        enddo
-!
-!        trace = 0.0_dp
-!        do i=1,nSites
-!            trace = trace + FCI_1RDM(i,i)
-!        enddo
-!        if(abs(trace-nel).gt.1.0e-7_dp) then
-!            write(6,*) "trace: ",trace
-!            write(6,*) "nel: ",nel
-!            call stop_all(t_r,'Trace of 1RDM incorrect')
-!        endif
-
         Omega = Start_Omega
         do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
 
@@ -223,17 +200,92 @@ module LinearResponse
                 LinearSystem(nFCIDet+1,i) = LinearSystem(i,nFCIDet+1)   !Hermiticity
             enddo
 
-            !Now for the semi-internal excitations
+            !*****************************************************************************************
+            !Now for the active-virtual semi-internal excitations
+            !*****************************************************************************************
+            !Precompute the normalization constants for each semi-internal excitation
+            allocate(ActiveVirtualNorm(nOcc-nImp+1:nOcc+nImp))
+            ActiveVirtualNorm(:) = 0.0_dp
+            do alpha = nOcc-nImp+1,nOcc+nImp
+                do a=nOcc+nImp+1,nSites
+                    ActiveVirtualNorm(alpha) = ActiveVirtualNorm(alpha) +   &
+                        SchmidtPert(a,alpha)*SchmidtPert(alpha,a)*HL_1RDM(alpha-nOcc+nImp,alpha-nOcc+nImp)
+                enddo
+            enddo
             !First, creating a particle in the virtual manifold, for each annihilation in the active space
-!            do alpha=nOcc-nImp+1,nOcc+nImp
-!
-!                !First, find normalization for these functions
-!                norm = 0.0_dp
-!                do a=nOcc+nImp+1,nSites
-!                    norm = norm + SchmidtPert(a,alpha)*SchmidtPert(alpha,a)*FCI_1RDM(alpha,alpha)
-!                enddo
+            ExcitInd = nFCIDet + 1
+            do alpha=nOcc-nImp+1,nOcc+nImp
+                ExcitInd = ExcitInd + 1
 
                 !Now the diagonal hamiltonian matrix element
+                do a = nOcc+nImp+1,nSites
+                    do b = nOcc+nImp+1,nSites
+                        LinearSystem(ExcitInd,ExcitInd) = LinearSystem(ExcitInd,ExcitInd) +     &
+                          SchmidtPert(a,alpha)*SchmidtPert(b,alpha)*FockSchmidt(b,a)*HL_1RDM(alpha-nOcc+nImp,alpha-nOcc+nImp)
+                    enddo
+                enddo
+                do i = 1,nOcc-nImp
+                    do a = nOcc+nImp+1,nSites
+                        LinearSystem(ExcitInd,ExcitInd) = LinearSystem(ExcitInd,ExcitInd) +     &
+                          2.0_dp*SchmidtPert(a,alpha)*SchmidtPert(a,alpha)*FockSchmidt(i,i)*    &
+                          HL_1RDM(alpha-nOcc+nImp,alpha-nOcc+nImp)
+                    enddo
+                enddo
+                do a = nOcc+nImp+1,nSites
+                    do beta = nOcc-nImp+1,nOcc+nImp
+                        do gam = nOcc-nImp+1,nOcc+nImp
+                            LinearSystem(ExcitInd,ExcitInd) = LinearSystem(ExcitInd,ExcitInd) +     &
+                            SchmidtPert(a,alpha)*SchmidtPert(a,alpha)*FockSchmidt(beta,gam)*
+                            HL_2RDM(alpha-nOcc+nImp,alpha-nOcc+nImp,beta-nOcc+nImp,gam-nOcc+nImp)
+                        enddo
+                    enddo
+                enddo
+                !Now add 2electron energy TODO: **** THIS IS NOT CORRECT **** Should be using 3RDMs BOOO...
+                LinearSystem(ExcitInd,ExcitInd) = LinearSystem(ExcitInd,ExcitInd) + Two_ElecE 
+                !Normalize
+                LinearSystem(ExcitInd,ExcitInd) = LinearSystem(ExcitInd,ExcitInd)/ActiveVirtualNorm(alpha)
+
+                !Now for the coupling to the determinant space (dj)
+                !Do very inefficiently - can optimize this a lot!
+                do dj = 1,nFCIDet
+                    !Calculate a transition matrix
+                    !Find <Dj|p^+q|0> if tGSKet=T, or the other way around if false.
+                    !det is the label to the single determinant function Dj
+                    call FindDeterminantTransRDM(dj,Trans1RDM_ket,.true.)
+                    call FindDeterminantTransRDM(dj,Trans1RDM_bra,.false.)
+
+                    do a = nOcc+nImp+1,nSites
+                        do beta = nOcc-nImp+1,nOcc+nImp
+                            LinearSystem(ExcitInd,dj) = LinearSystem(ExcitInd,dj) + SchmidtPert(a,alpha)* &
+                                FockSchmidt(beta,a)*Trans1RDM_ket(beta-nOcc+nImp,alpha-nOcc+nImp)
+                            LinearSystem(dj,ExcitInd) = LinearSystem(dj,ExcitInd) + SchmidtPert(a,alpha)* &
+                                FockSchmidt(beta,a)*Trans1RDM_bra(alpha-nOcc+nImp,beta-nOcc+nImp)
+                        enddo
+                    enddo
+                    LinearSystem(ExcitInd,dj) = LinearSystem(ExcitInd,dj)/sqrt(ActiveVirtualNorm(alpha))
+                    LinearSystem(dj,ExcitInd) = LinearSystem(dj,ExcitInd)/sqrt(ActiveVirtualNorm(alpha))
+                enddo
+
+                !Now, for the coupling to the strongly contracted excitation
+                do i = 1,nOcc-nImp
+                    do a = nOcc+nImp+1,nSites
+                        do beta = nOcc-nImp+1,nOcc+nImp
+                            LinearSystem(ExcitInd,nFCIDet+1) = LinearSystem(ExcitInd,nFCIDet+1) + &
+                                2.0_dp*SchmidtPert(a,i)*SchmidtPert(a,alpha)*FockSchmidt(i,beta)* &
+                                HL_1RDM(alpha-nOcc+nImp,beta-nOcc+nImp)
+                         enddo
+                     enddo
+                 enddo
+                 LinearSystem(ExcitInd,nFCIDet+1) = LinearSystem(ExcitInd,nFCIDet+1) /  &
+                    sqrt(CoreVirtualNorm*ActiveVirtualNorm(alpha))
+                 LinearSystem(nFCIDet+1,ExcitInd) = LinearSystem(ExcitInd,nFCIDet+1)
+
+                 !Now for the coupling to the other semi-internal excitations
+
+             enddo  !Finish looping over active-virtual semi-internal excitations
+             deallocate(ActiveVirtualNorm)
+
+
 
                     
 
@@ -387,6 +439,44 @@ module LinearResponse
         if(tNonIntTest) call stop_all(t_r,'End of NonInt test')
 
     end subroutine NonIntContracted_TDA_MCLR
+            
+    !Find <Dj|p^+q|0> if tGSKet=T, or the other way around if false.
+    !det is the label to the single determinant function Dj
+    subroutine FindDeterminantTransRDM(det,Trans1RDM,tGSKet)
+        implicit none
+        integer, intent(in) :: det
+        logical, intent(in) :: tGSKet
+        real(dp), intent(out) :: Trans1RDM(EmbSize,EmbSize)
+        integer :: IC,Ex(2),i
+        character(len=*), parameter :: t_r='FindDeterminantTransRDM'
+
+        Trans1RDM(:,:) = 0.0_dp
+
+        do i=1,nFCIDet
+            IC = iGetExcitLevel(FCIDetList(:,i),FCIDetList(:,det),Elec)
+            if(IC.eq.1) then
+                Ex(1) = 1
+                if(tGSKet) then
+                    call GetExcitation(FCIDetList(:,i),FCIDetList(:,det),Elec,Ex,tSign)
+                else
+                    call GetExcitation(FCIDetList(:,det),FCIDetList(:,i),Elec,Ex,tSign)
+                endif
+                if(tSign) then
+                    Trans1RDM(gtid(Ex(1)),gtid(Ex(2))) = Trans1RDM(gtid(Ex(1)),gtid(Ex(2))) - FullHamil(i,1)
+                else
+                    Trans1RDM(gtid(Ex(1)),gtid(Ex(2))) = Trans1RDM(gtid(Ex(1)),gtid(Ex(2))) + FullHamil(i,1)
+                endif
+            elseif(IC.eq.0) then
+                !Same det
+                if(i.ne.det) call stop_all(t_r,'Error here')
+                do k=1,Elec
+                    Trans1RDM(gtid(FCIDetList(k,i)),gtid(FCIDetList(k,i))) = Trans1RDM(gtid(FCIDetList(k,i)),gtid(FCIDetList(k,i))) &
+                        + FullHamil(i,1)
+                enddo
+            endif
+        enddo
+
+    end subroutine FindDeterminantTransRDM
 
     !Calculate the (transition) 1RDM.
     !Do this very naively to start with.
