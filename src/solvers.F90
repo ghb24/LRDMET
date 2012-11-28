@@ -166,24 +166,25 @@ module solvers
         Two_ElecE = HL_Energy - One_ElecE
 
         if(tCreate2RDM) then
+            !Do some tests to make sure we have the right 2RDM
 
-            !if(tCompleteDiag) then
-            !    write(6,*) "FCI determinant GS: "
-            !    do i=1,nFCIDet
-            !        write(6,*) FCIDetList(:,i),FullHamil(i,1)
-            !    enddo
-            !endif
-
-            !Write out the 2 electron RDM
-            do i=1,EmbSize
-                do j=1,EmbSize
-                    do k=1,EmbSize
-                        do l=1,EmbSize
-                            write(6,*) "RDM: ",i,j,k,l,HL_2RDM(i,j,k,l)
-                        enddo
-                    enddo
-                enddo
-            enddo
+!            if(tCompleteDiag) then
+!                write(6,*) "FCI determinant GS: "
+!                do i=1,nFCIDet
+!                    write(6,*) i,FCIDetList(:,i),FullHamil(i,1)
+!                enddo
+!            endif
+!
+!            !Write out the 2 electron RDM
+!            do i=1,EmbSize
+!                do j=1,EmbSize
+!                    do k=1,EmbSize
+!                        do l=1,EmbSize
+!                            write(6,*) "RDM: ",i,j,k,l,HL_2RDM(i,j,k,l)
+!                        enddo
+!                    enddo
+!                enddo
+!            enddo
 
             do i=1,EmbSize
                 do j=1,EmbSize
@@ -251,8 +252,6 @@ module solvers
             enddo
         endif
 
-        call stop_all(t_r,'Finishing after 2RDM tests')
-            
         !We only want to calculate the energy over the impurity site, along with the coupling to the bath.
         !Calculate one-electron energy contributions only over the impurity
         One_ElecE_Imp = 0.0_dp
@@ -761,6 +760,9 @@ module solvers
 
     end subroutine FindFull1RDM
 
+    !Find spin-integrated 2RDM very inefficiently
+    !According to Helgakker <0|e_pqrs|0>
+    !Done by running through all N^2 determinant pairs
     subroutine FindFull2RDM(StateBra,StateKet,RDM)
         use DetToolsData, only: FCIDetList,nFCIDet
         implicit none
@@ -780,34 +782,71 @@ module solvers
                     Ex(1,1) = 2
                     call GetExcitation(FCIDetList(:,i),FCIDetList(:,j),Elec,Ex,tSign)
                     if(mod(Ex(1,1),2).ne.mod(Ex(1,2),2)) then
-                        !mixed spin excitation
-                        !We need to ensure the same electron have the same spin
-                        if(mod(Ex(1,1),2).ne.mod(Ex(2,1),2)) then
-                            !We need to switch a and b (or i and j)
+                        !We have a mixed spin excitation
+                        !Ensure that the spin of i is the same as the spin of b
+                        !If its not, then reverse a and b and flip the sign
+                        if(mod(Ex(1,1),2).ne.mod(Ex(2,2),2)) then
                             temp = Ex(2,2)
                             Ex(2,2) = Ex(2,1)
                             Ex(2,1) = temp
                             tSign = .not.tSign
                         endif
                     endif
-                    !if(gtid(Ex(1,1)).eq.1.and.gtid(Ex(2,1)).eq.1.and.gtid(Ex(1,2)).eq.2.and.gtid(Ex(2,2)).eq.2) then
-                    !    write(6,*) "contrib (11,22): ",i,j,tSign,FullHamil(i,StateBra)*FullHamil(j,StateKet)
-                    !endif
                     if(tSign) then
-                        RDM(gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2))) =  &
-                            RDM(gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2))) -  &
-                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
-                        RDM(gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1))) =  &
-                            RDM(gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1))) -  &
-                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                        if(mod(Ex(1,1),2).eq.mod(Ex(1,2),2)) then
+                            !same spin excitation
+                            RDM(gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1))) =  &
+                                RDM(gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1))) +  &
+                                FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                            RDM(gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2))) =  &
+                                RDM(gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2))) +  &
+                                FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                            RDM(gtid(Ex(2,2)),gtid(Ex(1,2)),gtid(Ex(2,1)),gtid(Ex(1,1))) =  &
+                                RDM(gtid(Ex(2,2)),gtid(Ex(1,2)),gtid(Ex(2,1)),gtid(Ex(1,1))) -  &
+                                FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                            RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),gtid(Ex(2,2)),gtid(Ex(1,2))) =  &
+                                RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),gtid(Ex(2,2)),gtid(Ex(1,2))) -  &
+                                FullHamil(i,StateBra)*FullHamil(j,StateKet)
+
+                        else
+                            !Mixed spin excitation
+                            !i has the same spin as b
+                            RDM(gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1))) = &
+                                RDM(gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1))) + &
+                                FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                            RDM(gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2))) = &
+                                RDM(gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2))) + &
+                                FullHamil(i,StateBra)*FullHamil(j,StateKet)
+
+                        endif
+
                     else
-                        RDM(gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2))) =  &
-                            RDM(gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2))) +  &
-                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
-                        RDM(gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1))) =  &
-                            RDM(gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1))) +  &
-                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                        if(mod(Ex(1,1),2).eq.mod(Ex(1,2),2)) then
+                            !same spin excitation
+                            RDM(gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1))) =  &
+                                RDM(gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1))) -  &
+                                FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                            RDM(gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2))) =  &
+                                RDM(gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2))) -  &
+                                FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                            RDM(gtid(Ex(2,2)),gtid(Ex(1,2)),gtid(Ex(2,1)),gtid(Ex(1,1))) =  &
+                                RDM(gtid(Ex(2,2)),gtid(Ex(1,2)),gtid(Ex(2,1)),gtid(Ex(1,1))) +  &
+                                FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                            RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),gtid(Ex(2,2)),gtid(Ex(1,2))) =  &
+                                RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),gtid(Ex(2,2)),gtid(Ex(1,2))) +  &
+                                FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                        else
+                            !Mixed spin excitation
+                            !i has the same spin as b
+                            RDM(gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1))) = &
+                                RDM(gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1))) - &
+                                FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                            RDM(gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2))) = &
+                                RDM(gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2))) - &
+                                FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                        endif
                     endif
+
                 elseif(IC.eq.1) then
                     !Connected by a single
                     Ex(1,1) = 1
@@ -816,25 +855,67 @@ module solvers
                         kel = gtid(FCIDetList(k,i))
 
                         if(FCIDetList(k,i).ne.Ex(1,1)) then
-                            !if(kel.eq.1.and.gtid(Ex(2,1)).eq.2.and.gtid(Ex(1,1)).gt.2) then
-                            !    write(6,*) "contrib (11,22): ",i,j,tSign,FullHamil(i,StateBra)*FullHamil(j,StateKet)
-                            !endif
                             if(tSign) then
-                                RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) = &
-                                    RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) - &
-                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
-                                RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) = &
-                                    RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) - &
-                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                if(mod(Ex(1,1),2).eq.mod(FCIDetList(k,i),2)) then
+                                    !k also same spin
+                                    RDM(kel,gtid(Ex(1,1)),gtid(Ex(2,1)),kel) = &
+                                        RDM(kel,gtid(Ex(1,1)),gtid(Ex(2,1)),kel) + &
+                                        FullHamil(i,StateBra)*FullHamil(j,StateKet)
+
+                                    RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) = &
+                                        RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) - &
+                                        FullHamil(i,StateBra)*FullHamil(j,StateKet)
+
+                                    RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) = &
+                                        RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) - &
+                                        FullHamil(i,StateBra)*FullHamil(j,StateKet)
+
+                                    RDM(gtid(Ex(2,1)),kel,kel,gtid(Ex(1,1))) = &
+                                        RDM(gtid(Ex(2,1)),kel,kel,gtid(Ex(1,1))) + &
+                                        FullHamil(i,StateBra)*FullHamil(j,StateKet)
+
+                                else
+                                    !k opposite spin
+                                    RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) = &
+                                        RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) - &
+                                        FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                    RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) = &
+                                        RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) - &
+                                        FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                endif
+
+
                             else
-                                RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) = &
-                                    RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) + &
-                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
-                                RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) = &
-                                    RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) + &
-                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
-!
+                                if(mod(Ex(1,1),2).eq.mod(FCIDetList(k,i),2)) then
+                                    !k also same spin
+                                    RDM(kel,gtid(Ex(1,1)),gtid(Ex(2,1)),kel) = &
+                                        RDM(kel,gtid(Ex(1,1)),gtid(Ex(2,1)),kel) - &
+                                        FullHamil(i,StateBra)*FullHamil(j,StateKet)
+
+                                    RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) = &
+                                        RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) + &
+                                        FullHamil(i,StateBra)*FullHamil(j,StateKet)
+
+                                    RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) = &
+                                        RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) + &
+                                        FullHamil(i,StateBra)*FullHamil(j,StateKet)
+
+                                    RDM(gtid(Ex(2,1)),kel,kel,gtid(Ex(1,1))) = &
+                                        RDM(gtid(Ex(2,1)),kel,kel,gtid(Ex(1,1))) - &
+                                        FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                else
+                                    !k opposite spin
+                                    RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) = &
+                                        RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) + &
+                                        FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                    RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) = &
+                                        RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) + &
+                                        FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                endif
+
+
                             endif
+
                         endif
                     enddo
                 elseif(IC.eq.0) then
@@ -843,15 +924,25 @@ module solvers
                     if(i.ne.j) call stop_all(t_r,'Error here')
                     do k=1,Elec
                         kel = gtid(FCIDetList(k,i))
-                        do l=1,Elec
+                        do l=k+1,Elec
                             lel = gtid(FCIDetList(l,i))
                             if(FCIDetList(k,i).eq.FCIDetList(l,i)) cycle
-                            !if(kel.eq.1.and.lel.eq.2) then
-                            !    write(6,*) "contrib (11,22): ",i,FullHamil(i,StateBra)*FullHamil(j,StateKet)
-                            !endif
 
-                            RDM(kel,kel,lel,lel) = RDM(kel,kel,lel,lel) + &
-                                FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                            if(mod(FCIDetList(l,i),2).eq.mod(FCIDetList(k,i),2)) then
+                                RDM(kel,kel,lel,lel) = RDM(kel,kel,lel,lel) + &
+                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                RDM(lel,lel,kel,kel) = RDM(lel,lel,kel,kel) + &
+                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                RDM(lel,kel,kel,lel) = RDM(lel,kel,kel,lel) - &
+                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                RDM(kel,lel,lel,kel) = RDM(kel,lel,lel,kel) - &
+                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                            else
+                                RDM(kel,kel,lel,lel) = RDM(kel,kel,lel,lel) + &
+                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                RDM(lel,lel,kel,kel) = RDM(lel,lel,kel,kel) + &
+                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                            endif
 
                         enddo
                     enddo

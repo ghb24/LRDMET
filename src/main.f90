@@ -36,7 +36,6 @@ call run_DMETcalc()
         tPeriodic = .false.
         tAntiPeriodic = .true. 
         tRampDownOcc = .true.
-        tDiagFullSystem = .false.
 !        tCompleteDiag = tMFResponse
         tCompleteDiag = .true. 
         tGSFCI = .not.tCompleteDiag 
@@ -44,6 +43,7 @@ call run_DMETcalc()
         End_Omega = 5.0_dp
         Omega_Step = 0.001_dp
         tDumpFCIDUMP = .true.
+        tDiagFullSystem = .false.
 
     end subroutine set_defaults
 
