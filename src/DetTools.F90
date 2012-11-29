@@ -2,36 +2,47 @@
 
 !Wrapper routine to calculate FCI determinant list
 !This only calculates it for one spin-type. 
-subroutine GenDets(NEl,SpatOrbs)
+!If tCoupledSpaces is set, then it will also create the N+1 and N-1 spaces (both Ms = +- 1/2)
+subroutine GenDets(NEl,SpatOrbs,tCoupledSpaces,tCreateBitRep)
     use DetToolsData
+    use DetBitOps, only: EncodeBitDet
     implicit none
     integer, intent(in) :: NEl,SpatOrbs     !Number of electrons in active space, number of spatial orbitals in active space
-    integer :: nDetAlpha
-    integer, allocatable :: alphaDetList(:,:)
-    integer :: nAlphaElec,AlphaDetLoop(NEl/2),i,j,k,iEl
+    logical, intent(in) :: tCoupledSpaces,tCreateBitRep
+    integer :: nDetAlpha,Nm1DetAlpha,Np1DetAlpha
+    !The list of spatial orbital occupations for one spin type of the N-electron space
+    integer, allocatable :: NspinDetList(:,:)   
+    integer, allocatable :: NspinDetLoop(:) !Current Det for the N-electron space
+    integer, allocatable :: Nm1spinDetList(:,:)   
+    integer, allocatable :: Np1spinDetList(:,:)   
+    integer :: nSpinElec,Nm1SpinElec,Np1SpinElec,i,j,k,iEl
 
     nFCIDet = 0
     nDetAlpha = 0
-    nAlphaElec = NEl/2
+    nSpinElec = NEl/2
+    allocate(NspinDetLoop(nSpinElec))
+    NspinDetLoop(:) = 0
 
     !Count number of alpha determinants
     write(6,"(A,I6,A,I6,A)") "Calculating FCI space for ",NEl," electrons in ",SpatOrbs," orbitals."
 
-    call GenDets_R(AlphaDetLoop,nAlphaElec,SpatOrbs,1,nDetAlpha,.true.,alphaDetList)
+    call GenDets_R(NspinDetLoop,nSpinElec,SpatOrbs,1,nDetAlpha,.true.,NspinDetList)
     write(6,*) "Total number of determinants is: ",nDetAlpha*nDetAlpha
 
-    allocate(alphaDetList(nAlphaElec,nDetAlpha))
+    allocate(NspinDetList(nSpinElec,nDetAlpha))
     nDetAlpha = 0
     !Now actually calculate all the alpha determinants
-    call GenDets_R(AlphaDetLoop,nAlphaElec,SpatOrbs,1,nDetAlpha,.false.,alphaDetList)
+    call GenDets_R(NspinDetLoop,nSpinElec,SpatOrbs,1,nDetAlpha,.false.,NspinDetList)
+    deallocate(NspinDetLoop)
 !
 !    write(6,*) "Alpha determinant list is: "
 !    do i=1,nDetAlpha
-!        write(6,*) alphaDetList(:,i)
+!        write(6,*) NspinDetList(:,i)
 !    enddo
 
     !Now construct the full list as the product of the two lists
     nFCIDet = nDetAlpha**2
+    if(allocated(FCIDetList)) deallocate(FCIDetList)
     allocate(FCIDetList(NEl,nFCIDet))
     k = 0
     do i=1,nDetAlpha
@@ -39,9 +50,9 @@ subroutine GenDets(NEl,SpatOrbs)
         do j=1,nDetAlpha
             !Beta string (even orbital indices)
             k = k + 1   !Determinant index
-            do iEl=1,nAlphaElec
-                FCIDetList(2*iEl-1,k) = alphaDetList(iEl,i)*2-1
-                FCIDetList(2*iEl,k) = alphaDetList(iEl,j)*2
+            do iEl=1,nSpinElec
+                FCIDetList(2*iEl-1,k) = NspinDetList(iEl,i)*2-1
+                FCIDetList(2*iEl,k) = NspinDetList(iEl,j)*2
             enddo
             !sort the list
             call sort_int(FCIDetList(:,k),NEl)
@@ -52,6 +63,133 @@ subroutine GenDets(NEl,SpatOrbs)
 !    do i=1,nFCIDet
 !        write(6,*) FCIDetList(:,i)
 !    enddo
+
+    if(tCreateBitRep) then
+        if(allocated(FCIBitList)) deallocate(FCIBitList)
+        allocate(FCIBitList(nFCIDet))
+        do i=1,nFCIDet
+            call EncodeBitDet(FCIDetList(:,i),NEl,FCIBitList(i))
+        enddo
+    endif
+
+    if(.not.tCoupledSpaces) then
+        deallocate(NspinDetList)
+        return  !We do not want to create the N-1 and N+1 spaces
+    endif
+
+    !Now, create the N-1 space
+    write(6,*) "Calculating N-1 space"
+    write(6,"(A,I6,A,I6,A)") "Calculating FCI space for ",NEl-1," electrons in ",SpatOrbs," orbitals."
+
+    !The NspinDetList is now for the N eletron space. Make something equivalent for the N-1 electron space
+    nNm1FCIDet = 0
+    Nm1DetAlpha = 0
+    Nm1SpinElec = (NEl/2)-1
+
+    if(Nm1SpinElec.gt.0) then
+        allocate(NspinDetLoop(Nm1SpinElec))
+        NspinDetLoop(:) = 0
+        call GenDets_R(NspinDetLoop,Nm1SpinElec,SpatOrbs,1,Nm1DetAlpha,.true.,Nm1spinDetList)
+        write(6,*) "Total number of determinants in N-1 space is: ",Nm1DetAlpha*nDetAlpha*2
+        allocate(Nm1spinDetList(Nm1SpinElec,Nm1DetAlpha))
+        Nm1DetAlpha = 0
+        !Now actually calculate all the alpha determinants
+        call GenDets_R(NspinDetLoop,Nm1SpinElec,SpatOrbs,1,Nm1DetAlpha,.false.,Nm1spinDetList)
+        deallocate(NspinDetLoop)
+        nNm1FCIDet = Nm1DetAlpha*nDetAlpha*2    !Because we need both Ms values
+        if(allocated(Nm1FCIDetList)) deallocate(Nm1FCIDetList)
+        allocate(Nm1FCIDetList(NEl-1,nNm1FCIDet))
+
+        k=1
+        do i=1,nDetAlpha
+            do j=1,Nm1DetAlpha
+                do iEl=1,Nm1SpinElec
+                    Nm1FCIDetList(iEl,k) = Nm1spinDetList(iEl,j)*2-1    !N-1 alpha orbitals
+                    Nm1FCIDetList(iEl,k+1) = Nm1spinDetList(iEl,j)*2    !N-1 beta orbitals
+                enddo
+                do iEl=1,nSpinElec
+                    Nm1FCIDetList(Nm1SpinElec+iEl,k) = NspinDetList(iEl,i)*2
+                    Nm1FCIDetList(Nm1SpinElec+iEl,k+1) = NspinDetList(iEl,i)*2-1
+                enddo
+                call sort_int(Nm1FCIDetList(:,k),NEl-1)
+                call sort_int(Nm1FCIDetList(:,k+1),NEl-1)
+                k=k+2
+            enddo
+        enddo
+        deallocate(Nm1spinDetList)
+    else
+        Nm1DetAlpha = 0
+        write(6,*) "Total number of determinants in N-1 space is: ",nDetAlpha*2
+        nNm1FCIDet = nDetAlpha*2
+        if(allocated(Nm1FCIDetList)) deallocate(Nm1FCIDetList)
+        allocate(Nm1FCIDetList(NEl-1,nNm1FCIDet))
+        k=1
+        do i=1,nDetAlpha
+            !We only have alpha/beta orbtials at a time (1 electron)
+            Nm1FCIDetList(1,k) = NspinDetList(1,i)*2
+            Nm1FCIDetList(1,k+1) = NspinDetList(1,i)*2-1
+            k=k+2
+        enddo
+
+    endif
+
+    if(tCreateBitRep) then
+        if(allocated(Nm1BitList)) deallocate(Nm1BitList)
+        allocate(Nm1BitList(nNm1FCIDet))
+        do i=1,nNm1FCIDet
+            call EncodeBitDet(Nm1FCIDetList(:,i),NEl-1,Nm1BitList(i))
+        enddo
+    endif
+
+    !Now for the N+1 space
+    write(6,*) "Calculating N+1 space"
+    write(6,"(A,I6,A,I6,A)") "Calculating FCI space for ",NEl+1," electrons in ",SpatOrbs," orbitals."
+
+    !The NspinDetList is now for the N eletron space. Make something equivalent for the N+1 electron space
+    nNp1FCIDet = 0
+    Np1DetAlpha = 0
+    Np1SpinElec = (NEl/2)+1
+    allocate(NspinDetLoop(Np1SpinElec))
+    NspinDetLoop(:) = 0
+
+    call GenDets_R(NspinDetLoop,Np1SpinElec,SpatOrbs,1,Np1DetAlpha,.true.,Np1spinDetList)
+    write(6,*) "Total number of determinants in N+1 space is: ",Np1DetAlpha*nDetAlpha*2
+    allocate(Np1spinDetList(Np1SpinElec,Np1DetAlpha))
+    Np1DetAlpha = 0
+    !Now actually calculate all the alpha determinants
+    call GenDets_R(NspinDetLoop,Np1SpinElec,SpatOrbs,1,Np1DetAlpha,.false.,Np1spinDetList)
+    deallocate(NspinDetLoop)
+
+    nNp1FCIDet = Np1DetAlpha*nDetAlpha*2    !Because we need both Ms values
+    if(allocated(Np1FCIDetList)) deallocate(Nm1FCIDetList)
+    allocate(Np1FCIDetList(NEl+1,nNp1FCIDet))
+
+    k=1
+    do i=1,nDetAlpha
+        do j=1,Np1DetAlpha
+            do iEl=1,Np1SpinElec
+                Np1FCIDetList(iEl,k) = Np1spinDetList(iEl,j)*2-1    !N-1 alpha orbitals
+                Np1FCIDetList(iEl,k+1) = Np1spinDetList(iEl,j)*2    !N-1 beta orbitals
+            enddo
+            do iEl=1,nSpinElec
+                Np1FCIDetList(Np1SpinElec+iEl,k) = NspinDetList(iEl,i)*2
+                Np1FCIDetList(Np1SpinElec+iEl,k+1) = NspinDetList(iEl,i)*2-1
+            enddo
+            call sort_int(Np1FCIDetList(:,k),NEl+1)
+            call sort_int(Np1FCIDetList(:,k+1),NEl+1)
+            k=k+2
+        enddo
+    enddo
+    deallocate(Np1spinDetList,NspinDetList)
+    if(tCreateBitRep) then
+        if(allocated(Np1BitList)) deallocate(Np1BitList)
+        allocate(Np1BitList(nNp1FCIDet))
+        do i=1,nNp1FCIDet
+            call EncodeBitDet(Np1FCIDetList(:,i),NEl+1,Np1BitList(i))
+        enddo
+    endif
+
+    ECoupledSpace = nFCIDet + nNm1FCIDet + nNp1FCIDet
 
 end subroutine GenDets
 

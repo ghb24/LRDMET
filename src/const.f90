@@ -23,4 +23,10 @@ module const
     ! depsilon is the precision used to compare floating point numbers.
     real(dp), parameter :: depsilon = 1.e-8
 
+    integer :: qwerty
+    integer, parameter :: n_int = kind(qwerty)
+    integer, parameter :: bits_n_int = bit_size(qwerty)
+    integer, parameter :: end_n_int = bits_n_int - 1
+    integer, parameter :: size_n_int = bits_n_int/8
+
 end module const
