@@ -232,7 +232,7 @@ subroutine GetHElement(nI,nJ,NEl,HEl)
     integer, intent(in) :: nI(NEl),nJ(NEl)
     real(dp), intent(out) :: HEl
     real(dp) :: sltcnd_0,sltcnd_1,sltcnd_2
-    integer :: Ex(2,2),iGetExcitLevel,IC
+    integer :: Ex(2,2),iGetExcitLevel,IC,DeltaSpin
     logical :: tSign
 
     IC = IGETEXCITLEVEL(NI,NJ,NEL)
@@ -250,8 +250,20 @@ subroutine GetHElement(nI,nJ,NEl,HEl)
         hel = sltcnd_0(nI,NEl)
     elseif(IC.eq.1) then
         !Single excitation
+        DeltaSpin = mod(Ex(1,1),2) + mod(Ex(2,1),2)
+        if(mod(DeltaSpin,2).eq.1) then
+            !We have changed Ms - forbidden excitation
+            HEl = 0.0_dp
+            return
+        endif
         hel = sltcnd_1(nI, Ex, tSign, NEl)
     elseif(IC.eq.2) then
+        DeltaSpin = mod(Ex(1,1),2) + mod(Ex(2,1),2) + mod(Ex(1,2),2) + mod(Ex(2,2),2)
+        if(mod(DeltaSpin,2).eq.1) then
+            !We have changed Ms - forbidden excitation
+            HEl = 0.0_dp
+            return
+        endif
         hel = sltcnd_2(Ex, tSign)
     endif
 

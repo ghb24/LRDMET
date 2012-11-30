@@ -30,8 +30,8 @@ call run_DMETcalc()
         nSites = 12  
         LatticeDim = 1
         nImp = 1
-        StartU = 1.0_dp
-        EndU = 1.1_dp
+        StartU = 0.0_dp
+        EndU = 0.1_dp
         UStep = 0.2_dp
         tPeriodic = .false.
         tAntiPeriodic = .true. 
@@ -470,6 +470,9 @@ call run_DMETcalc()
         call DGEMM('T','N',nSites,nSites,nSites,1.0_dp,HFtoSchmidtTransform,nSites,FockSchmidt,nSites,0.0_dp,temp,nSites)
         call DGEMM('N','N',nSites,nSites,nSites,1.0_dp,temp,nSites,HFtoSchmidtTransform,nSites,0.0_dp,FockSchmidt,nSites)
         deallocate(temp)
+        !do i=1,nSites
+        !    write(6,*) "FOCKSCHMIDT: ",i,FockSchmidt(i,i)
+        !enddo
         !FockSchmidt has been overwritten with the fock matrix in the schmidt basis
 !        call writematrix(FockSchmidt,'Fock in schmidt basis',.true.)
 

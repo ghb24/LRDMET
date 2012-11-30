@@ -62,15 +62,55 @@ module LinearResponse
         use DetToolsData
         use DetBitOps 
         implicit none
-        real(dp), allocatable :: LinearSystem(:,:),temp(:,:)
+        real(dp), allocatable :: LinearSystem(:,:),temp(:,:),work(:),W(:)
         integer :: i,ierr,iunit,nLinearSystem,a,i_orb,IC,j,k,orb,orbdiffs,spat_orb
-        integer :: gtid
-        real(dp) :: Omega
+        integer :: gtid,ExcitInd,ExcitInd2,lwork,highbound,alpha,alphap,b,di,dj,info
+        integer :: OrbPairs,UMatSize,umatind,n
+        real(dp) :: Omega,CoreCoupling,CoreVirtualNorm,tmp,EDiff,Res1,Res2,ResponseFn
+        real(dp), allocatable :: CoreActiveNorm(:),ActiveVirtualNorm(:),RDM1(:,:),RDM2(:,:)
+        real(dp), allocatable :: Residues(:)
         character(len=*), parameter :: t_r='NonIntContracted_TDA_MCLR'
         
         write(6,*) "Calculating non-interacting IC MR-TDA LR version II..."
         if(.not.tConstructFullSchmidtBasis) call stop_all(t_r,'To solve LR, must construct full schmidt basis')
         if(.not.tCompleteDiag) call stop_all(t_r,'To solve LR, must perform complete diag')
+        
+        !umat and tmat for the active space
+        OrbPairs = (EmbSize*(EmbSize+1))/2
+        UMatSize = (OrbPairs*(OrbPairs+1))/2
+        if(allocated(UMat)) deallocate(UMat)
+        allocate(UMat(UMatSize))
+        UMat(:) = 0.0_dp
+        do i=1,nImp
+            umat(umatind(i,i,i,i)) = U
+        enddo
+        if(allocated(tmat)) deallocate(tmat)
+        allocate(tmat(EmbSize,EmbSize))
+        tmat(:,:) = 0.0_dp
+        do i=1,EmbSize
+            do j=1,EmbSize
+                if(abs(Emb_h0v(i,j)).gt.1.0e-10_dp) then
+                    tmat(i,j) = Emb_h0v(i,j)
+                endif
+            enddo
+        enddo
+        
+        !Enumerate excitations for fully coupled space
+        call GenDets(Elec,EmbSize,.true.,.true.)
+        write(6,*) "Number of determinants in {N,N+1,N-1} FCI space: ",ECoupledSpace
+
+        write(6,*) "N-electron space: "
+        do i=1,nFCIDet
+            write(6,*) FCIDetList(:,i),FCIBitList(i)
+        enddo
+        write(6,*) "N-1 electron space: "
+        do i=1,nNm1FCIDet
+            write(6,*) Nm1FCIDetList(:,i),Nm1BitList(i)
+        enddo
+        write(6,*) "N+1 electron space: "
+        do i=1,nNp1FCIDet
+            write(6,*) Np1FCIDetList(:,i),Np1BitList(i)
+        enddo
         
         iunit = get_free_unit()
         open(unit=iunit,file='IC-TDA_DDResponse',status='unknown')
@@ -83,23 +123,6 @@ module LinearResponse
 
             !First, find the non-interacting solution expressed in the schmidt basis
             call FindSchmidtPert(.false.,Omega)
-
-            !Enumerate excitations for fully coupled space
-            call GenDets(Elec,EmbSize,.true.,.true.)
-            write(6,*) "Number of determinants in {N,N+1,N-1} FCI space: ",ECoupledSpace
-
-            write(6,*) "N-electron space: "
-            do i=1,nFCIDet
-                write(6,*) FCIDetList(:,i),FCIBitList(i)
-            enddo
-            write(6,*) "N-1 electron space: "
-            do i=1,nNm1FCIDet
-                write(6,*) Nm1FCIDetList(:,i),Nm1BitList(i)
-            enddo
-            write(6,*) "N+1 electron space: "
-            do i=1,nNp1FCIDet
-                write(6,*) Np1FCIDetList(:,i),Np1BitList(i)
-            enddo
 
             !Calculate the size of the hamiltonian matrix including the N-1 and N+1 electron active spaces
             !Also include 1 fully contracted core-virtual excitation,
@@ -133,8 +156,23 @@ module LinearResponse
             deallocate(temp)
 
             !Calculate the FCI space within the N+1 and N-1 space blocks
+            !First the N-1 electron space
+            do i=1,nNm1FCIDet
+                do j=1,nNm1FCIDet
+                    call GetHElement(Nm1FCIDetList(:,i),Nm1FCIDetList(:,j),Elec-1,LinearSystem(nFCIDet+i,nFCIDet+j))
+                    !if(i.eq.j) then
+                    !    write(6,*) "N-1 diagonal element: ",i,i,LinearSystem(nFCIDet+i,nFCIDet+j)
+                    !endif
+                enddo
+            enddo
 
-            !TODO!!!
+            !Now for the N+1 electron space
+            do i=1,nNp1FCIDet
+                do j=1,nNp1FCIDet
+                    call GetHElement(Np1FCIDetList(:,i),Np1FCIDetList(:,j),Elec+1,  &
+                        LinearSystem(nFCIDet+nNm1FCIDet+i,nFCIDet+nNm1FCIDet+j))
+                enddo
+            enddo
 
             !Now, calculate the hamiltonian coupling between the N-1 and N+1 determinant spaces
             !First, coupling between the N-1 and N electron spaces
@@ -204,6 +242,7 @@ module LinearResponse
                 enddo
             enddo
 
+
             !********************************************************************************************
             !  CORE-VIRTUAL excitations
             !********************************************************************************************
@@ -247,26 +286,38 @@ module LinearResponse
             !We are not going to add on the active space FCI energy, since we assume that we have offset the hamiltonian by the 
             !zeroth order energy.
             
-            !Now, we need to define the coupling to the uncontracted *N-electron* determinant space.
-            !We first want to calculate <core|F|\sum_{ia}G_{ai}a_a^+a_i core>
-            !The F_ai component must match the G_ai one to be non-zero
-            !Therefore we know that this is \sum_ia F_ia G_ai
-            CoreCoupling = 0.0_dp
-            do i=1,nOcc-nImp
-                do a=nOcc+nImp+1,nSites
-                    CoreCoupling = CoreCoupling + FockSchmidt(i,a)*SchmidtPert(a,i)
+!            !Now, we need to define the coupling to the uncontracted *N-electron* determinant space.
+!            !We first want to calculate <core|F|\sum_{ia}G_{ai}a_a^+a_i core>
+!            !The F_ai component must match the G_ai one to be non-zero
+!            !Therefore we know that this is \sum_ia F_ia G_ai
+!            CoreCoupling = 0.0_dp
+!            do i=1,nOcc-nImp
+!                do a=nOcc+nImp+1,nSites
+!                    CoreCoupling = CoreCoupling + FockSchmidt(i,a)*SchmidtPert(a,i)
+!                enddo
+!            enddo
+!            CoreCoupling = CoreCoupling * 2.0_dp    !For the other spin type.
+!            !Now we need to include the contribution from \sum_k C_k <D_j|H|0>
+!            do i=1,nFCIDet
+!                do j=1,nFCIDet
+!                    LinearSystem(i,ECoupledSpace+1) = LinearSystem(i,ECoupledSpace+1) + LinearSystem(j,i)*FullHamil(j,1)
+!                enddo
+!                LinearSystem(i,ECoupledSpace+1) = LinearSystem(i,ECoupledSpace+1) + CoreCoupling    !Add core coupling contribution
+!                LinearSystem(i,ECoupledSpace+1) = LinearSystem(i,ECoupledSpace+1)/sqrt(CoreVirtualNorm) !Normalise IC single excits
+!                LinearSystem(ECoupledSpace+1,i) = LinearSystem(i,ECoupledSpace+1)   !Hermiticity
+!            enddo
+            do di = 1,nFCIDet
+                do i=1,nOcc-nImp
+                    do a=nOcc+nImp+1,nSites
+                         LinearSystem(di,ECoupledSpace+1) = LinearSystem(di,ECoupledSpace+1) +  &
+                            2.0_dp*FockSchmidt(i,a)*SchmidtPert(a,i)*FullHamil(di,1)
+                    enddo
                 enddo
+                LinearSystem(di,ECoupledSpace+1) = LinearSystem(di,ECoupledSpace+1)/sqrt(CoreVirtualNorm) !Normalise IC single excits
+                LinearSystem(ECoupledSpace+1,di) = LinearSystem(di,ECoupledSpace+1)
             enddo
-            CoreCoupling = CoreCoupling * 2.0_dp    !For the other spin type.
-            !Now we need to include the contribution from \sum_k C_k <D_j|H|0>
-            do i=1,nFCIDet
-                do j=1,nFCIDet
-                    LinearSystem(i,nFCIDet+1) = LinearSystem(i,ECoupledSpace+1) + LinearSystem(j,i)*FullHamil(j,1)
-                enddo
-                LinearSystem(i,ECoupledSpace+1) = LinearSystem(i,ECoupledSpace+1) + CoreCoupling    !Add core coupling contribution
-                LinearSystem(i,ECoupledSpace+1) = LinearSystem(i,ECoupledSpace+1)/sqrt(CoreVirtualNorm) !Normalise IC single excits
-                LinearSystem(ECoupledSpace+1,i) = LinearSystem(i,ECoupledSpace+1)   !Hermiticity
-            enddo
+
+            
 
             !Now, what about coupling from the core-virtual excitations to the N-1 space...
             !Assume for now that there is no coupling, but potentially there is, via annihilation of the extra electron in the core in the uncontracted function
@@ -311,11 +362,18 @@ module LinearResponse
                     do a = nOcc+nImp+1,nSites
                         tmp = tmp + SchmidtPert(a,alpha)*SchmidtPert(a,alphap)
                     enddo
-                    LinearSystem(ExcitInd,ExcitInd2) = 2.0_dp*OneElecE*tmp + 2.0_dp*TwoElecE*tmp
+                    tmp = tmp*2.0_dp
+                    LinearSystem(ExcitInd,ExcitInd2) = One_ElecE*tmp + Two_ElecE*tmp
+
+                    do i = 1,nOcc-nImp
+                        LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) + &
+                            FockSchmidt(i,i)*2.0_dp*tmp
+                    enddo
+
                     do a = nOcc+nImp+1,nSites
                         do b = nOcc+nImp+1,nSites
-                            LinearSystem(ExcitInd,ExcitInd2) + LinearSystem(ExcitInd,ExcitInd2) + &
-                                SchmidtPert(a,alpha)*SchmidtPert(b,alphap)*FockSchmidt(b,a)*2.0_dp
+                            LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) + &
+                                SchmidtPert(b,alpha)*SchmidtPert(a,alphap)*FockSchmidt(b,a)*2.0_dp
                         enddo
                     enddo
                     LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) /   &
@@ -334,8 +392,8 @@ module LinearResponse
                         IC = CountBits(orbdiffs)
                         if(IC.eq.1) then
                             do j=0,end_n_int
-                                if(btest(orbdiffs,k)) then
-                                    orb = k+1
+                                if(btest(orbdiffs,j)) then
+                                    orb = j+1
                                     exit
                                 endif
                             enddo
@@ -348,20 +406,209 @@ module LinearResponse
 
                         endif
                     enddo
-                    LinearSystem(ExcitInd,nFCIDet+nNm1FCIDet+dj) = LinearSystem(ExcitInd,nFCIDet+nNm1FCIDet+dj) / sqrt(ActiveVirtualNorm(alpha)
+                    LinearSystem(ExcitInd,nFCIDet+nNm1FCIDet+dj) = LinearSystem(ExcitInd,nFCIDet+nNm1FCIDet+dj) /   &
+                        sqrt(ActiveVirtualNorm(alpha))
                     LinearSystem(nFCIDet+nNm1FCIDet+dj,ExcitInd) = LinearSystem(ExcitInd,nFCIDet+nNm1FCIDet+dj)
                 enddo
 
             enddo
+            deallocate(ActiveVirtualNorm)
 
             !********************************************************************************************
             !  CORE-ACTIVE semi-internal excitations
             !********************************************************************************************
+            !Precompute the normalization constants for each semi-internal excitation
+            allocate(CoreActiveNorm(nOcc-nImp+1:nOcc+nImp))
+            CoreActiveNorm(:) = 0.0_dp
+            do alpha = nOcc-nImp+1,nOcc+nImp
+                do i = 1,nOcc-nImp
+                    CoreActiveNorm(alpha) = CoreActiveNorm(alpha) +   &
+                        SchmidtPert(i,alpha)*SchmidtPert(alpha,i)*2.0_dp
+                enddo
+            enddo
 
-            call stop_all(t_r,'End of test')
+            !Now calculate the diagonal hamiltonian matrix elements
+            ExcitInd = ECoupledSpace + 1 + EmbSize
+            do alpha=nOcc-nImp+1,nOcc+nImp
+                ExcitInd = ExcitInd + 1
 
-        enddo
+                !Now the diagonal hamiltonian matrix element, having subtracted the FCI energy away from it
+                do i = 1,nOcc-nImp
+                    LinearSystem(ExcitInd,ExcitInd) = LinearSystem(ExcitInd,ExcitInd) + 2.0_dp*FockSchmidt(i,i)
+                    
+                enddo
+                do i = 1,nOcc-nImp
+                    do j = 1,nOcc-nImp
+                        LinearSystem(ExcitInd,ExcitInd) = LinearSystem(ExcitInd,ExcitInd) - 2.0_dp*SchmidtPert(j,alpha)*    &
+                            SchmidtPert(i,alpha)*FockSchmidt(i,j)/CoreActiveNorm(alpha)
+                    enddo
+                enddo
 
+                !Now for coupling to other semi-internal excitations
+                ExcitInd2 = ECoupledSpace + 1 + EmbSize
+                do alphap = nOcc-nImp+1,nOcc+nImp
+                    ExcitInd2 = ExcitInd2 + 1
+                    if(alphap.eq.alpha) cycle   !Already done diagonals
+
+                    tmp = 0.0_dp
+                    do i = 1,nOcc-nImp
+                        tmp = tmp + SchmidtPert(i,alpha)*SchmidtPert(i,alphap)
+                    enddo
+                    tmp = tmp * 2.0_dp
+                    LinearSystem(ExcitInd,ExcitInd2) = One_ElecE*tmp + Two_ElecE*tmp
+                    do i = 1,nOcc-nImp
+                        LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) + &
+                            2.0_dp*tmp*FockSchmidt(i,i)
+                    enddo
+
+                    do i = 1,nOcc-nImp
+                        do j = 1,nOcc-nImp
+                            LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) - &
+                                SchmidtPert(j,alpha)*SchmidtPert(i,alphap)*FockSchmidt(i,j)*2.0_dp
+                        enddo
+                    enddo
+                    LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) /   &
+                        sqrt(CoreActiveNorm(alpha)*CoreActiveNorm(alphap))
+                    !Should be able to use hermiticity here, but can check it for a test
+                enddo
+
+                !Now for coupling to the N+1 uncontracted determinant block (this is the only block
+                !it connects to)
+                do dj = 1,nNm1FCIDet
+
+                    !Calculate coupling
+                    do di = 1,nFCIDet
+
+                        orbdiffs = ieor(FCIBitList(di),Nm1BitList(dj))
+                        IC = CountBits(orbdiffs)
+                        if(IC.eq.1) then
+                            do j=0,end_n_int
+                                if(btest(orbdiffs,j)) then
+                                    orb = j+1
+                                    exit
+                                endif
+                            enddo
+                            spat_orb = gtid(orb)
+
+                            do i = 1,nOcc-nImp
+                                LinearSystem(ExcitInd,nFCIDet+dj) = LinearSystem(ExcitInd,nFCIDet+dj) + &
+                                    SchmidtPert(i,alpha)*FockSchmidt(spat_orb,i)*FullHamil(di,1)
+                            enddo
+
+                        endif
+                    enddo
+                    LinearSystem(ExcitInd,nFCIDet+dj) = LinearSystem(ExcitInd,nFCIDet+dj) / sqrt(CoreActiveNorm(alpha))
+                    LinearSystem(nFCIDet+dj,ExcitInd) = LinearSystem(ExcitInd,nFCIDet+dj)
+                enddo
+
+            enddo
+            deallocate(CoreActiveNorm)
+
+            !Only now do we remove the ground state from the FCI space
+            do i=1,nFCIDet
+                do j=1,nFCIDet
+                    LinearSystem(j,i) = LinearSystem(j,i) - Spectrum(1)*FullHamil(i,1)*FullHamil(j,1)
+                enddo
+                !Finally, subtract the ground state energy from the diagonals, since we want to offset it.
+                LinearSystem(i,i) = LinearSystem(i,i) - Spectrum(1)
+            enddo
+
+            !Linear system should now be properly constructed
+            !Check hermiticity.
+            do i=1,nLinearSystem
+                do j=1,nLinearSystem
+                    if(abs(LinearSystem(i,j)-LinearSystem(j,i)).gt.1.0e-7_dp) then
+                        call writematrix(LinearSystem,'linear system',.true.)
+                        write(6,*) "***",i,j,LinearSystem(i,j)
+                        write(6,*) "***",j,i,LinearSystem(j,i)
+                        call stop_all(t_r,'Hessian matrix not hermitian')
+                    endif
+                enddo
+            enddo
+
+            LinearSystem(:,ECoupledSpace+2:nLinearSystem) = 0.0_dp  !Remove IC space
+            LinearSystem(ECoupledSpace+2:nLinearSystem,:) = 0.0_dp  !Remove IC space
+
+            write(6,*) "Hessian constructed."
+            call writematrix(LinearSystem,'linear system',.true.)
+
+            !Now we have the full hamiltonian. Diagonalize this fully
+            allocate(Work(1))
+            if(ierr.ne.0) call stop_all(t_r,"alloc err")
+            allocate(W(nLinearSystem))
+            W(:)=0.0_dp
+            lWork=-1
+            info=0
+            call dsyev('V','U',nLinearSystem,LinearSystem,nLinearSystem,W,Work,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'workspace query failed')
+            lwork=int(work(1))+1
+            deallocate(work)
+            allocate(work(lwork))
+            call dsyev('V','U',nLinearSystem,LinearSystem,nLinearSystem,W,Work,lWork,info)
+            if (info.ne.0) call stop_all(t_r,"Diag failed")
+            deallocate(work)
+            
+            write(6,*) "First 10 MR-TDA-LR transition frequencies: "
+            highbound = min(nLinearSystem,100)
+            call writevector(W(1:highbound),'transition frequencies')
+
+            write(6,*) "Calculating residues: "
+
+!            !Now find the transition moments
+            allocate(RDM1(nSites,nSites))
+            allocate(RDM2(nSites,nSites))
+            allocate(Residues(nLinearSystem))
+            Residues(:) = 0.0_dp
+
+            do n=1,nLinearSystem    !loop over states
+                !First, find the transition RDM between the ground FCI state, and state n
+                call Calc1RDM(FullHamil(:,1),LinearSystem(1:nFCIDet,n),RDM1)
+                !...and then vice versa
+                call Calc1RDM(LinearSystem(1:nFCIDet,n),FullHamil(:,1),RDM2)
+
+                !Now add to the 1RDM the conributions from the fully IC core-active excitations
+                do i=1,nOcc-nImp
+                    do a=nOcc+nImp+1,nSites
+
+                        RDM1(i,a) = RDM1(i,a) + 2.0_dp*LinearSystem(nFCIDet+1,n)*SchmidtPert(i,a)/sqrt(CoreVirtualNorm)
+                        !RDM1(a,i) = RDM1(a,i) + 2.0_dp*LinearSystem(nFCIDet+1,n)*SchmidtPert(a,i)/sqrt(CoreVirtualNorm)
+
+                        !RDM2(i,a) = RDM2(i,a) + 2.0_dp*LinearSystem(nFCIDet+1,n)*SchmidtPert(a,i)/sqrt(CoreVirtualNorm)
+                        RDM2(a,i) = RDM2(a,i) + 2.0_dp*LinearSystem(nFCIDet+1,n)*SchmidtPert(a,i)/sqrt(CoreVirtualNorm)
+
+                    enddo
+                enddo
+
+                !Now, calculate the (pertsite,pertsite) component of this in the AO basis
+                Res1 = 0.0_dp
+                Res2 = 0.0_dp
+                do i = 1,nSites
+                    do j = 1,nSites
+                        Res1 = Res1 + FullSchmidtBasis(pertsite,i)*RDM1(i,j)*FullSchmidtBasis(pertsite,j)
+                        Res2 = Res2 + FullSchmidtBasis(pertsite,i)*RDM2(i,j)*FullSchmidtBasis(pertsite,j)
+                    enddo
+                enddo
+
+                write(6,*) "Residues for state: ",n,Res1,Res2
+                Residues(n) = Res1*Res2*Lambda
+            enddo
+
+            ResponseFn = 0.0_dp
+            do i=1,nLinearSystem
+                EDiff = W(i) !-Spectrum(1)
+                ResponseFn = ResponseFn + Residues(i)/(Omega-EDiff)
+                ResponseFn = ResponseFn - Residues(i)/(Omega+EDiff)
+            enddo
+            write(iunit,*) Omega,ResponseFn
+
+            Omega = Omega + Omega_Step
+        
+            deallocate(Residues,W,LinearSystem,RDM1,RDM2)
+
+
+        enddo   !Enddo loop over omega
+        close(iunit)
+        call stop_all(t_r,'End of test')
 
     end subroutine NonIntContracted_TDA_MCLR_2
 
@@ -542,23 +789,18 @@ module LinearResponse
                 do a = nOcc+nImp+1,nSites
                     do b = nOcc+nImp+1,nSites
                         LinearSystem(ExcitInd,ExcitInd) = LinearSystem(ExcitInd,ExcitInd) +     &
-                          SchmidtPert(a,alpha)*SchmidtPert(b,alpha)*FockSchmidt(b,a)*HL_1RDM(alpha-nOcc+nImp,alpha-nOcc+nImp)
+                          SchmidtPert(a,alpha)*SchmidtPert(b,alpha)*FockSchmidt(b,a)*HL_1RDM(alpha-nOcc+nImp,alpha-nOcc+nImp) / &
+                          ActiveVirtualNorm(alpha)
                     enddo
                 enddo
                 do i = 1,nOcc-nImp
-                    do a = nOcc+nImp+1,nSites
-                        LinearSystem(ExcitInd,ExcitInd) = LinearSystem(ExcitInd,ExcitInd) +     &
-                          2.0_dp*SchmidtPert(a,alpha)*SchmidtPert(a,alpha)*FockSchmidt(i,i)*    &
-                          HL_1RDM(alpha-nOcc+nImp,alpha-nOcc+nImp)
-                    enddo
+                    LinearSystem(ExcitInd,ExcitInd) = LinearSystem(ExcitInd,ExcitInd) +     &
+                      2.0_dp*FockSchmidt(i,i)*HL_1RDM(alpha-nOcc+nImp,alpha-nOcc+nImp)
                 enddo
-                do a = nOcc+nImp+1,nSites
-                    do beta = nOcc-nImp+1,nOcc+nImp
-                        do gam = nOcc-nImp+1,nOcc+nImp
-                            LinearSystem(ExcitInd,ExcitInd) = LinearSystem(ExcitInd,ExcitInd) +     &
-                            SchmidtPert(a,alpha)*SchmidtPert(a,alpha)*FockSchmidt(beta,gam)*        &
-                            HL_2RDM(alpha-nOcc+nImp,alpha-nOcc+nImp,beta-nOcc+nImp,gam-nOcc+nImp)
-                        enddo
+                do beta = nOcc-nImp+1,nOcc+nImp
+                    do gam = nOcc-nImp+1,nOcc+nImp
+                        LinearSystem(ExcitInd,ExcitInd) = LinearSystem(ExcitInd,ExcitInd) +     &
+                        FockSchmidt(beta,gam)*HL_2RDM(alpha-nOcc+nImp,alpha-nOcc+nImp,beta-nOcc+nImp,gam-nOcc+nImp)
                     enddo
                 enddo
                 !Now add 2electron energy TODO: **** THIS IS NOT CORRECT **** Should be using 3RDMs BOOO...
