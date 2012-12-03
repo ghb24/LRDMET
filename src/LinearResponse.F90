@@ -269,7 +269,7 @@ module LinearResponse
                     do b = nOcc+nImp+1,nSites
                         LinearSystem(ExcitInd,ExcitInd) = LinearSystem(ExcitInd,ExcitInd) +     &
                           SchmidtPert(a,gtid(alpha))*SchmidtPert(b,gtid(alpha))*FockSchmidt(b,a)*   &
-                          HL_1RDM(gtid(alpha)-nOcc+nImp,gtid(alpha)-nOcc+nImp) / (ActiveVirtualNorm(alpha)*2.0_dp)
+                          HL_1RDM(gtid(alpha)-nOcc+nImp,gtid(alpha)-nOcc+nImp) / ActiveVirtualNorm(alpha)
                     enddo
                 enddo
                 do i = 1,nOcc-nImp
@@ -335,14 +335,164 @@ module LinearResponse
                             LinearSystem(ExcitInd,nFCIDet+1) = LinearSystem(ExcitInd,nFCIDet+1) - &
                                 SchmidtPert(a,i)*SchmidtPert(a,gtid(alpha))*FockSchmidt(i,gtid(beta)+nOcc-nImp)* &
                                 HL_1RDM(gtid(alpha)-nOcc+nImp,gtid(beta))
-                         enddo
-                     enddo
-                 enddo
-                 LinearSystem(ExcitInd,nFCIDet+1) = LinearSystem(ExcitInd,nFCIDet+1) /  &
+                        enddo
+                    enddo
+                enddo
+                LinearSystem(ExcitInd,nFCIDet+1) = LinearSystem(ExcitInd,nFCIDet+1) /  &
                     sqrt(CoreVirtualNorm*ActiveVirtualNorm(gtid(alpha)))
-                 LinearSystem(nFCIDet+1,ExcitInd) = LinearSystem(ExcitInd,nFCIDet+1)
+                LinearSystem(nFCIDet+1,ExcitInd) = LinearSystem(ExcitInd,nFCIDet+1)
 
-                 !Now for the coupling to the other semi-internal excitations
+                !Now for the coupling to the other semi-internal excitations
+
+                ExcitInd2 = nFCIDet + 1
+                do alphap = AS_Spin_start,AS_Spin_end
+                    ExcitInd2 = ExcitInd2 + 1
+                    !We shouldn't have coupling between excitations of the same spin
+                    if(mod(alphap,2).ne.mod(alpha,2)) cycle
+
+                    Nm1AlphapVec(:) = 0.0_dp
+                    !Create 1 and 2 body transition RDMs for the N-1 electron system where we have annihilated spin-orbital alphap
+                    !from |0>
+                    do i = 1,nFCIDet
+                        if(btest(FCIBitList(i),alphap-1)) then
+                            !We can annihilate it
+                            Det = FCIBitList(i)
+                            Det = ibclr(Det,alphap-1)
+
+                            do j = 1,nNm1FCIDet
+                                if(Nm1BitList(j).eq.Det) then
+                                    !We have found the orbital. Store the amplitude at this point
+                                    Nm1AlphapVec(j) = FullHamil(i,1)
+                                    exit
+                                endif
+                            enddo
+                            if(j.gt.nNm1FCIDet) call stop_all(t_r,'Can not find appropritate determinant in N-1 space')
+                        endif
+                    enddo
+                    
+                    !We now have the wavefunction a_alpha |0> expressed in the N-1 electron FCI basis
+                    !Now create the 1 and 2 body density matrices from these amplitudes for the resulting N-1 electron wavefunction
+                    call CalcNm1_1RDM(Nm1AlphaVec,Nm1AlphapVec,Nm1AlphaRDM)
+                    call CalcNm1_2RDM(Nm1AlphaVec,Nm1AlphapVec,Nm1Alpha2RDM)
+
+                    !Check that these correspond correctly to the higher-ranked density matrix in the N electron wavefunction
+                    do i = 1,nImp*2
+                        do j = 1,nImp*2
+                            if(abs(Nm1AlphaRDM(i,j)-(HL_2RDM(gtid(alpha),gtid(alphap),i,j)/2.0))) then
+                                call stop_all(t_r'N-1 RDMs do not correspond to higher rank equivalent operators 2')
+                            endif
+                        enddo
+                    enddo
+
+                    !This is a test - we don't actually need to do the diagonals!
+                    tmp2 = LinearSystem(ExcitInd,ExcitInd)  !Save the diagonal element to ensure that it reduces to the same thing
+                    LinearSystem(ExcitInd,ExcitInd) = 0.0_dp
+
+                    do a = nOcc+nImp+1,nSites
+                        do b = nOcc+nImp+1,nSites
+                            LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) +     &
+                              SchmidtPert(a,gtid(alpha))*SchmidtPert(b,gtid(alphap))*FockSchmidt(b,a)*   &
+                              HL_1RDM(gtid(alpha)-nOcc+nImp,gtid(alphap)-nOcc+nImp) /   &
+                        enddo
+                    enddo
+                    do a = nOcc+nImp+1,nSites
+                        do i = 1,nOcc-nImp
+                            LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) +     &
+                              FockSchmidt(i,i)*SchmidtPert(gtid(alpha),a)*SchmidtPert(gtid(alphap),a)* &
+                              HL_1RDM(gtid(alpha)-nOcc+nImp,gtid(alphap)-nOcc+nImp)
+                        enddo
+                    enddo
+                    do a = nOcc+nImp+1,nSites
+                        do beta = 1,2*nImp
+                            do gam = 1,n*nImp
+                                LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) + &
+                                    SchmidtPert(gtid(alpha),a)*SchmidtPert(gtid(alphap),a)*Nm1AlphaRDM(beta,gam)*   &
+                                    FockSchmidt(beta+nOcc-nImp,gam+nOcc-nImp)
+                            enddo
+                        enddo
+                    enddo
+                    tmp = 0.0_dp
+                    do a = nOcc+nImp+1,nSites
+                        tmp = tmp + SchmidtPert(a,gtid(alpha))*SchmidtPert(a,gtid(alphap))
+                    enddo
+                    !Now for the two electron component:
+                    do p = nOcc-nImp+1,nOcc+nImp
+                        do q = nOcc-nImp+1,nOcc+nImp
+                            do r = nOcc-nImp+1,nOcc+nImp
+                                do s = nOcc-nImp+1,nOcc+nImp
+                                    LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) + &
+                                        tmp*Nm1Alpha2RDM(p,q,r,s)*umat(umatind(p,r,q,s))
+                                enddo
+                            enddo
+                        enddo
+                    enddo
+                    LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2)/    &
+                        (sqrt(ActiveVirtualNorm(alpha)*ActiveVirtualNorm(alphap)))
+                    LinearSystem(ExcitInd2,ExcitInd) = LinearSystem(ExcitInd,ExcitInd2)
+                    if((ExcitInd2.eq.ExcitInd).and.(abs(tmp2-LinearSystem(ExcitInd,ExcitInd)).gt.1.0e-7_dp)) then
+                        call stop_all(t_r,'Error in consistent diagonal elements for semi-internal excitations')
+                    endif
+
+                enddo !alphap
+
+            enddo  !Finish looping over active-virtual semi-internal excitations
+
+            !*****************************************************************************************
+            !Now for the active-virtual semi-internal excitations
+            !*****************************************************************************************
+            !Precompute the normalization constants for each semi-internal excitation
+            allocate(CoreActiveNorm(AS_Spin_start:AS_Spin_end))
+            CoreActiveNorm(:) = 0.0_dp
+            do alpha = AS_Spin_start,AS_Spin_end
+                do i=1,nOcc-nImp        
+                    ActiveVirtualNorm(alpha) = ActiveVirtualNorm(alpha) +   &
+                        SchmidtPert(i,gtid(alpha))*SchmidtPert(gtid(alpha),i)*  &
+                        HL_1RDM(gtid(alpha)-nOcc+nImp,gtid(alpha)-nOcc+nImp)/2.0_dp !We only want one spin-type now
+                enddo
+            enddo
+            !First, creating a hole in the occupied manifold, for each alpha
+            ExcitInd = nFCIDet + 1 + 4*nImp
+            do alpha = AS_Spin_start,AS_Spin_end
+                ExcitInd = ExcitInd + 1
+
+                Np1AlphaVec(:) = 0.0_dp 
+                !Create 1 and 2 body symmetric RDMs for the N+1 electron system where we have created spin-orbital alpha
+                !from |0>
+                do i = 1,nFCIDet
+                    if(.not.btest(FCIBitList(i),alpha-1)) then
+                        !It is unoccupied - We can create it
+
+                        Det = FCIBitList(i)
+                        !Include orbital from Det
+                        Det = ibset(Det,alpha-1)
+
+                        !Find this in the Nm1 list
+                        do j = 1,nNp1FCIDet
+                            if(Np1BitList(j).eq.Det) then
+                                !We have found the orbital. Store the amplitude at this point
+                                Np1AlphaVec(j) = FullHamil(i,1)
+                                exit
+                            endif
+                        enddo
+                        if(j.gt.nNp1FCIDet) call stop_all(t_r,'Can not find appropriate determinant in N-1 space')
+
+                    endif
+                enddo
+                !We now have the wavefunction a_alpha |0> expressed in the N-1 electron FCI basis
+                !Now create the 1 and 2 body density matrices from these amplitudes for the resulting N-1 electron wavefunction
+                call CalcNm1_1RDM(Np1AlphaVec,Np1AlphaVec,Np1AlphaRDM)
+                call CalcNm1_2RDM(Np1AlphaVec,Np1AlphaVec,Np1Alpha2RDM)
+
+                !Now the diagonal hamiltonian matrix element
+                do i = 1,nOcc-nImp       
+                    do j = 1,nOcc-nImp       
+                        LinearSystem(ExcitInd,ExcitInd) = LinearSystem(ExcitInd,ExcitInd) -     &
+                          SchmidtPert(i,gtid(alpha))*SchmidtPert(j,gtid(alpha))*FockSchmidt(i,j)*
+                          HL_1RDM(gtid(alpha)-nOcc+nImp,gtid(alpha)-nOcc+nImp) / CoreActiveNorm(alpha)
+                    enddo
+                enddo
+
+                !TODO: Done up to here...
 
 
 
@@ -357,16 +507,173 @@ module LinearResponse
 
 
 
+                do i = 1,nOcc-nImp
+                    LinearSystem(ExcitInd,ExcitInd) = LinearSystem(ExcitInd,ExcitInd) +     &
+                      2.0_dp*FockSchmidt(i,i)*HL_1RDM(gtid(alpha)-nOcc+nImp,gtid(alpha)-nOcc+nImp)
+                enddo
+                tmp = 0.0_dp
+                do a = nOcc+nImp+1,nSites
+                    tmp = tmp + SchmidtPert(a,gtid(alpha))*SchmidtPert(a,gtid(alpha))
+                enddo
+                tmp = tmp/ActiveVirtualNorm(alpha)
+                do beta = nOcc-nImp+1,nOcc+nImp
+                    do gam = nOcc-nImp+1,nOcc+nImp
+                        LinearSystem(ExcitInd,ExcitInd) = LinearSystem(ExcitInd,ExcitInd) +     &
+                        tmp*FockSchmidt(beta,gam)*Nm1AlphaRDM(beta-nOcc+nImp,gam-nOcc+nImp)
+                    enddo
+                enddo
+                !Now for the two electron component:
+                do p = nOcc-nImp+1,nOcc+nImp
+                    do q = nOcc-nImp+1,nOcc+nImp
+                        do r = nOcc-nImp+1,nOcc+nImp
+                            do s = nOcc-nImp+1,nOcc+nImp
+                                LinearSystem(ExcitInd,ExcitInd) = LinearSystem(ExcitInd,ExcitInt) + &
+                                    tmp*Nm1Alpha2RDM(p,q,r,s)*umat(umatind(p,r,q,s))
+                            enddo
+                        enddo
+                    enddo
+                enddo
 
+                !Now for the coupling to the determinant space (dj)
+                do dj = 1,nFCIDet
+                    
+                    do beta = 1,4*nImp  !Loop over AS spin-orbitals
 
+                        if(btest(FCIBitList(dj,beta-1))) then
+                            !beta is occupied in dj. Annihilate it
+                            Det = FCIBitList(dj)
+                            Det = ibclr(Det,beta-1)     
 
+                            do i = 1,nNm1FCIDet
+                                if(Nm1BitList(i).eq.Det) then
+                                    !We have found the corresponding determinant
+                                    exit
+                                endif
+                            enddo
+                            if(i.gt.nNm1FCIDet) call stop_all(t_r,'Can not find appropriate determinant in N-1 space 2')
 
+                            !Coupling matrix element is Nm1AlphaVec(i)
+                            do a = nOcc+nImp+1,nSites
+                                LinearSystem(dj,ExcitInd) = LinearSystem(dj,ExcitInd) + SchmidtPert(a,gtid(alpha))* &
+                                    FockSchmidt(gtid(beta)+nOcc-nImp,a)*Nm1AlphaVec(i)/sqrt(ActiveVirtualNorm(alpha))
+                            enddo
+                        endif
+                    enddo
+                    LinearSystem(ExcitInd,dj) = LinearSystem(dj,ExcitInd)
+                enddo
 
+                !Now, for the coupling to the strongly contracted excitation
+                !Minus sign because we always annihilate first with the semi-internal excitations: TODO: Check this
+                do i = 1,nOcc-nImp
+                    do a = nOcc+nImp+1,nSites
+                        do beta = nOcc-nImp+1,nOcc+nImp
+                            LinearSystem(ExcitInd,nFCIDet+1) = LinearSystem(ExcitInd,nFCIDet+1) - &
+                                SchmidtPert(a,i)*SchmidtPert(a,gtid(alpha))*FockSchmidt(i,gtid(beta)+nOcc-nImp)* &
+                                HL_1RDM(gtid(alpha)-nOcc+nImp,gtid(beta))
+                        enddo
+                    enddo
+                enddo
+                LinearSystem(ExcitInd,nFCIDet+1) = LinearSystem(ExcitInd,nFCIDet+1) /  &
+                    sqrt(CoreVirtualNorm*ActiveVirtualNorm(gtid(alpha)))
+                LinearSystem(nFCIDet+1,ExcitInd) = LinearSystem(ExcitInd,nFCIDet+1)
 
+                !Now for the coupling to the other semi-internal excitations
 
+                ExcitInd2 = nFCIDet + 1
+                do alphap = AS_Spin_start,AS_Spin_end
+                    ExcitInd2 = ExcitInd2 + 1
+                    !We shouldn't have coupling between excitations of the same spin
+                    if(mod(alphap,2).ne.mod(alpha,2)) cycle
 
+                    Nm1AlphapVec(:) = 0.0_dp
+                    !Create 1 and 2 body transition RDMs for the N-1 electron system where we have annihilated spin-orbital alphap
+                    !from |0>
+                    do i = 1,nFCIDet
+                        if(btest(FCIBitList(i),alphap-1)) then
+                            !We can annihilate it
+                            Det = FCIBitList(i)
+                            Det = ibclr(Det,alphap-1)
+
+                            do j = 1,nNm1FCIDet
+                                if(Nm1BitList(j).eq.Det) then
+                                    !We have found the orbital. Store the amplitude at this point
+                                    Nm1AlphapVec(j) = FullHamil(i,1)
+                                    exit
+                                endif
+                            enddo
+                            if(j.gt.nNm1FCIDet) call stop_all(t_r,'Can not find appropritate determinant in N-1 space')
+                        endif
+                    enddo
+                    
+                    !We now have the wavefunction a_alpha |0> expressed in the N-1 electron FCI basis
+                    !Now create the 1 and 2 body density matrices from these amplitudes for the resulting N-1 electron wavefunction
+                    call CalcNm1_1RDM(Nm1AlphaVec,Nm1AlphapVec,Nm1AlphaRDM)
+                    call CalcNm1_2RDM(Nm1AlphaVec,Nm1AlphapVec,Nm1Alpha2RDM)
+
+                    !Check that these correspond correctly to the higher-ranked density matrix in the N electron wavefunction
+                    do i = 1,nImp*2
+                        do j = 1,nImp*2
+                            if(abs(Nm1AlphaRDM(i,j)-(HL_2RDM(gtid(alpha),gtid(alphap),i,j)/2.0))) then
+                                call stop_all(t_r'N-1 RDMs do not correspond to higher rank equivalent operators 2')
+                            endif
+                        enddo
+                    enddo
+
+                    !This is a test - we don't actually need to do the diagonals!
+                    tmp2 = LinearSystem(ExcitInd,ExcitInd)  !Save the diagonal element to ensure that it reduces to the same thing
+                    LinearSystem(ExcitInd,ExcitInd) = 0.0_dp
+
+                    do a = nOcc+nImp+1,nSites
+                        do b = nOcc+nImp+1,nSites
+                            LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) +     &
+                              SchmidtPert(a,gtid(alpha))*SchmidtPert(b,gtid(alphap))*FockSchmidt(b,a)*   &
+                              HL_1RDM(gtid(alpha)-nOcc+nImp,gtid(alphap)-nOcc+nImp) /   &
+                        enddo
+                    enddo
+                    do a = nOcc+nImp+1,nSites
+                        do i = 1,nOcc-nImp
+                            LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) +     &
+                              FockSchmidt(i,i)*SchmidtPert(gtid(alpha),a)*SchmidtPert(gtid(alphap),a)* &
+                              HL_1RDM(gtid(alpha)-nOcc+nImp,gtid(alphap)-nOcc+nImp)
+                        enddo
+                    enddo
+                    do a = nOcc+nImp+1,nSites
+                        do beta = 1,2*nImp
+                            do gam = 1,n*nImp
+                                LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) + &
+                                    SchmidtPert(gtid(alpha),a)*SchmidtPert(gtid(alphap),a)*Nm1AlphaRDM(beta,gam)*   &
+                                    FockSchmidt(beta+nOcc-nImp,gam+nOcc-nImp)
+                            enddo
+                        enddo
+                    enddo
+                    tmp = 0.0_dp
+                    do a = nOcc+nImp+1,nSites
+                        tmp = tmp + SchmidtPert(a,gtid(alpha))*SchmidtPert(a,gtid(alphap))
+                    enddo
+                    !Now for the two electron component:
+                    do p = nOcc-nImp+1,nOcc+nImp
+                        do q = nOcc-nImp+1,nOcc+nImp
+                            do r = nOcc-nImp+1,nOcc+nImp
+                                do s = nOcc-nImp+1,nOcc+nImp
+                                    LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) + &
+                                        tmp*Nm1Alpha2RDM(p,q,r,s)*umat(umatind(p,r,q,s))
+                                enddo
+                            enddo
+                        enddo
+                    enddo
+                    LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2)/    &
+                        (sqrt(ActiveVirtualNorm(alpha)*ActiveVirtualNorm(alphap)))
+                    LinearSystem(ExcitInd2,ExcitInd) = LinearSystem(ExcitInd,ExcitInd2)
+                    if((ExcitInd2.eq.ExcitInd).and.(abs(tmp2-LinearSystem(ExcitInd,ExcitInd)).gt.1.0e-7_dp)) then
+                        call stop_all(t_r,'Error in consistent diagonal elements for semi-internal excitations')
+                    endif
+
+                enddo !alphap
 
              enddo  !Finish looping over active-virtual semi-internal excitations
+
+
+
              deallocate(ActiveVirtualNorm)
 
 
@@ -1123,6 +1430,245 @@ module LinearResponse
         enddo
 
     end subroutine FindDeterminantTransRDM
+    
+    
+    !Calculate the 2RDM for an N+1 electron wavefunction. This can be transition
+    !This is only over the ACTIVE space
+    !These are spin-integrated, and have the form given in Helgakker
+    subroutine CalcNp1_2RDM(Bra,Ket,RDM)
+        use DetToolsData, only: nNp1FCIDet,Np1BitList,Np1FCIDetList
+        implicit none
+        real(dp), intent(in) :: Bra(nNp1FCIDet),Ket(nNp1FCIDet)
+        real(dp), intent(out) :: RDM(nImp*2,nImp*2,nImp*2,nImp*2)
+
+        RDM(:,:,:,:) = 0.0_dp
+
+        do i=1,nNp1FCIDet
+            do j=1,nNp1FCIDet
+                !Are they singles?
+                orbdiffs = ieor(Np1BitList(i),Np1BitList(j))
+                IC = CountBits(orbdiffs)
+                if(mod(IC,2).ne.0) call stop_all(t_r,'Error here')
+                IC = IC/2
+                !IC = iGetExcitLevel(FCIDetList(:,i),FCIDetList(:,j),Elec)
+                if(IC.eq.2) then
+                    !Connected by a double
+                    Ex(1,1) = 2
+                    call GetExcitation(Np1FCIDetList(:,i),Np1FCIDetList(:,j),Elec+1,Ex,tSign)
+                    if(mod(Ex(1,1),2).ne.mod(Ex(1,2),2)) then
+                        !We have a mixed spin excitation
+                        !Ensure that the spin of i is the same as the spin of b
+                        !If its not, then reverse a and b and flip the sign
+                        if(mod(Ex(1,1),2).ne.mod(Ex(2,2),2)) then
+                            temp = Ex(2,2)
+                            Ex(2,2) = Ex(2,1)
+                            Ex(2,1) = temp
+                            tSign = .not.tSign
+                        endif
+                    endif
+                    if(tSign) then
+                        if(mod(Ex(1,1),2).eq.mod(Ex(1,2),2)) then
+                            !same spin excitation
+                            RDM(gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1))) =  &
+                                RDM(gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1))) +  &
+                                Bra(i)*Ket(j)
+                            RDM(gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2))) =  &
+                                RDM(gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2))) +  &
+                                Bra(i)*Ket(j)
+                            RDM(gtid(Ex(2,2)),gtid(Ex(1,2)),gtid(Ex(2,1)),gtid(Ex(1,1))) =  &
+                                RDM(gtid(Ex(2,2)),gtid(Ex(1,2)),gtid(Ex(2,1)),gtid(Ex(1,1))) -  &
+                                Bra(i)*Ket(j)
+                            RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),gtid(Ex(2,2)),gtid(Ex(1,2))) =  &
+                                RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),gtid(Ex(2,2)),gtid(Ex(1,2))) -  &
+                                Bra(i)*Ket(j)
+
+                        else
+                            !Mixed spin excitation
+                            !i has the same spin as b
+                            RDM(gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1))) = &
+                                RDM(gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1))) + &
+                                Bra(i)*Ket(j)
+                            RDM(gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2))) = &
+                                RDM(gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2))) + &
+                                Bra(i)*Ket(j)
+
+                        endif
+                    else
+                        if(mod(Ex(1,1),2).eq.mod(Ex(1,2),2)) then
+                            !same spin excitation
+                            RDM(gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1))) =  &
+                                RDM(gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1))) -  &
+                                Bra(i)*Ket(j)
+                            RDM(gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2))) =  &
+                                RDM(gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2))) -  &
+                                Bra(i)*Ket(j)
+                            RDM(gtid(Ex(2,2)),gtid(Ex(1,2)),gtid(Ex(2,1)),gtid(Ex(1,1))) =  &
+                                RDM(gtid(Ex(2,2)),gtid(Ex(1,2)),gtid(Ex(2,1)),gtid(Ex(1,1))) +  &
+                                Bra(i)*Ket(j)
+                            RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),gtid(Ex(2,2)),gtid(Ex(1,2))) =  &
+                                RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),gtid(Ex(2,2)),gtid(Ex(1,2))) +  &
+                                Bra(i)*Ket(j)
+                        else
+                            !Mixed spin excitation
+                            !i has the same spin as b
+                            RDM(gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1))) = &
+                                RDM(gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1))) - &
+                                Bra(i)*Ket(j)
+                            RDM(gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2))) = &
+                                RDM(gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2))) - &
+                                Bra(i)*Ket(j)
+                        endif
+                    endif
+
+                elseif(IC.eq.1) then
+                    !Connected by a single
+                    Ex(1,1) = 1
+                    call GetExcitation(Np1FCIDetList(:,i),Np1FCIDetList(:,j),Elec+1,Ex,tSign)
+                    do k=1,elec+1
+                        kel = gtid(Np1FCIDetList(k,i))
+
+                        if(Np1FCIDetList(k,i).ne.Ex(1,1)) then
+                            if(tSign) then
+                                if(mod(Ex(1,1),2).eq.mod(Np1FCIDetList(k,i),2)) then
+                                    !k also same spin
+                                    RDM(kel,gtid(Ex(1,1)),gtid(Ex(2,1)),kel) = &
+                                        RDM(kel,gtid(Ex(1,1)),gtid(Ex(2,1)),kel) + &
+                                        Bra(i)*Ket(j)
+
+                                    RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) = &
+                                        RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) - &
+                                        Bra(i)*Ket(j)
+
+                                    RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) = &
+                                        RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) - &
+                                        Bra(i)*Ket(j)
+
+                                    RDM(gtid(Ex(2,1)),kel,kel,gtid(Ex(1,1))) = &
+                                        RDM(gtid(Ex(2,1)),kel,kel,gtid(Ex(1,1))) + &
+                                        Bra(i)*Ket(j)
+
+                                else
+                                    !k opposite spin
+                                    RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) = &
+                                        RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) - &
+                                        Bra(i)*Ket(j)
+                                    RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) = &
+                                        RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) - &
+                                        Bra(i)*Ket(j)
+                                endif
+
+                            else
+                                if(mod(Ex(1,1),2).eq.mod(Np1FCIDetList(k,i),2)) then
+                                    !k also same spin
+                                    RDM(kel,gtid(Ex(1,1)),gtid(Ex(2,1)),kel) = &
+                                        RDM(kel,gtid(Ex(1,1)),gtid(Ex(2,1)),kel) - &
+                                        Bra(i)*Ket(j)
+
+                                    RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) = &
+                                        RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) + &
+                                        Bra(i)*Ket(j)
+
+                                    RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) = &
+                                        RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) + &
+                                        Bra(i)*Ket(j)
+
+                                    RDM(gtid(Ex(2,1)),kel,kel,gtid(Ex(1,1))) = &
+                                        RDM(gtid(Ex(2,1)),kel,kel,gtid(Ex(1,1))) - &
+                                        Bra(i)*Ket(j)
+                                else
+                                    !k opposite spin
+                                    RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) = &
+                                        RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) + &
+                                        Bra(i)*Ket(j)
+                                    RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) = &
+                                        RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) + &
+                                        Bra(i)*Ket(j)
+                                endif
+
+                            endif
+
+                        endif
+                    enddo
+                elseif(IC.eq.0) then
+                    !Same det
+                    Ex(1,1) = 0
+                    if(i.ne.j) call stop_all(t_r,'Error here')
+                    do k=1,Elec+1
+                        kel = gtid(Np1FCIDetList(k,i))
+                        do l=k+1,Elec+1
+                            lel = gtid(Np1FCIDetList(l,i))
+                            if(Np1FCIDetList(k,i).eq.Np1FCIDetList(l,i)) cycle
+
+                            if(mod(Np1FCIDetList(l,i),2).eq.mod(Np1FCIDetList(k,i),2)) then
+                                RDM(kel,kel,lel,lel) = RDM(kel,kel,lel,lel) + &
+                                    Bra(i)*Ket(j)
+                                RDM(lel,lel,kel,kel) = RDM(lel,lel,kel,kel) + &
+                                    Bra(i)*Ket(j)
+                                RDM(lel,kel,kel,lel) = RDM(lel,kel,kel,lel) - &
+                                    Bra(i)*Ket(j)
+                                RDM(kel,lel,lel,kel) = RDM(kel,lel,lel,kel) - &
+                                    Bra(i)*Ket(j)
+                            else
+                                RDM(kel,kel,lel,lel) = RDM(kel,kel,lel,lel) + &
+                                    Bra(i)*Ket(j)
+                                RDM(lel,lel,kel,kel) = RDM(lel,lel,kel,kel) + &
+                                    Bra(i)*Ket(j)
+                            endif
+
+                        enddo
+                    enddo
+                endif
+
+            enddo
+        enddo
+
+    end subroutine CalcNp1_2RDM
+
+    !Calculate the 1RDM for an N+1 electron wavefunction. This can be transition
+    !This is only over the ACTIVE space
+    !These are spin-integrated
+    subroutine CalcNp1_1RDM(Bra,Ket,RDM)
+        use DetToolsData, only: nNp1FCIDet,Np1BitList,Np1FCIDetList
+        implicit none
+        real(dp), intent(in) :: Bra(nNp1FCIDet),Ket(nNp1FCIDet)
+        real(dp), intent(out) :: RDM(nImp*2,nImp*2)
+        !real(dp) :: trace
+        integer :: nCore,i,j,ex(2),k,i_spat,a_spat,k_spat,IC,igetexcitlevel
+        integer :: gtid,orbdiffs
+        logical :: tSign
+        character(len=*), parameter :: t_r='CalcNp1_1RDM'
+
+        RDM(:,:) = 0.0_dp
+        do i=1,nNp1FCIDet
+            do j=1,nNp1FCIDet
+
+                !Are they singles?
+                orbdiffs = ieor(Np1BitList(i),Np1BitList(j))
+                IC = CountBits(orbdiffs)
+                if(mod(IC,2).ne.0) call stop_all(t_r,'Error here')
+                IC = IC/2
+
+                !IC = igetexcitlevel(Np1FCIDetList(:,i),Np1FCIDetList(:,j),elec)
+                if(IC.eq.1) then
+                    !Calculate parity
+                    ex(1) = 1
+                    call getexcitation(Np1FCIDetList(:,i),Np1FCIDetList(:,j),elec+1,ex,tSign)
+                    i_spat = gtid(ex(1))
+                    a_spat = gtid(ex(2))
+                    if(tSign) then
+                        RDM(i_spat,a_spat) = RDM(i_spat,a_spat) - Bra(i)*Ket(j)
+                    else
+                        RDM(i_spat,a_spat) = RDM(i_spat,a_spat) + Bra(i)*Ket(j)
+                    endif
+                elseif(IC.eq.0) then
+                    do k=1,elec+1
+                        k_spat = gtid(Np1FCIDetList(k,i)) 
+                        RDM(k_spat,k_spat) = RDM(k_spat,k_spat) + Bra(i)*Ket(i)
+                    enddo
+                endif
+            enddo
+        enddo
+    end subroutine CalcNp1_1RDM
     
     !Calculate the 2RDM for an N-1 electron wavefunction. This can be transition
     !This is only over the ACTIVE space
