@@ -3,6 +3,25 @@ module DetBitOps
     implicit none
 
     contains
+    
+    pure subroutine DecodeBitDet(nI,nel,ilut)
+      integer , intent(in) :: ilut
+      integer , intent(in) :: nel
+      integer , intent(out) :: nI(nel)
+      integer :: elec,j
+
+      nI(:) = 0
+      elec = 0
+      do j=0,end_n_int
+          if(btest(iLut,j)) then
+              !An electron is at this orbital
+              elec=elec+1
+              nI(elec)=j+1
+              if (elec == nel) exit
+          endif
+      enddo
+
+    end subroutine DecodeBitDet
 
     pure subroutine EncodeBitDet(nI,nel,ilut)
       integer , intent(out) :: ilut

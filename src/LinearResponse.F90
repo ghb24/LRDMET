@@ -57,14 +57,16 @@ module LinearResponse
     !This results in requiring the solution of a system which *only* scales with the size of the active hilbert space, not the lattice
     subroutine NonIntContracted_TDA_MCLR()
         use utils, only: get_free_unit
+        use DetBitOps, only: DecodeBitDet
         use DetToolsData
         implicit none
         integer :: nLinearSystem,ierr,i,j,a,highbound,b,info,lwork,n,iunit
         integer :: i_spat,a_spat,gtid,alpha,beta,gam,dj,ExcitInd
         integer :: AS_Spin_start,AS_Spin_end,alphap,Det,ExcitInd2,p,q,r,s,umatind
-        integer :: OrbPairs,UMatSize,alpha_AS,alphap_AS
+        integer :: OrbPairs,UMatSize,alpha_AS,alphap_AS,ex(2,2),TmpDet,TmpnI(elec)
+        logical :: tSign
         real(dp) :: CoreCoupling,CoreVirtualNorm,Omega,Res1,Res2,EDiff,ResponseFn 
-        real(dp) :: testham,testnorm,tmp
+        real(dp) :: testham,testnorm,tmp,ParityFac
         real(dp), allocatable :: LinearSystem(:,:),temp(:,:),Work(:),W(:),Residues(:)
         real(dp), allocatable :: RDM1(:,:),RDM2(:,:)
         real(dp), allocatable :: Trans1RDM_bra(:,:),Trans1RDM_ket(:,:)
@@ -327,11 +329,36 @@ module LinearResponse
                                 endif
                             enddo
                             if(i.gt.nNm1FCIDet) call stop_all(t_r,'Can not find appropriate determinant in N-1 space 2')
+                            if(abs(Nm1AlphaVec(i)).lt.1.0e-8_dp) cycle  !There is not alpha|0> component here
+
+                            if(alpha_AS.ne.beta) then
+                                !We need to find the permutation of this excitation, rather than just taking the coefficient.
+                                !Obviously, this is a silly way of doing it...
+                                TmpDet = Det
+                                TmpDet = ibset(TmpDet,alpha_AS-1)  !Create alpha and decode to get the original determinant
+                                call DecodeBitDet(TmpnI,elec,TmpDet)
+                                ex(1,1) = 1
+                                call getexcitation(FCIDetList(:,dj),TmpnI,elec,ex,tSign)
+                                if(ex(1,1).ne.beta) then
+                                    call stop_all(t_r,'error calculating parity')
+                                elseif(ex(2,1).ne.alpha_AS) then
+                                    call stop_all(t_r,'error calculating parity 2')
+                                endif
+                                if(tSign) then
+                                    !Negative parity
+                                    ParityFac = -1.0_dp
+                                else
+                                    ParityFac = 1.0_dp
+                                endif
+                            else
+                                !We should have created and annihilated the same orbital
+                                ParityFac = 1.0_dp
+                            endif
 
                             !Coupling matrix element is Nm1AlphaVec(i)
                             do a = nOcc+nImp+1,nSites
                                 LinearSystem(dj,ExcitInd) = LinearSystem(dj,ExcitInd) + SchmidtPert(a,gtid(alpha))* &
-                                    FockSchmidt(gtid(beta)+nOcc-nImp,a)*Nm1AlphaVec(i)/sqrt(ActiveVirtualNorm(alpha))
+                                    FockSchmidt(gtid(beta)+nOcc-nImp,a)*Nm1AlphaVec(i)*ParityFac/sqrt(ActiveVirtualNorm(alpha))
                             enddo
                         endif
                     enddo
@@ -540,19 +567,50 @@ module LinearResponse
                                 endif
                             enddo
                             if(i.gt.nNp1FCIDet) call stop_all(t_r,'Can not find appropriate determinant in N+1 space 2')
+                            if(abs(Np1AlphaVec(i)).lt.1.0e-8_dp) cycle  !There is not alpha^+|0> component here
+
+                            if(alpha_AS.ne.beta) then
+                                !Find permutation.
+                                TmpDet = Det
+                                TmpDet = ibclr(TmpDet,alpha_AS-1)
+                                call DecodeBitDet(TmpnI,elec,TmpDet)
+                                Ex(1,1) = 1
+                                call getexcitation(FCIDetList(:,dj),TmpnI,elec,ex,tSign)
+                                if(ex(1,1).ne.alpha_AS) then
+                                    write(6,*) "FCIDetList: ",FCIDetList(:,dj)
+                                    write(6,*) "Np1Det: ",Np1FCIDetList(:,i) 
+                                    write(6,*) "TmpDet: ",TmpnI(:) 
+                                    write(6,*) "Np1AlphaVec(i): ",Np1AlphaVec(i)
+                                    write(6,*) "alpha, beta: ",alpha_AS,beta
+                                    write(6,*) "ex(1,1): ",ex(1,1)
+                                    call stop_all(t_r,'error calculating parity 3')
+                                elseif(ex(2,1).ne.beta) then
+                                    call stop_all(t_r,'error calculating parity 4')
+                                endif
+                                !The parities are switched, since we actually want beta alpha^+, rather than the canonical ordering
+                                if(tSign) then
+                                    !Positive parity
+                                    ParityFac = 1.0_dp
+                                else
+                                    ParityFac = -1.0_dp
+                                endif
+                            else
+                                !We should have created and annihilated the same orbital
+                                ParityFac = 1.0_dp
+                            endif
 
                             !Coupling matrix element is Np1AlphaVec(i)
                             do j = 1,nOcc-nImp
-                                LinearSystem(dj,ExcitInd) = LinearSystem(dj,ExcitInd) - SchmidtPert(j,gtid(alpha))* &
-                                    FockSchmidt(j,gtid(beta)+nOcc-nImp)*Np1AlphaVec(i)
+                                LinearSystem(dj,ExcitInd) = LinearSystem(dj,ExcitInd) + SchmidtPert(j,gtid(alpha))* &
+                                    FockSchmidt(j,gtid(beta)+nOcc-nImp)*Np1AlphaVec(i)*ParityFac
                             enddo
                         endif
                     enddo
 
-                    do i = 1,nOcc-nImp
-                        LinearSystem(dj,ExcitInd) = LinearSystem(dj,ExcitInd) + SchmidtPert(i,gtid(alpha))* &
-                            FockSchmidt(i,gtid(alpha))*FullHamil(dj,1)
-                    enddo
+!                    do i = 1,nOcc-nImp
+!                        LinearSystem(dj,ExcitInd) = LinearSystem(dj,ExcitInd) + SchmidtPert(i,gtid(alpha))* &
+!                            FockSchmidt(i,gtid(alpha))*FullHamil(dj,1)
+!                    enddo
                     LinearSystem(dj,ExcitInd) = LinearSystem(dj,ExcitInd)/sqrt(CoreActiveNorm(alpha))
                     LinearSystem(ExcitInd,dj) = LinearSystem(dj,ExcitInd)
                 enddo
@@ -708,16 +766,65 @@ module LinearResponse
                 !This is zero!
              enddo  !Finish looping over active-virtual semi-internal excitations
 
-            !Is there an overlap matrix we need?
-            !call writematrix(SchmidtPert,'SchmidtPert',.true.)
-            
             !Only now do we remove the ground state from the FCI space
             do i=1,nFCIDet
                 do j=1,nFCIDet
-                    LinearSystem(j,i) = LinearSystem(j,i) - Spectrum(1)*FullHamil(i,1)*FullHamil(j,1)
+                    LinearSystem(j,i) = LinearSystem(j,i) - FullHamil(i,1)*FullHamil(j,1)   !Spectrum(1)*FullHamil(i,1)*FullHamil(j,1)
                 enddo
                 !Finally, subtract the ground state energy from the diagonals, since we want to offset it.
                 LinearSystem(i,i) = LinearSystem(i,i) - Spectrum(1)
+                !Also, offset by the frequency of the transition
+                LinearSystem(i,i) = Omega - LinearSystem(i,i)
+            enddo
+
+            !Calculate overlap matrix. We have already dealt with the diagonals for the uncontracted space.
+            !Since the strongly contracted functions are already parameterized in terms of excitation energies from the GS, we do not
+            !Need to give them a diagonal
+            !First the active-virtual excitations
+            ExcitInd = nFCIDet + 1
+            do alpha = AS_Spin_start,AS_Spin_end
+                ExcitInd = ExcitInd + 1
+
+                alpha_AS = alpha-2*(nOcc-nImp)  !The spin-orbital label of alpha, starting from 1
+
+                ExcitInd2 = nFCIDet + 1
+                do alphap = AS_Spin_start,AS_Spin_end
+                    ExcitInd2 = ExcitInd2 + 1
+                    alphap_AS = alphap-2*(nOcc-nImp)  !The spin-orbital label of alpha, starting from 1
+                    if(mod(alpha,2).ne.mod(alphap,2)) cycle
+
+                    if(ExcitInd2.eq.ExcitInd) cycle !DO NOT DO DIAGONALS - EXCITATIONS ALREADY OFFSET
+
+                    do a = nOcc+nImp+1,nSites
+                        LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) - SchmidtPert(a,gtid(alpha))*  &
+                            SchmidtPert(a,gtid(alphap))*HL_1RDM(gtid(alpha_AS),gtid(alphap_AS)) / &
+                            (2.0_dp*sqrt(ActiveVirtualNorm(alpha)*ActiveVirtualNorm(alphap)))
+                    enddo
+                enddo
+            enddo
+
+            !Now for the core-active semi internals
+            ExcitInd = nFCIDet + 1 + 4*nImp
+            do alpha = AS_Spin_start,AS_Spin_end
+                ExcitInd = ExcitInd + 1
+
+                alpha_AS = alpha-2*(nOcc-nImp)  !The spin-orbital label of alpha, starting from 1
+
+                ExcitInd2 = nFCIDet + 1 + 4*nImp
+                do alphap = AS_Spin_start,AS_Spin_end
+                    ExcitInd2 = ExcitInd2 + 1
+                    alphap_AS = alphap-2*(nOcc-nImp)  !The spin-orbital label of alpha, starting from 1
+                    if(mod(alpha,2).ne.mod(alphap,2)) cycle
+
+                    if(ExcitInd2.eq.ExcitInd) cycle !DO NOT DO DIAGONALS - EXCITATIONS ALREADY OFFSET
+
+                    do i = 1,nOcc-nImp
+                        LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) +   &
+                            SchmidtPert(i,gtid(alpha))*SchmidtPert(i,gtid(alphap))* &
+                            HL_1RDM(gtid(alphap_AS),gtid(alpha_AS))/(2.0_dp*    &
+                            sqrt(CoreActiveNorm(alpha)*CoreActiveNorm(alphap)))
+                    enddo
+                enddo
             enddo
 
             !Check hamiltonian is hermitian
