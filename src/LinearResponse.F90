@@ -687,6 +687,9 @@ module LinearResponse
                                 !Term 1
                                 LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) -   &
                                     SchmidtPert(j,gtid(alphap))*SchmidtPert(i,gtid(alpha))*FockSchmidt(i,j)
+                                !Term 6a
+                                LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) +   &
+                                    SchmidtPert(i,gtid(alphap))*SchmidtPert(i,gtid(alpha))*FockSchmidt(j,j)*2.0_dp
                             enddo
                             !Term 6
                             do beta = 1,2*nImp
@@ -706,6 +709,10 @@ module LinearResponse
                             LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) + &
                                 SchmidtPert(j,gtid(alphap))*SchmidtPert(i,gtid(alpha))*FockSchmidt(i,j)*    &
                                 HL_1RDM(gtid(alpha)-nOcc+nImp,gtid(alphap)-nOcc+nImp)/2.0_dp
+                            !Term 7a
+                            LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) - &
+                                SchmidtPert(i,gtid(alphap))*SchmidtPert(i,gtid(alpha))*FockSchmidt(j,j)*    &
+                                HL_1RDM(gtid(alpha_AS),gtid(alphap_AS))
                         enddo
                         !Term 3
                         LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) + &
