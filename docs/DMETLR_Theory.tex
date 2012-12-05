@@ -1,0 +1,81 @@
+\documentclass[a4paper,oneside,11pt]{article}
+\usepackage{amssymb}
+\usepackage{overcite}
+\usepackage{amsmath}
+\usepackage{enumerate}
+\usepackage{graphicx}
+\usepackage[nottoc]{tocbibind}
+\usepackage{setspace}
+\usepackage{rotating}
+%\doublespacing
+\parindent=0cm
+%\parskip=.5cm
+\numberwithin{equation}{section}
+
+\newcommand{\rff}[1]{{Eq.~\ref{#1}}}
+
+\newcommand{\half}{\ensuremath{\frac{1}{2}}}
+\newcommand{\Rop}{\ensuremath{\mathbf{R}}}
+\newcommand{\wfn}[2]{\ensuremath{\psi_{#1}{(#2)}}}
+\newcommand{\VEC}[1]{\ensuremath{\mathbf{#1}}}
+\newcommand{\pvec}{\ensuremath{\mathbf{p}}}
+\newcommand{\rvec}{\ensuremath{\mathbf{r}}}
+\newcommand{\kvec}{\ensuremath{\mathbf{k}}}
+\newcommand{\Lvec}{\ensuremath{\mathbf{L}}}
+\newcommand{\omegavec}{\mathbf{\omega}}
+\newcommand{\drdr}{d\mathbf{r}_1d\mathbf{r}_2}
+\newcommand{\latvec}[1]{\ensuremath{\mathbf{a}_{#1}}}
+\newcommand{\Hamil}{\hat{H}}
+\newcommand{\hamil}{\hat{h}}
+\newcommand{\Tr}{\mathrm{Tr}}
+\newcommand{\Det}[1]{\ensuremath{D_{\mathbf{#1}}}}
+\newcommand{\w}[1]{\ensuremath{w_{\mathbf{#1}}}}
+\newcommand{\Etilde}[1]{\ensuremath{\tilde{E}_{\mathbf{#1}}}}
+\newcommand{\vxc}{\ensuremath{\hat{v}_{\text{xc}}}}
+\newcommand{\vext}{\ensuremath{\hat{v}_{\text{ext}}}}
+\newcommand{\vhar}{\ensuremath{\hat{v}_{\text{har}}}}
+\newcommand{\eigv}[1]{\ensuremath{\varepsilon_{#1}}}
+\newcommand{\htdop}{\ensuremath{e^{-\beta\Hamil/P}}}
+\newcommand{\rhoel}[1]{\ensuremath{\rho_{\mathbf{#1}}}}
+\newcommand{\cyc}[1]{\ensuremath{(\mathbf{#1})}}
+\def\Braket#1{\mathinner{\left\langle{#1}\right\rangle}}
+\def\braket#1{\mathinner{\langle{#1}\rangle}}
+\renewcommand{\thefootnote}{\fnsymbol{footnote}}
+
+\def \bfX {{\bf X}}
+\def \bfr {{\bf r}}
+\def \bfR {{\bf R}}
+\def \bfi {{\bf i}}
+\def \ket {{\rangle}}
+\def \bra {{\langle}}
+
+\begin{document}
+
+\title{Notes on Linear Response Theory for DMET}
+\date{}
+\maketitle
+
+\section{Linear Response Theory}
+To work more on - just LR equations
+Form of V and A
+Non-interacting theory, CIS and RPA
+\section{Background}
+DMET specific points
+Strongly contracted space
+V local
+\subsection{Spaces \& Notation}
+Notation, and spaces to consider
+\section{Implementation}
+\subsection{Hessian construction}
+Go through each term
+Subsubsection on reduction of ai terms to non-interacting limit
+\subsection{Overlap}
+Overlap diagonal is zero - reasons
+How final equations are exactly constructed
+Removal of zeroth order wavefunction
+\subsection{Transition moments}
+...and construction of excitation spectrum
+\section{Issues/Tests}
+\section{Further work}
+
+\end{document}
