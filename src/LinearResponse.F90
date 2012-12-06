@@ -64,19 +64,23 @@ module LinearResponse
         integer :: i_spat,a_spat,gtid,alpha,beta,gam,dj,ExcitInd
         integer :: AS_Spin_start,AS_Spin_end,alphap,Det,ExcitInd2,p,q,r,s,umatind
         integer :: OrbPairs,UMatSize,alpha_AS,alphap_AS,ex(2,2),TmpDet,TmpnI(elec)
+        integer :: pertsitealpha,pertsitebeta
+        integer, allocatable :: Pivots(:)
         logical :: tSign
         real(dp) :: CoreCoupling,CoreVirtualNorm,Omega,Res1,Res2,EDiff,ResponseFn 
         real(dp) :: testham,testnorm,tmp,ParityFac
         real(dp), allocatable :: LinearSystem(:,:),temp(:,:),Work(:),W(:),Residues(:)
         real(dp), allocatable :: RDM1(:,:),RDM2(:,:)
         real(dp), allocatable :: Trans1RDM_bra(:,:),Trans1RDM_ket(:,:)
-        real(dp), allocatable :: Nm1AlphaVec(:),Np1AlphaVec(:)
+        real(dp), allocatable :: Nm1AlphaVec(:),Np1AlphaVec(:),VGS(:)
         real(dp), allocatable :: Nm1AlphapVec(:),Np1AlphapVec(:)
         real(dp), allocatable :: CoreActiveNorm(:),ActiveVirtualNorm(:)
         real(dp), allocatable :: Nm1AlphaRDM(:,:),Np1AlphaRDM(:,:)
         real(dp), allocatable :: Nm1Alpha2RDM(:,:,:,:),Np1Alpha2RDM(:,:,:,:)
         character(len=*), parameter :: t_r='NonIntContracted_TDA_MCLR'
         logical, parameter :: tNonIntTest = .false.
+        logical, parameter :: tDiagonalize = .true. 
+        logical, parameter :: tResiduesFromRDM = .false.
 
         write(6,*) "Calculating non-interacting IC MR-TDA LR system..."
         if(.not.tConstructFullSchmidtBasis) call stop_all(t_r,'To solve LR, must construct full schmidt basis')
@@ -138,6 +142,12 @@ module LinearResponse
                 nFCIDet = 0
                 nImp = 0
             endif
+        
+            if(.not.tDiagonalize) then
+                allocate(VGS(nLinearSystem))
+                allocate(Pivots(nLinearSystem))
+            endif
+
 
             !Allocate memory for hmailtonian in this system:
             write(6,"(A,F14.6,A)") "Allocating memory for the LR hessian: ",real((nLinearSystem**2)*8,dp)/1048576.0_dp," Mb"
@@ -182,7 +192,7 @@ module LinearResponse
                 do j=1,nOcc-nImp
                     do a=nOcc+nImp+1,nSites
                         LinearSystem(nFCIDet+1,nFCIDet+1) = LinearSystem(nFCIDet+1,nFCIDet+1) -     &
-                            SchmidtPert(a,i)*SchmidtPert(a,j)*FockSchmidt(i,j)
+                            SchmidtPert(a,i)*SchmidtPert(a,j)*FockSchmidt(i,j)*2.0_dp
                     enddo
                 enddo
             enddo
@@ -190,11 +200,11 @@ module LinearResponse
                 do a=nOcc+nImp+1,nSites
                     do b=nOcc+nImp+1,nSites
                         LinearSystem(nFCIDet+1,nFCIDet+1) = LinearSystem(nFCIDet+1,nFCIDet+1) +     &
-                            SchmidtPert(a,i)*SchmidtPert(b,i)*FockSchmidt(a,b)
+                            SchmidtPert(a,i)*SchmidtPert(b,i)*FockSchmidt(a,b)*2.0_dp
                     enddo
                 enddo
             enddo
-            LinearSystem(nFCIDet+1,nFCIDet+1) = LinearSystem(nFCIDet+1,nFCIDet+1)*2.0_dp/CoreVirtualNorm    !for the other spin type.
+            LinearSystem(nFCIDet+1,nFCIDet+1) = LinearSystem(nFCIDet+1,nFCIDet+1)/CoreVirtualNorm    !for the other spin type.
             write(6,*) "Diagonal hamiltonian contribution from fully contracted core-virtual function: ",   &
                 LinearSystem(nFCIDet+1,nFCIDet+1)
             if(tNonIntTest) then
@@ -843,178 +853,244 @@ module LinearResponse
                 enddo
             enddo
 
-            !Now we have the full hamiltonian. Diagonalize this fully
-            allocate(Work(1))
-            if(ierr.ne.0) call stop_all(t_r,"alloc err")
-            allocate(W(nLinearSystem))
-            W(:)=0.0_dp
-            lWork=-1
-            info=0
-            call dsyev('V','U',nLinearSystem,LinearSystem,nLinearSystem,W,Work,lWork,info)
-            if(info.ne.0) call stop_all(t_r,'workspace query failed')
-            lwork=int(work(1))+1
-            deallocate(work)
-            allocate(work(lwork))
-            call dsyev('V','U',nLinearSystem,LinearSystem,nLinearSystem,W,Work,lWork,info)
-            if (info.ne.0) call stop_all(t_r,"Diag failed")
-            deallocate(work)
-            
-            write(6,*) "First 10 MR-TDA-LR transition frequencies: "
-            highbound = min(nLinearSystem,100)
-            call writevector(W(1:highbound),'transition frequencies')
+            if(.not.tDiagonalize) then
+                !Do not diagonalise. Instead, solve the linear system
+                VGS(:) = 0.0_dp
+                pertsitealpha = 2*pertsite-1
+                pertsitebeta = 2*pertsite
+                do i = 1,nFCIDet
+                    if(btest(FCIBitList(i),pertsitealpha-1)) then
+                        !This determinant is occupied
+                        VGS(i) = VGS(i) + FullHamil(i,1)
+                    endif
+                    if(btest(FCIBitList(i),pertsitebeta-1)) then
+                        VGS(i) = VGS(i) + FullHamil(i,1)
+                    endif
+                enddo
 
-            write(6,*) "Calculating residues: "
+                !Now solve these linear equations
+                call DGESV(nLinearSystem,1,LinearSystem,nLinearSystem,Pivots,VGS,nLinearSystem,info)
+                if(info.ne.0) call stop_all(t_r,'Solving Linear system failed') 
 
-            !Now find the transition moments
-            allocate(RDM1(nSites,nSites))
-            allocate(RDM2(nSites,nSites))
-            allocate(Residues(nLinearSystem))
-            Residues(:) = 0.0_dp
+                ResponseFn = 0.0_dp
+                do i = 1,nFCIDet
+                    if(btest(FCIBitList(i),pertsitealpha-1)) then
+                        ResponseFn = ResponseFn + FullHamil(i,1)*VGS(i)
+                    endif
+                    if(btest(FCIBitList(i),pertsitebeta-1)) then
+                        ResponseFn = ResponseFn + FullHamil(i,1)*VGS(i)
+                    endif
+                enddo
+                write(iunit,*) Omega,ResponseFn
 
-            do n=1,nLinearSystem    !loop over states
-                if(.not.tNonIntTest) then
-                    !If we have no FCI space at all, we should not even have core contributions
-                    !First, find the transition RDM between the ground FCI state, and state n
-                    call Calc1RDM(FullHamil(:,1),LinearSystem(1:nFCIDet,n),RDM1)
-                    !...and then vice versa
-                    call Calc1RDM(LinearSystem(1:nFCIDet,n),FullHamil(:,1),RDM2)
+            else
+                !Now we have the full hamiltonian. Diagonalize this fully
+                allocate(Work(1))
+                if(ierr.ne.0) call stop_all(t_r,"alloc err")
+                allocate(W(nLinearSystem))
+                W(:)=0.0_dp
+                lWork=-1
+                info=0
+                call dsyev('V','U',nLinearSystem,LinearSystem,nLinearSystem,W,Work,lWork,info)
+                if(info.ne.0) call stop_all(t_r,'workspace query failed')
+                lwork=int(work(1))+1
+                deallocate(work)
+                allocate(work(lwork))
+                call dsyev('V','U',nLinearSystem,LinearSystem,nLinearSystem,W,Work,lWork,info)
+                if (info.ne.0) call stop_all(t_r,"Diag failed")
+                deallocate(work)
+
+!                write(6,*) "First 10 MR-TDA-LR transition frequencies: "
+!                highbound = min(nLinearSystem,100)
+!                call writevector(W(1:highbound),'transition frequencies')
+!                
+                write(6,*) "Calculating residues: "
+
+                !Now find the transition moments
+                allocate(Residues(nLinearSystem))
+                Residues(:) = 0.0_dp
+
+                if(tResiduesFromRDM) then
+                    !Calc the residues from the full MO transition rdms.
+
+                    allocate(RDM1(nSites,nSites))
+                    allocate(RDM2(nSites,nSites))
+                    do n=1,nLinearSystem    !loop over states
+                        if(.not.tNonIntTest) then
+                            !If we have no FCI space at all, we should not even have core contributions
+                            !First, find the transition RDM between the ground FCI state, and state n
+                            call Calc1RDM(FullHamil(:,1),LinearSystem(1:nFCIDet,n),RDM1)
+                            !...and then vice versa
+                            call Calc1RDM(LinearSystem(1:nFCIDet,n),FullHamil(:,1),RDM2)
+                        else
+                            RDM1(:,:) = 0.0_dp
+                            RDM2(:,:) = 0.0_dp
+                        endif
+
+                        !Now add to the 1RDM the conributions from the fully IC core-active excitations
+                        do i=1,nOcc-nImp
+                            do a=nOcc+nImp+1,nSites
+
+                                RDM1(i,a) = RDM1(i,a) + 2.0_dp*LinearSystem(nFCIDet+1,n)*SchmidtPert(i,a)/sqrt(CoreVirtualNorm)
+                                !RDM1(a,i) = RDM1(a,i) + 2.0_dp*LinearSystem(nFCIDet+1,n)*SchmidtPert(a,i)/sqrt(CoreVirtualNorm)
+
+                                !RDM2(i,a) = RDM2(i,a) + 2.0_dp*LinearSystem(nFCIDet+1,n)*SchmidtPert(a,i)/sqrt(CoreVirtualNorm)
+                                RDM2(a,i) = RDM2(a,i) + 2.0_dp*LinearSystem(nFCIDet+1,n)*SchmidtPert(a,i)/sqrt(CoreVirtualNorm)
+
+                            enddo
+                        enddo
+
+                        !Now add to the 1RDM the contributions from the semi-internal IC active-virtual excitations
+                        ExcitInd = nFCIDet + 1
+                        do alpha = AS_Spin_start,AS_Spin_end
+                            ExcitInd = ExcitInd + 1
+                            do a=nOcc+nImp+1,nSites
+                                do beta = 1,4*nImp
+                                    if(mod(beta,2).ne.mod(alpha,2)) cycle
+                                    RDM1(gtid(beta)+nOcc-nImp,a) = RDM1(gtid(beta)+nOcc-nImp,a) + SchmidtPert(a,gtid(alpha))*    &
+                                        LinearSystem(ExcitInd,n)*HL_1RDM(gtid(beta),gtid(alpha)-nOcc+nImp) /   &
+                                        (2.0_dp*sqrt(ActiveVirtualNorm(alpha)))
+                                    RDM2(a,gtid(beta)+nOcc-nImp) = RDM2(a,gtid(beta)+nOcc-nImp) + SchmidtPert(a,gtid(alpha))*    &
+                                        LinearSystem(ExcitInd,n)*HL_1RDM(gtid(alpha)-nOcc+nImp,gtid(beta)) /   &
+                                        (2.0_dp*sqrt(ActiveVirtualNorm(alpha)))
+                                enddo
+                            enddo
+                        enddo
+
+                        !Now add tot he 1RDM the contributions from the semi-internal IC active-virtual excitations
+                        ExcitInd = nFCIDet + 1 + 4*nImp
+                        do alpha = AS_Spin_start,AS_Spin_end 
+                            ExcitInd = ExcitInd + 1
+                            do i=1,nOcc-nImp
+                                RDM1(i,gtid(alpha)) = RDM1(i,gtid(alpha)) + SchmidtPert(i,gtid(alpha))* &
+                                    LinearSystem(ExcitInd,n) / sqrt(CoreActiveNorm(alpha))
+                                
+                                RDM2(gtid(alpha),i) = RDM2(gtid(alpha),i) + SchmidtPert(i,gtid(alpha))* &
+                                    LinearSystem(ExcitInd,n) / sqrt(CoreActiveNorm(alpha))
+                                do beta = 1,4*nImp
+                                    if(mod(beta,2).ne.mod(alpha,2)) cycle
+                                    RDM1(i,gtid(beta)+nOcc-nImp) = RDM1(i,gtid(beta)+nOcc-nImp) - &
+                                        SchmidtPert(i,gtid(alpha))*LinearSystem(ExcitInd,n)*  &
+                                        HL_1RDM(gtid(alpha)-nOcc+nImp,gtid(beta))/(2.0_dp*sqrt(CoreActiveNorm(alpha)))
+                                    
+                                    RDM2(gtid(beta)+nOcc-nImp,i) = RDM2(gtid(beta)+nOcc-nImp,i) - &
+                                        SchmidtPert(i,gtid(alpha))*LinearSystem(ExcitInd,n)*  &
+                                        HL_1RDM(gtid(beta),gtid(alpha)-nOcc+nImp)/(2.0_dp*sqrt(CoreActiveNorm(alpha)))
+                                enddo
+                            enddo
+                        enddo
+                                    
+                        !Now, calculate the (pertsite,pertsite) component of this in the AO basis
+                        Res1 = 0.0_dp
+                        Res2 = 0.0_dp
+                        do i = 1,nSites
+                            do j = 1,nSites
+                                Res1 = Res1 + FullSchmidtBasis(pertsite,i)*RDM1(i,j)*FullSchmidtBasis(pertsite,j)
+                                Res2 = Res2 + FullSchmidtBasis(pertsite,i)*RDM2(i,j)*FullSchmidtBasis(pertsite,j)
+                            enddo
+                        enddo
+
+                        write(6,*) "Residues for state: ",n,Res1,Res2
+                        Residues(n) = Res1*Res2*Lambda
+                    enddo
+
                 else
-                    RDM1(:,:) = 0.0_dp
-                    RDM2(:,:) = 0.0_dp
+                    !Calculate residues directly from the wavefunction, since we know that the perturbation acts locally to one orbital only.
+                    pertsitealpha = 2*pertsite-1
+                    pertsitebeta = 2*pertsite
+                    
+                    do n=1,nLinearSystem
+
+                        do i = 1,nFCIDet
+                            if(btest(FCIBitList(i),pertsitealpha-1)) then
+                                Residues(n) = Residues(n) + (LinearSystem(i,n)*FullHamil(i,1))**2
+                            endif
+                            if(btest(FCIBitList(i),pertsitebeta-1)) then
+                                Residues(n) = Residues(n) + (LinearSystem(i,n)*FullHamil(i,1))**2
+                            endif
+
+                        enddo
+                        Residues(n) = Residues(n)*Lambda
+
+                    enddo
+
                 endif
 
-                !Now add to the 1RDM the conributions from the fully IC core-active excitations
-                do i=1,nOcc-nImp
-                    do a=nOcc+nImp+1,nSites
-
-                        RDM1(i,a) = RDM1(i,a) + 2.0_dp*LinearSystem(nFCIDet+1,n)*SchmidtPert(i,a)/sqrt(CoreVirtualNorm)
-                        !RDM1(a,i) = RDM1(a,i) + 2.0_dp*LinearSystem(nFCIDet+1,n)*SchmidtPert(a,i)/sqrt(CoreVirtualNorm)
-
-                        !RDM2(i,a) = RDM2(i,a) + 2.0_dp*LinearSystem(nFCIDet+1,n)*SchmidtPert(a,i)/sqrt(CoreVirtualNorm)
-                        RDM2(a,i) = RDM2(a,i) + 2.0_dp*LinearSystem(nFCIDet+1,n)*SchmidtPert(a,i)/sqrt(CoreVirtualNorm)
-
-                    enddo
+                ResponseFn = 0.0_dp
+                do i=1,nLinearSystem
+                    if(tNonIntTest) then
+                        EDiff = W(i)
+                    else
+                        EDiff = W(i) !-Spectrum(1)
+                    endif
+                    ResponseFn = ResponseFn + Residues(i)/(Omega-EDiff)
+        !                ResponseFn = ResponseFn - Residues(i)/(Omega+EDiff)
                 enddo
+                write(iunit,*) Omega,ResponseFn
 
-                !Now add to the 1RDM the contributions from the semi-internal IC active-virtual excitations
-                ExcitInd = nFCIDet + 1
-                do alpha = AS_Spin_start,AS_Spin_end
-                    ExcitInd = ExcitInd + 1
-                    do a=nOcc+nImp+1,nSites
-                        do beta = 1,4*nImp
-                            if(mod(beta,2).ne.mod(alpha,2)) cycle
-                            RDM1(gtid(beta)+nOcc-nImp,a) = RDM1(gtid(beta)+nOcc-nImp,a) + SchmidtPert(a,gtid(alpha))*    &
-                                LinearSystem(ExcitInd,n)*HL_1RDM(gtid(beta),gtid(alpha)-nOcc+nImp) /   &
-                                (2.0_dp*sqrt(ActiveVirtualNorm(alpha)))
-                            RDM2(a,gtid(beta)+nOcc-nImp) = RDM2(a,gtid(beta)+nOcc-nImp) + SchmidtPert(a,gtid(alpha))*    &
-                                LinearSystem(ExcitInd,n)*HL_1RDM(gtid(alpha)-nOcc+nImp,gtid(beta)) /   &
-                                (2.0_dp*sqrt(ActiveVirtualNorm(alpha)))
-                        enddo
-                    enddo
-                enddo
-
-                !Now add tot he 1RDM the contributions from the semi-internal IC active-virtual excitations
-                ExcitInd = nFCIDet + 1 + 4*nImp
-                do alpha = AS_Spin_start,AS_Spin_end 
-                    ExcitInd = ExcitInd + 1
-                    do i=1,nOcc-nImp
-                        RDM1(i,gtid(alpha)) = RDM1(i,gtid(alpha)) + SchmidtPert(i,gtid(alpha))* &
-                            LinearSystem(ExcitInd,n) / sqrt(CoreActiveNorm(alpha))
-                        
-                        RDM2(gtid(alpha),i) = RDM2(gtid(alpha),i) + SchmidtPert(i,gtid(alpha))* &
-                            LinearSystem(ExcitInd,n) / sqrt(CoreActiveNorm(alpha))
-                        do beta = 1,4*nImp
-                            if(mod(beta,2).ne.mod(alpha,2)) cycle
-                            RDM1(i,gtid(beta)+nOcc-nImp) = RDM1(i,gtid(beta)+nOcc-nImp) - &
-                                SchmidtPert(i,gtid(alpha))*LinearSystem(ExcitInd,n)*  &
-                                HL_1RDM(gtid(alpha)-nOcc+nImp,gtid(beta))/(2.0_dp*sqrt(CoreActiveNorm(alpha)))
-                            
-                            RDM2(gtid(beta)+nOcc-nImp,i) = RDM2(gtid(beta)+nOcc-nImp,i) - &
-                                SchmidtPert(i,gtid(alpha))*LinearSystem(ExcitInd,n)*  &
-                                HL_1RDM(gtid(beta),gtid(alpha)-nOcc+nImp)/(2.0_dp*sqrt(CoreActiveNorm(alpha)))
-                        enddo
-                    enddo
-                enddo
-                            
-                !Now, calculate the (pertsite,pertsite) component of this in the AO basis
-                Res1 = 0.0_dp
-                Res2 = 0.0_dp
-                do i = 1,nSites
-                    do j = 1,nSites
-                        Res1 = Res1 + FullSchmidtBasis(pertsite,i)*RDM1(i,j)*FullSchmidtBasis(pertsite,j)
-                        Res2 = Res2 + FullSchmidtBasis(pertsite,i)*RDM2(i,j)*FullSchmidtBasis(pertsite,j)
-                    enddo
-                enddo
-
-                write(6,*) "Residues for state: ",n,Res1,Res2
-                Residues(n) = Res1*Res2*Lambda
-            enddo
-
-            ResponseFn = 0.0_dp
-            do i=1,nLinearSystem
                 if(tNonIntTest) then
-                    EDiff = W(i)
-                else
-                    EDiff = W(i) !-Spectrum(1)
-                endif
-                ResponseFn = ResponseFn + Residues(i)/(Omega-EDiff)
-                ResponseFn = ResponseFn - Residues(i)/(Omega+EDiff)
-            enddo
-            write(iunit,*) Omega,ResponseFn
+                    !Debug comparison info
+                    if(abs(W(1)-testham).gt.1.0e-7_dp) then
+                        write(6,*) "testham: ",testham
+                        write(6,*) "Eigenvalue: ",W(1)
+                        call stop_all(t_r,'eigenvalue not as expected')
+                    endif
+                    testham = 0.0_dp
+                    do i=1,nel
+                        do a=nel+1,nSites*2
+                            if(mod(i,2).ne.mod(a,2)) cycle
+                            i_spat = gtid(i)
+                            a_spat = gtid(a)
 
-            if(tNonIntTest) then
-                !Debug comparison info
-                if(abs(W(1)-testham).gt.1.0e-7_dp) then
-                    write(6,*) "testham: ",testham
-                    write(6,*) "Eigenvalue: ",W(1)
-                    call stop_all(t_r,'eigenvalue not as expected')
-                endif
-                testham = 0.0_dp
-                do i=1,nel
-                    do a=nel+1,nSites*2
-                        if(mod(i,2).ne.mod(a,2)) cycle
-                        i_spat = gtid(i)
-                        a_spat = gtid(a)
+                            testham = testham + ((FullHFOrbs(pertsite,i_spat)*FullHFOrbs(pertsite,a_spat))**2) / &
+                                ( (Omega**2/(FullHFEnergies(a_spat)-FullHFEnergies(i_spat))) - 2*Omega + &
+                                    (FullHFEnergies(a_spat)-FullHFEnergies(i_spat)))
 
-                        testham = testham + ((FullHFOrbs(pertsite,i_spat)*FullHFOrbs(pertsite,a_spat))**2) / &
-                            ( (Omega**2/(FullHFEnergies(a_spat)-FullHFEnergies(i_spat))) - 2*Omega + &
-                                (FullHFEnergies(a_spat)-FullHFEnergies(i_spat)))
-
+                        enddo
                     enddo
-                enddo
-                testham = testham / testnorm
-                testham = Omega - testham
-                !write(6,*) "****",abs(testham-(Omega-EDiff)),abs(testham),abs(testham-(Omega-EDiff))/abs(testham)
-                if(abs(testham-(Omega-EDiff)).gt.1.0e-8_dp) then
-                    !write(6,*) "test denominator: ",testham
-                    !write(6,*) "Calculated Denominator: ",Omega-EDiff
-                    !call stop_all(t_r,'non interacting test denominator fail')
-                endif
+                    testham = testham / testnorm
+                    testham = Omega - testham
+                    !write(6,*) "****",abs(testham-(Omega-EDiff)),abs(testham),abs(testham-(Omega-EDiff))/abs(testham)
+                    if(abs(testham-(Omega-EDiff)).gt.1.0e-8_dp) then
+                        !write(6,*) "test denominator: ",testham
+                        !write(6,*) "Calculated Denominator: ",Omega-EDiff
+                        !call stop_all(t_r,'non interacting test denominator fail')
+                    endif
 
-                testham = 0.0_dp
-                do i=1,nel
-                    do a=nel+1,nSites*2
-                        if(mod(i,2).ne.mod(a,2)) cycle
-                        i_spat = gtid(i)
-                        a_spat = gtid(a)
+                    testham = 0.0_dp
+                    do i=1,nel
+                        do a=nel+1,nSites*2
+                            if(mod(i,2).ne.mod(a,2)) cycle
+                            i_spat = gtid(i)
+                            a_spat = gtid(a)
 
-                        testham = testham + ((FullHFOrbs(pertsite,i_spat)*FullHFOrbs(pertsite,a_spat))**2) / &
-                            (Omega - (FullHFEnergies(a_spat)-FullHFEnergies(i_spat)))
+                            testham = testham + ((FullHFOrbs(pertsite,i_spat)*FullHFOrbs(pertsite,a_spat))**2) / &
+                                (Omega - (FullHFEnergies(a_spat)-FullHFEnergies(i_spat)))
 
+                        enddo
                     enddo
-                enddo
-                testham = testham / sqrt(testnorm)
-                testham = testham*testham
-                if(abs(testham-Residues(1)).gt.1.0e-7_dp) then
-                    write(6,*) "test residue: ",testham
-                    write(6,*) "Calculated Residue: ",Residues(1)
-                    call stop_all(t_r,'non interacting test residue fail')
+                    testham = testham / sqrt(testnorm)
+                    testham = testham*testham
+                    if(abs(testham-Residues(1)).gt.1.0e-7_dp) then
+                        write(6,*) "test residue: ",testham
+                        write(6,*) "Calculated Residue: ",Residues(1)
+                        call stop_all(t_r,'non interacting test residue fail')
+                    endif
                 endif
+
             endif
 
             Omega = Omega + Omega_Step
         
-            deallocate(Residues,W,LinearSystem,RDM1,RDM2)
+            deallocate(LinearSystem)
+            if(.not.tDiagonalize) then
+                deallocate(VGS,Pivots)
+            else
+                if(tResiduesFromRDM) then
+                    deallocate(RDM1,RDM2)
+                endif
+                deallocate(Residues,W)
+            endif
 
         enddo   !Enddo loop over omega
         close(iunit)
@@ -2073,8 +2149,8 @@ module LinearResponse
         use utils, only: get_free_unit
         implicit none
         integer :: ov_space,virt_start,i,a,a_spat,i_spat,ai_ind,gtid,iunit
-        integer :: highbound
-        real(dp) :: Omega,EDiff,ResponseFn
+        integer :: highbound,iunit2
+        real(dp) :: Omega,EDiff,ResponseFn,ResponseFnPosW
         real(dp), allocatable :: transitions(:,:)   !(ov_space,2)   !1 = transition frequencies, 2 = moments
         !character(len=*), parameter :: t_r='NonInteractingLR'
 
@@ -2118,11 +2194,15 @@ module LinearResponse
 
         open(unit=iunit,file='NonInt_DDResponse',status='unknown')
         write(iunit,"(A)") "# Frequency     DD_LinearResponse"
+        iunit2 = get_free_unit()
+        open(unit=iunit2,file='NonInt_DDResponse_posW',status='unknown')
+        write(iunit2,"(A)") "# Frequency     DD_LinearResponse"
 
         Omega = Start_Omega
         do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
 
             ResponseFn = 0.0_dp
+            ResponseFnPosW = 0.0_dp !Only positive frequency
             do i=1,nel
                 do a=virt_start,2*nSites
                     if(mod(i,2).ne.mod(a,2)) cycle      !Only want same spin excitations 
@@ -2131,16 +2211,19 @@ module LinearResponse
 
                     EDiff = FullHFEnergies(a_spat)-FullHFEnergies(i_spat)
                     ResponseFn = ResponseFn + ((FullHFOrbs(pertsite,a_spat)*FullHFOrbs(pertsite,i_spat))**2)/(Omega-EDiff)
+                    ResponseFnPosW = ResponseFnPosW + ((FullHFOrbs(pertsite,a_spat)*FullHFOrbs(pertsite,i_spat))**2)/(Omega-EDiff)
                     ResponseFn = ResponseFn - ((FullHFOrbs(pertsite,a_spat)*FullHFOrbs(pertsite,i_spat))**2)/(Omega+EDiff)
                 enddo
             enddo
             ResponseFn = ResponseFn*Lambda
             write(iunit,*) Omega,ResponseFn
+            write(iunit2,*) Omega,ResponseFnPosW
 
             Omega = Omega + Omega_Step
 
         enddo
         close(iunit)
+        close(iunit2)
 
     end subroutine NonInteractingLR
 

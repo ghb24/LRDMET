@@ -28,6 +28,8 @@
 \newcommand{\Hamil}{\hat{H}}
 \newcommand{\hamil}{\hat{h}}
 \newcommand{\Tr}{\mathrm{Tr}}
+\newcommand{\DMETBra}{\langle \mathrm{core}|\langle 0|}
+\newcommand{\DMETKet}{|0\rangle| \mathrm{core} \rangle}
 \newcommand{\Det}[1]{\ensuremath{D_{\mathbf{#1}}}}
 \newcommand{\w}[1]{\ensuremath{w_{\mathbf{#1}}}}
 \newcommand{\Etilde}[1]{\ensuremath{\tilde{E}_{\mathbf{#1}}}}
@@ -55,27 +57,186 @@
 \date{}
 \maketitle
 
-\section{Linear Response Theory}
-To work more on - just LR equations
-Form of V and A
-Non-interacting theory, CIS and RPA
-\section{Background}
-DMET specific points
-Strongly contracted space
-V local
+\section{Linear Response Theory Fundamentals}
+Full background LR theory will be included later, and here we just outline salient points.
+
+Introduce single-frequency harmonic perturbation to the hamiltonian,
+\begin{eqnarray}
+H_0 \rightarrow H_0 + V^t \\
+V^t = \lambda V (e^{i \omega t}+e^{-i \omega t}) .
+\end{eqnarray}
+The perturbation can also be expressed in the frequency domain as $V^{\omega}$, which acts only at the specified frequency.
+We can consider how the expectation of an operator $A$ changes to linear order in the perturbation strength, which defines
+the linear response function for a given frequency,
+\begin{eqnarray}
+\langle \langle A ; V^{\omega} \rangle \rangle = \langle \psi^{(0)} | A | \psi^{(1)}_{\omega} \rangle + \langle \psi^{(1)}_{-\omega} | A | \psi^{(0)} \rangle  ,   \label{LRFunc}
+\end{eqnarray}
+where $|\psi^{(1)}_{\omega}\rangle$ can be defined in the eigenbasis of the hamiltonian as
+\begin{equation}
+| \psi^{(1)}_{\omega} \rangle = \sum_{n \neq 0} \frac{ | n \rangle \langle n | V | \psi^{(0)} \rangle}{\omega - (E_n - E_0)} .
+\end{equation}
+This results in the Lehmann representation of the linear response function as
+\begin{equation}
+\langle \langle A ; V^{\omega} \rangle \rangle = \sum_{n \neq 0} \frac{\langle \psi^{(0)} | A | n \rangle \langle n | V | \psi^{(0)} \rangle}{\omega - (E_n - E_0)} - \sum_{n \neq 0} \frac{\langle \psi^{(0)} | V | n \rangle \langle n | A | \psi^{(0)} \rangle}{\omega + (E_n - E_0)} .  \label{Lehmann}
+\end{equation}
+It can be seen then that the residues of the linear response function give the direct transition moment between the ground and excited state, while the poles identify the direct excitation energies.
+Instead of requiring the eigenbasis representation, a set of linear equations can be solved to directly obtain the $|\psi^{(1)}_{\omega}\rangle$, according to
+\begin{equation}
+(S \omega - (H - E_0))|\psi^{(1)}\rangle = V|\psi^{(0)}.     \label{LinearSystem}
+\end{equation}
+Once obtained, the linear response equation can be obtained from Eq.~\ref{LRFunc}.
+The time-domain evolution of the expectation value can then be written to first-order as a discrete FT of the linear response function,
+\begin{equation}
+\langle \psi(t) | A | \psi(t) \rangle = \langle \psi^{(0)} | A | \psi^{(0)} \rangle + \langle \langle A ; V^{\omega} \rangle \rangle e^{-i \omega t} + \langle \langle A ; V^{-\omega} \rangle \rangle e^{i \omega t} .
+\end{equation}
+In the same way in which static response functions result from the derivatives of the stationary energy series of a perturbation expansion, dynamic response functions result from the 
+derivatives of the perturbation expansion of the stationary quasi-energy, defined as the averaged action of
+\begin{equation}
+\epsilon = \frac{1}{T}\int_0^T dt \langle \psi^{(0)} | H-i\frac{\partial}{\partial t} | \psi^{(0)} \rangle
+\end{equation}
+This will be written on more later.
+Much of the decision therefore rests on how to parameterise this $|\psi^{(1)}_{\omega} \rangle$. In the non-interacting theory, starting from the HF ground state, we can write
+\begin{equation}
+V^{\omega} = \sum_{ia} \frac{V_{ia} a_a^{+} a_i}{\omega - (\varepsilon_a - \varepsilon_i)}, \label{NonInteractingOperator}
+\end{equation}
+resulting in
+\begin{equation}
+|\psi^{(1)} \rangle = \sum_{ia} \frac{V_{ia} a_a^{+} a_i}{\omega - (\varepsilon_a - \varepsilon_i)} |\psi^{(0)} \rangle,    \label{NonInteractingPhi1}
+\end{equation}
+which can be inserted into Eq.~\ref{LRFunc} to obtain the non-interacting linear response function.
+RPA (LR-HF), you can consider the space of the hamiltonian as consisting of all single excitations and de-excitations of the Hartree--Fock reference. This results in a slightly different
+form for the linear response function, since an explicit form for $|\psi^{(1)} \rangle$ is not obtained, and eigenvectors of the hamiltonian rather represent generalized excitation operators 
+(linear combination of excitation and deexcitation).
+This results in transition moments needing to be evaluated as commutators with the perturbation. The deexcitation operators are required to ensure that the time-dependent observable remains
+one which is expressible by a single determinant constructed from all rotations among all possible determinants in the space. If the deexcitation operators are omitted, then an explicit 
+expression for $|\psi^{(1)} \rangle$
+can be obtained, resulting from the Tamm-Dancoff approximation, or CIS, and (for instance) Eq.~\ref{Lehmann} can be used directly to obtain the linear response function.
+
+In these notes, we will restrict ourselves to a density-density linear response function at a local site $\phi_{\alpha}$, with $A = \lambda V = a_{\alpha}^{+} a_{\alpha}$, 
+resulting in the transitions corresponding to 
+number-conserving (neutral) excitations. Therefore, in e.g. Eq.~\ref{NonInteractingOperator}, $V_{ia} = \langle i | a_{\alpha}^{+} a_{\alpha} | a \rangle$.
+
+\section{DMET-LR Background}
+
+In DMET, we aim to self-consistently solve both a mean-field problem, and an impurity problem. The mean-field problem results in a set of delocalized orbitals, which are then transformed into a specific
+set of doubly-occupied core and virtual orbitals, as well as an active set of orbitals in which to perform a CAS calculation (FCI for these purposes). There are $2 \times$ the number of impurity sites in
+this CAS space, and represent the full impurity orbital space, along with a bath of the same size which contains {\em all} the one-electron coupling to the mean-field determinant orbitals. 
+This embedded basis therefore
+contains the full space of the impurity, as well as the full coupling to the rest of the space at the mean-field level. At self-consistency, a correlation potential is applied over the impurity space,
+such that the 1RDM of the mean-field and the FCI high-level RDM in the embedded system match.
+
+In order to do linear response on the wavefunction from this embedded system, we want to combine the optimised active space of the ground state DMET theory, with that of strongly contracted basis of single
+excitations present in the non-interacting perturbation operator in Eq.~\ref{NonInteractingOperator}. The strongly contracted basis is reminiscent of the strongly contracted basis of NEVPT2, but in this
+case is soley for one-electron operators. In addition, as long as the perturbation is chosen to act locally at an impurity site, i.e. $\phi_{\alpha} \in \{\phi_{\textrm{imp}}\}$, 
+then $V |\psi^{(0)} \rangle$ is entirely spanned by the original CAS space, regardless of the $|\psi^{(0)} \rangle$ expressed in this space, since the full orbital space of $\phi_{\alpha}$ is 
+included in the space. In full MCLR, all single excitations and deexcitations would then be included on top of the CAS space; from the core to the virtual space, the core to active space, and active to virtual.
+In order to retain the feature of DMET that the explicit space of the wavefunction does not scale with the size of the underlying system, these single excitations first internally contracted (in keeping
+with MCLR), whereby the excitation operators act on the $|\psi^{(0)} \rangle$ as a whole, and then are also strongly contracted, whereby they are collected and parameterized according contraction
+coefficients obtained from the non-interacting theory.
+
 \subsection{Spaces \& Notation}
-Notation, and spaces to consider
+
+Writing the optimized DMET $|\psi^{(0)} \rangle$ as
+\begin{equation}
+|\psi^{(0)} \rangle = |0 \rangle|core \rangle ,
+\end{equation}
+where the $|0 \rangle$ represents the wavefunction in the CAS space, we can denote the {\em spatial} orbital space which the schmidt basis spans 
+as $\{i,j,k\} \in \textrm{core}$, $\{a,b,c\} \in \textrm{virtual}$, and $\{ \alpha,\beta,\gamma,\delta \} \in \textrm{active}$. There are $n_{emb}$ spatial 
+orbitals in the active space in which $|0 \rangle$ is represented. For future use $\{p,q,r,s\}$ represent general orbitals over all space.
+We want to construct the hamiltonian in the basis the full CAS space, and include coupling to the spaces of
+\begin{eqnarray}
+\chi^{CV} = \sum_{ia} G_{ia}(\omega) a_a^{+} a_i |0\rangle |core\rangle \\
+\chi^{AV}_{\beta} = \sum_{a} G_{\beta a}(\omega) a_a^{+} a_{\beta} |0\rangle |core\rangle \\
+\chi^{CA}_{\beta} = \sum_{i} G_{i \beta}(\omega) a_{\beta}^{+} a_{i} |0\rangle |core\rangle , \\
+\end{eqnarray}
+where superscripts CV stand for strongly contracted `core-virtual' excitations, AV is for the `active-virtual', and CA for `core-active'. The contraction matrix, $G(\omega)$, is obtained from projecting the
+form for the non-interacting operator in the mean-field basis (Eq.~\ref{NonInteractingOperator}) into the (full) Schmidt basis as defined above. Note that this is only obtained for a specific
+frequency, and therefore will need to be recalculated each time over a frequency sweep. This explicit $\omega$ dependence will be omitted and implied from now on for brevity. 
+
+Initially, the AV and CA excitations remain defined for
+each active space spin-orbital $\beta$, and have yet to be spin-integrated. Therefore the resulting size of the linear equations is the size of the original CAS determinant space, plus $4 \times n_{emb}$
+functions corresponding to $\chi^{AV}_{\beta}$ and $\chi^{CA}_{\beta} \forall \beta \in$ the active orbital space, and a single function corresponding to $\chi^{CV}$.
+
+We note that the DMET hamiltonian only contains two-electron terms over the impurity space (a subspace of the full embedded `active' system). However, the calculation of the hamiltonian in the 
+basis described above, will also include 3RDMs when considering the two-electron elements between AV or CA `internal` excitations, since there are two active space fermion operators, as well as the 
+two electron operator from the hamiltonian. These will be dealt with (see below) via an RI onto the N+1/N-1 electron space in the active basis. Essentially, the operators on each side of the
+expectation value are explicitly applied to give e.g.
+\begin{equation}
+|0^{(-1)}_{\beta} \rangle = a_{\beta} |0\rangle ,
+\end{equation}
+from which transition density matrices are constructed from these functions. More details on this will be given below. One other point is that since no orbitals are now canonical HF orbitals,
+the one-electron operator in the space is no longer diagonal.
+
 \section{Implementation}
+Here I will go through the construction of the individual terms, as they are coded up, and for brevity will omit the `$a$' in the use of fermionic operators.
+\subsection{Normalization}
+The strongly contracted functions given above which define the space in which we want to construct the hamiltonian are not normalized, and initially the normalization constants are calculated.
+\begin{eqnarray}
+N^{(CV)} &= \sum_{ijab} G_{ia} G_{jb} \DMETBra b^{+} j a^{+} i \DMETKet \\
+&= 2\sum_{ai} |G_{ai}|^2    \\
+N^{(AV)}_{\beta} &= \sum_{ab} G_{\beta a} G_{\beta b} \DMETBra \beta^{+} b a^{+} \beta \DMETKet \\
+&= \frac{1}{2} D_{\beta \beta} \sum_{a} |G_{\beta a}|^2    \\
+N^{(CA)}_{\beta} &= \sum_{ij} G_{i \beta} G_{j \beta} \DMETBra j^{+} \beta \beta^{+} i \DMETKet \\
+&= \frac{1}{2} D_{\beta \beta} \sum_{i} |G_{i \beta}|^2
+\end{eqnarray}
+where $D$ is the {\em spin-free} one-electron RDM. The factor of two in $N^{(CV)}$ comes from the spin integration, since the ai run over both spin-types, but the internal excitations only
+run over one spin-type for the active orbital.
 \subsection{Hessian construction}
-Go through each term
-Subsubsection on reduction of ai terms to non-interacting limit
+There are ten seperate blocks of the hamiltonian which need to be constructed. The first consists of just the uncontracted CAS determinant space, which is identical to the hamiltonian operator
+in which the high-level calculation acted. The others need to be derived, as given below.
+\subsubsection{Diagonal element of core-virtual excitation}
+The expression for the diagonal hamiltonian matrix element for the CV excitation is
+\begin{equation}
+\frac{1}{N^{(CV)}}\sum_{ijabpq} G_{jb} G_{ia} f_{pq} \DMETBra j^{+} b p^{+} q a^{+} i \DMETKet ,
+\end{equation}
+where $f_{pq}$ are elements of the one-electron mean-field operator. Evaluating the expectation value gives
+\begin{equation}
+\delta_{bp} \delta_{qa} \delta_{ij} - \delta_{ab} \delta_{jq} \delta_{ip} + \delta_{ab} \delta_{ij} \langle p^{+} q \rangle
+\end{equation}
+After spin integration, this gives
+\begin{equation}
+\frac{1}{N^{(CV)}} \left( 2\sum_{iab} G_{ib} G_{ia} f_{ba} - 2\sum_{ija} G_{ja} G_{ia} f_{ij} + 4 \sum_{ija} G_{ia} G_{ia} f_{jj} + 2 \sum_{ai \beta \gamma} G_{ia} G_{ia} \gamma_{\beta \gamma} f_{\beta \gamma} \right) .
+\end{equation}
+The two electron term gives
+\begin{equation}
+\sum_{\beta \gamma \delta \mu} (\beta \gamma | \delta \mu) d_{\beta \gamma \delta \mu}
+\end{equation}
+where $d_{\beta \gamma \delta \mu}$ is the spin-free 2RDM over the active space. This is just the two electron energy over the active space -- we will return to this later.
+\subsubsection{Coupling between core-virtual excitation and uncontracted determinant space}
+\begin{equation}
+\frac{1}{\sqrt{N^{(CV)}}} \sum_{iapq} G_{ia} f_{pq} \langle \textrm{core} |\langle D_J | p^{+} q a^{+} i \DMETKet ,
+\end{equation}
+where $| D_J \rangle$ is an active space uncontracted determinant, with a corresponding FCI coefficient $C_J$ in $|0\rangle$. Evaluating the matrix element and spin-integrating gives
+\begin{equation}
+\frac{2}{\sqrt{N^{(CV)}}} C_J \sum_{ia} G_{ia} f_{ia} .
+\end{equation}
+The two-electron term does not couple.
 \subsection{Overlap}
+\subsection{Setup of final equations}
 Overlap diagonal is zero - reasons
 How final equations are exactly constructed
 Removal of zeroth order wavefunction
-\subsection{Transition moments}
+\subsection{Linear response function}
 ...and construction of excitation spectrum
 \section{Issues/Tests}
-\section{Further work}
+TDA, RDM both reduce to the same non-interacting limit
+Subsubsection on reduction of ai terms to non-interacting limit
+Show ia reduces, numerically and analytically
+3 different ways to construct residues - all should be equivalent
+
+Explicitly calculate 3RDMs (this should not affect the reduction to the non-interacting limit as I have implemented it, since it only effects the 2-electron operator)
+
+Check that FCI space correct!
+Things to try: With non-zero active space, show that we should get non-int limit correctly
+\section{Further methodological work}
+Obv, need to get it to work!
+Full spin-integration of active excitations
+- omega term!
+Factorize terms for efficiency
+Different orbital partitioning - apply
+Response of correlation potential? At the moment, just LR on Anderson impurity model, since no self-consistency. (note to self: care needed that the correlation potential does not apply over the impurity sites?)
+Comparison to full MCLR
+Include deexcitations which can have different parameterization
+More accurate contraction parameterization from TDA or RPA
 
 \end{document}
