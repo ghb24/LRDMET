@@ -228,7 +228,7 @@ The expectation value evaluates to
 \end{equation}
 From which we can partially spin-integrate (remembering that $\beta$ and $\gamma$ refer to specific spin-orbitals) to give the expression
 \begin{equation}
-\frac{1}{\sqrt{N^{(AV)}_{\beta}N^{(AV)}_{\gamma}}} \left( \frac{D_{\gamma \beta}}{2} \sum_{ab} G_{\beta b} G_{\gamma a} f_{ab} + D_{\gamma \beta} \sum_{ai} G_{\beta a} G_{\gamma a} f_{ii} + \frac{1}{2}\sum_{a \delta \mu} G_{\beta a} G_{\gamma a} d_{\gamma \beta \delta \mu} f_{\delta \mu} \right )
+\frac{1}{\sqrt{N^{(AV)}_{\beta}N^{(AV)}_{\gamma}}} \left( \frac{D_{\gamma \beta}}{2} \sum_{ab} G_{\beta b} G_{\gamma a} f_{ab} + D_{\gamma \beta} \sum_{ai} G_{\beta a} G_{\gamma a} f_{ii} + \frac{1}{2}\sum_{a \delta \mu} G_{\beta a} G_{\gamma a} d_{\gamma \beta \delta \mu} f_{\delta \mu} \right ) \label{DiagAVBlock}
 \end{equation}
 The two electron part requires the evaluation of the expectation value
 \begin{equation}
@@ -246,7 +246,7 @@ Once this is obtained, transition density matrices between these N-1 electron fu
 In this way, we only need to evaluate and store 2-RDMs for all needs. It may however be easier in the end to simply construct the 3RDMs as needed - this is to test.
 The final two-electron energy expression for this block is therefore
 \begin{equation}
-\frac{1}{2 \sqrt{N^{(AV)}_{\beta}N^{(AV)}_{\gamma}}} \sum_{a \delta \nu \mu \lambda} G_{\beta a} G_{\gamma a} (d^T_{\beta \gamma})_{\delta \nu \mu \lambda} (\delta \nu | \mu \lambda)
+\frac{1}{2 \sqrt{N^{(AV)}_{\beta}N^{(AV)}_{\gamma}}} \sum_{a \delta \nu \mu \lambda} G_{\beta a} G_{\gamma a} (d^T_{\beta \gamma})_{\delta \nu \mu \lambda} (\delta \nu | \mu \lambda)   \label{DiagAVBlock2e}
 \end{equation}
 Care needs to be taken - $\gamma$ and $\beta$ correspond to spin-orbitals, but we need to full spin-integrate the $(d^T_{\beta \gamma})_{\delta \nu \mu \lambda}$ term. There is clearly no term
 between $\gamma$ and $\beta$ of different spin. This is something to check against
@@ -389,7 +389,10 @@ For the core-virtual excitation, we have terms corresponding to the zeroth-order
 These terms correspond to the final two terms in Eq.~\ref{1eCVDiag}, and Eq.~\ref{2eCVDiag}. These are therefore neglected in the construction of the diagonal element for the core-virtual excitation. In 
 section \ref{sec:ReductionofCA} we analytically prove that these are the correct terms to subtract, to ensure that this term leads to the non-interacting equations when taken in isolation.
 
-
+The diagonal hamiltonian terms of the active-virtual excitations (Eq. \ref{DiagAVBlock} \& Eq. \ref{DiagAVBlock2e}) can be rewritten as
+\begin{equation}
+\frac{\sum_{ab} G_{\beta a} G_{\beta b} f_{ab}}{\sum_a G_{\beta a} G_{\beta a}} + 2 \sum_i f_{ii} + \frac{\sum_{\delta \mu} d_{\beta \beta \delta \mu} f_{\delta \mu}}{D_{\beta \beta}} + \frac{1}{D_{\beta \beta}} \sum_{\delta \nu \mu \lambda} \langle \beta^{+} \delta^{+} \mu^{+} \lambda \nu \beta \rangle (\delta \nu | \mu \lambda)
+\end{equation}
 
 
 Overlap diagonal is zero - reasons
@@ -398,6 +401,60 @@ Removal of zeroth order wavefunction
 \subsection{Linear response function}
 ...and construction of excitation spectrum
 \section{Issues/Tests}
+
+\subsubsection{Reduction of strongly contracted core-virtual excitation to non-interacting limit}
+Assume we have no active space, and the space reduces to the canonical HF orbital space. In this limit, the strongly contracted core-virtual excitation
+alone should reproduce the non-interacting limit. In this case, the matrix consists of only one function, and thus, the linear response function can be
+written as
+\begin{equation}
+\langle \langle V ; V \rangle \rangle = \frac{\langle 0 | V | 1 \rangle \langle 1 | V | 0 \rangle}{\omega - E}  ,   \label{CVLR}
+\end{equation}
+where (ignoring spin for simplicitly),
+\begin{align}
+|1 \rangle &= \frac{1}{\sqrt{N}} \sum_{ia} G_{ia} a^{+} i | HF \rangle  \\
+!0 \rangle &= |HF \rangle   \\
+G_{ia} &= \frac{ \langle i | V | a \rangle }{\omega-(\epsilon_a - \epsilon_i)}   \\ 
+N &= \sum_{ia} G_{ai} G_{ia} \\
+V &= \alpha^{+} \alpha  .
+\end{align}
+The hamiltonian matrix element of Eq.~\ref{1eCVDiag} is taken to be in the canonical basis (removing the `zeroth' energy contribution as discussed above),
+\begin{equation}
+E = \frac{1}{N} \sum_{ia} G_{ai} G_{ia} (\epsilon_a - \epsilon_i)
+\end{equation}
+We find that
+\begin{equation}
+\langle 0 | p^{+} q | 1 \rangle = \frac{1}{\sqrt{N}} G_{ia}
+\end{equation}
+Rotating this into the AO basis, and extracting the $\alpha \alpha$ component of the resultant transition density matrix in the AO basis, gives
+\begin{align}
+\langle 0 | \alpha^{+} \alpha | 1 \rangle &= \frac{1}{\sqrt{N}} \sum_{ia} C_{\alpha i} G_{ia} C_{\alpha a}     // 
+&= \frac{1}{\sqrt{N}} \sum_{ia} \frac{\langle i | \alpha^{+} \alpha | a \rangle C_{\alpha i} C_{\alpha a}}{\omega - (\epsilon_a - \epsilon_i)}
+\end{align}
+where $C_{\alpha i}$ represents MO transformation matrix, giving the $\alpha$ component of the $i^{\textrm{th}}$ MO.
+Since
+\begin{equation}
+C_{\alpha i} C_{\alpha a} = \langle a | \alpha^{+} \alpha | i \rangle ,
+\end{equation}
+we can write
+\begin{equation}
+\langle 0 | \alpha^{+} \alpha | 1 \rangle = \frac{1}{\sqrt{N}} \sum_{ia} \frac{\langle i | \alpha^{+} \alpha | a \rangle \langle a | \alpha^{+} \alpha | i \rangle}{\omega - (\epsilon_a - \epsilon_i)}
+\end{equation}
+Subbing this into Eq.~\ref{CVLR} gives
+\begin{equation}
+\langle \langle V ; V \rangle \rangle = \frac{ \frac{1}{N} \left( \sum_{ia} \frac{\langle i | \alpha^{+} \alpha | a \rangle \langle a | \alpha^{+} \alpha | i \rangle }{ \omega - (\epsilon_a - \epsilon_i)} \right)^2}{\omega - \frac{1}{N} \sum_{ia} G_{ia} G_{ai} (\epsilon_a - \epsilon_i)} \label{asd}
+\end{equation}
+Multiplying the numerator and denominator by $N$, and considering the denominator in isolation, gives
+\begin{align}
+& \sum_{ia} \frac{\omega|\langle i | \alpha^{+} \alpha | a \rangle |^2 - (\epsilon_a - \epsilon_i) |\langle i | \alpha^{+} \alpha | a \rangle |^{+}}{(\omega - (\epsilon_a - \epsilon_i))^2}
+&=\sum_{ia} \frac{|\langle i | \alpha^{+} \alpha | a \rangle|^2}{\omega - (\epsilon_a - \epsilon_i)} , 
+\end{align}
+which when substituted into Eq.~\ref{asd}, gives
+\begin{equation}
+\frac{ \left( \sum_{ia} \frac{|\langle i | \alpha^{+} \alpha | a \rangle |^2}{\omega - (\epsilon_a - \epsilon_i)} \right)^2}{\sum_{ia} \frac{|\langle i | \alpha^{+} \alpha | a \rangle |^2}{\omega - (\epsilon_a - \epsilon_i)}} = \sum_{ia} \frac{|\langle i | \alpha^{+} \alpha | a \rangle |^2}{\omega - (\epsilon_a - \epsilon_i)} ,
+\end{equation}
+as desired for the ($+ \omega$ component only) non-interacting linear response function. This has been justified both analytically, and numerically in the code.
+This also confirms the choice of $E_0$ for the core-virtual excitation as described in the section above.
+
 TDA, RDM both reduce to the same non-interacting limit
 Subsubsection on reduction of ai terms to non-interacting limit
 Show ia reduces, numerically and analytically
