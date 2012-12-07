@@ -79,7 +79,7 @@ module LinearResponse
         real(dp), allocatable :: Nm1Alpha2RDM(:,:,:,:),Np1Alpha2RDM(:,:,:,:)
         character(len=*), parameter :: t_r='NonIntContracted_TDA_MCLR'
         logical, parameter :: tNonIntTest = .false.
-        logical, parameter :: tDiagonalize = .true. 
+        logical, parameter :: tDiagonalize = .false.
         logical, parameter :: tResiduesFromRDM = .false.
 
         write(6,*) "Calculating non-interacting IC MR-TDA LR system..."
@@ -458,10 +458,6 @@ module LinearResponse
                             LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) +     &
                               SchmidtPert(a,gtid(alpha))*SchmidtPert(b,gtid(alphap))*FockSchmidt(b,a)*   &
                               HL_1RDM(gtid(alpha)-nOcc+nImp,gtid(alphap)-nOcc+nImp)/2.0_dp
-
-                            LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) +     &
-                              SchmidtPert(a,gtid(alpha))*SchmidtPert(a,gtid(alphap))*FockSchmidt(b,b)*   &
-                              HL_1RDM(gtid(alpha)-nOcc+nImp,gtid(alphap)-nOcc+nImp)
                         enddo
                     enddo
                     do a = nOcc+nImp+1,nSites
@@ -521,9 +517,10 @@ module LinearResponse
             do alpha = AS_Spin_start,AS_Spin_end
                 do i=1,nOcc-nImp        
                     CoreActiveNorm(alpha) = CoreActiveNorm(alpha) +   &
-                        SchmidtPert(i,gtid(alpha))*SchmidtPert(gtid(alpha),i)*  &
-                        HL_1RDM(gtid(alpha)-nOcc+nImp,gtid(alpha)-nOcc+nImp)/2.0_dp !We only want one spin-type now
+                        SchmidtPert(i,gtid(alpha))*SchmidtPert(gtid(alpha),i)
                 enddo
+                CoreActiveNorm(alpha) = CoreActiveNorm(alpha) *     &
+                    (1.0_dp - (HL_1RDM(gtid(alpha)-nOcc+nImp,gtid(alpha)-nOcc+nImp)/2.0_dp))
             enddo
             !First, creating a hole in the occupied manifold, for each alpha
             ExcitInd = nFCIDet + 1 + 4*nImp
@@ -783,16 +780,24 @@ module LinearResponse
                 !This is zero!
              enddo  !Finish looping over active-virtual semi-internal excitations
 
-            !Only now do we remove the ground state from the FCI space
+            !Only now do we remove the ground state from the FCI space, since this is redundant
             do i=1,nFCIDet
                 do j=1,nFCIDet
-                    LinearSystem(j,i) = LinearSystem(j,i) - FullHamil(i,1)*FullHamil(j,1)   !Spectrum(1)*FullHamil(i,1)*FullHamil(j,1)
+                    LinearSystem(j,i) = LinearSystem(j,i) - Spectrum(1)*FullHamil(i,1)*FullHamil(j,1)
                 enddo
                 !Finally, subtract the ground state energy from the diagonals, since we want to offset it.
                 LinearSystem(i,i) = LinearSystem(i,i) - Spectrum(1)
                 !Also, offset by the frequency of the transition
                 LinearSystem(i,i) = Omega - LinearSystem(i,i)
             enddo
+
+            !The CV excitation also needs to be offset by the transition frequency
+            !Its overlap is 1
+            LinearSystem(nFCIDet+1,nFCIDet+1) = Omega - LinearSystem(nFCIDet+1,nFCIDet+1)
+
+            !******************************************************************************************
+            ! OVERLAP matrix elements
+            !******************************************************************************************
 
             !Calculate overlap matrix. We have already dealt with the diagonals for the uncontracted space.
             !Since the strongly contracted functions are already parameterized in terms of excitation energies from the GS, we do not

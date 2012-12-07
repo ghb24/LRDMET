@@ -82,7 +82,7 @@ This results in the Lehmann representation of the linear response function as
 It can be seen then that the residues of the linear response function give the direct transition moment between the ground and excited state, while the poles identify the direct excitation energies.
 Instead of requiring the eigenbasis representation, a set of linear equations can be solved to directly obtain the $|\psi^{(1)}_{\omega}\rangle$, according to
 \begin{equation}
-(S \omega - (H - E_0))|\psi^{(1)}\rangle = V|\psi^{(0)}.     \label{LinearSystem}
+(S \omega - (H - E_0))|\psi^{(1)}\rangle = V|\psi^{(0)} \rangle.     \label{LinearSystem}
 \end{equation}
 Once obtained, the linear response equation can be obtained from Eq.~\ref{LRFunc}.
 The time-domain evolution of the expectation value can then be written to first-order as a discrete FT of the linear response function,
@@ -138,10 +138,10 @@ coefficients obtained from the non-interacting theory.
 
 Writing the optimized DMET $|\psi^{(0)} \rangle$ as
 \begin{equation}
-|\psi^{(0)} \rangle = |0 \rangle|core \rangle ,
+|\psi^{(0)} \rangle = \DMETKet ,
 \end{equation}
 where the $|0 \rangle$ represents the wavefunction in the CAS space, we can denote the {\em spatial} orbital space which the schmidt basis spans 
-as $\{i,j,k\} \in \textrm{core}$, $\{a,b,c\} \in \textrm{virtual}$, and $\{ \alpha,\beta,\gamma,\delta \} \in \textrm{active}$. There are $n_{emb}$ spatial 
+as $\{i,j,k\} \in \textrm{core}$, $\{a,b,c\} \in \textrm{virtual}$, and greek indices $\{ \alpha,\beta,\gamma,\delta,\mu,\lambda \} \in \textrm{active}$. There are $n_{emb}$ spatial 
 orbitals in the active space in which $|0 \rangle$ is represented. For future use $\{p,q,r,s\}$ represent general orbitals over all space.
 We want to construct the hamiltonian in the basis the full CAS space, and include coupling to the spaces of
 \begin{eqnarray}
@@ -171,19 +171,21 @@ the one-electron operator in the space is no longer diagonal.
 Here I will go through the construction of the individual terms, as they are coded up, and for brevity will omit the `$a$' in the use of fermionic operators.
 \subsection{Normalization}
 The strongly contracted functions given above which define the space in which we want to construct the hamiltonian are not normalized, and initially the normalization constants are calculated.
-\begin{eqnarray}
+\begin{align}
 N^{(CV)} &= \sum_{ijab} G_{ia} G_{jb} \DMETBra b^{+} j a^{+} i \DMETKet \\
 &= 2\sum_{ai} |G_{ai}|^2    \\
 N^{(AV)}_{\beta} &= \sum_{ab} G_{\beta a} G_{\beta b} \DMETBra \beta^{+} b a^{+} \beta \DMETKet \\
-&= \frac{1}{2} D_{\beta \beta} \sum_{a} |G_{\beta a}|^2    \\
+&= \frac{1}{2} D_{\beta \beta} \sum_{a} |G_{\beta a}|^2    \label{AVNorm} \\
 N^{(CA)}_{\beta} &= \sum_{ij} G_{i \beta} G_{j \beta} \DMETBra j^{+} \beta \beta^{+} i \DMETKet \\
-&= \frac{1}{2} D_{\beta \beta} \sum_{i} |G_{i \beta}|^2
-\end{eqnarray}
+&= \left(1-\frac{1}{2} \right) D_{\beta \beta} \sum_{i} |G_{i \beta}|^2     \label{CANorm}
+\end{align}
 where $D$ is the {\em spin-free} one-electron RDM. The factor of two in $N^{(CV)}$ comes from the spin integration, since the ai run over both spin-types, but the internal excitations only
 run over one spin-type for the active orbital.
+
 \subsection{Hessian construction}
 There are ten seperate blocks of the hamiltonian which need to be constructed. The first consists of just the uncontracted CAS determinant space, which is identical to the hamiltonian operator
 in which the high-level calculation acted. The others need to be derived, as given below.
+
 \subsubsection{Diagonal element of core-virtual excitation}
 The expression for the diagonal hamiltonian matrix element for the CV excitation is
 \begin{equation}
@@ -195,13 +197,15 @@ where $f_{pq}$ are elements of the one-electron mean-field operator. Evaluating 
 \end{equation}
 After spin integration, this gives
 \begin{equation}
-\frac{1}{N^{(CV)}} \left( 2\sum_{iab} G_{ib} G_{ia} f_{ba} - 2\sum_{ija} G_{ja} G_{ia} f_{ij} + 4 \sum_{ija} G_{ia} G_{ia} f_{jj} + 2 \sum_{ai \beta \gamma} G_{ia} G_{ia} \gamma_{\beta \gamma} f_{\beta \gamma} \right) .
+\frac{1}{N^{(CV)}} \left( 2\sum_{iab} G_{ib} G_{ia} f_{ba} - 2\sum_{ija} G_{ja} G_{ia} f_{ij} + 4 \sum_{ija} G_{ia} G_{ia} f_{jj} + 2 \sum_{ai \beta \gamma} G_{ia} G_{ia} \gamma_{\beta \gamma} f_{\beta \gamma} \right) . \label{1eCVDiag}
 \end{equation}
 The two electron term gives
 \begin{equation}
-\sum_{\beta \gamma \delta \mu} (\beta \gamma | \delta \mu) d_{\beta \gamma \delta \mu}
+\sum_{\beta \gamma \delta \mu} (\beta \gamma | \delta \mu) d_{\beta \gamma \delta \mu}  \label{2eCVDiag}
 \end{equation}
-where $d_{\beta \gamma \delta \mu}$ is the spin-free 2RDM over the active space. This is just the two electron energy over the active space -- we will return to this later.
+where $d_{\beta \gamma \delta \mu} = \sum_{\sigma \tau} \langle 0| \beta^{+}_{\sigma} \delta^{+}_{\tau} \mu_{\tau} \gamma_{\sigma} | 0 \rangle$ is the spin-free 2RDM over the active space. 
+This final contrubtion is just the two electron energy over the active space -- we will return to this later.
+
 \subsubsection{Coupling between core-virtual excitation and uncontracted determinant space}
 \begin{equation}
 \frac{1}{\sqrt{N^{(CV)}}} \sum_{iapq} G_{ia} f_{pq} \langle \textrm{core} |\langle D_J | p^{+} q a^{+} i \DMETKet ,
@@ -211,8 +215,183 @@ where $| D_J \rangle$ is an active space uncontracted determinant, with a corres
 \frac{2}{\sqrt{N^{(CV)}}} C_J \sum_{ia} G_{ia} f_{ia} .
 \end{equation}
 The two-electron term does not couple.
-\subsection{Overlap}
+
+\subsubsection{Diagonal block between Active-Virtual internal excitations}
+\label{sec:AVDiag}
+The one electron contribution to these matrix elements is given by
+\begin{equation}
+\frac{1}{\sqrt{N^{(AV)}_{\beta}N^{(AV)}_{\gamma}}} \sum_{apqb} G_{\beta b} G_{\gamma a} f_{pq} \DMETBra \gamma^{+} a p^{+} q b^{+} \beta \DMETKet
+\end{equation}
+The expectation value evaluates to
+\begin{equation}
+\delta_{ap} \delta_{qb} \langle \gamma^{+} \beta \rangle + \delta_{ab} \langle \gamma^{+} p^{+} q \beta \rangle
+\end{equation}
+From which we can partially spin-integrate (remembering that $\beta$ and $\gamma$ refer to specific spin-orbitals) to give the expression
+\begin{equation}
+\frac{1}{\sqrt{N^{(AV)}_{\beta}N^{(AV)}_{\gamma}}} \left( \frac{D_{\gamma \beta}}{2} \sum_{ab} G_{\beta b} G_{\gamma a} f_{ab} + D_{\gamma \beta} \sum_{ai} G_{\beta a} G_{\gamma a} f_{ii} + \frac{1}{2}\sum_{a \delta \mu} G_{\beta a} G_{\gamma a} d_{\gamma \beta \delta \mu} f_{\delta \mu} \right )
+\end{equation}
+The two electron part requires the evaluation of the expectation value
+\begin{equation}
+\langle 0 | \gamma^{+} a \delta^{+} \mu^{+} \lambda \nu b^{+} \beta | 0 \rangle = \delta_{ab} \langle 0 | \gamma^{+} \delta^{+} \mu^{+} \lambda \nu \beta | 0 \rangle
+\end{equation}
+Unfortunately, to evaluate exactly required 3-particle RDMs. This is avoided by precomputing the N-1 electron wavefunction
+\begin{equation}
+|0^{(-1)}_{\beta} \rangle = \sum_J |D_J^{(-1)} \rangle \langle D_J^{(-1)} | a_{\beta} |0\rangle ,
+\end{equation}
+where $D_J^{(-1)}$ represents the uncontracted N-1 electron determinant space spanned by the active orbitals.
+Once this is obtained, transition density matrices between these N-1 electron functions can be used instead of higher-ranked density matrices between the N-electron ground state, i.e.
+\begin{equation}
+(d^T_{\beta \gamma})_{\delta \nu \mu \lambda} = \langle 0^{(-1)}_{\beta} | \delta^{+} \mu^{+} \lambda \nu | 0^{(-1)}_{\gamma} \rangle = \langle 0 | \gamma^{+} \delta^{+} \mu^{+} \lambda \nu \beta | 0 \rangle
+\end{equation}
+In this way, we only need to evaluate and store 2-RDMs for all needs. It may however be easier in the end to simply construct the 3RDMs as needed - this is to test.
+The final two-electron energy expression for this block is therefore
+\begin{equation}
+\frac{1}{2 \sqrt{N^{(AV)}_{\beta}N^{(AV)}_{\gamma}}} \sum_{a \delta \nu \mu \lambda} G_{\beta a} G_{\gamma a} (d^T_{\beta \gamma})_{\delta \nu \mu \lambda} (\delta \nu | \mu \lambda)
+\end{equation}
+Care needs to be taken - $\gamma$ and $\beta$ correspond to spin-orbitals, but we need to full spin-integrate the $(d^T_{\beta \gamma})_{\delta \nu \mu \lambda}$ term. There is clearly no term
+between $\gamma$ and $\beta$ of different spin. This is something to check against
+the 3RDMs, but will not affect non-interacting limit, so not my first place I am checking now...
+
+\subsubsection{Coupling between active-virtual excitations and the uncontracted determinant space}
+The one-electron coupling is given by
+\begin{equation}
+\frac{1}{\sqrt{N_{\beta}^{(AV)}}} \sum_{apq} G_{\beta a} f_{pq} \langle \textrm{core} | \langle D_J | p^{+} q a^{+} \beta \DMETKet
+\end{equation}
+which evaluates to
+\begin{equation}
+\frac{1}{\sqrt{N_{\beta}^{(AV)}}} \sum_{\gamma a} G_{\beta a} f_{\gamma a} \langle D_J | \gamma^{+} \beta | 0 \rangle
+\end{equation}
+Algorithmically, you do not want to loop over $\gamma$, but rather loop over the FCI wavefunction, before calculating whether it couples via a single excitation to $D_J$. The parity factor of 
+$\langle D_J | \gamma^{+} \beta | 0 \rangle$ needs also to be calculated, and can introduce a sign change. It is also possible to reuse the N-1 electron $|0^{(-1)}_{\beta} \rangle$ wavefunction calculated
+earlier for more efficiency, and this can be a test. $\gamma^{+}$ would then be sequentially applied to each element in this wavefunction. Parities would however still need to be calculated.
+The two-electron term again does not couple.
+
+\subsubsection{Coupling between active-virtual excitations and the strongly contracted core-virtual excitation}
+The one electron coupling is given by
+\begin{equation}
+\frac{1}{\sqrt{N^{(CV)}N^{(AV)}_{\beta}}} \sum_{iabpq} G_{ia} G_{\beta b} f_{pq} \DMETBra i^{+} a p^{+} q b^{+} \beta \DMETKet
+\end{equation}
+The expectation value is
+\begin{equation}
+\DMETBra i^{+} a p^{+} q b^{+} \beta \DMETKet = -\delta_{ab} \delta_{iq} \DMETBra p^{+} \beta \DMETKet   ,
+\end{equation}
+which results in the matrix element
+\begin{equation}
+-\frac{1}{2 \sqrt{N^{(CV)}N^{(AV)}_{\beta}}} \sum_{ia \gamma} G_{ia} G_{\beta a} f_{\gamma i} D_{\gamma \beta} .
+\end{equation}
+No two-electron term.
+
+\subsubsection{Diagonal block between core-active internal excitations}
+The one-electron component is given as 
+\begin{equation}
+\frac{1}{\sqrt{N^{CA}_{\beta} N^{(CA)}_{\gamma}}} \sum_{ijpq} G_{i \beta} G_{j \gamma} f_{pq} \DMETBra j^{+} \gamma p^{+} q \beta^{+} i \DMETKet     \label{CABlock}
+\end{equation}
+The expectation value can be evaluated and reduced to canonical form as
+\begin{eqnarray}
+-\delta_{jq}\delta_{pi}\delta_{\beta \gamma} + \delta_{jq}\delta{pi}\langle \beta^{+} \gamma \rangle + \delta_{ij} \delta_{p \gamma} \delta_{q \beta} - \delta_{ij} \delta_{p \gamma} \langle \beta q \rangle \\ \notag
+- \delta_{ij} \delta_{q \beta} \langle p^{+} \gamma \rangle + \delta_{ij} \delta_{\gamma \beta} \langle p^{+} q \rangle - \delta_{ij} \langle p^{+} \beta^{+} \gamma q \rangle
+\end{eqnarray}
+These terms are spin-integrated where possible, and divided into terms which only act on the diagonal (contains $\delta_{\gamma \beta}$ - terms 1 \& 6), 
+which consist of (note that the normalization factor in Eq.~\ref{CABlock} is implied and omitted for readability)
+\begin{equation}
+-\sum_{ij} G_{j \beta} G_{i \beta} f_{ij} + \sum_{i \delta \lambda} G_{i \beta} G_{i \beta} f_{\delta \lambda} D_{\delta \lambda} + 2 \sum_{ij} G_{i \beta} G_{i \beta} f_{jj}
+\end{equation}
+The other one-electron terms act on all elements in the block, and consist of (again, normalization omitted)
+\begin{eqnarray}
+\frac{1}{2} \sum_{ij} G_{j \gamma} G_{i \beta} f_{ij} D_{\beta \gamma} + \sum_{i} G_{i \gamma} G_{i \beta} f_{\gamma \beta} - \frac{1}{2} \sum_{i \delta} G_{i \gamma} G_{i \beta} f_{\gamma \delta} D_{\beta \delta}  \notag \\ 
+- \frac{1}{2} \sum_{i \delta} G_{i \gamma} G_{i \beta} f_{\delta \beta} D_{\delta \gamma} - \sum_{ij} G_{i \gamma} G_{i \beta} f_{jj} D_{\beta \gamma} - \frac{1}{2} \sum_{i \delta \lambda} G_{i \gamma} G_{i \beta} f_{\delta \lambda} d_{\delta \lambda \beta \gamma} .
+\end{eqnarray}
+Obviously, many of these terms factorize and can be evaluated more efficiently, but here they are written out in full.
+The two-electron term is given by
+\begin{equation}
+\frac{1}{\sqrt{N^{CA}_{\beta} N^{(CA)}_{\gamma}}} \sum_{ij \delta \lambda \mu \nu} G_{i \beta} G_{j \gamma} (\delta \lambda | \mu \nu) \DMETBra j^{+} \gamma \delta^{+} \mu^{+} \nu \lambda \beta^{+} i \DMETKet
+\end{equation}
+which reduces to
+\begin{equation}
+\frac{1}{\sqrt{N^{CA}_{\beta} N^{(CA)}_{\gamma}}} \sum_{i \delta \lambda \mu \nu} G_{i \beta} G_{i \gamma} (\delta \lambda | \mu \nu) \DMETBra \gamma \delta^{+} \mu^{+} \nu \lambda \beta^{+} \DMETKet
+\end{equation}
+As in section \ref{sec:AVDiag}, this expectation value can be evaluated either by reducing it to canonical form and constructing the 3RDM, or by evaluating two-body transition density matrices between
+N+1 electron wavefunctions. If the 3RDM is to be used, many more terms will result than for the active-virtual analogue, since previously it was already in a canonical representation for the 3RDM.
+Here, lower-ranked RDMs will also be produced. Care is also needed therefore in the spin-integration.
+
+\subsubsection{Coupling between core-active internal excitations and the uncontracted CAS determinants}
+The one-electron contribution is
+\begin{equation}
+\frac{1}{\sqrt{N^{(CA)}_{\beta}}} \sum_{ipq} G_{i \beta} f_{pq} \langle \textrm{core} | \langle D_J | p^{+} q \beta^{+} i \DMETKet
+\end{equation}
+This can be written as
+\begin{equation}
+\frac{1}{\sqrt{N^{(CA)}_{\beta}}} \sum_{i \delta} G_{i \beta} f_{i \delta} \langle D_J | \delta \beta^{+} | 0 \rangle
+\end{equation}
+We have to be careful here, since the matrix element is not in a canonical form. We could either reduce it to canonical form (in which case we would obtain a $\delta_{\delta \beta}$ term), or leave it in this
+form, since we already have the N+1 electron wavefunction stored according to $\beta^{+} | 0 \rangle$. In this case the parities need be be flipped when $\beta \neq \delta$, or include diagonal RDM contributions
+when $\beta = \delta$. This is something I need to rigourously check. To check, it is equivalent to form the transistion RDM between the states for all $\delta$.
+
+\subsubsection{Coupling between core-active internal excitations and strongly contracted CV excitation}
+The one-electron contribution is
+\begin{equation}
+\frac{1}{\sqrt{N^{(CV)} N^{(CA)}_{\beta}}} \sum_{ijapq} G_{ja} G_{i \beta} f_{pq} \DMETBra j^{+} a p^{+} q \beta^{+} i \DMETKet
+\end{equation}
+The expectation value reduces to
+\begin{equation}
+\delta_{ap} \delta_{ij} \delta_{q \beta} - \delta_{ap} \delta_{ij} \langle \beta^{+} q \rangle
+\end{equation}
+Spin-integrating, the full term is therefore
+\begin{equation}
+\frac{1}{\sqrt{N^{(CV)} N^{(CA)}_{\beta}}} \sum_{ai} G_{ia} G_{i \beta} f_{a \beta} - \frac{1}{2 \sqrt{N^{(CV)} N^{(CA)}_{\beta}}} \sum_{a i \gamma} G_{ia} G_{i \beta} f_{a \gamma} D_{\beta \gamma}
+\end{equation}
+
+\subsubsection{Coupling between the core-active internal excitations and active-virtual internal excitations}
+This can be written as
+\begin{equation}
+\frac{1}{\sqrt{N^{(AV)}_{\beta} N^{(CA)}_{\gamma}}} \sum_{aipq} G_{i \beta} G_{\gamma a} f_{pq} \DMETBra \gamma^{+} a p^{+} q \beta^{+} i \DMETKet
+\end{equation}
+This expectation value evaluates to zero for all $\gamma$ and $\beta$, and therefore there is no coupling between the different classes for internal excitations.
+
+\subsection{Overlap matrix}
+
+All functions have been explicitly normalized, but not all of them are orthogonal to each other. 
+Within each class of internal excitations, we have to explicitly construct the overlap matrix in this block.
+
+\subsubsection{Active-virtual excitation overlap}
+The overlap of these functions is given by
+\begin{equation}
+S^{(AV)}_{\beta \gamma} = \frac{1}{\sqrt{N^{(AV)}_{\beta} N^{(AV)}_{\gamma}}} \sum_{ab} G_{b \beta} G_{a \gamma} \DMETBra \gamma^{+} a b^{+} \beta \DMETKet
+\end{equation}
+Evaluating this gives
+\begin{equation}
+S^{(AV)}_{\beta \gamma} = \frac{1}{2 \sqrt{N^{(AV)}_{\beta} N^{(AV)}_{\gamma}}} \sum_{a} G_{a \beta} G_{a \gamma} D_{\beta \gamma}
+\end{equation}
+Expanding out the normalization according to Eq.~\ref{AVNorm}, it can be seen as a check that $S^{(AV)}_{\beta \beta} = 1$ as expected.
+
+\subsubsection{Core-Active excitation overlap}
+Similarly, the overlap of the core-active excitation block is given by
+\begin{equation}
+S^{(CA)}_{\beta \gamma} = \frac{1}{\sqrt{N^{(CA)}_{\beta} N^{(CA)}_{\gamma}}} \sum_{ij} G_{i \beta} G_{j \gamma} \DMETBra i^{+} \beta \gamma^{+} j \DMETKet
+\end{equation}
+Evaluating this gives an additional diagonal term compared to the active-virtual block:
+\begin{equation}
+S^{(CA)}_{\beta \gamma} = \frac{1}{\sqrt{N^{(AV)}_{\beta} N^{(AV)}_{\gamma}}} \left ( \sum_i \delta_{\beta \gamma} G_{i \beta} G_{i \beta} - \frac{1}{2} \sum_{i} G_{i \beta} G_{i \gamma} D_{\gamma \beta} \right)
+\end{equation}
+Once again, substituting in the normalization according to Eq.~\ref{CANorm} gives unity as expected.
+
 \subsection{Setup of final equations}
+
+We now want to construct and solve for $|\psi^{(0)} \rangle$ as given in Eq.~\ref{LinearSystem}. The first thing that is done, is to remove the redundant ground state eigenvector from the hamiltonian
+matrix that we have constructed. This involves a double loop over the CAS space in which $|\psi^{(0)} \rangle$ is defined:
+\begin{equation}
+H \rightarrow H - |\psi^{(0)} \rangle E_0 \langle \psi^{(0)} |
+\end{equation}
+Next, we need to offset the `zeroth-order' energy from the diagonals of the hessian. This needs care, to consider what exactly constitutes this in each block. In the uncontracted CAS space, this is 
+just the energy from the diagonalization, $E_0$, since the determinant basis is constructed without reference to the core contribution.
+
+For the core-virtual excitation, we have terms corresponding to the zeroth-order energy, both in the same way as the determinant space ($E_0$), but also from the 1-electron core energy contribution.
+These terms correspond to the final two terms in Eq.~\ref{1eCVDiag}, and Eq.~\ref{2eCVDiag}. These are therefore neglected in the construction of the diagonal element for the core-virtual excitation. In 
+section \ref{sec:ReductionofCA} we analytically prove that these are the correct terms to subtract, to ensure that this term leads to the non-interacting equations when taken in isolation.
+
+
+
+
 Overlap diagonal is zero - reasons
 How final equations are exactly constructed
 Removal of zeroth order wavefunction
