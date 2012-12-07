@@ -791,17 +791,27 @@ module LinearResponse
                 LinearSystem(i,i) = Omega - LinearSystem(i,i)
             enddo
 
+            !The CV excitation never had its zeroth-order energy included
             !The CV excitation also needs to be offset by the transition frequency
             !Its overlap is 1
             LinearSystem(nFCIDet+1,nFCIDet+1) = Omega - LinearSystem(nFCIDet+1,nFCIDet+1)
+
+            !Remove what is expected to be the `zeroth-order' energy from the internal excitations
+            tmp = 0.0_dp
+            do i=1,nOcc-nImp
+                tmp = tmp + FockSchmidt(i,i)
+            enddo
+            tmp = tmp * 2.0_dp
+            !Remove the same energy contribution from all internal excitations
+            do alpha = nFCIDet + 2,nLinearSystem
+                LinearSystem(alpha,alpha) = LinearSystem(alpha,alpha) - tmp - HL_Energy
+            enddo
 
             !******************************************************************************************
             ! OVERLAP matrix elements
             !******************************************************************************************
 
-            !Calculate overlap matrix. We have already dealt with the diagonals for the uncontracted space.
-            !Since the strongly contracted functions are already parameterized in terms of excitation energies from the GS, we do not
-            !Need to give them a diagonal
+            !Calculate overlap matrix. 
             !First the active-virtual excitations
             ExcitInd = nFCIDet + 1
             do alpha = AS_Spin_start,AS_Spin_end
@@ -815,13 +825,23 @@ module LinearResponse
                     alphap_AS = alphap-2*(nOcc-nImp)  !The spin-orbital label of alpha, starting from 1
                     if(mod(alpha,2).ne.mod(alphap,2)) cycle
 
-                    if(ExcitInd2.eq.ExcitInd) cycle !DO NOT DO DIAGONALS - EXCITATIONS ALREADY OFFSET
+                    if(ExcitInd2.eq.ExcitInd) then
+                        !Overlap is 1
+                        LinearSystem(ExcitInd,ExcitInd) = Omega - LinearSystem(ExcitInd,ExcitInd)
 
-                    do a = nOcc+nImp+1,nSites
-                        LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) - SchmidtPert(a,gtid(alpha))*  &
-                            SchmidtPert(a,gtid(alphap))*HL_1RDM(gtid(alpha_AS),gtid(alphap_AS)) / &
-                            (2.0_dp*sqrt(ActiveVirtualNorm(alpha)*ActiveVirtualNorm(alphap)))
-                    enddo
+                    else
+                        !Overlap needs to be multiplied by Omega before subtraction
+
+                        tmp = 0.0_dp
+                        do a = nOcc+nImp+1,nSites
+                            !Accumulate wS
+                            tmp = tmp + SchmidtPert(a,gtid(alpha))*  &
+                                SchmidtPert(a,gtid(alphap))*HL_1RDM(gtid(alpha_AS),gtid(alphap_AS)) / &
+                                (2.0_dp*sqrt(ActiveVirtualNorm(alpha)*ActiveVirtualNorm(alphap))) 
+                        enddo
+                        tmp = tmp * Omega
+                        LinearSystem(ExcitInd,ExcitInd2) = tmp - LinearSystem(ExcitInd,ExcitInd2) 
+                    endif
                 enddo
             enddo
 
@@ -838,14 +858,21 @@ module LinearResponse
                     alphap_AS = alphap-2*(nOcc-nImp)  !The spin-orbital label of alpha, starting from 1
                     if(mod(alpha,2).ne.mod(alphap,2)) cycle
 
-                    if(ExcitInd2.eq.ExcitInd) cycle !DO NOT DO DIAGONALS - EXCITATIONS ALREADY OFFSET
+                    if(ExcitInd2.eq.ExcitInd) then
+                        !Overlap is 1
+                        LinearSystem(ExcitInd,ExcitInd) = Omega - LinearSystem(ExcitInd,ExcitInd)
+                    else
+                        !Overlap needs to be multiplied by Omega before subtraction
 
-                    do i = 1,nOcc-nImp
-                        LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) +   &
-                            SchmidtPert(i,gtid(alpha))*SchmidtPert(i,gtid(alphap))* &
-                            HL_1RDM(gtid(alphap_AS),gtid(alpha_AS))/(2.0_dp*    &
-                            sqrt(CoreActiveNorm(alpha)*CoreActiveNorm(alphap)))
-                    enddo
+                        tmp = 0.0_dp
+                        do i = 1,nOcc-nImp
+                            tmp = tmp - SchmidtPert(i,gtid(alpha))*SchmidtPert(i,gtid(alphap))* &
+                                HL_1RDM(gtid(alphap_AS),gtid(alpha_AS))/(2.0_dp*    &
+                                sqrt(CoreActiveNorm(alpha)*CoreActiveNorm(alphap)))
+                        enddo
+                        tmp = tmp * Omega
+                        LinearSystem(ExcitInd,ExcitInd2) = tmp - LinearSystem(ExcitInd,ExcitInd2)
+                    endif
                 enddo
             enddo
 

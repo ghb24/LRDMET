@@ -27,7 +27,7 @@ call run_DMETcalc()
         tConstructFullSchmidtBasis = .true. 
         tMFResponse = .false. 
         tHalfFill = .true. 
-        nSites = 12  
+        nSites = 8   
         LatticeDim = 1
         nImp = 1
         StartU = 0.0_dp
@@ -39,8 +39,8 @@ call run_DMETcalc()
 !        tCompleteDiag = tMFResponse
         tCompleteDiag = .true. 
         tGSFCI = .not.tCompleteDiag 
-        Start_Omega = 0.0_dp
-        End_Omega = 5.0_dp
+        Start_Omega = -20.0_dp
+        End_Omega = 20.0_dp
         Omega_Step = 0.001_dp
         tDumpFCIDUMP = .true.
         tDiagFullSystem = .false.

@@ -73,7 +73,7 @@ the linear response function for a given frequency,
 \end{eqnarray}
 where $|\psi^{(1)}_{\omega}\rangle$ can be defined in the eigenbasis of the hamiltonian as
 \begin{equation}
-| \psi^{(1)}_{\omega} \rangle = \sum_{n \neq 0} \frac{ | n \rangle \langle n | V | \psi^{(0)} \rangle}{\omega - (E_n - E_0)} .
+| \psi^{(1)}_{\omega} \rangle = \sum_{n \neq 0} \frac{ | n \rangle \langle n | V | \psi^{(0)} \rangle}{\omega - (E_n - E_0)} . 
 \end{equation}
 This results in the Lehmann representation of the linear response function as
 \begin{equation}
@@ -373,7 +373,7 @@ Evaluating this gives an additional diagonal term compared to the active-virtual
 \begin{equation}
 S^{(CA)}_{\beta \gamma} = \frac{1}{\sqrt{N^{(AV)}_{\beta} N^{(AV)}_{\gamma}}} \left ( \sum_i \delta_{\beta \gamma} G_{i \beta} G_{i \beta} - \frac{1}{2} \sum_{i} G_{i \beta} G_{i \gamma} D_{\gamma \beta} \right)
 \end{equation}
-Once again, substituting in the normalization according to Eq.~\ref{CANorm} gives unity as expected.
+Once again, substituting in the normalization according to Eq.~\ref{CANorm} gives unity as expected for $\beta = \gamma$.
 
 \subsection{Setup of final equations}
 
@@ -387,47 +387,77 @@ just the energy from the diagonalization, $E_0$, since the determinant basis is 
 
 For the core-virtual excitation, we have terms corresponding to the zeroth-order energy, both in the same way as the determinant space ($E_0$), but also from the 1-electron core energy contribution.
 These terms correspond to the final two terms in Eq.~\ref{1eCVDiag}, and Eq.~\ref{2eCVDiag}. These are therefore neglected in the construction of the diagonal element for the core-virtual excitation. In 
-section \ref{sec:ReductionofCA} we analytically prove that these are the correct terms to subtract, to ensure that this term leads to the non-interacting equations when taken in isolation.
+section \ref{sec:ReductionofCV} we analytically prove that these are the correct terms to subtract, to ensure that this term leads to the non-interacting equations when taken in isolation.
 
 The diagonal hamiltonian terms of the active-virtual excitations (Eq. \ref{DiagAVBlock} \& Eq. \ref{DiagAVBlock2e}) can be rewritten as
 \begin{equation}
 \frac{\sum_{ab} G_{\beta a} G_{\beta b} f_{ab}}{\sum_a G_{\beta a} G_{\beta a}} + 2 \sum_i f_{ii} + \frac{\sum_{\delta \mu} d_{\beta \beta \delta \mu} f_{\delta \mu}}{D_{\beta \beta}} + \frac{1}{D_{\beta \beta}} \sum_{\delta \nu \mu \lambda} \langle \beta^{+} \delta^{+} \mu^{+} \lambda \nu \beta \rangle (\delta \nu | \mu \lambda)
 \end{equation}
+The second term is the same core contribution to the zeroth order energy as for the CV excitation, and is therefore removed, but it is not obvious at the moment whether the last two terms reduce to 
+the full active space energy. This is something to consider further, but for the moment, the energy which is subtracted from the diagonal is the same as for the CV excitation, i.e. the core energy, and the 
+FCI active space energy. The CA excitations are dealt with similarly.
 
+We then construct the final matrix as $S\omega - (H-E^{(0)})$.
 
-Overlap diagonal is zero - reasons
-How final equations are exactly constructed
-Removal of zeroth order wavefunction
+Finally, the $V|\psi^{(0)} \rangle = \alpha^{+} \alpha \rangle$ vector needs to be constructed. 
+Since the $\alpha$ space is entirely spanned by a single orbital in the active space, this function does not couple
+to the space of contracted excitations, and remains within the CAS space, and we can write it as
+\begin{equation}
+V|\psi^{(0)} \rangle = \sum_J C_J |D_J \rangle \langle D_J | \alpha^{+} \alpha | D_J \rangle    .
+\end{equation}
+All determinants which have $\alpha$ (either spin) occupied will contribute.
+
 \subsection{Linear response function}
-...and construction of excitation spectrum
+The linear equations which have been constructed, and are solved (just DGESV currently, rather than an iterative scheme) for $|\psi^{(1)}_{\omega} \rangle$. The linear response function can then be
+constructed as in Eq.~\ref{LRFunc} (but just for $+\omega$ term) as
+\begin{equation}
+\langle \langle V ; V \rangle \rangle = \langle \psi^{(0)} | V | \psi^{(1)}_{\omega} \rangle = \langle \psi^{(0)} | \alpha^{+} \alpha | \psi^{(1)}_{\omega} \rangle
+\end{equation}
+Once again, this only acts on the determinants in the CAS space.
+
+Alternatively, 
+RDM construction
+Will diagonalization work?
+
 \section{Issues/Tests}
 
+TDA, RDM both reduce to the same non-interacting limit
+Subsubsection on reduction of ai terms to non-interacting limit
+Show ia reduces, numerically and analytically
+3 different ways to construct residues - all should be equivalent
+
+Explicitly calculate 3RDMs (this should not affect the reduction to the non-interacting limit as I have implemented it, since it only effects the 2-electron operator)
+
+Check that FCI space correct!
+Things to try: With non-zero active space, show that we should get non-int limit correctly
+
 \subsubsection{Reduction of strongly contracted core-virtual excitation to non-interacting limit}
+\label{sec:ReductionofCV}
 Assume we have no active space, and the space reduces to the canonical HF orbital space. In this limit, the strongly contracted core-virtual excitation
-alone should reproduce the non-interacting limit. In this case, the matrix consists of only one function, and thus, the linear response function can be
-written as
+alone should reproduce the non-interacting limit, which is orthogonal to the ground state. In this case, the matrix consists of only one function, and thus, the linear response function can be
+written as (if we are just considering the $+\omega$ contribution - more on this later)
 \begin{equation}
 \langle \langle V ; V \rangle \rangle = \frac{\langle 0 | V | 1 \rangle \langle 1 | V | 0 \rangle}{\omega - E}  ,   \label{CVLR}
 \end{equation}
 where (ignoring spin for simplicitly),
 \begin{align}
 |1 \rangle &= \frac{1}{\sqrt{N}} \sum_{ia} G_{ia} a^{+} i | HF \rangle  \\
-!0 \rangle &= |HF \rangle   \\
+|0 \rangle &= |HF \rangle   \\
 G_{ia} &= \frac{ \langle i | V | a \rangle }{\omega-(\epsilon_a - \epsilon_i)}   \\ 
 N &= \sum_{ia} G_{ai} G_{ia} \\
 V &= \alpha^{+} \alpha  .
 \end{align}
-The hamiltonian matrix element of Eq.~\ref{1eCVDiag} is taken to be in the canonical basis (removing the `zeroth' energy contribution as discussed above),
+The hamiltonian matrix element of Eq.~\ref{1eCVDiag} is taken to be in the canonical basis (removing the `zeroth' energy contribution as discussed above), which gives
 \begin{equation}
 E = \frac{1}{N} \sum_{ia} G_{ai} G_{ia} (\epsilon_a - \epsilon_i)
 \end{equation}
 We find that
 \begin{equation}
-\langle 0 | p^{+} q | 1 \rangle = \frac{1}{\sqrt{N}} G_{ia}
+\langle 0 | p^{+} q | 1 \rangle = \frac{1}{\sqrt{N}} G_{ia} \delta_{pi} \delta_{qa}
 \end{equation}
 Rotating this into the AO basis, and extracting the $\alpha \alpha$ component of the resultant transition density matrix in the AO basis, gives
 \begin{align}
-\langle 0 | \alpha^{+} \alpha | 1 \rangle &= \frac{1}{\sqrt{N}} \sum_{ia} C_{\alpha i} G_{ia} C_{\alpha a}     // 
+\langle 0 | \alpha^{+} \alpha | 1 \rangle &= \frac{1}{\sqrt{N}} \sum_{ia} C_{\alpha i} G_{ia} C_{\alpha a}     \\
 &= \frac{1}{\sqrt{N}} \sum_{ia} \frac{\langle i | \alpha^{+} \alpha | a \rangle C_{\alpha i} C_{\alpha a}}{\omega - (\epsilon_a - \epsilon_i)}
 \end{align}
 where $C_{\alpha i}$ represents MO transformation matrix, giving the $\alpha$ component of the $i^{\textrm{th}}$ MO.
@@ -455,15 +485,8 @@ which when substituted into Eq.~\ref{asd}, gives
 as desired for the ($+ \omega$ component only) non-interacting linear response function. This has been justified both analytically, and numerically in the code.
 This also confirms the choice of $E_0$ for the core-virtual excitation as described in the section above.
 
-TDA, RDM both reduce to the same non-interacting limit
-Subsubsection on reduction of ai terms to non-interacting limit
-Show ia reduces, numerically and analytically
-3 different ways to construct residues - all should be equivalent
+\subsubsection{Notes to self - things to check}
 
-Explicitly calculate 3RDMs (this should not affect the reduction to the non-interacting limit as I have implemented it, since it only effects the 2-electron operator)
-
-Check that FCI space correct!
-Things to try: With non-zero active space, show that we should get non-int limit correctly
 \section{Further methodological work}
 Obv, need to get it to work!
 Full spin-integration of active excitations
