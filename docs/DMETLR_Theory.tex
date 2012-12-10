@@ -411,25 +411,25 @@ All determinants which have $\alpha$ (either spin) occupied will contribute.
 The linear equations which have been constructed, and are solved (just DGESV currently, rather than an iterative scheme) for $|\psi^{(1)}_{\omega} \rangle$. The linear response function can then be
 constructed as in Eq.~\ref{LRFunc} (but just for $+\omega$ term) as
 \begin{equation}
-\langle \langle V ; V \rangle \rangle = \langle \psi^{(0)} | V | \psi^{(1)}_{\omega} \rangle = \langle \psi^{(0)} | \alpha^{+} \alpha | \psi^{(1)}_{\omega} \rangle
+\langle \langle V ; V^{\omega} \rangle \rangle = \langle \psi^{(0)} | V | \psi^{(1)}_{\omega} \rangle = \langle \psi^{(0)} | \alpha^{+} \alpha | \psi^{(1)}_{\omega} \rangle
 \end{equation}
-Once again, this only acts on the determinants in the CAS space.
+Once again, this only acts on the determinants in the CAS space, in a similar way in which $V|\psi^{(0)} \rangle$ was constructed, constructing sums of $C^{(0)}_J C^{(1)}_J$ if either of the spin orbitals
+of $\phi_{\alpha}$ are occupied.
 
-Alternatively, 
-RDM construction
-Will diagonalization work?
+Alternative constructions to check for consistency can be formulated, including construction of the transition 1RDM over the entire space, of 
+$\langle \psi^{(0)} | p^{+} q | \psi^{(1)}_{\omega} \rangle$, and rotating into the AO space, before extracting the $\alpha \alpha$ component.
+In addition, a complete diagonalization can be performed rather than DGESV, and the Lehmann representation of the function constructed, according to Eq.~\ref{Lehmann}. These should all agree.
 
 \section{Issues/Tests}
 
-TDA, RDM both reduce to the same non-interacting limit
-Subsubsection on reduction of ai terms to non-interacting limit
-Show ia reduces, numerically and analytically
-3 different ways to construct residues - all should be equivalent
-
-Explicitly calculate 3RDMs (this should not affect the reduction to the non-interacting limit as I have implemented it, since it only effects the 2-electron operator)
-
-Check that FCI space correct!
-Things to try: With non-zero active space, show that we should get non-int limit correctly
+\begin{itemize}
+\item Non-interacting theory, TDA, and RPA should all reduce to the same non-interacting limit.
+\item Ensuring reduction to the non-interacting limit as $U \rightarrow 0$ and active space vanishs -- see section~\ref{sec:ReductionofCV}. 
+\item Ensure all three ways to construct the final linear respose function are equivalent.
+\item Explicitly calculate 3RDMs on the fly to compare to transition 2RDMs over $N\pm1$ spaces. (This should not affect $U\rightarrow0$ limit)
+\item Ensure that without the contracted functions, and just the determinant space, the poles of the resultant LR function are at the FCI transition frequencies.
+\item In a diagonal approximation for the hessian, we should return to the non-interacting limit, along with poles at the different in the determinantal energies?
+\end{itemize}
 
 \subsubsection{Reduction of strongly contracted core-virtual excitation to non-interacting limit}
 \label{sec:ReductionofCV}
@@ -485,17 +485,20 @@ which when substituted into Eq.~\ref{asd}, gives
 as desired for the ($+ \omega$ component only) non-interacting linear response function. This has been justified both analytically, and numerically in the code.
 This also confirms the choice of $E_0$ for the core-virtual excitation as described in the section above.
 
-\subsubsection{Notes to self - things to check}
-
 \section{Further methodological work}
-Obv, need to get it to work!
-Full spin-integration of active excitations
-- omega term!
-Factorize terms for efficiency
-Different orbital partitioning - apply
-Response of correlation potential? At the moment, just LR on Anderson impurity model, since no self-consistency. (note to self: care needed that the correlation potential does not apply over the impurity sites?)
-Comparison to full MCLR
-Include deexcitations which can have different parameterization
-More accurate contraction parameterization from TDA or RPA
+
+\begin{itemize}
+\item Get it working correctly!
+\item Full spin-integration of active excitations
+\item $-\omega$ term needs to be included in the full linear response function - just repeat calculations with new $G(\omega)$
+\item Increase code efficiency, factorizing terms where possible for efficiency
+\item Code up iterative solver for linear equations
+\item Different orbital partitioning? Include bath orbitals in the `core' space, and therefore strongly contract their excitations in with the core-virtual ones. This should be relatively straightforward.
+\item Compare results to DMRG for the 1D hubbard, and test on 2D hubbard, and on to atomistic model hamiltonians
+\item Consider response of correlation potential? At the moment, just LR on Anderson impurity model, since no self-consistency. (note to self: care needed that the correlation potential does not apply over the impurity sites?)
+\item Code up uncontracted full MCLR to compare, in both a MR-TDA and MR-RPA fashion
+\item Include deexcitations which can have different parameterization in an RPA fashion
+\item Consider more accurate contraction coefficients for the strongly contracted functions from the $G(\omega)$ matrix, which could be obtained from TDA or RPA theories?
+\end{itemize}
 
 \end{document}
