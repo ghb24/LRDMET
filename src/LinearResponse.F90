@@ -185,9 +185,7 @@ module LinearResponse
             enddo
             CoreVirtualNorm = CoreVirtualNorm * 2.0_dp  !Spin integration 
             write(6,*) "Fully contracted core-virtual excitations have a normalization of: ",CoreVirtualNorm
-            !Strongly contracted function is defined as:
-            !   1/sqrt(Norm) |0> \sum_{ai(spat)} G_ai(w) a_a^+ a_i |core>
-            !Anything involving this function should come with a 1/sqrt(CoreVirtualNorm) in front of it
+            !Diagonal term for CA excitation
             do i=1,nOcc-nImp
                 do j=1,nOcc-nImp
                     do a=nOcc+nImp+1,nSites
@@ -204,7 +202,7 @@ module LinearResponse
                     enddo
                 enddo
             enddo
-            LinearSystem(nFCIDet+1,nFCIDet+1) = LinearSystem(nFCIDet+1,nFCIDet+1)/CoreVirtualNorm    !for the other spin type.
+            LinearSystem(nFCIDet+1,nFCIDet+1) = LinearSystem(nFCIDet+1,nFCIDet+1)/CoreVirtualNorm  
             write(6,*) "Diagonal hamiltonian contribution from fully contracted core-virtual function: ",   &
                 LinearSystem(nFCIDet+1,nFCIDet+1)
             if(tNonIntTest) then
@@ -484,13 +482,14 @@ module LinearResponse
                     do a = nOcc+nImp+1,nSites
                         tmp = tmp + SchmidtPert(a,gtid(alpha))*SchmidtPert(a,gtid(alphap))
                     enddo
-                    !Now for the two electron component:    !TODO: THIS IS WRONG!
+                    tmp = tmp /2.0_dp
+                    !Now for the two electron component:
                     do p = 1,EmbSize            
                         do q = 1,EmbSize             
                             do r = 1,EmbSize               
                                 do s = 1,EmbSize               
                                     LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) + &
-                                        tmp*Nm1Alpha2RDM(p,q,r,s)*umat(umatind(p,r,q,s))
+                                        tmp*Nm1Alpha2RDM(p,q,r,s)*umat(umatind(p,r,q,s)) 
                                 enddo
                             enddo
                         enddo
@@ -683,10 +682,6 @@ module LinearResponse
 !                            endif
 !                        enddo
 !                    enddo
-
-!                    !This is a test - we don't actually need to do the diagonals!
-!                    tmp2 = LinearSystem(ExcitInd,ExcitInd)  !Save the diagonal element to ensure that it reduces to the same thing
-!                    LinearSystem(ExcitInd,ExcitInd) = 0.0_dp
 
                     if(alpha.eq.alphap) then
                         do i = 1,nOcc-nImp
