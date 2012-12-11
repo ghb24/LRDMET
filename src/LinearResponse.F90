@@ -60,7 +60,7 @@ module LinearResponse
         use DetBitOps, only: DecodeBitDet
         use DetToolsData
         implicit none
-        integer :: nLinearSystem,ierr,i,j,a,highbound,b,info,lwork,n,iunit
+        integer :: nLinearSystem,ierr,i,j,a,b,info,lwork,n,iunit
         integer :: i_spat,a_spat,gtid,alpha,beta,gam,dj,ExcitInd
         integer :: AS_Spin_start,AS_Spin_end,alphap,Det,ExcitInd2,p,q,r,s,umatind
         integer :: OrbPairs,UMatSize,alpha_AS,alphap_AS,ex(2,2),TmpDet,TmpnI(elec)
@@ -98,6 +98,11 @@ module LinearResponse
         !Enumerate excitations for fully coupled space
         call GenDets(Elec,EmbSize,.true.,.true.)
         write(6,*) "Number of determinants in {N,N+1,N-1} FCI space: ",ECoupledSpace
+        !Calculate the size of the hamiltonian matrix
+        !This is simply the normal active space size, plus 1 fully contracted core-virtual excitation,
+        !plus 2*nImp fully contracted core-active excitation, and 2*nImp fully contracted active-virtual excitations
+        nLinearSystem = nFCIDet+1+8*nImp 
+        write(6,"(A,F14.6,A)") "Memory required for the LR hessian: ",real((nLinearSystem**2)*8,dp)/1048576.0_dp," Mb"
         
         iunit = get_free_unit()
         open(unit=iunit,file='IC-TDA_DDResponse',status='unknown')
@@ -130,11 +135,8 @@ module LinearResponse
             !First, find the non-interacting solution expressed in the schmidt basis
             call FindSchmidtPert(tNonIntTest,Omega)
 
-            !Calculate the size of the hamiltonian matrix
-            !This is simply the normal active space size, plus 1 fully contracted core-virtual excitation,
-            !plus 2*nImp fully contracted core-active excitation, and 2*nImp fully contracted active-virtual 
-            !excitations
-            nLinearSystem = nFCIDet+1+8*nImp !just initially, do without the semi-internal excitations
+            call writematrix(SchmidtPert,'SchmidtPert',.true.)
+            call writematrix(FockSchmidt,'FockSchmidt',.true.)
 
             !Test that we reduce to the non-interacting limit
             if(tNonIntTest) then
@@ -150,12 +152,11 @@ module LinearResponse
 
 
             !Allocate memory for hmailtonian in this system:
-            write(6,"(A,F14.6,A)") "Allocating memory for the LR hessian: ",real((nLinearSystem**2)*8,dp)/1048576.0_dp," Mb"
             allocate(LinearSystem(nLinearSystem,nLinearSystem),stat=ierr)
             if(ierr.ne.0) call stop_all(t_r,'Error allocating')
             LinearSystem(:,:) = 0.0_dp
 
-            write(6,"(A)",advance='no') "Constructing hessian matrix..."
+            !write(6,"(A)",advance='no') "Constructing hessian matrix..."
             
             !First, construct FCI space, in determinant basis
             !This is the first block
@@ -773,13 +774,15 @@ module LinearResponse
 
                 !Final block: Coupling between two types of semi-internal excitations
                 !This is zero!
-             enddo  !Finish looping over active-virtual semi-internal excitations
+            enddo  !Finish looping over active-virtual semi-internal excitations
+
+!            call writematrix(LinearSystem(1:nFCIDet,1:nFCIDet),'FCI Hessian',.true.)
 
             !Only now do we remove the ground state from the FCI space, since this is redundant
             do i=1,nFCIDet
-                do j=1,nFCIDet
-                    LinearSystem(j,i) = LinearSystem(j,i) - Spectrum(1)*FullHamil(i,1)*FullHamil(j,1)
-                enddo
+!                do j=1,nFCIDet
+!                    LinearSystem(j,i) = LinearSystem(j,i) - Spectrum(1)*FullHamil(i,1)*FullHamil(j,1)
+!                enddo
                 !Finally, subtract the ground state energy from the diagonals, since we want to offset it.
                 LinearSystem(i,i) = LinearSystem(i,i) - Spectrum(1)
                 !Also, offset by the frequency of the transition
@@ -799,7 +802,7 @@ module LinearResponse
             tmp = tmp * 2.0_dp
             !Remove the same energy contribution from all internal excitations
             do alpha = nFCIDet + 2,nLinearSystem
-                LinearSystem(alpha,alpha) = LinearSystem(alpha,alpha) - tmp - HL_Energy
+                LinearSystem(alpha,alpha) = LinearSystem(alpha,alpha) - tmp - Spectrum(1)
             enddo
 
             !******************************************************************************************
@@ -880,6 +883,46 @@ module LinearResponse
                 enddo
             enddo
 
+            call writematrix(LinearSystem,'LinearSystem',.true.)
+
+            !TEST! Diagonal approximation
+!            do i=1,nLinearSystem
+!                do j=1,nLinearSystem
+!                    if(i.eq.j) then
+!                        write(6,*) "Hess, ",i,LinearSystem(i,i)
+!                        cycle
+!                    endif
+!                    LinearSystem(i,j) = 0.0_dp
+!                enddo
+!            enddo
+!
+!
+!            !TEST! Just take FCI space
+!            do i=nFCIDet+1,nLinearSystem
+!                do j=nFCIDet+1,nLinearSystem
+!                    LinearSystem(i,j) = 0.0_dp
+!                enddo
+!            enddo
+!            !Check spectrum
+!            allocate(temp(nFCIDet,nFCIDet))
+!            temp(:,:) = LinearSystem(1:nFCIDet,1:nFCIDet)
+!            allocate(Work(1))
+!            if(ierr.ne.0) call stop_all(t_r,"alloc err")
+!            allocate(W(nFCIDet))
+!            W(:)=0.0_dp
+!            lWork=-1
+!            info=0
+!            call dsyev('V','U',nFCIDet,temp,nFCIDet,W,Work,lWork,info)
+!            if(info.ne.0) call stop_all(t_r,'workspace query failed')
+!            lwork=int(work(1))+1
+!            deallocate(work)
+!            allocate(work(lwork))
+!            call dsyev('V','U',nFCIDet,temp,nFCIDet,W,Work,lWork,info)
+!            if (info.ne.0) call stop_all(t_r,"Diag failed")
+!            deallocate(work)
+!            call writevector(W,'Hessian spectrum')
+!            deallocate(W,temp)
+
             if(.not.tDiagonalize) then
                 !Do not diagonalise. Instead, solve the linear system
                 VGS(:) = 0.0_dp
@@ -897,6 +940,7 @@ module LinearResponse
 
                 !Now solve these linear equations
                 call DGESV(nLinearSystem,1,LinearSystem,nLinearSystem,Pivots,VGS,nLinearSystem,info)
+!                call DGESV(nFCIDet,1,LinearSystem(1:nFCIDet,1:nFCIDet),nFCIDet,Pivots,VGS,nFCIDet,info)
                 if(info.ne.0) call stop_all(t_r,'Solving Linear system failed') 
 
                 ResponseFn = 0.0_dp
@@ -2135,7 +2179,7 @@ module LinearResponse
             enddo
         enddo
 
-        !call writematrix(HFPertBasis,'Perturbation in HF basis',.true.)
+        call writematrix(HFPertBasis,'Perturbation in HF basis',.true.)
         !write(6,*) "Transforming non-interacting response operator into full schmidt basis..."
 
         allocate(temp(nSites,nSites))

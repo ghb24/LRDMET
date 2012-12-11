@@ -382,10 +382,10 @@ module mat_tools
             
         write(6,*) "nOCC", nOcc
         write(6,*) "Fock eigenvalues around fermi level: "
-        do i=max(1,nOcc-3),nOcc
+        do i=max(1,nOcc-7),nOcc
             write(6,*) HFEnergies(i),"*"
         enddo
-        do i=nOcc+1,min(nSites,nOcc+3)
+        do i=nOcc+1,min(nSites,nOcc+7)
             write(6,*) HFEnergies(i)
         enddo
 

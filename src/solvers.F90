@@ -660,6 +660,7 @@ module solvers
                 endif
             enddo
         enddo
+        call writematrix(tmat,'tmat',.true.)
 
         !Now generate all determinants in the active space
         if(allocated(FCIDetList)) deallocate(FCIDetList)
@@ -678,7 +679,7 @@ module solvers
                 call GetHElement(FCIDetList(:,i),FCIDetList(:,j),Elec,FullHamil(i,j))
             enddo
         enddo
-        !call writematrix(FullHamil(1:nFCIDet,1:nFCIDet),'FCI hamil',.true.)
+        call writematrix(FullHamil(1:nFCIDet,1:nFCIDet),'FCI hamil',.true.)
 
         !Diagonalize
         allocate(Work(1))

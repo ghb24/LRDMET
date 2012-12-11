@@ -39,8 +39,10 @@ call run_DMETcalc()
 !        tCompleteDiag = tMFResponse
         tCompleteDiag = .true. 
         tGSFCI = .not.tCompleteDiag 
-        Start_Omega = -20.0_dp
-        End_Omega = 20.0_dp
+        Start_Omega = 0.0_dp
+        End_Omega = 6.0_dp
+        !Start_Omega = 3.695518_dp
+        !End_Omega = 3.695519_dp
         Omega_Step = 0.001_dp
         tDumpFCIDUMP = .true.
         tDiagFullSystem = .false.
