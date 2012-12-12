@@ -57,14 +57,14 @@ module LinearResponse
     !This results in requiring the solution of a system which *only* scales with the size of the active hilbert space, not the lattice
     subroutine NonIntContracted_TDA_MCLR()
         use utils, only: get_free_unit
-        use DetBitOps, only: DecodeBitDet
+        use DetBitOps, only: DecodeBitDet,SQOperator
         use DetToolsData
         implicit none
         integer :: nLinearSystem,ierr,i,j,a,b,info,lwork,n,iunit
         integer :: i_spat,a_spat,gtid,alpha,beta,gam,dj,ExcitInd
         integer :: AS_Spin_start,AS_Spin_end,alphap,Det,ExcitInd2,p,q,r,s,umatind
         integer :: OrbPairs,UMatSize,alpha_AS,alphap_AS,ex(2,2),TmpDet,TmpnI(elec)
-        integer :: pertsitealpha,pertsitebeta
+        integer :: pertsitealpha,pertsitebeta,nSize,iunit2
         integer, allocatable :: Pivots(:)
         logical :: tSign
         real(dp) :: CoreCoupling,CoreVirtualNorm,Omega,Res1,Res2,EDiff,ResponseFn 
@@ -79,8 +79,8 @@ module LinearResponse
         real(dp), allocatable :: Nm1Alpha2RDM(:,:,:,:),Np1Alpha2RDM(:,:,:,:)
         character(len=*), parameter :: t_r='NonIntContracted_TDA_MCLR'
         logical, parameter :: tNonIntTest = .false.
-        logical, parameter :: tDiagonalize = .false.
-        logical, parameter :: tResiduesFromRDM = .false.
+        logical, parameter :: tDiagonalize = .true. 
+        logical, parameter :: tResiduesFromRDM = .false. 
 
         write(6,*) "Calculating non-interacting IC MR-TDA LR system..."
         if(.not.tConstructFullSchmidtBasis) call stop_all(t_r,'To solve LR, must construct full schmidt basis')
@@ -107,6 +107,10 @@ module LinearResponse
         iunit = get_free_unit()
         open(unit=iunit,file='IC-TDA_DDResponse',status='unknown')
         write(iunit,"(A)") "# Frequency     DD_LinearResponse"
+        
+        iunit2 = get_free_unit()
+        open(unit=iunit2,file='IC-TDA_EValues',status='unknown')
+        write(iunit2,"(A)") "# Frequency     EValues..."
 
         allocate(Trans1RDM_bra(EmbSize,EmbSize))
         allocate(Trans1RDM_ket(EmbSize,EmbSize))
@@ -123,6 +127,9 @@ module LinearResponse
 
         AS_Spin_start = ((nOcc-nImp+1)*2)-1     !The starting index of the active space in spin-orbital notation
         AS_Spin_end = (nOcc+nImp)*2     !odd = alpha, even = beta
+
+        write(6,*) "Starting spin-orbital for active space: ",AS_Spin_start
+        write(6,*) "Final spin-orbital for active space: ",AS_Spin_end
         
         allocate(CoreActiveNorm(AS_Spin_start:AS_Spin_end))
         allocate(ActiveVirtualNorm(AS_Spin_start:AS_Spin_end))
@@ -135,8 +142,8 @@ module LinearResponse
             !First, find the non-interacting solution expressed in the schmidt basis
             call FindSchmidtPert(tNonIntTest,Omega)
 
-            call writematrix(SchmidtPert,'SchmidtPert',.true.)
-            call writematrix(FockSchmidt,'FockSchmidt',.true.)
+!            call writematrix(SchmidtPert,'SchmidtPert',.true.)
+!            call writematrix(FockSchmidt,'FockSchmidt',.true.)
 
             !Test that we reduce to the non-interacting limit
             if(tNonIntTest) then
@@ -185,8 +192,9 @@ module LinearResponse
                 enddo
             enddo
             CoreVirtualNorm = CoreVirtualNorm * 2.0_dp  !Spin integration 
-            write(6,*) "Fully contracted core-virtual excitations have a normalization of: ",CoreVirtualNorm
-            !Diagonal term for CA excitation
+            write(6,*) "Fully contracted core-virtual excitations have a normalization of: ",Omega,CoreVirtualNorm
+            !Diagonal term for CV excitation
+            tmp = 0.0_dp
             do i=1,nOcc-nImp
                 do j=1,nOcc-nImp
                     do a=nOcc+nImp+1,nSites
@@ -195,50 +203,26 @@ module LinearResponse
                     enddo
                 enddo
             enddo
+            write(6,"(A,2G25.17)") "Term 1 for CV: ",Omega,LinearSystem(nFCIDet+1,nFCIDet+1)
+            tmp = 0.0_dp
             do i=1,nOcc-nImp
                 do a=nOcc+nImp+1,nSites
                     do b=nOcc+nImp+1,nSites
-                        LinearSystem(nFCIDet+1,nFCIDet+1) = LinearSystem(nFCIDet+1,nFCIDet+1) +     &
+                        !LinearSystem(nFCIDet+1,nFCIDet+1) = LinearSystem(nFCIDet+1,nFCIDet+1) +     &
+                        tmp = tmp +     &
                             SchmidtPert(a,i)*SchmidtPert(b,i)*FockSchmidt(a,b)*2.0_dp
                     enddo
                 enddo
             enddo
+            write(6,"(A,2G25.17)") "Term 2 for CV: ",Omega,tmp
+            LinearSystem(nFCIDet+1,nFCIDet+1) = LinearSystem(nFCIDet+1,nFCIDet+1) + tmp
             LinearSystem(nFCIDet+1,nFCIDet+1) = LinearSystem(nFCIDet+1,nFCIDet+1)/CoreVirtualNorm  
-            write(6,*) "Diagonal hamiltonian contribution from fully contracted core-virtual function: ",   &
-                LinearSystem(nFCIDet+1,nFCIDet+1)
-            if(tNonIntTest) then
-                !Check that it gives what we expect
-                testham = 0.0_dp
-                testnorm = 0.0_dp
-                do i=1,nel
-                    do a=nel+1,nSites*2
-                        if(mod(i,2).ne.mod(a,2)) cycle
-                        i_spat = gtid(i)
-                        a_spat = gtid(a)
-                        testham = testham + SchmidtPert(a_spat,i_spat)*SchmidtPert(i_spat,a_spat)   &
-                            *(FullHFEnergies(a_spat)-FullHFEnergies(i_spat))
-                        testnorm = testnorm + SchmidtPert(a_spat,i_spat)*SchmidtPert(i_spat,a_spat)
-                    enddo
-                enddo
-                if(abs(testnorm-CoreVirtualNorm).gt.1.0e-7_dp) then
-                    write(6,*) "testnorm: ",testnorm
-                    write(6,*) "CoreVirtualNorm: ",CoreVirtualNorm
-                    !call stop_all(t_r,'non interacting test norm fail')
-                endif
-                testham = testham/testnorm
-                if(abs(testham-LinearSystem(nFCIDet+1,nFCIDet+1)).gt.1.0e-7_dp) then
-                    write(6,*) "testham ",testham
-                    write(6,*) "Ham matrix el: ",LinearSystem(nFCIDet+1,nFCIDet+1)
-                    call stop_all(t_r,'non interacting test hamiltonian fail')
-                endif
-            endif
+            write(6,"(A,2G25.17)") "Diagonal hamiltonian contribution from fully contracted core-virtual function: ",   &
+                Omega,LinearSystem(nFCIDet+1,nFCIDet+1)
             !We are not going to add on the active space energy, since we assume that we have offset the hamiltonian by the 
             !zeroth order energy.
 
             !Now, we need to define the coupling to the uncontracted determinant space.
-            !We first want to calculate <core|F|\sum_{ia}G_{ai}a_a^+a_i core>
-            !The F_ai component must match the G_ai one to be non-zero
-            !Therefore we know that this is \sum_ia F_ia G_ai
             CoreCoupling = 0.0_dp
             do i=1,nOcc-nImp
                 do a=nOcc+nImp+1,nSites
@@ -264,6 +248,7 @@ module LinearResponse
                         HL_1RDM(gtid(alpha)-nOcc+nImp,gtid(alpha)-nOcc+nImp)/2.0_dp !We only want one spin-type now
                 enddo
             enddo
+            call writevector(ActiveVirtualNorm,'AV_Norm')
             !First, creating a particle in the virtual manifold, for each annihilation in the active space
             ExcitInd = nFCIDet + 1
             do alpha = AS_Spin_start,AS_Spin_end
@@ -280,14 +265,20 @@ module LinearResponse
                         !We can annihilate it
 
                         Det = FCIBitList(i)
+
                         !Delete orbital from Det
-                        Det = ibclr(Det,alpha_AS-1)
+                        call SQOperator(Det,alpha_AS,tSign,.true.)
+                        !Det = ibclr(Det,alpha_AS-1)
 
                         !Find this in the Nm1 list
                         do j = 1,nNm1FCIDet
                             if(Nm1BitList(j).eq.Det) then
                                 !We have found the orbital. Store the amplitude at this point
-                                Nm1AlphaVec(j) = FullHamil(i,1)
+                                if(tSign) then
+                                    Nm1AlphaVec(j) = -FullHamil(i,1)
+                                else
+                                    Nm1AlphaVec(j) = FullHamil(i,1)
+                                endif
                                 exit
                             endif
                         enddo
@@ -329,7 +320,8 @@ module LinearResponse
                         if(btest(FCIBitList(dj),beta-1)) then
                             !beta is occupied in dj. Annihilate it
                             Det = FCIBitList(dj)
-                            Det = ibclr(Det,beta-1)     
+                            call SQOperator(Det,beta,tSign,.true.)
+!                            Det = ibclr(Det,beta-1)     
 
                             do i = 1,nNm1FCIDet
                                 if(Nm1BitList(i).eq.Det) then
@@ -340,29 +332,35 @@ module LinearResponse
                             if(i.gt.nNm1FCIDet) call stop_all(t_r,'Can not find appropriate determinant in N-1 space 2')
                             if(abs(Nm1AlphaVec(i)).lt.1.0e-8_dp) cycle  !There is not alpha|0> component here
 
-                            if(alpha_AS.ne.beta) then
-                                !We need to find the permutation of this excitation, rather than just taking the coefficient.
-                                !Obviously, this is a silly way of doing it...
-                                TmpDet = Det
-                                TmpDet = ibset(TmpDet,alpha_AS-1)  !Create alpha and decode to get the original determinant
-                                call DecodeBitDet(TmpnI,elec,TmpDet)
-                                ex(1,1) = 1
-                                call getexcitation(FCIDetList(:,dj),TmpnI,elec,ex,tSign)
-                                if(ex(1,1).ne.beta) then
-                                    call stop_all(t_r,'error calculating parity')
-                                elseif(ex(2,1).ne.alpha_AS) then
-                                    call stop_all(t_r,'error calculating parity 2')
-                                endif
-                                if(tSign) then
-                                    !Negative parity
-                                    ParityFac = -1.0_dp
-                                else
-                                    ParityFac = 1.0_dp
-                                endif
+                            if(tSign) then
+                                ParityFac = -1.0_dp
                             else
-                                !We should have created and annihilated the same orbital
                                 ParityFac = 1.0_dp
                             endif
+
+!                            if(alpha_AS.ne.beta) then
+!                                !We need to find the permutation of this excitation, rather than just taking the coefficient.
+!                                !Obviously, this is a silly way of doing it...
+!                                TmpDet = Det
+!                                TmpDet = ibset(TmpDet,alpha_AS-1)  !Create alpha and decode to get the original determinant
+!                                call DecodeBitDet(TmpnI,elec,TmpDet)
+!                                ex(1,1) = 1
+!                                call getexcitation(FCIDetList(:,dj),TmpnI,elec,ex,tSign)
+!                                if(ex(1,1).ne.beta) then
+!                                    call stop_all(t_r,'error calculating parity')
+!                                elseif(ex(2,1).ne.alpha_AS) then
+!                                    call stop_all(t_r,'error calculating parity 2')
+!                                endif
+!                                if(tSign) then
+!                                    !Negative parity
+!                                    ParityFac = -1.0_dp
+!                                else
+!                                    ParityFac = 1.0_dp
+!                                endif
+!                            else
+!                                !We should have created and annihilated the same orbital
+!                                ParityFac = 1.0_dp
+!                            endif
 
                             !Coupling matrix element is Nm1AlphaVec(i)
                             do a = nOcc+nImp+1,nSites
@@ -381,14 +379,13 @@ module LinearResponse
                         do beta = nOcc-nImp+1,nOcc+nImp
                             LinearSystem(ExcitInd,nFCIDet+1) = LinearSystem(ExcitInd,nFCIDet+1) - &
                                 SchmidtPert(a,i)*SchmidtPert(a,gtid(alpha))*FockSchmidt(i,beta)* &
-                                HL_1RDM(gtid(alpha)-nOcc+nImp,beta-nOcc+nImp)
+                                HL_1RDM(gtid(alpha_AS),beta-nOcc+nImp)
                         enddo
                     enddo
                 enddo
                 LinearSystem(ExcitInd,nFCIDet+1) = LinearSystem(ExcitInd,nFCIDet+1) /  &
                     (2.0_dp*sqrt(CoreVirtualNorm*ActiveVirtualNorm(alpha)))
                 LinearSystem(nFCIDet+1,ExcitInd) = LinearSystem(ExcitInd,nFCIDet+1)
-
 
                 !Now for the coupling to the other semi-internal excitations
                 ExcitInd2 = nFCIDet + 1
@@ -399,18 +396,23 @@ module LinearResponse
                     alphap_AS = alphap-2*(nOcc-nImp)
 
                     Nm1AlphapVec(:) = 0.0_dp
-                    !Create 1 and 2 body transition RDMs for the N-1 electron system where we have annihilated spin-orbital alphap
-                    !from |0>
+                    !Create 1 and 2 body transition RDMs for the N-1 electron system where 
+                    !we have annihilated spin-orbital alphap from |0>
                     do i = 1,nFCIDet
                         if(btest(FCIBitList(i),alphap_AS-1)) then
                             !We can annihilate it
                             Det = FCIBitList(i)
-                            Det = ibclr(Det,alphap_AS-1)
+                            call SQOperator(Det,alphap_AS,tSign,.true.)
+!                            Det = ibclr(Det,alphap_AS-1)
 
                             do j = 1,nNm1FCIDet
                                 if(Nm1BitList(j).eq.Det) then
                                     !We have found the orbital. Store the amplitude at this point
-                                    Nm1AlphapVec(j) = FullHamil(i,1)
+                                    if(tSign) then
+                                        Nm1AlphapVec(j) = -FullHamil(i,1)
+                                    else
+                                        Nm1AlphapVec(j) = FullHamil(i,1)
+                                    endif
                                     exit
                                 endif
                             enddo
@@ -456,14 +458,14 @@ module LinearResponse
                         do b = nOcc+nImp+1,nSites
                             LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) +     &
                               SchmidtPert(a,gtid(alpha))*SchmidtPert(b,gtid(alphap))*FockSchmidt(b,a)*   &
-                              HL_1RDM(gtid(alpha)-nOcc+nImp,gtid(alphap)-nOcc+nImp)/2.0_dp
+                              HL_1RDM(gtid(alpha_AS),gtid(alphap_AS))/2.0_dp
                         enddo
                     enddo
                     do a = nOcc+nImp+1,nSites
                         do i = 1,nOcc-nImp
                             LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) +     &
                               FockSchmidt(i,i)*SchmidtPert(gtid(alpha),a)*SchmidtPert(gtid(alphap),a)* &
-                              HL_1RDM(gtid(alpha)-nOcc+nImp,gtid(alphap)-nOcc+nImp)
+                              HL_1RDM(gtid(alpha_AS),gtid(alphap_AS))
                         enddo
                     enddo
                     do a = nOcc+nImp+1,nSites
@@ -483,7 +485,7 @@ module LinearResponse
                     do a = nOcc+nImp+1,nSites
                         tmp = tmp + SchmidtPert(a,gtid(alpha))*SchmidtPert(a,gtid(alphap))
                     enddo
-                    tmp = tmp /2.0_dp
+                    tmp = tmp/2.0_dp
                     !Now for the two electron component:
                     do p = 1,EmbSize            
                         do q = 1,EmbSize             
@@ -515,17 +517,19 @@ module LinearResponse
             !Precompute the normalization constants for each semi-internal excitation
             CoreActiveNorm(:) = 0.0_dp
             do alpha = AS_Spin_start,AS_Spin_end
-                do i=1,nOcc-nImp        
+                do i=1,nOcc-nImp 
                     CoreActiveNorm(alpha) = CoreActiveNorm(alpha) +   &
                         SchmidtPert(i,gtid(alpha))*SchmidtPert(gtid(alpha),i)
                 enddo
                 CoreActiveNorm(alpha) = CoreActiveNorm(alpha) *     &
                     (1.0_dp - (HL_1RDM(gtid(alpha)-nOcc+nImp,gtid(alpha)-nOcc+nImp)/2.0_dp))
             enddo
+!            call writevector(CoreActiveNorm,'CA_Norm')
             !First, creating a hole in the occupied manifold, for each alpha
             ExcitInd = nFCIDet + 1 + 4*nImp
             do alpha = AS_Spin_start,AS_Spin_end
                 ExcitInd = ExcitInd + 1
+                if(LinearSystem(ExcitInd,ExcitInd).ne.0.0_dp) call stop_all(t_r,'Indexing error')
 
                 alpha_AS = alpha-2*(nOcc-nImp)  !The spin-orbital label of alpha, starting from 1
 
@@ -537,14 +541,19 @@ module LinearResponse
                         !It is unoccupied - We can create it
 
                         Det = FCIBitList(i)
+                        call SQOperator(Det,alpha_AS,tSign,.false.)
                         !Include orbital from Det
-                        Det = ibset(Det,alpha_AS-1)
+!                        Det = ibset(Det,alpha_AS-1)
 
                         !Find this in the Nm1 list
                         do j = 1,nNp1FCIDet
                             if(Np1BitList(j).eq.Det) then
                                 !We have found the orbital. Store the amplitude at this point
-                                Np1AlphaVec(j) = FullHamil(i,1)
+                                if(tSign) then
+                                    Np1AlphaVec(j) = -FullHamil(i,1)
+                                else
+                                    Np1AlphaVec(j) = FullHamil(i,1)
+                                endif
                                 exit
                             endif
                         enddo
@@ -565,7 +574,8 @@ module LinearResponse
                         if(.not.btest(FCIBitList(dj),beta-1)) then
                             !beta is unoccupied in dj. create it
                             Det = FCIBitList(dj)
-                            Det = ibset(Det,beta-1)     
+                            call SQOperator(Det,beta,tSign,.false.)
+!                            Det = ibset(Det,beta-1)     
 
                             do i = 1,nNp1FCIDet
                                 if(Np1BitList(i).eq.Det) then
@@ -576,35 +586,41 @@ module LinearResponse
                             if(i.gt.nNp1FCIDet) call stop_all(t_r,'Can not find appropriate determinant in N+1 space 2')
                             if(abs(Np1AlphaVec(i)).lt.1.0e-8_dp) cycle  !There is not alpha^+|0> component here
 
-                            if(alpha_AS.ne.beta) then
-                                !Find permutation.
-                                TmpDet = Det
-                                TmpDet = ibclr(TmpDet,alpha_AS-1)
-                                call DecodeBitDet(TmpnI,elec,TmpDet)
-                                Ex(1,1) = 1
-                                call getexcitation(FCIDetList(:,dj),TmpnI,elec,ex,tSign)
-                                if(ex(1,1).ne.alpha_AS) then
-                                    write(6,*) "FCIDetList: ",FCIDetList(:,dj)
-                                    write(6,*) "Np1Det: ",Np1FCIDetList(:,i) 
-                                    write(6,*) "TmpDet: ",TmpnI(:) 
-                                    write(6,*) "Np1AlphaVec(i): ",Np1AlphaVec(i)
-                                    write(6,*) "alpha, beta: ",alpha_AS,beta
-                                    write(6,*) "ex(1,1): ",ex(1,1)
-                                    call stop_all(t_r,'error calculating parity 3')
-                                elseif(ex(2,1).ne.beta) then
-                                    call stop_all(t_r,'error calculating parity 4')
-                                endif
-                                !The parities are switched, since we actually want beta alpha^+, rather than the canonical ordering
-                                if(tSign) then
-                                    !Positive parity
-                                    ParityFac = 1.0_dp
-                                else
-                                    ParityFac = -1.0_dp
-                                endif
+                            if(tSign) then
+                                ParityFac = -1.0_dp
                             else
-                                !We should have created and annihilated the same orbital
                                 ParityFac = 1.0_dp
                             endif
+
+!                            if(alpha_AS.ne.beta) then
+!                                !Find permutation.
+!                                TmpDet = Det
+!                                TmpDet = ibclr(TmpDet,alpha_AS-1)
+!                                call DecodeBitDet(TmpnI,elec,TmpDet)
+!                                Ex(1,1) = 1
+!                                call getexcitation(FCIDetList(:,dj),TmpnI,elec,ex,tSign)
+!                                if(ex(1,1).ne.alpha_AS) then
+!                                    write(6,*) "FCIDetList: ",FCIDetList(:,dj)
+!                                    write(6,*) "Np1Det: ",Np1FCIDetList(:,i) 
+!                                    write(6,*) "TmpDet: ",TmpnI(:) 
+!                                    write(6,*) "Np1AlphaVec(i): ",Np1AlphaVec(i)
+!                                    write(6,*) "alpha, beta: ",alpha_AS,beta
+!                                    write(6,*) "ex(1,1): ",ex(1,1)
+!                                    call stop_all(t_r,'error calculating parity 3')
+!                                elseif(ex(2,1).ne.beta) then
+!                                    call stop_all(t_r,'error calculating parity 4')
+!                                endif
+!                                !The parities are switched, since we actually want beta alpha^+, rather than the canonical ordering
+!                                if(tSign) then
+!                                    !Positive parity
+!                                    ParityFac = 1.0_dp
+!                                else
+!                                    ParityFac = -1.0_dp
+!                                endif
+!                            else
+!                                !We should have created and annihilated the same orbital
+!                                ParityFac = 1.0_dp
+!                            endif
 
                             !Coupling matrix element is Np1AlphaVec(i)
                             do j = 1,nOcc-nImp
@@ -623,13 +639,12 @@ module LinearResponse
                 enddo
 
                 !Now, for the coupling to the strongly contracted excitation
-                !Minus sign because we always annihilate first with the semi-internal excitations: 
                 do i = 1,nOcc-nImp
                     do a = nOcc+nImp+1,nSites
                         do beta = 1,nImp*2                           
                             LinearSystem(ExcitInd,nFCIDet+1) = LinearSystem(ExcitInd,nFCIDet+1) - &
                                 SchmidtPert(i,a)*SchmidtPert(i,gtid(alpha))*FockSchmidt(a,beta+nOcc-nImp)* &
-                                HL_1RDM(gtid(alpha)-nOcc+nImp,beta)/2.0_dp
+                                HL_1RDM(gtid(alpha_AS),beta)/2.0_dp
                         enddo
                     enddo
                 enddo
@@ -658,12 +673,17 @@ module LinearResponse
                         if(.not.btest(FCIBitList(i),alphap_AS-1)) then
                             !We can create it
                             Det = FCIBitList(i)
-                            Det = ibset(Det,alphap_AS-1)
+                            call SQOperator(Det,alphap_AS,tSign,.false.)
+!                            Det = ibset(Det,alphap_AS-1)
 
                             do j = 1,nNp1FCIDet
                                 if(Np1BitList(j).eq.Det) then
                                     !We have found the orbital. Store the amplitude at this point
-                                    Np1AlphapVec(j) = FullHamil(i,1)
+                                    if(tSign) then
+                                        Np1AlphapVec(j) = -FullHamil(i,1)
+                                    else
+                                        Np1AlphapVec(j) = FullHamil(i,1)
+                                    endif
                                     exit
                                 endif
                             enddo
@@ -695,14 +715,16 @@ module LinearResponse
                                     SchmidtPert(i,gtid(alphap))*SchmidtPert(i,gtid(alpha))*FockSchmidt(j,j)*2.0_dp
                             enddo
                             !Term 6
-                            do beta = 1,2*nImp
-                                do gam = 1,2*nImp
-                                    LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) +   &
-                                        SchmidtPert(i,gtid(alphap))*SchmidtPert(i,gtid(alpha))* &
-                                        !TODO: This should just be the one-electron energy
-                                        FockSchmidt(beta+nOcc-nImp,gam+nOcc-nImp)*HL_1RDM(beta,gam)
-                                enddo
-                            enddo
+                            LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) +   &
+                                SchmidtPert(i,gtid(alphap))*SchmidtPert(i,gtid(alpha))*One_ElecE
+!                            do beta = 1,2*nImp
+!                                do gam = 1,2*nImp
+!                                    LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) +   &
+!                                        SchmidtPert(i,gtid(alphap))*SchmidtPert(i,gtid(alpha))* &
+!                                        !TODO: This should just be the one-electron energy
+!                                        FockSchmidt(beta+nOcc-nImp,gam+nOcc-nImp)*HL_1RDM(beta,gam)
+!                                enddo
+!                            enddo
                         enddo
                     endif
 
@@ -711,7 +733,7 @@ module LinearResponse
                             !Term 2
                             LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) + &
                                 SchmidtPert(j,gtid(alphap))*SchmidtPert(i,gtid(alpha))*FockSchmidt(i,j)*    &
-                                HL_1RDM(gtid(alpha)-nOcc+nImp,gtid(alphap)-nOcc+nImp)/2.0_dp
+                                HL_1RDM(gtid(alpha_AS),gtid(alphap_AS))/2.0_dp
                             !Term 7a
                             LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) - &
                                 SchmidtPert(i,gtid(alphap))*SchmidtPert(i,gtid(alpha))*FockSchmidt(j,j)*    &
@@ -727,12 +749,12 @@ module LinearResponse
                             !Term 4
                             LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) -   &
                                 SchmidtPert(i,gtid(alphap))*SchmidtPert(i,gtid(alpha))*  &
-                                FockSchmidt(gtid(alphap),beta+nOcc-nImp)*HL_1RDM(gtid(alpha)-nOcc+nImp,beta)/2.0_dp
+                                FockSchmidt(gtid(alphap),beta+nOcc-nImp)*HL_1RDM(gtid(alpha_AS),beta)/2.0_dp
 
                             !Term 5
                             LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) -   &
                                 SchmidtPert(i,gtid(alphap))*SchmidtPert(i,gtid(alpha))* &
-                                FockSchmidt(beta+nOcc-nImp,gtid(alpha))*HL_1RDM(beta,gtid(alphap)-nOcc+nImp)/2.0_dp
+                                FockSchmidt(beta+nOcc-nImp,gtid(alpha))*HL_1RDM(beta,gtid(alphap_AS))/2.0_dp
                         enddo
                     enddo
 
@@ -743,7 +765,7 @@ module LinearResponse
                                 LinearSystem(ExcitInd,ExcitInd2) = LinearSystem(ExcitInd,ExcitInd2) -   &
                                     SchmidtPert(i,gtid(alphap))*SchmidtPert(i,gtid(alpha))* &
                                     FockSchmidt(beta+nOcc-nImp,gam+nOcc-nImp)*  &
-                                    HL_2RDM(beta,gam,gtid(alpha)-nOcc+nImp,gtid(alphap)-nOcc+nImp)/2.0_dp
+                                    HL_2RDM(beta,gam,gtid(alpha_AS),gtid(alphap_AS))/2.0_dp
                             enddo
                         enddo
                     enddo
@@ -752,7 +774,7 @@ module LinearResponse
                     do i = 1,nOcc-nImp           
                         tmp = tmp + SchmidtPert(i,gtid(alpha))*SchmidtPert(i,gtid(alphap))
                     enddo
-                    !Now for the two electron component:    !TODO: THIS IS DEFINITELY WRONG!!
+                    !Now for the two electron component: 
                     do p = 1,2*nImp               
                         do q = 1,2*nImp               
                             do r = 1,2*nImp               
@@ -780,9 +802,9 @@ module LinearResponse
 
             !Only now do we remove the ground state from the FCI space, since this is redundant
             do i=1,nFCIDet
-!                do j=1,nFCIDet
-!                    LinearSystem(j,i) = LinearSystem(j,i) - Spectrum(1)*FullHamil(i,1)*FullHamil(j,1)
-!                enddo
+                do j=1,nFCIDet
+                    LinearSystem(j,i) = LinearSystem(j,i) - Spectrum(1)*FullHamil(i,1)*FullHamil(j,1)
+                enddo
                 !Finally, subtract the ground state energy from the diagonals, since we want to offset it.
                 LinearSystem(i,i) = LinearSystem(i,i) - Spectrum(1)
                 !Also, offset by the frequency of the transition
@@ -802,7 +824,7 @@ module LinearResponse
             tmp = tmp * 2.0_dp
             !Remove the same energy contribution from all internal excitations
             do alpha = nFCIDet + 2,nLinearSystem
-                LinearSystem(alpha,alpha) = LinearSystem(alpha,alpha) - tmp - Spectrum(1)
+                LinearSystem(alpha,alpha) = LinearSystem(alpha,alpha) - tmp !- Spectrum(1)
             enddo
 
             !******************************************************************************************
@@ -883,7 +905,7 @@ module LinearResponse
                 enddo
             enddo
 
-            call writematrix(LinearSystem,'LinearSystem',.true.)
+!            call writematrix(LinearSystem,'LinearSystem',.true.)
 
             !TEST! Diagonal approximation
 !            do i=1,nLinearSystem
@@ -904,24 +926,27 @@ module LinearResponse
 !                enddo
 !            enddo
 !            !Check spectrum
-!            allocate(temp(nFCIDet,nFCIDet))
-!            temp(:,:) = LinearSystem(1:nFCIDet,1:nFCIDet)
-!            allocate(Work(1))
-!            if(ierr.ne.0) call stop_all(t_r,"alloc err")
-!            allocate(W(nFCIDet))
-!            W(:)=0.0_dp
-!            lWork=-1
-!            info=0
-!            call dsyev('V','U',nFCIDet,temp,nFCIDet,W,Work,lWork,info)
-!            if(info.ne.0) call stop_all(t_r,'workspace query failed')
-!            lwork=int(work(1))+1
-!            deallocate(work)
-!            allocate(work(lwork))
-!            call dsyev('V','U',nFCIDet,temp,nFCIDet,W,Work,lWork,info)
-!            if (info.ne.0) call stop_all(t_r,"Diag failed")
-!            deallocate(work)
-!            call writevector(W,'Hessian spectrum')
-!            deallocate(W,temp)
+            nSize = nLinearSystem
+            allocate(temp(nSize,nSize))
+            temp(:,:) = LinearSystem(1:nSize,1:nSize)
+            allocate(Work(1))
+            if(ierr.ne.0) call stop_all(t_r,"alloc err")
+            allocate(W(nSize))
+            W(:)=0.0_dp
+            lWork=-1
+            info=0
+            call dsyev('V','U',nSize,temp,nSize,W,Work,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'workspace query failed')
+            lwork=int(work(1))+1
+            deallocate(work)
+            allocate(work(lwork))
+            call dsyev('V','U',nSize,temp,nSize,W,Work,lWork,info)
+            if (info.ne.0) call stop_all(t_r,"Diag failed")
+            deallocate(work)
+            call writevector(W,'Hessian spectrum')
+            write(iunit2,*) Omega,W(:)
+            deallocate(W,temp)
+
 
             if(.not.tDiagonalize) then
                 !Do not diagonalise. Instead, solve the linear system
@@ -1089,13 +1114,8 @@ module LinearResponse
 
                 ResponseFn = 0.0_dp
                 do i=1,nLinearSystem
-                    if(tNonIntTest) then
-                        EDiff = W(i)
-                    else
-                        EDiff = W(i) !-Spectrum(1)
-                    endif
-                    ResponseFn = ResponseFn + Residues(i)/(Omega-EDiff)
-        !                ResponseFn = ResponseFn - Residues(i)/(Omega+EDiff)
+                    ResponseFn = ResponseFn + Residues(i)/W(i)
+    !                ResponseFn = ResponseFn - Residues(i)/(Omega+EDiff)
                 enddo
                 write(iunit,*) Omega,ResponseFn
 
@@ -1165,6 +1185,7 @@ module LinearResponse
 
         enddo   !Enddo loop over omega
         close(iunit)
+        close(iunit2)
         if(tNonIntTest) call stop_all(t_r,'End of NonInt test')
 
     end subroutine NonIntContracted_TDA_MCLR

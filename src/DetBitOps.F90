@@ -23,6 +23,50 @@ module DetBitOps
 
     end subroutine DecodeBitDet
 
+    !Routine to create/annihilate orbital 'orb' from bit representation ilut
+    !ilut is returned as the new occupation vector
+    !tAnn = .T. - annihilate
+    !tAnn = .F. - create
+    !tSign is the change in parity of the vector
+    subroutine SQOperator(ilut,orb,tSign,tAnn)
+        use errors, only: stop_all 
+        integer, intent(inout) :: ilut
+        integer, intent(in) :: orb
+        logical, intent(in) :: tAnn
+        logical, intent(out) :: tSign
+        integer :: i,setorbs
+        character(len=*), parameter :: t_r='SQOperator'
+
+        if(tAnn.and.(.not.btest(ilut,orb-1))) then
+            call stop_all(t_r,'Orbital not occupied for annihilation')
+        endif
+        if((.not.tAnn).and.(btest(ilut,orb-1))) then
+            call stop_all(t_r,'Orbital not unoccupied for creation')
+        endif
+
+        !orb is bit 'orb-1'
+        !Calculate parity
+        setorbs = 0
+        do i=0,orb-2
+            if(btest(ilut,i)) then
+                setorbs = setorbs + 1
+            endif
+        enddo
+        if(mod(setorbs,2).eq.0) then
+            !Even number of set spin-orbitals before desired orb. No change in parity
+            tSign = .false.
+        else
+            tSign = .true.
+        endif
+
+        if(tAnn) then
+            ilut = ibclr(ilut,orb-1)
+        else
+            ilut = ibset(ilut,orb-1)
+        endif
+
+    end subroutine SQOperator
+
     pure subroutine EncodeBitDet(nI,nel,ilut)
       integer , intent(out) :: ilut
       integer , intent(in) :: nel

@@ -172,12 +172,12 @@ Here I will go through the construction of the individual terms, as they are cod
 \subsection{Normalization}
 The strongly contracted functions given above which define the space in which we want to construct the hamiltonian are not normalized, and initially the normalization constants are calculated.
 \begin{align}
-N^{(CV)} &= \sum_{ijab} G_{ia} G_{jb} \DMETBra b^{+} j a^{+} i \DMETKet \\
+N^{(CV)} &= \sum_{ijab} G_{ia} G_{jb} \DMETBra j^{+} b a^{+} i \DMETKet \\
 &= 2\sum_{ai} |G_{ai}|^2    \\
 N^{(AV)}_{\beta} &= \sum_{ab} G_{\beta a} G_{\beta b} \DMETBra \beta^{+} b a^{+} \beta \DMETKet \\
 &= \frac{1}{2} D_{\beta \beta} \sum_{a} |G_{\beta a}|^2    \label{AVNorm} \\
 N^{(CA)}_{\beta} &= \sum_{ij} G_{i \beta} G_{j \beta} \DMETBra j^{+} \beta \beta^{+} i \DMETKet \\
-&= \left(1-\frac{1}{2} \right) D_{\beta \beta} \sum_{i} |G_{i \beta}|^2     \label{CANorm}
+&= \left(1-\frac{1}{2} D_{\beta \beta} \right) \sum_{i} |G_{i \beta}|^2     \label{CANorm}
 \end{align}
 where $D$ is the {\em spin-free} one-electron RDM. The factor of two in $N^{(CV)}$ comes from the spin integration, since the ai run over both spin-types, but the internal excitations only
 run over one spin-type for the active orbital.
@@ -288,7 +288,7 @@ The one-electron component is given as
 \end{equation}
 The expectation value can be evaluated and reduced to canonical form as
 \begin{eqnarray}
--\delta_{jq}\delta_{pi}\delta_{\beta \gamma} + \delta_{jq}\delta{pi}\langle \beta^{+} \gamma \rangle + \delta_{ij} \delta_{p \gamma} \delta_{q \beta} - \delta_{ij} \delta_{p \gamma} \langle \beta q \rangle \\ \notag
+-\delta_{jq}\delta_{pi}\delta_{\beta \gamma} + \delta_{jq}\delta_{pi}\langle \beta^{+} \gamma \rangle + \delta_{ij} \delta_{p \gamma} \delta_{q \beta} - \delta_{ij} \delta_{p \gamma} \langle \beta q \rangle \\ \notag
 - \delta_{ij} \delta_{q \beta} \langle p^{+} \gamma \rangle + \delta_{ij} \delta_{\gamma \beta} \langle p^{+} q \rangle - \delta_{ij} \langle p^{+} \beta^{+} \gamma q \rangle
 \end{eqnarray}
 These terms are spin-integrated where possible, and divided into terms which only act on the diagonal (contains $\delta_{\gamma \beta}$ - terms 1 \& 6), 
