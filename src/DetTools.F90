@@ -3,12 +3,13 @@
 !Wrapper routine to calculate FCI determinant list
 !This only calculates it for one spin-type. 
 !If tCoupledSpaces is set, then it will also create the N+1 and N-1 spaces (both Ms = +- 1/2)
-subroutine GenDets(NEl,SpatOrbs,tCoupledSpaces,tCreateBitRep)
+!tSplitMs will split the N+1 and N-1 spaces into seperate Ms components
+subroutine GenDets(NEl,SpatOrbs,tCoupledSpaces,tCreateBitRep,tSplitMs)
     use DetToolsData
     use DetBitOps, only: EncodeBitDet
     implicit none
     integer, intent(in) :: NEl,SpatOrbs     !Number of electrons in active space, number of spatial orbitals in active space
-    logical, intent(in) :: tCoupledSpaces,tCreateBitRep
+    logical, intent(in) :: tCoupledSpaces,tCreateBitRep,tSplitMs
     integer :: nDetAlpha,Nm1DetAlpha,Np1DetAlpha
     !The list of spatial orbital occupations for one spin type of the N-electron space
     integer, allocatable :: NspinDetList(:,:)   
