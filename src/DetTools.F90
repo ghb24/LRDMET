@@ -7,6 +7,7 @@
 subroutine GenDets(NEl,SpatOrbs,tCoupledSpaces,tCreateBitRep,tSplitMs)
     use DetToolsData
     use DetBitOps, only: EncodeBitDet
+    use errors, only: stop_all 
     implicit none
     integer, intent(in) :: NEl,SpatOrbs     !Number of electrons in active space, number of spatial orbitals in active space
     logical, intent(in) :: tCoupledSpaces,tCreateBitRep,tSplitMs
@@ -17,6 +18,7 @@ subroutine GenDets(NEl,SpatOrbs,tCoupledSpaces,tCreateBitRep,tSplitMs)
     integer, allocatable :: Nm1spinDetList(:,:)   
     integer, allocatable :: Np1spinDetList(:,:)   
     integer :: nSpinElec,Nm1SpinElec,Np1SpinElec,i,j,k,iEl
+    character(len=*), parameter :: t_r='GenDets'
 
     nFCIDet = 0
     nDetAlpha = 0
@@ -97,49 +99,104 @@ subroutine GenDets(NEl,SpatOrbs,tCoupledSpaces,tCreateBitRep,tSplitMs)
         !Now actually calculate all the alpha determinants
         call GenDets_R(NspinDetLoop,Nm1SpinElec,SpatOrbs,1,Nm1DetAlpha,.false.,Nm1spinDetList)
         deallocate(NspinDetLoop)
-        nNm1FCIDet = Nm1DetAlpha*nDetAlpha*2    !Because we need both Ms values
-        if(allocated(Nm1FCIDetList)) deallocate(Nm1FCIDetList)
-        allocate(Nm1FCIDetList(NEl-1,nNm1FCIDet))
+        if(tSplitMs) then
+            nNm1FCIDet = Nm1DetAlpha*nDetAlpha 
+            nNm1bFCIDet = Nm1DetAlpha*nDetAlpha 
+            if(allocated(Nm1FCIDetList)) deallocate(Nm1FCIDetList)
+            allocate(Nm1FCIDetList(NEl-1,nNm1FCIDet))
+            if(allocated(Nm1bFCIDetList)) deallocate(Nm1bFCIDetList)
+            allocate(Nm1bFCIDetList(NEl-1,nNm1bFCIDet))
 
-        k=1
-        do i=1,nDetAlpha
-            do j=1,Nm1DetAlpha
-                do iEl=1,Nm1SpinElec
-                    Nm1FCIDetList(iEl,k) = Nm1spinDetList(iEl,j)*2-1    !N-1 alpha orbitals
-                    Nm1FCIDetList(iEl,k+1) = Nm1spinDetList(iEl,j)*2    !N-1 beta orbitals
+            k=1
+            do i=1,nDetAlpha
+                do j=1,Nm1DetAlpha
+                    do iEl=1,Nm1SpinElec
+                        Nm1bFCIDetList(iEl,k) = Nm1spinDetList(iEl,j)*2-1    !N-1 alpha orbitals
+                        Nm1FCIDetList(iEl,k) = Nm1spinDetList(iEl,j)*2    !N-1 beta orbitals
+                    enddo
+                    do iEl=1,nSpinElec
+                        Nm1bFCIDetList(Nm1SpinElec+iEl,k) = NspinDetList(iEl,i)*2
+                        Nm1FCIDetList(Nm1SpinElec+iEl,k) = NspinDetList(iEl,i)*2-1
+                    enddo
+                    call sort_int(Nm1bFCIDetList(:,k),NEl-1)
+                    call sort_int(Nm1FCIDetList(:,k),NEl-1)
+                    k=k+1
                 enddo
-                do iEl=1,nSpinElec
-                    Nm1FCIDetList(Nm1SpinElec+iEl,k) = NspinDetList(iEl,i)*2
-                    Nm1FCIDetList(Nm1SpinElec+iEl,k+1) = NspinDetList(iEl,i)*2-1
-                enddo
-                call sort_int(Nm1FCIDetList(:,k),NEl-1)
-                call sort_int(Nm1FCIDetList(:,k+1),NEl-1)
-                k=k+2
             enddo
-        enddo
+            if(k.ne.nNm1FCIDet+1) call stop_all(t_r,'Error filling split det lists')
+        else
+            nNm1FCIDet = Nm1DetAlpha*nDetAlpha*2    !Because we need both Ms values
+            if(allocated(Nm1FCIDetList)) deallocate(Nm1FCIDetList)
+            allocate(Nm1FCIDetList(NEl-1,nNm1FCIDet))
+
+            k=1
+            do i=1,nDetAlpha
+                do j=1,Nm1DetAlpha
+                    do iEl=1,Nm1SpinElec
+                        Nm1FCIDetList(iEl,k) = Nm1spinDetList(iEl,j)*2-1    !N-1 alpha orbitals
+                        Nm1FCIDetList(iEl,k+1) = Nm1spinDetList(iEl,j)*2    !N-1 beta orbitals
+                    enddo
+                    do iEl=1,nSpinElec
+                        Nm1FCIDetList(Nm1SpinElec+iEl,k) = NspinDetList(iEl,i)*2
+                        Nm1FCIDetList(Nm1SpinElec+iEl,k+1) = NspinDetList(iEl,i)*2-1
+                    enddo
+                    call sort_int(Nm1FCIDetList(:,k),NEl-1)
+                    call sort_int(Nm1FCIDetList(:,k+1),NEl-1)
+                    k=k+2
+                enddo
+            enddo
+        endif
         deallocate(Nm1spinDetList)
     else
+        !Only 1 electron
         Nm1DetAlpha = 0
         write(6,*) "Total number of determinants in N-1 space is: ",nDetAlpha*2
-        nNm1FCIDet = nDetAlpha*2
-        if(allocated(Nm1FCIDetList)) deallocate(Nm1FCIDetList)
-        allocate(Nm1FCIDetList(NEl-1,nNm1FCIDet))
-        k=1
-        do i=1,nDetAlpha
-            !We only have alpha/beta orbtials at a time (1 electron)
-            Nm1FCIDetList(1,k) = NspinDetList(1,i)*2
-            Nm1FCIDetList(1,k+1) = NspinDetList(1,i)*2-1
-            k=k+2
-        enddo
+        if(tSplitMs) then
+            nNm1FCIDet = nDetAlpha
+            nNm1bFCIDet = nDetAlpha
+            if(allocated(Nm1FCIDetList)) deallocate(Nm1FCIDetList)
+            allocate(Nm1FCIDetList(NEl-1,nNm1FCIDet))
+            if(allocated(Nm1bFCIDetList)) deallocate(Nm1bFCIDetList)
+            allocate(Nm1bFCIDetList(NEl-1,nNm1bFCIDet))
+            k=1
+            do i=1,nDetAlpha
+                !We only have alpha/beta orbtials at a time (1 electron)
+                Nm1bFCIDetList(1,k) = NspinDetList(1,i)*2
+                Nm1FCIDetList(1,k) = NspinDetList(1,i)*2-1
+                k=k+1
+            enddo
+        else
+            Nm1DetAlpha = 0
+            write(6,*) "Total number of determinants in N-1 space is: ",nDetAlpha*2
+            nNm1FCIDet = nDetAlpha*2
+            if(allocated(Nm1FCIDetList)) deallocate(Nm1FCIDetList)
+            allocate(Nm1FCIDetList(NEl-1,nNm1FCIDet))
+            k=1
+            do i=1,nDetAlpha
+                !We only have alpha/beta orbtials at a time (1 electron)
+                Nm1FCIDetList(1,k) = NspinDetList(1,i)*2
+                Nm1FCIDetList(1,k+1) = NspinDetList(1,i)*2-1
+                k=k+2
+            enddo
+        endif
 
     endif
 
     if(tCreateBitRep) then
         if(allocated(Nm1BitList)) deallocate(Nm1BitList)
         allocate(Nm1BitList(nNm1FCIDet))
+        if(tSplitMs) then
+            if(allocated(Nm1bBitList)) deallocate(Nm1bBitList)
+            allocate(Nm1bBitList(nNm1bFCIDet))
+        endif
         do i=1,nNm1FCIDet
             call EncodeBitDet(Nm1FCIDetList(:,i),NEl-1,Nm1BitList(i))
         enddo
+        if(tSplitMs) then
+            do i=1,nNm1bFCIDet
+                call EncodeBitDet(Nm1bFCIDetList(:,i),NEl-1,Nm1bBitList(i))
+            enddo
+        endif
     endif
 
     !Now for the N+1 space
@@ -161,36 +218,78 @@ subroutine GenDets(NEl,SpatOrbs,tCoupledSpaces,tCreateBitRep,tSplitMs)
     call GenDets_R(NspinDetLoop,Np1SpinElec,SpatOrbs,1,Np1DetAlpha,.false.,Np1spinDetList)
     deallocate(NspinDetLoop)
 
-    nNp1FCIDet = Np1DetAlpha*nDetAlpha*2    !Because we need both Ms values
-    if(allocated(Np1FCIDetList)) deallocate(Nm1FCIDetList)
-    allocate(Np1FCIDetList(NEl+1,nNp1FCIDet))
+    if(tSplitMs) then
+        nNp1FCIDet = Np1DetAlpha*nDetAlpha
+        nNp1bFCIDet = Np1DetAlpha*nDetAlpha
+        if(allocated(Np1FCIDetList)) deallocate(Nm1FCIDetList)
+        allocate(Np1FCIDetList(NEl+1,nNp1FCIDet))
+        if(allocated(Np1bFCIDetList)) deallocate(Nm1bFCIDetList)
+        allocate(Np1bFCIDetList(NEl+1,nNp1bFCIDet))
 
-    k=1
-    do i=1,nDetAlpha
-        do j=1,Np1DetAlpha
-            do iEl=1,Np1SpinElec
-                Np1FCIDetList(iEl,k) = Np1spinDetList(iEl,j)*2-1    !N-1 alpha orbitals
-                Np1FCIDetList(iEl,k+1) = Np1spinDetList(iEl,j)*2    !N-1 beta orbitals
+        k=1
+        do i=1,nDetAlpha
+            do j=1,Np1DetAlpha
+                do iEl=1,Np1SpinElec
+                    Np1FCIDetList(iEl,k) = Np1spinDetList(iEl,j)*2-1    !N-1 alpha orbitals
+                    Np1bFCIDetList(iEl,k) = Np1spinDetList(iEl,j)*2    !N-1 beta orbitals
+                enddo
+                do iEl=1,nSpinElec
+                    Np1FCIDetList(Np1SpinElec+iEl,k) = NspinDetList(iEl,i)*2
+                    Np1bFCIDetList(Np1SpinElec+iEl,k) = NspinDetList(iEl,i)*2-1
+                enddo
+                call sort_int(Np1FCIDetList(:,k),NEl+1)
+                call sort_int(Np1bFCIDetList(:,k),NEl+1)
+                k=k+1
             enddo
-            do iEl=1,nSpinElec
-                Np1FCIDetList(Np1SpinElec+iEl,k) = NspinDetList(iEl,i)*2
-                Np1FCIDetList(Np1SpinElec+iEl,k+1) = NspinDetList(iEl,i)*2-1
+        enddo
+        if(k.ne.nNp1FCIDet+1) call stop_all(t_r,'Error counting Ms Dets N+1')
+        deallocate(Np1spinDetList,NspinDetList)
+        if(tCreateBitRep) then
+            if(allocated(Np1BitList)) deallocate(Np1BitList)
+            allocate(Np1BitList(nNp1FCIDet))
+            if(allocated(Np1bBitList)) deallocate(Np1bBitList)
+            allocate(Np1bBitList(nNp1bFCIDet))
+            do i=1,nNp1FCIDet
+                call EncodeBitDet(Np1FCIDetList(:,i),NEl+1,Np1BitList(i))
+                call EncodeBitDet(Np1bFCIDetList(:,i),NEl+1,Np1bBitList(i))
             enddo
-            call sort_int(Np1FCIDetList(:,k),NEl+1)
-            call sort_int(Np1FCIDetList(:,k+1),NEl+1)
-            k=k+2
+        endif
+    else
+        nNp1FCIDet = Np1DetAlpha*nDetAlpha*2    !Because we need both Ms values
+        if(allocated(Np1FCIDetList)) deallocate(Nm1FCIDetList)
+        allocate(Np1FCIDetList(NEl+1,nNp1FCIDet))
+
+        k=1
+        do i=1,nDetAlpha
+            do j=1,Np1DetAlpha
+                do iEl=1,Np1SpinElec
+                    Np1FCIDetList(iEl,k) = Np1spinDetList(iEl,j)*2-1    !N-1 alpha orbitals
+                    Np1FCIDetList(iEl,k+1) = Np1spinDetList(iEl,j)*2    !N-1 beta orbitals
+                enddo
+                do iEl=1,nSpinElec
+                    Np1FCIDetList(Np1SpinElec+iEl,k) = NspinDetList(iEl,i)*2
+                    Np1FCIDetList(Np1SpinElec+iEl,k+1) = NspinDetList(iEl,i)*2-1
+                enddo
+                call sort_int(Np1FCIDetList(:,k),NEl+1)
+                call sort_int(Np1FCIDetList(:,k+1),NEl+1)
+                k=k+2
+            enddo
         enddo
-    enddo
-    deallocate(Np1spinDetList,NspinDetList)
-    if(tCreateBitRep) then
-        if(allocated(Np1BitList)) deallocate(Np1BitList)
-        allocate(Np1BitList(nNp1FCIDet))
-        do i=1,nNp1FCIDet
-            call EncodeBitDet(Np1FCIDetList(:,i),NEl+1,Np1BitList(i))
-        enddo
+        deallocate(Np1spinDetList,NspinDetList)
+        if(tCreateBitRep) then
+            if(allocated(Np1BitList)) deallocate(Np1BitList)
+            allocate(Np1BitList(nNp1FCIDet))
+            do i=1,nNp1FCIDet
+                call EncodeBitDet(Np1FCIDetList(:,i),NEl+1,Np1BitList(i))
+            enddo
+        endif
     endif
 
-    ECoupledSpace = nFCIDet + nNm1FCIDet + nNp1FCIDet
+    if(tSplitMs) then
+        ECoupledSpace = nFCIDet + nNm1FCIDet + nNm1bFCIDet + nNp1FCIDet + nNp1bFCIDet
+    else
+        ECoupledSpace = nFCIDet + nNm1FCIDet + nNp1FCIDet
+    endif
 
 end subroutine GenDets
 

@@ -582,5 +582,20 @@ module mat_tools
         enddo
         write(6,*)
     end subroutine WriteVector
+    
+    subroutine WriteVectorInt(vec,vecname)
+        implicit none
+        integer, intent(in) :: vec(:)
+        character(len=*), intent(in) :: vecname
+        integer :: i
+
+        write(6,*) "Writing out vector: ",trim(vecname)
+        write(6,"(A,I7,A,I7)") "Size: ",size(vec,1)
+        do i=1,size(vec,1)
+!            write(6,"(G25.10)",advance='no') vec(i)
+            write(6,"(I12)") vec(i)
+        enddo
+        write(6,*)
+    end subroutine WriteVectorInt
 
 end module mat_tools

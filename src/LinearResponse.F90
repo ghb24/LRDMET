@@ -1,7 +1,7 @@
 module LinearResponse
     use const
     use errors, only: stop_all
-    use mat_tools, only: WriteVector,WriteMatrix
+    use mat_tools, only: WriteVector,WriteMatrix,WriteVectorInt
     use globals
     implicit none
     contains
@@ -22,10 +22,12 @@ module LinearResponse
         !The matrix is then created in a CI fashion
         !The difference between this and the one below is that it does not include any operators in the active space, and therefore relies on coupling between
         !the N and N+1 and N-1 active spaces.
-        call NonIntContracted_TDA_MCLR()
+        !call NonIntContracted_TDA_MCLR()
 
         !Externally contracted
         call NonIntExContracted_TDA_MCLR()
+
+        call stop_all('Finished MR LR routine','END')
 
         !Create contracted single excitation space using the non-interacting reference for the contractions
         !The matrix is then created in an RPA fashion
@@ -74,8 +76,14 @@ module LinearResponse
         enddo
         
         !Enumerate excitations for fully coupled space
-        call GenDets(Elec,EmbSize,.true.,.true.)
+        !Seperate the lists into different Ms sectors in the N+- lists
+        call GenDets(Elec,EmbSize,.true.,.true.,.true.) 
         write(6,*) "Number of determinants in {N,N+1,N-1} FCI space: ",ECoupledSpace
+
+        !if(allocated(Nm1BitList)) call writevectorint(Nm1BitList,'Nm1BitList')
+        !if(allocated(Nm1bBitList)) call writevectorint(Nm1bBitList,'Nm1bBitList')
+        !if(allocated(Np1BitList)) call writevectorint(Np1BitList,'Np1BitList')
+        !if(allocated(Np1bBitList)) call writevectorint(Np1bBitList,'Np1bBitList')
 
     end subroutine NonIntExContracted_TDA_MCLR
     
@@ -123,7 +131,7 @@ module LinearResponse
         enddo
         
         !Enumerate excitations for fully coupled space
-        call GenDets(Elec,EmbSize,.true.,.true.)
+        call GenDets(Elec,EmbSize,.true.,.true.,.false.)
         write(6,*) "Number of determinants in {N,N+1,N-1} FCI space: ",ECoupledSpace
         !Calculate the size of the hamiltonian matrix
         !This is simply the normal active space size, plus 1 fully contracted core-virtual excitation,

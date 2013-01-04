@@ -17,6 +17,15 @@ module DetToolsData
     integer, allocatable :: Np1BitList(:)
     integer :: nNp1FCIDet   !Number of determinants in N+1 list
 
+    !If tSplitMS is used, then the above lists only refer to the Ms=1/2 lists, and the following arrays correspond to the beta lists
+    integer, allocatable :: Nm1bFCIDetList(:,:)  !N-1 electron determinant list
+    integer, allocatable :: Nm1bBitList(:)
+    integer :: nNm1bFCIDet   !Number of determinants in N-1 list
+
+    integer, allocatable :: Np1bFCIDetList(:,:)  !N+1 electron determinant list
+    integer, allocatable :: Np1bBitList(:)
+    integer :: nNp1bFCIDet   !Number of determinants in N+1 list
+
     integer :: ECoupledSpace !Total number of determinants in the N,N-1 and N+1 spaces
 
 end module DetToolsData

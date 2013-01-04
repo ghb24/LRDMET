@@ -664,7 +664,7 @@ module solvers
 
         !Now generate all determinants in the active space
         if(allocated(FCIDetList)) deallocate(FCIDetList)
-        call GenDets(Elec,EmbSize,.false.,.false.)
+        call GenDets(Elec,EmbSize,.false.,.false.,.false.)
         !FCIDetList now stores a list of all the determinants
         write(6,"(A,I14)") "Number of determinants in FCI space: ",nFCIDet
         write(6,"(A,F14.6,A)") "Allocating memory for the hamiltonian: ",real((nFCIDet**2)*8,dp)/1048576.0_dp," Mb"
