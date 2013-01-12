@@ -85,6 +85,236 @@ module LinearResponse
         !if(allocated(Np1BitList)) call writevectorint(Np1BitList,'Np1BitList')
         !if(allocated(Np1bBitList)) call writevectorint(Np1bBitList,'Np1bBitList')
 
+        !Construct FCI hamiltonians for the N, N-1_alpha, N-1_beta, N+1_alpha and N+1_beta spaces
+        !N electron
+        allocate(NFCIHam(nFCIDet,nFCIDet))
+        NFCIHam(:,:) = 0.0_dp
+        do i=1,nFCIDet
+            NFCIHam(i,i) = Spectrum(i) 
+        enddo
+        !Now transform this block back into the determinant basis
+        allocate(temp(nFCIDet,nFCIDet))
+        call DGEMM('N','N',nFCIDet,nFCIDet,nFCIDet,1.0_dp,FullHamil,nFCIDet,NFCIHam(1:nFCIDet,1:nFCIDet),  &
+            nFCIDet,0.0_dp,temp,nFCIDet)
+        call DGEMM('N','T',nFCIDet,nFCIDet,nFCIDet,1.0_dp,temp,nFCIDet,FullHamil,nFCIDet,0.0_dp,    &
+            NFCIHam(1:nFCIDet,1:nFCIDet),nFCIDet)
+        deallocate(temp)
+
+        !N-1 hamiltonian
+        if(nNm1FCIDet.ne.nNm1bFCIDet) call stop_all(t_r,'Cannot deal with open shell systems')
+        allocate(Nm1FCIHam_alpha(nNm1FCIDet,nNm1FCIDet))
+        Nm1FCIHam_alpha(:,:) = 0.0_dp
+        allocate(Nm1FCIHam_beta(nNm1FCIDet,nNm1FCIDet))
+        Nm1FCIHam_beta(:,:) = 0.0_dp
+        do i=1,nNm1FCIDet
+            do j=1,nNm1FCIDet
+                call GetHElement(Nm1FCIDetList(:,i),Nm1FCIDetList(:,j),Elec-1,Nm1FCIHam_alpha(i,j))
+                call GetHElement(Nm1bFCIDetList(:,i),Nm1bFCIDetList(:,j),Elec-1,Nm1FCIHam_beta(i,j))
+            enddo
+        enddo
+
+        !N+1 hamiltonian
+        allocate(Np1FCIHam_alpha(nNp1FCIDet,nNp1FCIDet))
+        Np1FCIHam_alpha(:,:) = 0.0_dp
+        allocate(Np1FCIHam_beta(nNp1FCIDet,nNp1FCIDet))
+        Np1FCIHam_beta(:,:) = 0.0_dp
+        do i=1,nNp1FCIDet
+            do j=1,nNp1FCIDet
+                call GetHElement(Np1FCIDetList(:,i),Np1FCIDetList(:,j),Elec+1,Np1FCIHam_alpha(i,j))
+                call GetHElement(Np1bFCIDetList(:,i),Np1bFCIDetList(:,j),Elec+1,Np1FCIHam_beta(i,j))
+            enddo
+        enddo
+
+        nLinearSystem = (2*nFCIDet) + nImp*2*(nNm1FCIDet+nNm1bFCIDet) + nImp*2*(nNp1FCIDet+nNp1bFCIDet) 
+        
+        write(6,"(A,F14.6,A)") "Memory required for the LR hessian: ",real((nLinearSystem**2)*8,dp)/1048576.0_dp," Mb"
+        
+        iunit = get_free_unit()
+        open(unit=iunit,file='EC-TDA_DDResponse',status='unknown')
+        write(iunit,"(A)") "# Frequency     DD_LinearResponse"
+        
+        iunit2 = get_free_unit()
+        open(unit=iunit2,file='EC-TDA_EValues',status='unknown')
+        write(iunit2,"(A)") "# Frequency     EValues..."
+
+        !Allocate memory for hmailtonian in this system:
+        allocate(LinearSystem(nLinearSystem,nLinearSystem),stat=ierr)
+        allocate(Overlap(nLinearSystem,nLinearSystem),stat=ierr)
+        if(ierr.ne.0) call stop_all(t_r,'Error allocating')
+        
+        !Set up orbital indices
+        CoreEnd = nOcc-nImp
+        VirtStart = nOcc+nImp+1
+        VirtEnd = nSites
+
+        !Set up indices for the block of the linear system
+        CVIndex = nFCIDet + 1   !Beginning of EC Core virtual excitations
+        AVIndex = nFCIDet + nFCIDet + 1 !Beginning of EV Active Virtual excitations
+
+        Omega = Start_Omega
+        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+
+            LinearSystem(:,:) = 0.0_dp
+            Overlap(:,:) = 0.0_dp
+            write(6,*) "Calculating linear response for frequency: ",Omega
+
+            !First, find the non-interacting solution expressed in the schmidt basis
+            call FindSchmidtPert(tNonIntTest,Omega)
+
+!            call writematrix(SchmidtPert,'SchmidtPert',.true.)
+!            call writematrix(FockSchmidt,'FockSchmidt',.true.)
+
+            !write(6,"(A)",advance='no') "Constructing hessian matrix..."
+            
+            !First, construct FCI space, in determinant basis
+            !This is the first block
+            LinearSystem(1:nFCIDet,1:nFCIDet) = NFCIHam(:,:)
+
+            !****************************************************************************
+            !*********    CORE-VIRTUAL EXCITATION BLOCK *********************************
+            !****************************************************************************
+
+            !Calc normalization for the CV block
+            CVNorm = 0.0_dp
+            do i=1,CoreEnd
+                do a=VirtStart,VirtEnd
+                    CVNorm = CVNorm + SchmidtPert(i,a)**2
+                enddo
+            enddo
+            CVNorm = CVNorm * 2.0_dp
+
+            !Copy the uncontracted FCI hamiltonian space
+            LinearSystem(CVIndex:AVIndex-1,CVIndex:AVIndex-1) = LinearSystem(1:nFCIDet,1:nFCIDet)
+
+            !Now alter the diagonals of this block
+            tempel = 0.0_dp
+            do i=1,CoreEnd
+                do j=1,CoreEnd
+                    do a=VirtStart,VirtEnd
+                        tempel = tempel - FockSchmidt(j,i)*SchmidtPert(a,i)*SchmidtPert(a,j)
+                    enddo
+                enddo
+            enddo
+
+            do i = 1,CoreEnd
+                do a = VirtStart,VirtEnd
+                    do b = VirtStart,VirtEnd
+                        tempel = tempel + FockSchmidt(b,a)*SchmidtPert(a,i)*SchmidtPert(b,i)
+                    enddo
+                enddo
+            enddo
+            tempel = tempel * (2.0_dp/CVNorm)
+
+            write(6,*) "In the CV diagonal space, the diagonals are offset by (should be +ve): ",tempel
+            !Offset all diagonals of the CV space by this value
+            do i = CVIndex,AVIndex-1
+                LinearSystem(i,i) = LinearSystem(i,i) + tempel
+            enddo
+
+            !Now for the coupling of the CV excitations to the uncontracted space
+            tempel = 0.0_dp
+            do i = 1,CoreEnd
+                do a = VirtStart,VirtEnd
+                    tempel = tempel + SchmidtPert(a,i)*FockSchmidt(a,i)
+                enddo
+            enddo
+            tempel = tempel * (2.0_dp/(sqrt(CVNorm)))
+
+            !Add these in to the diagonals of the coupling blocks
+            do i = 1,nFCIDet
+                LinearSystem(nFCIDet+i,i) = tempel
+                LinearSystem(i,nFCIDet+i) = tempel
+            enddo
+
+            !****************************************************************************
+            !*********    ACTIVE-VIRTUAL EXCITATION BLOCK *******************************
+            !****************************************************************************
+
+            !First, get normalization constants
+            allocate(AVNorm(1:nImp*2))
+            AVNorm(:) = 0.0_dp
+            do gam = 1,nImp*2
+                do a = VirtStart,VirtEnd
+                    AVNorm(gam) = AVNorm(gam) + SchmidtPert(gam,a)**2
+                enddo
+            enddo
+
+            !This starts at 'AVIndex'
+            do gam1 = 1,nImp*2
+                !Run through all active space orbitals
+                gam1_spat = gam1+(nOcc-nImp)
+
+                !gam1_ind now gives the starting index of the AV diagonal block
+                !for orbital gam1
+                gam1_ind = AVIndex + (gam1-1)*(nNm1FCIDet+nNm1bFCIDet)
+
+                do gam2 = 1,nImp*2
+                    gam2_spat = gat2+(nOcc-nImp)
+
+                    gam2_ind = AVIndex + (gam2-1)*(nNm1FCIDet+nNm1bFCIDet)
+
+                    !Construct appropriate weighting factor for the hamiltonian matrix element contribution
+                    tempel = 0.0_dp
+                    do a = VirtStart,VirtEnd
+                        tempel = tempel + SchmidtPert(gam1_spat,a)*SchmidtPert(gam2_spat,a)
+                    enddo
+
+                    !Fill with appropriate FCI hamiltonian block
+                    LinearSystem(gam1_ind:gam1_ind+nNm1bFCIDet-1,gam2_ind:gam2_ind+nNm1bFCIDet-1) = Nm1FCIHam_beta(:,:)
+
+                    !Now construct for the gam1_beta : gam2_beta block
+                    LinearSystem(gam1_ind+nNm1bFCIDet:gam1_ind+nNm1bFCIDet+nNm1FCIDet-1,    &
+                        gam2_ind+nNm1bFCIDet:gam2_ind+nNm1bFCIDet+nNm1FCIDet-1) = Nm1FCIHam_alpha(:,:)
+                    
+                    !Multiply every element by the appropriate weighting factor
+                    !This weighting factor is the same for both spin blocks, so no need to do seperately
+                    do i = gam1_ind,gam1_ind+(nNm1bFCIDet+nNm1FCIDet)-1
+                        do j = gam2_ind,gam2_ind+(nNm1bFCIDet+nNm1FCIDet)-1
+                            LinearSystem(i,j) = LinearSystem(i,j)*tempel
+                        enddo
+                    enddo
+
+                    !Now for the virtual excitation term, which is diagonal in each determinant space
+                    tempel = 0.0_dp
+                    do a = VirtStart,VirtEnd
+                        do b = VirtStart,VirtEnd
+                            tempel = tempel + FockSchmidt(a,b)*SchmidtPert(gam1_spat,a)*SchmidtPert(gam2_spat,b)
+                        enddo
+                    enddo
+                    !Add this term in to the diagonals of each block
+                    do i = 0,nNm1bFCIDet+nNm1FCIDet-1
+                        LinearSystem(gam1_ind+i,gam2_ind+i) = LinearSystem(gam1_ind+i,gam2_ind+i) + tempel
+                    enddo
+
+                    !Finally, all the elements need to be normalized correctly.
+                    !Again, the normalization condition is the same for both spins.
+
+                    !!!!UP TO HERE: NORMALIZATION NOT JUST DIAGONAL!!!
+                    do i = 0,nNm1bFCIDet+nNm1FCIDet-1
+                        LinearSystem(gam1_ind+i,gam2_ind+i) = LinearSystem(gam1_ind+i,gam2_ind+i)/sqrt(AVNorm(gam1)*AVNorm(gam2))
+                    enddo
+
+                enddo
+            enddo
+
+
+
+
+
+
+            enddo
+
+
+
+
+
+            
+
+
+
+
+
+
     end subroutine NonIntExContracted_TDA_MCLR
     
     !Contract the basis of single excitations, by summing together all the uncontracted parts with the non-interacting LR coefficients
