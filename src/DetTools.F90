@@ -608,7 +608,6 @@ function GetHFInt_spinorb(ex,AOBasisTrans) result(HEl)
     endif
 
 end function GetHFInt_spinorb
-    
 
 ! Get the orbitals which are excited in going from I to J
 ! EX(1,*) are in I, and EX(2,*) are in J

@@ -56,10 +56,19 @@ module LinearResponse
 
     subroutine NonIntExContracted_TDA_MCLR()
         use utils, only: get_free_unit
-        use DetBitOps, only: DecodeBitDet,SQOperator
+        use DetBitOps, only: DecodeBitDet,SQOperator,CountBits
         use DetToolsData
         implicit none
-        integer :: i,OrbPairs,UMatSize,UMatInd
+        integer :: a,i,j,k,OrbPairs,UMatSize,UMatInd,AVInd_tmp,AVIndex,b,beta,beta_spat
+        integer :: CAIndex,CoreEnd,VirtStart,VirtEnd,CVInd_tmp,CVIndex,iunit,iunit2
+        integer :: DiffOrb,nOrbs,gam,gam1,gam1_ind,gam1_spat,gam2,gam2_ind,gam2_spat,ierr
+        integer :: gam_spat,nLinearSystem,tempK,gtid
+        integer :: orbdum(1)
+        logical :: tParity
+        real(dp) :: CVNorm,Omega,tempel
+        real(dp), allocatable :: NFCIHam(:,:),temp(:,:),Nm1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
+        real(dp), allocatable :: Np1FCIHam_alpha(:,:),Np1FCIHam_beta(:,:),LinearSystem(:,:),Overlap(:,:)
+        real(dp), allocatable :: AVNorm(:)
         character(len=*), parameter :: t_r='NonIntExContracted_TDA_MCLR'
 
         write(6,*) "Calculating non-interacting EC MR-TDA LR system..."
@@ -149,7 +158,8 @@ module LinearResponse
 
         !Set up indices for the block of the linear system
         CVIndex = nFCIDet + 1   !Beginning of EC Core virtual excitations
-        AVIndex = nFCIDet + nFCIDet + 1 !Beginning of EV Active Virtual excitations
+        AVIndex = nFCIDet + nFCIDet + 1 !Beginning of EC Active Virtual excitations
+        CAIndex = AVIndex + (nImp*2)*(nNm1FCIDet+nNm1bFCIDet) !Beginning of EC Core Active excitations
 
         Omega = Start_Omega
         do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
@@ -159,7 +169,7 @@ module LinearResponse
             write(6,*) "Calculating linear response for frequency: ",Omega
 
             !First, find the non-interacting solution expressed in the schmidt basis
-            call FindSchmidtPert(tNonIntTest,Omega)
+            call FindSchmidtPert(.false.,Omega)
 
 !            call writematrix(SchmidtPert,'SchmidtPert',.true.)
 !            call writematrix(FockSchmidt,'FockSchmidt',.true.)
@@ -240,6 +250,7 @@ module LinearResponse
             enddo
 
             !This starts at 'AVIndex'
+            !'Diagonal' block
             do gam1 = 1,nImp*2
                 !Run through all active space orbitals
                 gam1_spat = gam1+(nOcc-nImp)
@@ -249,7 +260,7 @@ module LinearResponse
                 gam1_ind = AVIndex + (gam1-1)*(nNm1FCIDet+nNm1bFCIDet)
 
                 do gam2 = 1,nImp*2
-                    gam2_spat = gat2+(nOcc-nImp)
+                    gam2_spat = gam2+(nOcc-nImp)
 
                     gam2_ind = AVIndex + (gam2-1)*(nNm1FCIDet+nNm1bFCIDet)
 
@@ -288,25 +299,89 @@ module LinearResponse
 
                     !Finally, all the elements need to be normalized correctly.
                     !Again, the normalization condition is the same for both spins.
-
-                    !!!!UP TO HERE: NORMALIZATION NOT JUST DIAGONAL!!!
                     do i = 0,nNm1bFCIDet+nNm1FCIDet-1
-                        LinearSystem(gam1_ind+i,gam2_ind+i) = LinearSystem(gam1_ind+i,gam2_ind+i)/sqrt(AVNorm(gam1)*AVNorm(gam2))
+                        do j = 0,nNm1bFCIDet+nNm1FCIDet-1
+                            LinearSystem(gam1_ind+j,gam2_ind+i) = LinearSystem(gam1_ind+j,gam2_ind+i) / &
+                                sqrt(AVNorm(gam1)*AVNorm(gam2))
+                        enddo
+                    enddo
+
+                enddo   !End gam2
+            enddo   !End gam1
+
+            !Now for the coupling to the active-virtual excitation block
+
+            !TODO: Optimize this. Can be done more cheaply
+            !First, when the AV excitations are both alpha operators
+            do J = 1,nFCIDet
+                CVInd_tmp = CVIndex + J - 1 
+                do K = 1,nNm1bFCIDet 
+                    !Find the single orbital that they differ by, or cycle if not
+                    DiffOrb = ieor(Nm1bBitList(K),FCIBitList(J))
+                    nOrbs = CountBits(DiffOrb)
+                    if(mod(nOrbs,2).ne.1) then
+                        !There must be an odd number of orbital differences between the determinants
+                        !since they are of different electron number by one
+                        call stop_all(t_r,'Not odd number of electrons')
+                    endif
+                    if(nOrbs.ne.1) then
+                        !We only want one orbital different
+                        cycle
+                    endif
+                    !Now, find out what SPINorbital this one is from the bit number set
+                    call DecodeBitDet(orbdum,1,DiffOrb)
+                    gam = orbdum(1)
+                    if(mod(gam,2).ne.1) then
+                        call stop_all(t_r,'differing orbital should be an alpha spin orbital')
+                    endif
+                    gam_spat = gtid(gam) + CoreEnd
+
+                    !Now find out the parity change when applying this creation operator to the original determinant
+                    tempK = Nm1bBitList(K)
+                    call SQOperator(tempK,gam,tParity,.false.)
+                    !We now know that between J & K, the gam SPINorbital is created with parity tParity
+
+                    do beta = 1,2*nImp
+                        !Run over all active space orbitals
+                        AVInd_tmp = AVIndex + (beta-1)*(nNm1FCIDet+nNm1bFCIDet) + K - 1
+                        if((AVInd_tmp.ge.CAIndex).or.(AVInd_tmp.lt.AVIndex)) then
+                            call stop_all(t_r,'AVInd_tmp out of bounds')
+                        endif
+                        beta_spat = beta + (nOcc-nImp)
+                        !K is with a destroyed alpha orbital. beta must also correspond to alpha orbitals
+                        do i = 1,CoreEnd
+                            do a = VirtStart,VirtEnd
+
+                                if(tParity) then
+                                    LinearSystem(CVInd_tmp,AVInd_tmp) = LinearSystem(CVInd_tmp,AVInd_tmp) &
+                                        + SchmidtPert(a,i)*SchmidtPert(beta_spat,a)*FockSchmidt(gam_spat,i)
+                                else
+                                    LinearSystem(CVInd_tmp,AVInd_tmp) = LinearSystem(CVInd_tmp,AVInd_tmp) &
+                                        - SchmidtPert(a,i)*SchmidtPert(beta_spat,a)*FockSchmidt(gam_spat,i)
+                                endif
+
+                            enddo
+                        enddo
                     enddo
 
                 enddo
             enddo
+            !Now go through and normalize all of these matrix elements correctly
+            do J = 1,nFCIDet
+                CVInd_tmp = CVIndex + J - 1 
+                do beta = 1,2*nImp
+                    do K = 1,nNm1bFCIDet 
+                        AVInd_tmp = AVIndex + (beta-1)*(nNm1FCIDet+nNm1bFCIDet) + K - 1
 
-
-
-
-
-
+                        LinearSystem(CVInd_tmp,AVInd_tmp) = LinearSystem(CVInd_tmp,AVInd_tmp) / &
+                            sqrt(CVNorm*AVNorm(beta))
+                        !Copy to other half of matrix
+                        LinearSystem(AVInd_tmp,CVInd_tmp) = LinearSystem(CVInd_tmp,AVInd_tmp)
+                    enddo
+                enddo
             enddo
 
-
-
-
+            !Now for the coupling between the AV excitations and the uncontracted N-electron space. 
 
             
 
@@ -315,7 +390,17 @@ module LinearResponse
 
 
 
+
+
+
+
+
+
+        enddo   !End loop over omega
+
     end subroutine NonIntExContracted_TDA_MCLR
+
+
     
     !Contract the basis of single excitations, by summing together all the uncontracted parts with the non-interacting LR coefficients
     !This results in requiring the solution of a system which *only* scales with the size of the active hilbert space, not the lattice
