@@ -63,12 +63,13 @@ module LinearResponse
         integer :: CAIndex,CoreEnd,VirtStart,VirtEnd,CVInd_tmp,CVIndex,iunit,iunit2
         integer :: DiffOrb,nOrbs,gam,gam1,gam1_ind,gam1_spat,gam2,gam2_ind,gam2_spat,ierr
         integer :: gam_spat,nLinearSystem,tempK,gtid
-        integer :: orbdum(1),CAInd_tmp
+        integer :: orbdum(1),CAInd_tmp,lwork,info,nSize,pertsitealpha,pertsitebeta
         logical :: tParity
-        real(dp) :: CVNorm,Omega,tempel
+        real(dp) :: CVNorm,Omega,tempel,ResponseFn
         real(dp), allocatable :: NFCIHam(:,:),temp(:,:),Nm1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
         real(dp), allocatable :: Np1FCIHam_alpha(:,:),Np1FCIHam_beta(:,:),LinearSystem(:,:),Overlap(:,:)
-        real(dp), allocatable :: AVNorm(:),CANorm(:)
+        real(dp), allocatable :: AVNorm(:),CANorm(:),Work(:),W(:),temp_vec(:),Projector(:,:),VGS(:)
+        integer, allocatable :: Pivots(:)
         character(len=*), parameter :: t_r='NonIntExContracted_TDA_MCLR'
 
         write(6,*) "Calculating non-interacting EC MR-TDA LR system..."
@@ -149,6 +150,8 @@ module LinearResponse
         !Allocate memory for hmailtonian in this system:
         allocate(LinearSystem(nLinearSystem,nLinearSystem),stat=ierr)
         allocate(Overlap(nLinearSystem,nLinearSystem),stat=ierr)
+        allocate(VGS(nLinearSystem),stat=ierr)
+        allocate(Pivots(nLinearSystem),stat=ierr)
         if(ierr.ne.0) call stop_all(t_r,'Error allocating')
         
         !Set up orbital indices
@@ -160,6 +163,11 @@ module LinearResponse
         CVIndex = nFCIDet + 1   !Beginning of EC Core virtual excitations
         AVIndex = nFCIDet + nFCIDet + 1 !Beginning of EC Active Virtual excitations
         CAIndex = AVIndex + (nImp*2)*(nNm1FCIDet+nNm1bFCIDet) !Beginning of EC Core Active excitations
+
+        write(6,*) "CV indices start from: ",CVIndex
+        write(6,*) "AV indices start from: ",AVIndex
+        write(6,*) "CA indices start from: ",CAIndex
+        write(6,*) "Total size of linear sys: ",nLinearSystem
             
         !Allocate memory for normalization constants
         allocate(AVNorm(1:nImp*2))
@@ -249,10 +257,12 @@ module LinearResponse
             !First, get normalization constants
             AVNorm(:) = 0.0_dp
             do gam = 1,nImp*2
+                gam_spat = gam+(nOcc-nImp)
                 do a = VirtStart,VirtEnd
-                    AVNorm(gam) = AVNorm(gam) + SchmidtPert(gam,a)**2
+                    AVNorm(gam) = AVNorm(gam) + SchmidtPert(gam_spat,a)**2
                 enddo
             enddo
+            call writevector(AVNorm,'AV Norm')
 
             !This starts at 'AVIndex'
             !'Diagonal' block
@@ -587,10 +597,12 @@ module LinearResponse
             !First, get normalization constants
             CANorm(:) = 0.0_dp
             do gam = 1,nImp*2
+                gam_spat = gam+(nOcc-nImp)
                 do i = 1,CoreEnd 
-                    CANorm(gam) = CANorm(gam) + SchmidtPert(i,gam)**2
+                    CANorm(gam) = CANorm(gam) + SchmidtPert(i,gam_spat)**2
                 enddo
             enddo
+            call writevector(CANorm,'CA Norm')
 
             !This starts at 'CAIndex'
             !'Diagonal' block
@@ -924,6 +936,9 @@ module LinearResponse
             do i=1,nLinearSystem
                 do j=1,nLinearSystem
                     if(abs(LinearSystem(i,j)-LinearSystem(j,i)).gt.1.0e-7_dp) then
+                        write(6,*) "i, j: ",i,j
+                        write(6,*) "LinearSystem(i,j): ",LinearSystem(i,j)
+                        write(6,*) "LinearSystem(j,i): ",LinearSystem(j,i)
                         call stop_all(t_r,'Hessian for EC-LR not hermitian')
                     endif
                 enddo
@@ -932,19 +947,185 @@ module LinearResponse
             write(6,*) "Hessian constructed successfully...",Omega
 
             !*********************   Hessian construction finished   **********************
+            !call writematrix(LinearSystem,'Hessian',.true.)
 
+            !****************************************************************************
+            !************    OVERLAP MATRIX   *******************************************
+            !****************************************************************************
 
+            ! Block 1 and 2 are equal to the identity
+            do i = 1,AVIndex-1
+                Overlap(i,i) = 1.0_dp
+            enddo
 
+            !Now deal with block 4
+            !AV-AV overlap
+            do gam1 = 1,nImp*2
+                !Run through all active space orbitals
+                gam1_spat = gam1+(nOcc-nImp)
 
+                !gam1_ind now gives the starting index of the AV diagonal block
+                !for orbital gam1
+                gam1_ind = AVIndex + (gam1-1)*(nNm1FCIDet+nNm1bFCIDet)
 
+                do gam2 = 1,nImp*2
+                    gam2_spat = gam2+(nOcc-nImp)
 
+                    gam2_ind = AVIndex + (gam2-1)*(nNm1FCIDet+nNm1bFCIDet)
 
+                    !Now for the overlap, which is diagonal in each determinant space
+                    tempel = 0.0_dp
+                    do a = VirtStart,VirtEnd
+                        tempel = tempel + SchmidtPert(gam1_spat,a)*SchmidtPert(gam2_spat,a)
+                    enddo
+                    tempel = tempel / sqrt(AVNorm(gam1)*AVNorm(gam2))
+                    if((gam1.eq.gam2).and.(abs(tempel-1.0_dp).gt.1.0e-7_dp)) then
+                        write(6,*) "gam1,gam2: ",gam1,gam2
+                        write(6,*) "tempel: ",tempel
+                        call stop_all(t_r,'Error calculating overlap 1')
+                    endif
+                    !Add this term in to the diagonals of each block
+                    do i = 0,nNm1bFCIDet+nNm1FCIDet-1
+                        Overlap(gam1_ind+i,gam2_ind+i) = tempel
+                    enddo
+                enddo   !End gam2
+            enddo   !End gam1
 
+            !Now deal with block 7
+            !CA-CA overlap
+            do gam1 = 1,nImp*2
+                !Run through all active space orbitals
+                gam1_spat = gam1+(nOcc-nImp)
 
+                !gam1_ind now gives the starting index of the AV diagonal block
+                !for orbital gam1
+                gam1_ind = CAIndex + (gam1-1)*(nNp1FCIDet+nNp1bFCIDet)
 
+                do gam2 = 1,nImp*2
+                    gam2_spat = gam2+(nOcc-nImp)
 
+                    gam2_ind = CAIndex + (gam2-1)*(nNp1FCIDet+nNp1bFCIDet)
+
+                    !Now for the occupied excitation term, which is diagonal in each determinant space
+                    tempel = 0.0_dp
+                    do i = 1,CoreEnd
+                        tempel = tempel + SchmidtPert(i,gam1_spat)*SchmidtPert(i,gam2_spat)
+                    enddo
+                    tempel = tempel / sqrt(CANorm(gam1)*CANorm(gam2))
+                    if((gam1.eq.gam2).and.(abs(tempel-1.0_dp).gt.1.0e-7_dp)) then
+                        call stop_all(t_r,'Error calculating overlap 2')
+                    endif
+                    !Add this term in to the diagonals of each block
+                    do i = 0,nNp1FCIDet+nNp1bFCIDet-1
+                        Overlap(gam1_ind+i,gam2_ind+i) = tempel
+                    enddo
+
+                enddo   !End gam2
+            enddo   !End gam1
+
+            !Check hermiticity and normalization of overlap matrix
+            do i=1,nLinearSystem
+                do j=1,nLinearSystem
+                    if(abs(Overlap(i,j)-Overlap(j,i)).gt.1.0e-7_dp) then
+                        call stop_all(t_r,'Overlap matrix not hermitian')
+                    endif
+                enddo
+                if(abs(Overlap(i,i)-1.0_dp).gt.1.0e-7_dp) then
+                    write(6,*) "i: ",i
+                    write(6,*) "Overlap(i,i): ",Overlap(i,i)
+                    call stop_all(t_r,'Functions not normalized')
+                endif
+            enddo
+
+            write(6,*) "Overlap matrix constructed successfully..."
+
+            !Now, we want to calculate H - (E_0 + Omega)S
+            !Initially, assume that E_0 is just FCI energy.
+            !This is because we haven't included the core contributions anywhere
+            do i=1,nLinearSystem
+                do j=1,nLinearSystem
+                    LinearSystem(j,i) = LinearSystem(j,i) - (Overlap(j,i)*(Spectrum(1) + Omega))
+                enddo
+            enddo
+
+            !Test: Diagonalize the linear system to have a look at spectrum
+            nSize = nLinearSystem
+            allocate(temp(nSize,nSize))
+            temp(:,:) = LinearSystem(1:nSize,1:nSize)
+            allocate(Work(1))
+            if(ierr.ne.0) call stop_all(t_r,"alloc err")
+            allocate(W(nSize))
+            W(:)=0.0_dp
+            lWork=-1
+            info=0
+            call dsyev('V','U',nSize,temp,nSize,W,Work,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'workspace query failed')
+            lwork=int(work(1))+1
+            deallocate(work)
+            allocate(work(lwork))
+            call dsyev('V','U',nSize,temp,nSize,W,Work,lWork,info)
+            if (info.ne.0) call stop_all(t_r,"Diag failed")
+            deallocate(work)
+            !call writevector(W,'Hessian spectrum')
+            write(iunit2,*) Omega,W(:)
+            deallocate(W,temp)
+
+            !Do not diagonalise. Instead, solve the linear system
+            !Set up LHS of linear system: -Q V |0>
+            allocate(temp_vec(nFCIDet))
+            temp_vec(:) = 0.0_dp
+            pertsitealpha = 2*pertsite-1
+            pertsitebeta = 2*pertsite
+            do i = 1,nFCIDet
+                if(btest(FCIBitList(i),pertsitealpha-1)) then
+                    !This determinant is occupied
+                    temp_vec(i) = temp_vec(i) + FullHamil(i,1)
+                endif
+                if(btest(FCIBitList(i),pertsitebeta-1)) then
+                    temp_vec(i) = temp_vec(i) + FullHamil(i,1)
+                endif
+            enddo
+
+            allocate(Projector(nFCIDet,nFCIDet))
+            Projector(:,:) = 0.0_dp
+            do i=1,nFCIDet
+                Projector(i,i) = 1.0_dp
+            enddo
+            do i=1,nFCIDet
+                do j=1,nFCIDet
+                    Projector(j,i) = Projector(j,i) - FullHamil(i,1)*FullHamil(j,1)
+                enddo
+            enddo
+
+            VGS(:) = 0.0_dp
+            call DGEMM('N','N',nFCIDet,1,nFCIDet,-1.0_dp,Projector,nFCIDet,temp_vec,nFCIDet,    &
+                0.0_dp,VGS(1:nFCIDet),nFCIDet)
+
+            deallocate(temp_vec,Projector)
+
+            !Now solve these linear equations
+            call DGESV(nLinearSystem,1,LinearSystem,nLinearSystem,Pivots,VGS,nLinearSystem,info)
+            if(info.ne.0) call stop_all(t_r,'Solving Linear system failed') 
+
+            ResponseFn = 0.0_dp
+            do i = 1,nFCIDet
+                if(btest(FCIBitList(i),pertsitealpha-1)) then
+                    ResponseFn = ResponseFn + FullHamil(i,1)*VGS(i)
+                endif
+                if(btest(FCIBitList(i),pertsitebeta-1)) then
+                    ResponseFn = ResponseFn + FullHamil(i,1)*VGS(i)
+                endif
+            enddo
+            write(iunit,*) Omega,ResponseFn
+
+            Omega = Omega + Omega_Step
 
         enddo   !End loop over omega
+
+        deallocate(LinearSystem,Overlap)
+        deallocate(VGS,Pivots)
+        close(iunit)
+        close(iunit2)
 
     end subroutine NonIntExContracted_TDA_MCLR
 
