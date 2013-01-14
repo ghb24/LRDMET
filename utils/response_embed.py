@@ -1,3 +1,4 @@
+#makes configs
 import numpy as N
 import numpy.linalg
 import models
@@ -226,6 +227,7 @@ def mb_ph_ops_configs(ops_dict,configs_dict):
         ops_configs+=[(op,configs_dict["n+1"])]
     return ops_configs
 
+#creates neutral ops configs (N particles - operator is unity)
 def mb_sp_ops_configs(ops_dict,configs_dict):
     neutral_op_configs=[(ops_dict["1"],configs_dict["n"])]
 
