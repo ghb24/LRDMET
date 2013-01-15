@@ -258,6 +258,9 @@ module mat_tools
             !call writevector(FullHFEnergies(1:10),'HF eigenvalues')
         enddo
         deallocate(PMatrix,PMatrix_old,OccOrbs_HF)
+
+        !write(6,*) "Full HF Orbs: "
+        !call writematrix(FullHFOrbs,'FullHFOrbs',.true.)
             
         write(6,*) "nOCC", nOcc
         write(6,*) "*True* Fock eigenvalues around fermi level: "

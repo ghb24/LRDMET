@@ -11,6 +11,7 @@ import opbasis
 import opbasis_ni
 import la
 import utils
+import os
 
 def _sp_gf(h0,omega,perturb,nocc):
     # noninteracting single-particle g.f.
@@ -36,11 +37,16 @@ def _second_order_energy(h0,nocc,perturb,omega):
     eigs,cmo=scipy.linalg.eigh(h0)
     nsites=h0.shape[0]
 
+    #print 'cmo: '
+    #print cmo
+
     perturb_mo=N.dot(cmo.T,N.dot(perturb,cmo))
     t1amp=utils.zeros([nsites,nsites])
     ret_val=0.
     for i in xrange(nocc):
         for a in xrange(nocc,nsites):
+            #print "i,a,e_i,e_a: ",i,a,eigs[i],eigs[a]
+            #print "perturb_mo: ",i,a,perturb_mo[i,a]
             t1amp[a,i]=perturb_mo[a,i]/(omega-(eigs[a]-eigs[i]))
             ret_val+=t1amp[a,i]*perturb_mo[i,a]
     return ret_val
@@ -51,8 +57,8 @@ def ph_greens():
 
     nimp=1
     nimp_sp=2*nimp
-    nocc=20
-    nsites=40
+    nocc=10
+    nsites=20
     nsites_sp=nsites*2
     ndim=2
     sz=0
@@ -66,15 +72,15 @@ def ph_greens():
     N.set_printoptions(precision=3)
 
     t=-1. # hopping
-    delta=0.25 # broadening
+    delta=0.0 #25 # broadening
 
 #    for u in [0.0,4.0,10.0]:
-    for u in [0.0,1.0,4.0,8.0]:
+    for u in [0.0,0.5,1.0,2.0,4.0,8.0]: #,1.0,4.0,8.0]:
 
         # Single impurity Anderson model
         mu=0.
-        hlat,hall,hlat_sp,hall_sp,e0=models_embed.si_anderson_imp_ext_ni_h(t,nocc,nimp,nsites)
-        hop,himp,hcs_imp,hds_imp,hcs_ext,hds_ext,hext=models_embed.si_anderson_imp_ext_h(hall_sp,u,nocc,nimp,nsites)
+        hlat,hall,hlat_sp,hall_sp,e0 = models_embed.si_anderson_imp_ext_ni_h(t,nocc,nimp,nsites)
+        hop,himp,hcs_imp,hds_imp,hcs_ext,hds_ext,hext = models_embed.si_anderson_imp_ext_h(hall_sp,u,nocc,nimp,nsites)
 
 #        single site Hubbard in DMET basis
 #        mu=u/2
@@ -94,9 +100,12 @@ def ph_greens():
         perturbop=models.ContractedCD(p_coeffs)
 
         fd=file("ph_siam.out."+str(u),"w")
-        for omega in N.arange(0,8,0.1):
+        for omega in N.arange(0,4,0.01):
+
+            if abs(omega-2.0) < 0.00001:
+                continue
     
-            ops_dict=response_embed.mb_ph_ops(hlat,perturb,omega+1j*delta,nimp,nocc,pemb,pcore,pvirt)
+            ops_dict = response_embed.mb_ph_ops(hlat,perturb,omega+1j*delta,nimp,nocc,pemb,pcore,pvirt)
             configs_dict=response_embed.mb_configs(nsites,nimp,nimp_sp,2*nocc-nimp_sp,0)
             neutral_ops_configs=response_embed.mb_ph_ops_configs(ops_dict,configs_dict)
 
@@ -107,8 +116,15 @@ def ph_greens():
             himp_mat=opbasis_ni.oimp_matrix_form(himp,neutral_ops_configs,cocc,vocc)
             himp_ext_mat=opbasis_ni.himp_ext_matrix_form(hcs_imp,hds_ext,hds_imp,hcs_ext,neutral_ops_configs,cocc,vocc)
             hext_mat=opbasis_ni.hext_matrix_form(hext,neutral_ops_configs,cocc,vocc,e0)
+
+            #print 'himp_mat size: ',himp_mat.shape
+            #print 'himp_mat',himp_mat[:,0]
+            #print 'hext_mat size: ',hext_mat.shape
+            #print 'himp_ext_mat size: ',himp_ext_mat.shape
             
             hmat=himp_mat+himp_ext_mat+hext_mat
+
+            #print 'total size hmat: ',hmat.shape
 
             unit_mat=opbasis_ni.oimp_matrix_form(models.Unit(),neutral_ops_configs,cocc,vocc)
 
@@ -123,9 +139,15 @@ def ph_greens():
 
             ph_gf0=_second_order_energy(hlat,nocc,perturb,omega+1j*delta)
 
+            #print 'hlat size: ',hlat.shape
+            #print 'hlat: '
+            #print hlat
+
             #print omega, ph_gf.imag,ph_gf0.imag
             print omega, ph_gf,2*ph_gf0
-            print >>fd, omega-mu, ph_gf.imag,ph_gf0.imag
+            print >>fd, omega-mu, ph_gf.imag,ph_gf0.imag,ph_gf.real,2*ph_gf0.real
+
+            #os._exit(1)
 
 
 def sp_greens():
@@ -227,3 +249,7 @@ def sp_greens():
 
             print omega, gfplus.imag,c_gf.imag, gfminus.imag,d_gf.imag
             print >>fd, omega-mu, gfplus.imag+gfminus.imag,c_gf.imag+d_gf.imag
+
+if __name__ == "__main__":
+    ph_greens()
+

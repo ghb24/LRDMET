@@ -1,6 +1,6 @@
 module LinearResponse
     use const
-    use errors, only: stop_all
+    use errors, only: stop_all,warning
     use mat_tools, only: WriteVector,WriteMatrix,WriteVectorInt
     use globals
     implicit none
@@ -807,7 +807,7 @@ module LinearResponse
                     enddo
                 enddo
             enddo
-
+            
             !**************************   Block 10 *********************
             !Coupling between the CA excitations and the uncontracted N-electron space
             !cf. Block 6
@@ -851,7 +851,7 @@ module LinearResponse
                                 LinearSystem(J,CAind_tmp) = LinearSystem(J,CAInd_tmp) &
                                     + SchmidtPert(beta_spat,i)*FockSchmidt(gam_spat,i)
                             else
-                                LinearSystem(J,AVInd_tmp) = LinearSystem(J,AVInd_tmp) &
+                                LinearSystem(J,CAInd_tmp) = LinearSystem(J,CAInd_tmp) &
                                     - SchmidtPert(beta_spat,i)*FockSchmidt(gam_spat,i)
                             endif
                         enddo
@@ -947,7 +947,7 @@ module LinearResponse
             write(6,*) "Hessian constructed successfully...",Omega
 
             !*********************   Hessian construction finished   **********************
-            !call writematrix(LinearSystem,'Hessian',.true.)
+            !call writematrix(LinearSystem(1:nFCIDet,1:nFCIDet),'Hessian_N',.true.)
 
             !****************************************************************************
             !************    OVERLAP MATRIX   *******************************************
@@ -1105,18 +1105,23 @@ module LinearResponse
 
             !Now solve these linear equations
             call DGESV(nLinearSystem,1,LinearSystem,nLinearSystem,Pivots,VGS,nLinearSystem,info)
-            if(info.ne.0) call stop_all(t_r,'Solving Linear system failed') 
+            if(info.ne.0) then 
+                write(6,*) "INFO: ",info
+                !call stop_all(t_r,'Solving Linear system failed') 
+                call warning(t_r,'Solving linear system failed')
+            else
 
-            ResponseFn = 0.0_dp
-            do i = 1,nFCIDet
-                if(btest(FCIBitList(i),pertsitealpha-1)) then
-                    ResponseFn = ResponseFn + FullHamil(i,1)*VGS(i)
-                endif
-                if(btest(FCIBitList(i),pertsitebeta-1)) then
-                    ResponseFn = ResponseFn + FullHamil(i,1)*VGS(i)
-                endif
-            enddo
-            write(iunit,*) Omega,ResponseFn
+                ResponseFn = 0.0_dp
+                do i = 1,nFCIDet
+                    if(btest(FCIBitList(i),pertsitealpha-1)) then
+                        ResponseFn = ResponseFn + FullHamil(i,1)*VGS(i)
+                    endif
+                    if(btest(FCIBitList(i),pertsitebeta-1)) then
+                        ResponseFn = ResponseFn + FullHamil(i,1)*VGS(i)
+                    endif
+                enddo
+                write(iunit,*) Omega,ResponseFn
+            endif
 
             Omega = Omega + Omega_Step
 
@@ -3385,6 +3390,8 @@ module LinearResponse
                 transitions(ai_ind,1) = FullHFEnergies(a_spat)-FullHFEnergies(i_spat)
                 !Now calculate the moment
                 transitions(ai_ind,2) = (FullHFOrbs(pertsite,i_spat)*FullHFOrbs(pertsite,a_spat))**2
+                !write(6,*) "perturb_mo",i_spat,a_spat,FullHFOrbs(pertsite,i_spat)*FullHFOrbs(pertsite,a_spat)
+                !write(6,*) "i,a,e_i,e_a: ",i_spat,a_spat,FullHFEnergies(i_spat),FullHFEnergies(a_spat)
 !                write(6,*) "i, a: ",i,a
 !                write(6,*) "moment: ",(FullHFOrbs(pertsite,i_spat)*FullHFOrbs(pertsite,a_spat))**2
                 !write(6,*) Transitions(ai_ind,1),Transitions(ai_ind,2)
