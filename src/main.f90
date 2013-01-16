@@ -27,24 +27,24 @@ call run_DMETcalc()
         tConstructFullSchmidtBasis = .true. 
         tMFResponse = .false. 
         tHalfFill = .true. 
-        nSites = 40   
+        nSites = 20   
         LatticeDim = 1
         nImp = 1
-        StartU = 1.0_dp
+        StartU = 0.0_dp
         EndU = 1.1_dp
-        UStep = 0.2_dp
+        UStep = 0.25_dp
         tPeriodic = .false.
         tAntiPeriodic = .true.  
         tRampDownOcc = .true.
-!        tCompleteDiag = tMFResponse
         tCompleteDiag = .true. 
         tGSFCI = .not.tCompleteDiag 
         Start_Omega = 0.0_dp
         End_Omega = 4.0_dp
         Omega_Step = 0.01_dp
-        tDumpFCIDUMP = .true.
+        tDumpFCIDUMP = .false.
         tDiagFullSystem = .false.
         dDelta = 0.001_dp
+        tAnderson = .true.
 
     end subroutine set_defaults
 
@@ -53,7 +53,7 @@ call run_DMETcalc()
     implicit none
 !    logical :: exists
 
-    write(6,"(A)") "***  Starting real-space hubbard calculation  ***"
+    write(6,"(A)") "***  Starting real-space hubbard/anderson calculation  ***"
     call cpu_time(start_time)
     call environment_report()
 
@@ -114,7 +114,11 @@ call run_DMETcalc()
                 write(6,"(A,F8.3)")           "Hubbard U:            ",U
                 write(6,"(A,I5,A)")           "Embedded system size: ",nImp," sites"
                 if(LatticeDim.eq.1) then
-                write(6,"(A,I5,A)")           "1D hubbard lattice of ",nSites," sites"
+                if(tAnderson) then
+                write(6,"(A,I5,A)")           "1D Anderson lattice of ",nSites," sites"
+                else
+                write(6,"(A,I5,A)")           "1D Hubbard lattice of ",nSites," sites"
+                endif
                 endif
                 write(6,*) 
                 
@@ -131,7 +135,9 @@ call run_DMETcalc()
                 endif
 
                 !Calculate single reference linear response - non-interacting, TDA and RPA
-                call SR_LinearResponse()
+                if(tLR_DMET) then
+                    call SR_LinearResponse()
+                endif
 
                 !At this point, we have h0, U and a set of system sites (the first nImp indices), as well as a local potential
                 do it=1,150
@@ -160,51 +166,54 @@ call run_DMETcalc()
                     !to get the same result. We could also check that the number of electrons adds to the correct thing
                     call Transform1e()
                     
-!                    if(tLR_DMET) then
-!                        !Find the perturbation for the linear response in the schmidt basis of the zeroth order perturbation
-!                        call FindSchmidtPert()
-!                    endif
-
                     !Construct the two electron integrals in the system, and solve embedded system with high-level method
                     call SolveSystem(.true.)
 
-                    if(tLR_DMET) then
-                        call MR_LinearResponse()
-                    endif
-                    
-                    call stop_all('end','end')
+                    if(.not.tAnderson) then
+                        !Fit new potential
+                        !vloc_change (global) is updated in here to reflect the optimal change
+                        !VarVloc is a meansure of the change in the potential
+                        !ErrRDM is a measure of the initial difference in the RDMs
+                        call Fit_vloc(VarVloc,ErrRDM)
 
-                    !Fit new potential
-                    !vloc_change (global) is updated in here to reflect the optimal change
-                    !VarVloc is a meansure of the change in the potential
-                    !ErrRDM is a measure of the initial difference in the RDMs
-                    call Fit_vloc(VarVloc,ErrRDM)
+                        if(tDebug) call writematrix(vloc_change,'vloc_change',.true.)
 
-                    if(tDebug) call writematrix(vloc_change,'vloc_change',.true.)
+                        !Mean vloc is actually for the old vloc for consistency with Geralds code
+                        mean_vloc = 0.0_dp
+                        do i=1,nImp
+                            mean_vloc = mean_vloc + v_loc(i,i)
+                        enddo
+                        mean_vloc = mean_vloc/real(nImp)
 
-                    !Mean vloc is actually for the old vloc for consistency with Geralds code
-                    mean_vloc = 0.0_dp
-                    do i=1,nImp
-                        mean_vloc = mean_vloc + v_loc(i,i)
-                    enddo
-                    mean_vloc = mean_vloc/real(nImp)
 
-                    !Write out stats:
-                    !   Iter    E/Site  d[V]    ERR[RDM]    ERR[Filling]    mean[corr_pot]      Some RDM stuff...?
-                    write(6,*) it,TotalE_Imp,VarVloc,ErrRDM,FillingError,mean_vloc
+                        !Write out stats:
+                        !   Iter    E/Site  d[V]    ERR[RDM]    ERR[Filling]    mean[corr_pot]      Some RDM stuff...?
+                        write(6,*) it,TotalE_Imp,VarVloc,ErrRDM,FillingError,mean_vloc
 
-                    !Update vloc
-                    v_loc(:,:) = v_loc(:,:) + vloc_change(:,:)
+                        !Update vloc
+                        v_loc(:,:) = v_loc(:,:) + vloc_change(:,:)
 
-                    if(VarVloc.lt.1.0e-8) then
-                        write(6,"(A)") "...correlation potential converged" 
-                        exit
+                        if(VarVloc.lt.1.0e-8) then
+                            write(6,"(A)") "...correlation potential converged" 
+                            exit
+                        endif
+                    else
+                        !Write out stats:
+                        !   Iter    E/Site  d[V]    ERR[RDM]    ERR[Filling]    mean[corr_pot]      Some RDM stuff...?
+                        write(6,*) it,TotalE_Imp,VarVloc,ErrRDM,FillingError,mean_vloc
+
+                        exit    !Anderson model, so we do not want to iterate
                     endif
 
                 enddo
 
                 if(it.eq.151) call stop_all(t_r,'DMET Convergence failed')
-
+                    
+                if(tLR_DMET) then
+                    !Perform linear response on the resulting DMET state
+                    call MR_LinearResponse()
+                endif
+                    
                 deallocate(HFOrbs)
 
                 !Potentially run FCI again now to get correlation functions from 2RDMs?

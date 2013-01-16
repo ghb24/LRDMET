@@ -137,6 +137,22 @@ contains
 
     end subroutine append_ext
 
+    subroutine append_ext_real(stem, f, s)
+        use const
+
+        ! Returns stem.f in s
+
+        implicit none
+        character(*), intent(in) :: stem
+        real(dp), intent(in) :: f
+        character(*), intent(out) :: s
+
+        s = ''
+        write(s,'(F6.2)') f
+        s = stem//'_'//adjustl(s)
+
+    end subroutine append_ext_real
+
    subroutine get_unique_filename(stem, tnext, istart, filename)
 
         ! Find a filename which is either the "newest" or the next to be used.

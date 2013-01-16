@@ -27,8 +27,6 @@ module LinearResponse
         !Externally contracted
         call NonIntExContracted_TDA_MCLR()
 
-        call stop_all('Finished MR LR routine','END')
-
         !Create contracted single excitation space using the non-interacting reference for the contractions
         !The matrix is then created in an RPA fashion
 !        call NonIntContracted_RPA_MCLR()
@@ -55,7 +53,7 @@ module LinearResponse
     end subroutine SR_LinearResponse
 
     subroutine NonIntExContracted_TDA_MCLR()
-        use utils, only: get_free_unit
+        use utils, only: get_free_unit,append_ext_real
         use DetBitOps, only: DecodeBitDet,SQOperator,CountBits
         use DetToolsData
         implicit none
@@ -73,6 +71,7 @@ module LinearResponse
         real(dp), allocatable :: Np1FCIHam_alpha(:,:),Np1FCIHam_beta(:,:)
         real(dp), allocatable :: AVNorm(:),CANorm(:)    !,Work(:),W(:)
         integer, allocatable :: Pivots(:)
+        character(64) :: filename
         character(len=*), parameter :: t_r='NonIntExContracted_TDA_MCLR'
 
         write(6,*) "Calculating non-interacting EC MR-TDA LR system..."
@@ -153,11 +152,13 @@ module LinearResponse
         write(6,"(A,F14.6,A)") "Memory required for the LR hessian: ",real((nLinearSystem**2)*16,dp)/1048576.0_dp," Mb"
         
         iunit = get_free_unit()
-        open(unit=iunit,file='EC-TDA_DDResponse',status='unknown')
+        call append_ext_real('EC-TDA_DDResponse',U,filename)
+        open(unit=iunit,file=filename,status='unknown')
         write(iunit,"(A)") "# Frequency     DD_LinearResponse(Re)    DD_LinearResponse(Im)"
         
         iunit2 = get_free_unit()
-        open(unit=iunit2,file='EC-TDA_EValues',status='unknown')
+        call append_ext_real('EC-RDA_EValues',U,filename)
+        open(unit=iunit2,file=filename,status='unknown')
         write(iunit2,"(A)") "# Frequency     EValues..."
 
         !Allocate memory for hmailtonian in this system:
@@ -1155,6 +1156,20 @@ module LinearResponse
         deallocate(VGS,Pivots)
         close(iunit)
         close(iunit2)
+
+        !Deallocate determinant lists
+        if(allocated(FCIDetList)) deallocate(FCIDetList)
+        if(allocated(FCIBitList)) deallocate(FCIBitList)
+        if(allocated(UMat)) deallocate(UMat)
+        if(allocated(TMat)) deallocate(TMat)
+        if(allocated(Nm1FCIDetList)) deallocate(Nm1FCIDetList)
+        if(allocated(Nm1BitList)) deallocate(Nm1BitList)
+        if(allocated(Np1FCIDetList)) deallocate(Np1FCIDetList)
+        if(allocated(Np1BitList)) deallocate(Np1BitList)
+        if(allocated(Nm1bFCIDetList)) deallocate(Nm1bFCIDetList)
+        if(allocated(Nm1bBitList)) deallocate(Nm1bBitList)
+        if(allocated(Np1bFCIDetList)) deallocate(Np1bFCIDetList)
+        if(allocated(Np1bBitList)) deallocate(Np1bBitList)
 
     end subroutine NonIntExContracted_TDA_MCLR
 
@@ -3391,13 +3406,14 @@ module LinearResponse
     end subroutine FindSchmidtPert
 
     subroutine NonInteractingLR()
-        use utils, only: get_free_unit
+        use utils, only: get_free_unit,append_ext_real
         implicit none
         integer :: ov_space,virt_start,i,a,a_spat,i_spat,ai_ind,gtid,iunit
         integer :: highbound,iunit2
         real(dp) :: Omega,EDiff
         complex(dp) :: ResponseFn,ResponseFnPosW
         real(dp), allocatable :: transitions(:,:)   !(ov_space,2)   !1 = transition frequencies, 2 = moments
+        character(len=64) :: filename,filename2
         !character(len=*), parameter :: t_r='NonInteractingLR'
 
         write(6,*) "Calculating the non-interacting linear response function"
@@ -3426,8 +3442,10 @@ module LinearResponse
         enddo
         call sort_real2(transitions,ov_space,2)
 
+        call append_ext_real('NonInt_Transitions',U,filename)
+
         iunit = get_free_unit()
-        open(unit=iunit,file='NonInt_Transitions',status='unknown')
+        open(unit=iunit,file=filename,status='unknown')
         write(iunit,"(A)") "#Excitation     Transition_Frequency       Transition_Moment"
         do i=1,ov_space
             write(iunit,"(I8,2G22.12)") i,transitions(i,1),transitions(i,2)
@@ -3440,10 +3458,12 @@ module LinearResponse
 
         write(6,*) "Writing non-interacting linear response function to disk..."
 
-        open(unit=iunit,file='NonInt_DDResponse',status='unknown')
+        call append_ext_real('NonInt_DDResponse',U,filename)
+        open(unit=iunit,file=filename,status='unknown')
         write(iunit,"(A)") "# Frequency     DD_LinearResponse"
         iunit2 = get_free_unit()
-        open(unit=iunit2,file='NonInt_DDResponse_posW',status='unknown')
+        call append_ext_real('NonInt_DDResponse_posW',U,filename2)
+        open(unit=iunit2,file=filename2,status='unknown')
         write(iunit2,"(A)") "# Frequency     DD_LinearResponse"
 
         Omega = Start_Omega
@@ -3482,7 +3502,7 @@ module LinearResponse
     end subroutine NonInteractingLR
 
     subroutine TDA_LR()
-        use utils, only: get_free_unit
+        use utils, only: get_free_unit,append_ext_real
         use DetToolsData, only: tmat,umat
         implicit none
         integer :: ov_space,virt_start,ierr,i,j,n,m,nj_ind,mi_ind,ex(2,2),gtid
@@ -3494,6 +3514,7 @@ module LinearResponse
         complex(dp) :: ResponseFn
         real(dp), allocatable :: A_mat(:,:),W(:),Work(:),temp(:,:),Residues(:)
         real(dp), allocatable :: DM(:,:),DM_conj(:,:),DM_AO(:,:),DM_AO_conj(:,:)
+        character(64) :: filename
         character(len=*), parameter :: t_r='TDA_LR'
 
         write(6,*) "Calculating the linear response function via the Tamm-Dancoff approximation"
@@ -3754,7 +3775,8 @@ module LinearResponse
         Residues(:) = Residues(:)*Lambda
         
         iunit = get_free_unit()
-        open(unit=iunit,file='TDA_Transitions',status='unknown')
+        call append_ext_real('TDA_Transitions',U,filename)
+        open(unit=iunit,file=filename,status='unknown')
         write(iunit,"(A)") "#Excitation     Transition_Frequency       Transition_Moment"
         do i=1,ov_space
             write(iunit,"(I8,2G22.12)") i,W(i),Residues(i)
@@ -3763,7 +3785,8 @@ module LinearResponse
 
         write(6,*) "Writing TDA linear response function to disk..."
 
-        open(unit=iunit,file='TDA_DDResponse',status='unknown')
+        call append_ext_real('TDA_DDResponse',U,filename)
+        open(unit=iunit,file=filename,status='unknown')
         write(iunit,"(A)") "# Frequency     DD_LinearResponse"
 
         Omega = Start_Omega
@@ -3789,7 +3812,7 @@ module LinearResponse
     !Finally, create the density-density linear response function from the resulting excitations/deexcitations
     !This is done in the spin-orbital space
     subroutine RPA_LR()
-        use utils, only: get_free_unit
+        use utils, only: get_free_unit,append_ext_real
         use matrixops, only: d_inv
         implicit none
         integer :: ov_space,virt_start,ierr,j,ex(2,2),ex2(2,2),n,i,m,nj_ind,mi_ind,info,lwork
@@ -3800,6 +3823,7 @@ module LinearResponse
         real(dp), allocatable :: A_mat(:,:),B_mat(:,:),Stability(:,:),StabilityCopy(:,:),W(:),Work(:)
         real(dp), allocatable :: S_half(:,:),temp(:,:),temp2(:,:),W2(:),X_stab(:,:),Y_stab(:,:)
         real(dp), allocatable :: trans_moment(:),AOMO_Spin(:,:),DM(:,:)
+        character(64) :: filename
         character(len=*), parameter :: t_r='RPA_LR'
 
         ov_space = 2*nOcc*(nSites-nOcc)
@@ -4238,7 +4262,8 @@ module LinearResponse
         trans_moment(:) = trans_moment(:)*Lambda
 
         iunit = get_free_unit()
-        open(unit=iunit,file='RPA_Transitions',status='unknown')
+        call append_ext_real('RPA_Transitions',U,filename)
+        open(unit=iunit,file=filename,status='unknown')
         write(iunit,"(A)") "#Excitation     Transition_Frequency       Transition_Moment"
         do i=1,ov_space
             write(iunit,"(I8,2G22.12)") i,W2(ov_space+i),trans_moment(i)
@@ -4250,7 +4275,8 @@ module LinearResponse
 
         write(6,*) "Writing RPA linear response function to disk..."
 
-        open(unit=iunit,file='RPA_DDResponse',status='unknown')
+        call append_ext_real('RPA_DDResponse',U,filename)
+        open(unit=iunit,file=filename,status='unknown')
         write(iunit,"(A)") "# Frequency     DD_LinearResponse"
 
         Omega = Start_Omega
