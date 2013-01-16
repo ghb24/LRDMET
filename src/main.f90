@@ -27,14 +27,14 @@ call run_DMETcalc()
         tConstructFullSchmidtBasis = .true. 
         tMFResponse = .false. 
         tHalfFill = .true. 
-        nSites = 20 !8 !12 !8   
+        nSites = 40   
         LatticeDim = 1
         nImp = 1
-        StartU = 8.0_dp
-        EndU = 8.1_dp
+        StartU = 1.0_dp
+        EndU = 1.1_dp
         UStep = 0.2_dp
         tPeriodic = .false.
-        tAntiPeriodic = .false. 
+        tAntiPeriodic = .true.  
         tRampDownOcc = .true.
 !        tCompleteDiag = tMFResponse
         tCompleteDiag = .true. 
@@ -44,6 +44,7 @@ call run_DMETcalc()
         Omega_Step = 0.01_dp
         tDumpFCIDUMP = .true.
         tDiagFullSystem = .false.
+        dDelta = 0.001_dp
 
     end subroutine set_defaults
 
@@ -130,7 +131,7 @@ call run_DMETcalc()
                 endif
 
                 !Calculate single reference linear response - non-interacting, TDA and RPA
-                !call SR_LinearResponse()
+                call SR_LinearResponse()
 
                 !At this point, we have h0, U and a set of system sites (the first nImp indices), as well as a local potential
                 do it=1,150

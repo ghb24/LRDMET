@@ -549,6 +549,26 @@ module mat_tools
 
     end subroutine FromTriangularPacked
 
+    subroutine WriteMatrixcomp(mat,matname,tOneLine)
+        implicit none
+        complex(dp), intent(in) :: mat(:,:)
+        character(len=*), intent(in) :: matname
+        integer :: i,j
+        logical :: tOneLine
+
+        write(6,*) "Writing out matrix: ",trim(matname)
+        write(6,"(A,I7,A,I7)") "Size: ",size(mat,1)," by ",size(mat,2)
+        do i=1,size(mat,1)
+            do j=1,size(mat,2)
+                if(tOneLine) then
+                    write(6,"(2G25.10)",advance='no') mat(i,j)
+                else
+                    write(6,"(2I6,2G25.10)") i,j,mat(i,j)
+                endif
+            enddo
+            write(6,*)
+        enddo
+    end subroutine WriteMatrixcomp
 
     subroutine WriteMatrix(mat,matname,tOneLine)
         implicit none

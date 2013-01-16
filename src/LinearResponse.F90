@@ -1,7 +1,7 @@
 module LinearResponse
     use const
     use errors, only: stop_all,warning
-    use mat_tools, only: WriteVector,WriteMatrix,WriteVectorInt
+    use mat_tools, only: WriteVector,WriteMatrix,WriteVectorInt,WriteMatrixComp
     use globals
     implicit none
     contains
@@ -65,10 +65,13 @@ module LinearResponse
         integer :: gam_spat,nLinearSystem,tempK,gtid
         integer :: orbdum(1),CAInd_tmp,lwork,info,nSize,pertsitealpha,pertsitebeta
         logical :: tParity
-        real(dp) :: CVNorm,Omega,tempel,ResponseFn
+        real(dp) :: Omega,CVNorm
+        complex(dp) :: tempel,ResponseFn
+        complex(dp) , allocatable :: LinearSystem(:,:),Overlap(:,:),Projector(:,:),VGS(:)
+        complex(dp) , allocatable :: temp_vec(:)
         real(dp), allocatable :: NFCIHam(:,:),temp(:,:),Nm1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
-        real(dp), allocatable :: Np1FCIHam_alpha(:,:),Np1FCIHam_beta(:,:),LinearSystem(:,:),Overlap(:,:)
-        real(dp), allocatable :: AVNorm(:),CANorm(:),Work(:),W(:),temp_vec(:),Projector(:,:),VGS(:)
+        real(dp), allocatable :: Np1FCIHam_alpha(:,:),Np1FCIHam_beta(:,:)
+        real(dp), allocatable :: AVNorm(:),CANorm(:)    !,Work(:),W(:)
         integer, allocatable :: Pivots(:)
         character(len=*), parameter :: t_r='NonIntExContracted_TDA_MCLR'
 
@@ -83,6 +86,16 @@ module LinearResponse
         UMat(:) = 0.0_dp
         do i=1,nImp
             umat(umatind(i,i,i,i)) = U
+        enddo
+        if(allocated(tmat)) deallocate(tmat)
+        allocate(tmat(EmbSize,EmbSize))
+        tmat(:,:) = 0.0_dp
+        do i=1,EmbSize
+            do j=1,EmbSize
+                if(abs(Emb_h0v(i,j)).gt.1.0e-10_dp) then
+                    tmat(i,j) = Emb_h0v(i,j)
+                endif
+            enddo
         enddo
         
         !Enumerate excitations for fully coupled space
@@ -137,11 +150,11 @@ module LinearResponse
 
         nLinearSystem = (2*nFCIDet) + nImp*2*(nNm1FCIDet+nNm1bFCIDet) + nImp*2*(nNp1FCIDet+nNp1bFCIDet) 
         
-        write(6,"(A,F14.6,A)") "Memory required for the LR hessian: ",real((nLinearSystem**2)*8,dp)/1048576.0_dp," Mb"
+        write(6,"(A,F14.6,A)") "Memory required for the LR hessian: ",real((nLinearSystem**2)*16,dp)/1048576.0_dp," Mb"
         
         iunit = get_free_unit()
         open(unit=iunit,file='EC-TDA_DDResponse',status='unknown')
-        write(iunit,"(A)") "# Frequency     DD_LinearResponse"
+        write(iunit,"(A)") "# Frequency     DD_LinearResponse(Re)    DD_LinearResponse(Im)"
         
         iunit2 = get_free_unit()
         open(unit=iunit2,file='EC-TDA_EValues',status='unknown')
@@ -176,13 +189,14 @@ module LinearResponse
         Omega = Start_Omega
         do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
 
-            LinearSystem(:,:) = 0.0_dp
-            Overlap(:,:) = 0.0_dp
+            LinearSystem(:,:) = complex(0.0_dp,0.0_dp)
+            Overlap(:,:) = complex(0.0_dp,0.0_dp)
             write(6,*) "Calculating linear response for frequency: ",Omega
 
             !First, find the non-interacting solution expressed in the schmidt basis
             call FindSchmidtPert(.false.,Omega)
 
+            !call writematrixcomp(SchmidtPert,'SchmidtPert',.true.)
 !            call writematrix(SchmidtPert,'SchmidtPert',.true.)
 !            call writematrix(FockSchmidt,'FockSchmidt',.true.)
 
@@ -190,7 +204,9 @@ module LinearResponse
             
             !First, construct FCI space, in determinant basis
             !****************************   Block 1   **************************
-            LinearSystem(1:nFCIDet,1:nFCIDet) = NFCIHam(:,:)
+            call R_C_Copy_2D(LinearSystem(1:nFCIDet,1:nFCIDet),NFCIHam(:,:),nFCIDet,nFCIDet)
+            !LinearSystem(1:nFCIDet,1:nFCIDet) = NFCIHam(:,:)
+            !call writematrixcomp(LinearSystem(1:nFCIDet,1:nFCIDet),'N-electron hamil',.true.)
 
             !****************************************************************************
             !*********    CORE-VIRTUAL EXCITATION BLOCK *********************************
@@ -200,21 +216,21 @@ module LinearResponse
             CVNorm = 0.0_dp
             do i=1,CoreEnd
                 do a=VirtStart,VirtEnd
-                    CVNorm = CVNorm + SchmidtPert(i,a)**2
+                    CVNorm = CVNorm + real(SchmidtPert(i,a))**2 + aimag(SchmidtPert(i,a))**2
                 enddo
             enddo
-            CVNorm = CVNorm * 2.0_dp
+            CVNorm = CVNorm * 2.0_dp    
 
             !*****************************   Block 2   *****************************
             !Copy the uncontracted FCI hamiltonian space
             LinearSystem(CVIndex:AVIndex-1,CVIndex:AVIndex-1) = LinearSystem(1:nFCIDet,1:nFCIDet)
 
             !Now alter the diagonals of this block
-            tempel = 0.0_dp
+            tempel = complex(0.0_dp,0.0_dp)
             do i=1,CoreEnd
                 do j=1,CoreEnd
                     do a=VirtStart,VirtEnd
-                        tempel = tempel - FockSchmidt(j,i)*SchmidtPert(a,i)*SchmidtPert(a,j)
+                        tempel = tempel - FockSchmidt(j,i)*conjg(SchmidtPert(a,i))*SchmidtPert(a,j)
                     enddo
                 enddo
             enddo
@@ -222,7 +238,7 @@ module LinearResponse
             do i = 1,CoreEnd
                 do a = VirtStart,VirtEnd
                     do b = VirtStart,VirtEnd
-                        tempel = tempel + FockSchmidt(b,a)*SchmidtPert(a,i)*SchmidtPert(b,i)
+                        tempel = tempel + FockSchmidt(b,a)*conjg(SchmidtPert(a,i))*SchmidtPert(b,i)
                     enddo
                 enddo
             enddo
@@ -236,7 +252,7 @@ module LinearResponse
 
             !Now for the coupling of the CV excitations to the uncontracted space
             !***********************   Block 3   ***************************
-            tempel = 0.0_dp
+            tempel = complex(0.0_dp,0.0_dp)
             do i = 1,CoreEnd
                 do a = VirtStart,VirtEnd
                     tempel = tempel + SchmidtPert(a,i)*FockSchmidt(a,i)
@@ -246,8 +262,8 @@ module LinearResponse
 
             !Add these in to the diagonals of the coupling blocks
             do i = 1,nFCIDet
-                LinearSystem(nFCIDet+i,i) = tempel
                 LinearSystem(i,nFCIDet+i) = tempel
+                LinearSystem(nFCIDet+i,i) = conjg(tempel)
             enddo
 
             !****************************************************************************
@@ -259,7 +275,7 @@ module LinearResponse
             do gam = 1,nImp*2
                 gam_spat = gam+(nOcc-nImp)
                 do a = VirtStart,VirtEnd
-                    AVNorm(gam) = AVNorm(gam) + SchmidtPert(gam_spat,a)**2
+                    AVNorm(gam) = AVNorm(gam) + real(SchmidtPert(gam_spat,a))**2 + aimag(SchmidtPert(gam_spat,a))**2
                 enddo
             enddo
             call writevector(AVNorm,'AV Norm')
@@ -281,17 +297,21 @@ module LinearResponse
                     gam2_ind = AVIndex + (gam2-1)*(nNm1FCIDet+nNm1bFCIDet)
 
                     !Construct appropriate weighting factor for the hamiltonian matrix element contribution
-                    tempel = 0.0_dp
+                    tempel = complex(0.0_dp,0.0_dp)
                     do a = VirtStart,VirtEnd
-                        tempel = tempel + SchmidtPert(gam1_spat,a)*SchmidtPert(gam2_spat,a)
+                        tempel = tempel + conjg(SchmidtPert(gam1_spat,a))*SchmidtPert(gam2_spat,a)
                     enddo
 
                     !Fill with appropriate FCI hamiltonian block
-                    LinearSystem(gam1_ind:gam1_ind+nNm1bFCIDet-1,gam2_ind:gam2_ind+nNm1bFCIDet-1) = Nm1FCIHam_beta(:,:)
+                    call R_C_Copy_2D(LinearSystem(gam1_ind:gam1_ind+nNm1bFCIDet-1,gam2_ind:gam2_ind+nNm1bFCIDet-1), &
+                        Nm1FCIHam_beta(:,:),nNm1bFCIDet,nNm1bFCIDet)
+                    !LinearSystem(gam1_ind:gam1_ind+nNm1bFCIDet-1,gam2_ind:gam2_ind+nNm1bFCIDet-1) = Nm1FCIHam_beta(:,:)
 
                     !Now construct for the gam1_beta : gam2_beta block
-                    LinearSystem(gam1_ind+nNm1bFCIDet:gam1_ind+nNm1bFCIDet+nNm1FCIDet-1,    &
-                        gam2_ind+nNm1bFCIDet:gam2_ind+nNm1bFCIDet+nNm1FCIDet-1) = Nm1FCIHam_alpha(:,:)
+                    call R_C_Copy_2D(LinearSystem(gam1_ind+nNm1bFCIDet:gam1_ind+nNm1bFCIDet+nNm1FCIDet-1,   &
+                        gam2_ind+nNm1bFCIDet:gam2_ind+nNm1bFCIDet+nNm1FCIDet-1),Nm1FCIHam_alpha(:,:),nNm1FCIDet,nNm1FCIDet)
+                    !LinearSystem(gam1_ind+nNm1bFCIDet:gam1_ind+nNm1bFCIDet+nNm1FCIDet-1,    &
+                    !    gam2_ind+nNm1bFCIDet:gam2_ind+nNm1bFCIDet+nNm1FCIDet-1) = Nm1FCIHam_alpha(:,:)
                     
                     !Multiply every element by the appropriate weighting factor
                     !This weighting factor is the same for both spin blocks, so no need to do seperately
@@ -302,10 +322,10 @@ module LinearResponse
                     enddo
 
                     !Now for the virtual excitation term, which is diagonal in each determinant space
-                    tempel = 0.0_dp
+                    tempel = complex(0.0_dp,0.0_dp)
                     do a = VirtStart,VirtEnd
                         do b = VirtStart,VirtEnd
-                            tempel = tempel + FockSchmidt(a,b)*SchmidtPert(gam1_spat,a)*SchmidtPert(gam2_spat,b)
+                            tempel = tempel + FockSchmidt(a,b)*conjg(SchmidtPert(gam1_spat,a))*SchmidtPert(gam2_spat,b)
                         enddo
                     enddo
                     !Add this term in to the diagonals of each block
@@ -370,10 +390,10 @@ module LinearResponse
 
                                 if(tParity) then
                                     LinearSystem(CVInd_tmp,AVInd_tmp) = LinearSystem(CVInd_tmp,AVInd_tmp) &
-                                        + SchmidtPert(a,i)*SchmidtPert(beta_spat,a)*FockSchmidt(gam_spat,i)
+                                        + conjg(SchmidtPert(a,i))*SchmidtPert(beta_spat,a)*FockSchmidt(gam_spat,i)
                                 else
                                     LinearSystem(CVInd_tmp,AVInd_tmp) = LinearSystem(CVInd_tmp,AVInd_tmp) &
-                                        - SchmidtPert(a,i)*SchmidtPert(beta_spat,a)*FockSchmidt(gam_spat,i)
+                                        - conjg(SchmidtPert(a,i))*SchmidtPert(beta_spat,a)*FockSchmidt(gam_spat,i)
                                 endif
 
                             enddo
@@ -391,7 +411,7 @@ module LinearResponse
                         LinearSystem(CVInd_tmp,AVInd_tmp) = LinearSystem(CVInd_tmp,AVInd_tmp) / &
                             sqrt(CVNorm*AVNorm(beta))
                         !Copy to other half of matrix
-                        LinearSystem(AVInd_tmp,CVInd_tmp) = LinearSystem(CVInd_tmp,AVInd_tmp)
+                        LinearSystem(AVInd_tmp,CVInd_tmp) = conjg(LinearSystem(CVInd_tmp,AVInd_tmp))
                     enddo
                 enddo
             enddo
@@ -438,10 +458,10 @@ module LinearResponse
                             do a = VirtStart,VirtEnd
                                 if(tParity) then
                                     LinearSystem(CVInd_tmp,AVInd_tmp) = LinearSystem(CVInd_tmp,AVInd_tmp) &
-                                        + SchmidtPert(a,i)*SchmidtPert(beta_spat,a)*FockSchmidt(gam_spat,i)
+                                        + conjg(SchmidtPert(a,i))*SchmidtPert(beta_spat,a)*FockSchmidt(gam_spat,i)
                                 else
                                     LinearSystem(CVInd_tmp,AVInd_tmp) = LinearSystem(CVInd_tmp,AVInd_tmp) &
-                                        - SchmidtPert(a,i)*SchmidtPert(beta_spat,a)*FockSchmidt(gam_spat,i)
+                                        - conjg(SchmidtPert(a,i))*SchmidtPert(beta_spat,a)*FockSchmidt(gam_spat,i)
                                 endif
 
                             enddo
@@ -460,7 +480,7 @@ module LinearResponse
                         LinearSystem(CVInd_tmp,AVInd_tmp) = LinearSystem(CVInd_tmp,AVInd_tmp) / &
                             sqrt(CVNorm*AVNorm(beta))
                         !Copy to other half of matrix
-                        LinearSystem(AVInd_tmp,CVInd_tmp) = LinearSystem(CVInd_tmp,AVInd_tmp)
+                        LinearSystem(AVInd_tmp,CVInd_tmp) = conjg(LinearSystem(CVInd_tmp,AVInd_tmp))
                     enddo
                 enddo
             enddo
@@ -524,7 +544,7 @@ module LinearResponse
                         LinearSystem(J,AVInd_tmp) = LinearSystem(J,AVInd_tmp) / &
                             sqrt(AVNorm(beta))
                         !Copy to other half of matrix
-                        LinearSystem(AVInd_tmp,J) = LinearSystem(J,AVInd_tmp)
+                        LinearSystem(AVInd_tmp,J) = conjg(LinearSystem(J,AVInd_tmp))
                     enddo
                 enddo
             enddo
@@ -585,7 +605,7 @@ module LinearResponse
                         LinearSystem(J,AVInd_tmp) = LinearSystem(J,AVInd_tmp) / &
                             sqrt(AVNorm(beta))
                         !Copy to other half of matrix
-                        LinearSystem(AVInd_tmp,J) = LinearSystem(J,AVInd_tmp)
+                        LinearSystem(AVInd_tmp,J) = conjg(LinearSystem(J,AVInd_tmp))
                     enddo
                 enddo
             enddo
@@ -599,7 +619,7 @@ module LinearResponse
             do gam = 1,nImp*2
                 gam_spat = gam+(nOcc-nImp)
                 do i = 1,CoreEnd 
-                    CANorm(gam) = CANorm(gam) + SchmidtPert(i,gam_spat)**2
+                    CANorm(gam) = CANorm(gam) + real(SchmidtPert(i,gam_spat))**2 + aimag(SchmidtPert(i,gam_spat))**2
                 enddo
             enddo
             call writevector(CANorm,'CA Norm')
@@ -622,17 +642,21 @@ module LinearResponse
                     gam2_ind = CAIndex + (gam2-1)*(nNp1FCIDet+nNp1bFCIDet)
 
                     !Construct appropriate weighting factor for the hamiltonian matrix element contribution
-                    tempel = 0.0_dp
+                    tempel = complex(0.0_dp,0.0_dp)
                     do i = 1,CoreEnd
-                        tempel = tempel + SchmidtPert(gam1_spat,i)*SchmidtPert(gam2_spat,i)
+                        tempel = tempel + conjg(SchmidtPert(gam1_spat,i))*SchmidtPert(gam2_spat,i)
                     enddo
 
                     !Fill with appropriate FCI hamiltonian block
-                    LinearSystem(gam1_ind:gam1_ind+nNp1FCIDet-1,gam2_ind:gam2_ind+nNp1FCIDet-1) = Np1FCIHam_alpha(:,:)
+                    call R_C_Copy_2D(LinearSystem(gam1_ind:gam1_ind+nNp1FCIDet-1,gam2_ind:gam2_ind+nNp1FCIDet-1),   &
+                        Np1FCIHam_alpha(:,:),nNp1FCIDet,nNp1FCIDet)
+                    !LinearSystem(gam1_ind:gam1_ind+nNp1FCIDet-1,gam2_ind:gam2_ind+nNp1FCIDet-1) = Np1FCIHam_alpha(:,:)
 
                     !Now construct for the gam1_beta : gam2_beta block
-                    LinearSystem(gam1_ind+nNp1FCIDet:gam1_ind+nNp1FCIDet+nNp1bFCIDet-1,    &
-                        gam2_ind+nNp1FCIDet:gam2_ind+nNp1FCIDet+nNp1bFCIDet-1) = Np1FCIHam_beta(:,:)
+                    call R_C_Copy_2D(LinearSystem(gam1_ind+nNp1FCIDet:gam1_ind+nNp1FCIDet+nNp1bFCIDet-1,    &
+                        gam2_ind+nNp1FCIDet:gam2_ind+nNp1FCIDet+nNp1bFCIDet-1),Np1FCIHam_beta(:,:),nNp1bFCIDet,nNp1bFCIDet)
+                    !LinearSystem(gam1_ind+nNp1FCIDet:gam1_ind+nNp1FCIDet+nNp1bFCIDet-1,    &
+                    !    gam2_ind+nNp1FCIDet:gam2_ind+nNp1FCIDet+nNp1bFCIDet-1) = Np1FCIHam_beta(:,:)
                     
                     !Multiply every element by the appropriate weighting factor
                     !This weighting factor is the same for both spin blocks, so no need to do seperately
@@ -643,10 +667,10 @@ module LinearResponse
                     enddo
 
                     !Now for the occupied excitation term, which is diagonal in each determinant space
-                    tempel = 0.0_dp
+                    tempel = complex(0.0_dp,0.0_dp)
                     do i = 1,CoreEnd
                         do j = 1,CoreEnd        
-                            tempel = tempel + FockSchmidt(j,i)*SchmidtPert(i,gam1_spat)*SchmidtPert(j,gam2_spat)
+                            tempel = tempel + FockSchmidt(j,i)*conjg(SchmidtPert(i,gam1_spat))*SchmidtPert(j,gam2_spat)
                         enddo
                     enddo
                     !Add this term in to the diagonals of each block
@@ -713,10 +737,10 @@ module LinearResponse
 
                                 if(tParity) then
                                     LinearSystem(CVInd_tmp,CAInd_tmp) = LinearSystem(CVInd_tmp,CAInd_tmp) &
-                                        + SchmidtPert(a,i)*SchmidtPert(beta_spat,i)*FockSchmidt(gam_spat,a)
+                                        + conjg(SchmidtPert(a,i))*SchmidtPert(beta_spat,i)*FockSchmidt(gam_spat,a)
                                 else
                                     LinearSystem(CVInd_tmp,CAInd_tmp) = LinearSystem(CVInd_tmp,CAInd_tmp) &
-                                        - SchmidtPert(a,i)*SchmidtPert(beta_spat,i)*FockSchmidt(gam_spat,a)
+                                        - conjg(SchmidtPert(a,i))*SchmidtPert(beta_spat,i)*FockSchmidt(gam_spat,a)
                                 endif
 
                             enddo
@@ -734,7 +758,7 @@ module LinearResponse
                         LinearSystem(CVInd_tmp,CAInd_tmp) = LinearSystem(CVInd_tmp,CAInd_tmp) / &
                             sqrt(CVNorm*CANorm(beta))
                         !Copy to other half of matrix
-                        LinearSystem(CAInd_tmp,CVInd_tmp) = LinearSystem(CVInd_tmp,CAInd_tmp)
+                        LinearSystem(CAInd_tmp,CVInd_tmp) = conjg(LinearSystem(CVInd_tmp,CAInd_tmp))
                     enddo
                 enddo
             enddo
@@ -781,10 +805,10 @@ module LinearResponse
                             do a = VirtStart,VirtEnd
                                 if(tParity) then
                                     LinearSystem(CVInd_tmp,CAInd_tmp) = LinearSystem(CVInd_tmp,CAInd_tmp) &
-                                        + SchmidtPert(a,i)*SchmidtPert(beta_spat,i)*FockSchmidt(gam_spat,a)
+                                        + conjg(SchmidtPert(a,i))*SchmidtPert(beta_spat,i)*FockSchmidt(gam_spat,a)
                                 else
                                     LinearSystem(CVInd_tmp,CAInd_tmp) = LinearSystem(CVInd_tmp,CAInd_tmp) &
-                                        - SchmidtPert(a,i)*SchmidtPert(beta_spat,i)*FockSchmidt(gam_spat,a)
+                                        - conjg(SchmidtPert(a,i))*SchmidtPert(beta_spat,i)*FockSchmidt(gam_spat,a)
                                 endif
 
                             enddo
@@ -803,7 +827,7 @@ module LinearResponse
                         LinearSystem(CVInd_tmp,CAInd_tmp) = LinearSystem(CVInd_tmp,CAInd_tmp) / &
                             sqrt(CVNorm*CANorm(beta))
                         !Copy to other half of matrix
-                        LinearSystem(CAInd_tmp,CVInd_tmp) = LinearSystem(CVInd_tmp,CAInd_tmp)
+                        LinearSystem(CAInd_tmp,CVInd_tmp) = conjg(LinearSystem(CVInd_tmp,CAInd_tmp))
                     enddo
                 enddo
             enddo
@@ -867,7 +891,7 @@ module LinearResponse
                         LinearSystem(J,CAInd_tmp) = LinearSystem(J,CAInd_tmp) / &
                             sqrt(CANorm(beta))
                         !Copy to other half of matrix
-                        LinearSystem(CAInd_tmp,J) = LinearSystem(J,CAInd_tmp)
+                        LinearSystem(CAInd_tmp,J) = conjg(LinearSystem(J,CAInd_tmp))
                     enddo
                 enddo
             enddo
@@ -927,7 +951,7 @@ module LinearResponse
                         LinearSystem(J,CAInd_tmp) = LinearSystem(J,CAInd_tmp) / &
                             sqrt(CANorm(beta))
                         !Copy to other half of matrix
-                        LinearSystem(CAInd_tmp,J) = LinearSystem(J,CAInd_tmp)
+                        LinearSystem(CAInd_tmp,J) = conjg(LinearSystem(J,CAInd_tmp))
                     enddo
                 enddo
             enddo
@@ -935,7 +959,7 @@ module LinearResponse
             !Now check that Hessian is hermitian
             do i=1,nLinearSystem
                 do j=1,nLinearSystem
-                    if(abs(LinearSystem(i,j)-LinearSystem(j,i)).gt.1.0e-7_dp) then
+                    if(abs(LinearSystem(i,j)-conjg(LinearSystem(j,i))).gt.1.0e-7_dp) then
                         write(6,*) "i, j: ",i,j
                         write(6,*) "LinearSystem(i,j): ",LinearSystem(i,j)
                         write(6,*) "LinearSystem(j,i): ",LinearSystem(j,i)
@@ -955,7 +979,7 @@ module LinearResponse
 
             ! Block 1 and 2 are equal to the identity
             do i = 1,AVIndex-1
-                Overlap(i,i) = 1.0_dp
+                Overlap(i,i) = complex(1.0_dp,0.0_dp)
             enddo
 
             !Now deal with block 4
@@ -974,9 +998,9 @@ module LinearResponse
                     gam2_ind = AVIndex + (gam2-1)*(nNm1FCIDet+nNm1bFCIDet)
 
                     !Now for the overlap, which is diagonal in each determinant space
-                    tempel = 0.0_dp
+                    tempel = complex(0.0_dp,0.0_dp)
                     do a = VirtStart,VirtEnd
-                        tempel = tempel + SchmidtPert(gam1_spat,a)*SchmidtPert(gam2_spat,a)
+                        tempel = tempel + conjg(SchmidtPert(gam1_spat,a))*SchmidtPert(gam2_spat,a)
                     enddo
                     tempel = tempel / sqrt(AVNorm(gam1)*AVNorm(gam2))
                     if((gam1.eq.gam2).and.(abs(tempel-1.0_dp).gt.1.0e-7_dp)) then
@@ -1007,9 +1031,9 @@ module LinearResponse
                     gam2_ind = CAIndex + (gam2-1)*(nNp1FCIDet+nNp1bFCIDet)
 
                     !Now for the occupied excitation term, which is diagonal in each determinant space
-                    tempel = 0.0_dp
+                    tempel = complex(0.0_dp,0.0_dp)
                     do i = 1,CoreEnd
-                        tempel = tempel + SchmidtPert(i,gam1_spat)*SchmidtPert(i,gam2_spat)
+                        tempel = tempel + conjg(SchmidtPert(i,gam1_spat))*SchmidtPert(i,gam2_spat)
                     enddo
                     tempel = tempel / sqrt(CANorm(gam1)*CANorm(gam2))
                     if((gam1.eq.gam2).and.(abs(tempel-1.0_dp).gt.1.0e-7_dp)) then
@@ -1026,7 +1050,7 @@ module LinearResponse
             !Check hermiticity and normalization of overlap matrix
             do i=1,nLinearSystem
                 do j=1,nLinearSystem
-                    if(abs(Overlap(i,j)-Overlap(j,i)).gt.1.0e-7_dp) then
+                    if(abs(Overlap(i,j)-conjg(Overlap(j,i))).gt.1.0e-7_dp) then
                         call stop_all(t_r,'Overlap matrix not hermitian')
                     endif
                 enddo
@@ -1044,74 +1068,74 @@ module LinearResponse
             !This is because we haven't included the core contributions anywhere
             do i=1,nLinearSystem
                 do j=1,nLinearSystem
-                    LinearSystem(j,i) = LinearSystem(j,i) - (Overlap(j,i)*(Spectrum(1) + Omega))
+                    LinearSystem(j,i) = LinearSystem(j,i) - (Overlap(j,i)*(Spectrum(1) + complex(Omega,dDelta)))
                 enddo
             enddo
 
             !Test: Diagonalize the linear system to have a look at spectrum
-            nSize = nLinearSystem
-            allocate(temp(nSize,nSize))
-            temp(:,:) = LinearSystem(1:nSize,1:nSize)
-            allocate(Work(1))
-            if(ierr.ne.0) call stop_all(t_r,"alloc err")
-            allocate(W(nSize))
-            W(:)=0.0_dp
-            lWork=-1
-            info=0
-            call dsyev('V','U',nSize,temp,nSize,W,Work,lWork,info)
-            if(info.ne.0) call stop_all(t_r,'workspace query failed')
-            lwork=int(work(1))+1
-            deallocate(work)
-            allocate(work(lwork))
-            call dsyev('V','U',nSize,temp,nSize,W,Work,lWork,info)
-            if (info.ne.0) call stop_all(t_r,"Diag failed")
-            deallocate(work)
-            !call writevector(W,'Hessian spectrum')
-            write(iunit2,*) Omega,W(:)
-            deallocate(W,temp)
+!            nSize = nLinearSystem
+!            allocate(temp(nSize,nSize))
+!            temp(:,:) = LinearSystem(1:nSize,1:nSize)
+!            allocate(Work(1))
+!            if(ierr.ne.0) call stop_all(t_r,"alloc err")
+!            allocate(W(nSize))
+!            W(:)=0.0_dp
+!            lWork=-1
+!            info=0
+!            call dsyev('V','U',nSize,temp,nSize,W,Work,lWork,info)
+!            if(info.ne.0) call stop_all(t_r,'workspace query failed')
+!            lwork=int(work(1))+1
+!            deallocate(work)
+!            allocate(work(lwork))
+!            call dsyev('V','U',nSize,temp,nSize,W,Work,lWork,info)
+!            if (info.ne.0) call stop_all(t_r,"Diag failed")
+!            deallocate(work)
+!            !call writevector(W,'Hessian spectrum')
+!            write(iunit2,*) Omega,W(:)
+!            deallocate(W,temp)
 
             !Do not diagonalise. Instead, solve the linear system
             !Set up LHS of linear system: -Q V |0>
             allocate(temp_vec(nFCIDet))
-            temp_vec(:) = 0.0_dp
+            temp_vec(:) = complex(0.0_dp,0.0_dp)
             pertsitealpha = 2*pertsite-1
             pertsitebeta = 2*pertsite
             do i = 1,nFCIDet
                 if(btest(FCIBitList(i),pertsitealpha-1)) then
                     !This determinant is occupied
-                    temp_vec(i) = temp_vec(i) + FullHamil(i,1)
+                    temp_vec(i) = temp_vec(i) + complex(FullHamil(i,1),0.0_dp)
                 endif
                 if(btest(FCIBitList(i),pertsitebeta-1)) then
-                    temp_vec(i) = temp_vec(i) + FullHamil(i,1)
+                    temp_vec(i) = temp_vec(i) + complex(FullHamil(i,1),0.0_dp)
                 endif
             enddo
 
             allocate(Projector(nFCIDet,nFCIDet))
-            Projector(:,:) = 0.0_dp
+            Projector(:,:) = complex(0.0_dp,0.0_dp)
             do i=1,nFCIDet
-                Projector(i,i) = 1.0_dp
+                Projector(i,i) = complex(1.0_dp,0.0_dp)
             enddo
             do i=1,nFCIDet
                 do j=1,nFCIDet
-                    Projector(j,i) = Projector(j,i) - FullHamil(i,1)*FullHamil(j,1)
+                    Projector(j,i) = Projector(j,i) - complex(FullHamil(i,1)*FullHamil(j,1),0.0_dp)
                 enddo
             enddo
 
-            VGS(:) = 0.0_dp
-            call DGEMM('N','N',nFCIDet,1,nFCIDet,-1.0_dp,Projector,nFCIDet,temp_vec,nFCIDet,    &
-                0.0_dp,VGS(1:nFCIDet),nFCIDet)
+            VGS(:) = complex(0.0_dp,0.0_dp)
+            call ZGEMM('N','N',nFCIDet,1,nFCIDet,complex(-1.0_dp,0.0_dp),Projector,nFCIDet,temp_vec,nFCIDet,    &
+                complex(0.0_dp,0.0_dp),VGS(1:nFCIDet),nFCIDet)
 
             deallocate(temp_vec,Projector)
 
             !Now solve these linear equations
-            call DGESV(nLinearSystem,1,LinearSystem,nLinearSystem,Pivots,VGS,nLinearSystem,info)
+            call ZGESV(nLinearSystem,1,LinearSystem,nLinearSystem,Pivots,VGS,nLinearSystem,info)
             if(info.ne.0) then 
                 write(6,*) "INFO: ",info
                 !call stop_all(t_r,'Solving Linear system failed') 
                 call warning(t_r,'Solving linear system failed')
             else
 
-                ResponseFn = 0.0_dp
+                ResponseFn = complex(0.0_dp,0.0_dp)
                 do i = 1,nFCIDet
                     if(btest(FCIBitList(i),pertsitealpha-1)) then
                         ResponseFn = ResponseFn + FullHamil(i,1)*VGS(i)
@@ -1120,7 +1144,7 @@ module LinearResponse
                         ResponseFn = ResponseFn + FullHamil(i,1)*VGS(i)
                     endif
                 enddo
-                write(iunit,*) Omega,ResponseFn
+                write(iunit,*) Omega,real(ResponseFn),-aimag(ResponseFn)
             endif
 
             Omega = Omega + Omega_Step
@@ -3301,7 +3325,8 @@ module LinearResponse
     subroutine FindSchmidtPert(tNonIntTest,Omega)
         implicit none
         logical, intent(in) :: tNonIntTest  !Test to return just the perturbation in the normal HF basis
-        real(dp), allocatable :: HFPertBasis(:,:),temp(:,:)
+        complex(dp), allocatable :: HFPertBasis(:,:),temp(:,:)
+        complex(dp), allocatable :: C_HFtoSTrans(:,:)
         real(dp) :: EDiff
         real(dp), intent(in) :: Omega
         integer :: a,i
@@ -3314,7 +3339,7 @@ module LinearResponse
         endif
 
         allocate(HFPertBasis(nSites,nSites))
-        HFPertBasis(:,:) = 0.0_dp
+        HFPertBasis(:,:) = complex(0.0_dp,0.0_dp)
 
         !Assume perturbation is local to the first impurity site (pertsite = 1).
         if(pertsite.ne.1) call stop_all(t_r,'Perturbation is not local to the impurity site')
@@ -3322,12 +3347,14 @@ module LinearResponse
         do i=1,nOcc
             do a=nOcc+1,nSites
                 EDiff = HFEnergies(a)-HFEnergies(i)
-                HFPertBasis(i,a) = HFOrbs(pertsite,i)*HFOrbs(pertsite,a)*Lambda*(1.0_dp/(Omega-EDiff))
+                HFPertBasis(i,a) = complex(HFOrbs(pertsite,i),0.0_dp)*complex(HFOrbs(pertsite,a),0.0_dp)*   &
+                    complex(Lambda,0.0_dp)*(complex(1.0_dp,0.0_dp) / &
+                    (complex(Omega,dDelta)-complex(EDiff,0.0_dp)))
                 HFPertBasis(a,i) = HFPertBasis(i,a)
             enddo
         enddo
 
-!        call writematrix(HFPertBasis,'Perturbation in HF basis',.true.)
+        !call writematrixcomp(HFPertBasis,'Perturbation in HF basis',.true.)
         !write(6,*) "Transforming non-interacting response operator into full schmidt basis..."
 
         allocate(temp(nSites,nSites))
@@ -3343,24 +3370,23 @@ module LinearResponse
         !        endif
         !    enddo
         !enddo
-        
+
+        allocate(C_HFtoSTrans(nSites,nSites))
+        call R_C_Copy_2D(C_HFtoSTrans(:,:),HFtoSchmidtTransform(:,:),nSites,nSites)
+
         if(allocated(SchmidtPert)) deallocate(SchmidtPert)
         allocate(SchmidtPert(nSites,nSites))
-        if(tNonIntTest) then
-            SchmidtPert(:,:) = HFPertBasis(:,:)
-            FockSchmidt(:,:) = 0.0_dp
-            do i=1,nSites
-                FockSchmidt(i,i) = HFEnergies(i)
-            enddo
-            FullSchmidtBasis(:,:) = HFOrbs(:,:) 
-        else
-            call DGEMM('T','N',nSites,nSites,nSites,1.0_dp,HFtoSchmidtTransform,nSites,HFPertBasis,nSites,0.0_dp,temp,nSites)
-            call DGEMM('N','N',nSites,nSites,nSites,1.0_dp,temp,nSites,HFtoSchmidtTransform,nSites,0.0_dp,SchmidtPert,nSites)
-        endif
-        deallocate(temp,HFPertBasis)
+        !call DGEMM('T','N',nSites,nSites,nSites,complex(1.0_dp,0.0_dp),HFtoSchmidtTransform,nSites,HFPertBasis,nSites,0.0_dp,temp,nSites)
+        call ZGEMM('T','N',nSites,nSites,nSites,complex(1.0_dp,0.0_dp),C_HFtoSTrans,nSites, &
+            HFPertBasis,nSites,complex(0.0_dp,0.0_dp),temp,nSites)
+        call ZGEMM('N','N',nSites,nSites,nSites,complex(1.0_dp,0.0_dp),temp,nSites, &
+            C_HFtoSTrans,nSites,complex(0.0_dp,0.0_dp),SchmidtPert,nSites)
+        deallocate(temp,HFPertBasis,C_HFtoSTrans)
 
         !SchmidtPert is now the perturbation in the schmidt basis
         !call writematrix(SchmidtPert,'Perturbation in schmidt basis',.true.)
+        !call writematrixcomp(SchmidtPert,'Perturbation in schmidt basis',.true.)
+        !call stop_all('sdg','sdf')
 
     end subroutine FindSchmidtPert
 
@@ -3369,7 +3395,8 @@ module LinearResponse
         implicit none
         integer :: ov_space,virt_start,i,a,a_spat,i_spat,ai_ind,gtid,iunit
         integer :: highbound,iunit2
-        real(dp) :: Omega,EDiff,ResponseFn,ResponseFnPosW
+        real(dp) :: Omega,EDiff
+        complex(dp) :: ResponseFn,ResponseFnPosW
         real(dp), allocatable :: transitions(:,:)   !(ov_space,2)   !1 = transition frequencies, 2 = moments
         !character(len=*), parameter :: t_r='NonInteractingLR'
 
@@ -3422,8 +3449,8 @@ module LinearResponse
         Omega = Start_Omega
         do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
 
-            ResponseFn = 0.0_dp
-            ResponseFnPosW = 0.0_dp !Only positive frequency
+            ResponseFn = complex(0.0_dp,0.0_dp)
+            ResponseFnPosW = complex(0.0_dp,0.0_dp) !Only positive frequency
             do i=1,nel
                 do a=virt_start,2*nSites
                     if(mod(i,2).ne.mod(a,2)) cycle      !Only want same spin excitations 
@@ -3431,14 +3458,20 @@ module LinearResponse
                     a_spat = gtid(a)
 
                     EDiff = FullHFEnergies(a_spat)-FullHFEnergies(i_spat)
-                    ResponseFn = ResponseFn + ((FullHFOrbs(pertsite,a_spat)*FullHFOrbs(pertsite,i_spat))**2)/(Omega-EDiff)
-                    ResponseFnPosW = ResponseFnPosW + ((FullHFOrbs(pertsite,a_spat)*FullHFOrbs(pertsite,i_spat))**2)/(Omega-EDiff)
-                    ResponseFn = ResponseFn - ((FullHFOrbs(pertsite,a_spat)*FullHFOrbs(pertsite,i_spat))**2)/(Omega+EDiff)
+                    ResponseFn = ResponseFn + complex((FullHFOrbs(pertsite,a_spat)* &
+                        FullHFOrbs(pertsite,i_spat))**2,0.0_dp) /    &
+                        (complex(Omega,dDelta)-complex(EDiff,0.0_dp))
+                    ResponseFnPosW = ResponseFnPosW + complex((FullHFOrbs(pertsite,a_spat)* &
+                        FullHFOrbs(pertsite,i_spat))**2,0.0_dp) / &
+                        (complex(Omega,dDelta)-complex(EDiff,0.0_dp))
+                    ResponseFn = ResponseFn - complex((FullHFOrbs(pertsite,a_spat)* &
+                        FullHFOrbs(pertsite,i_spat))**2,0.0_dp) /    &
+                        (complex(Omega,dDelta)+complex(EDiff,0.0_dp))
                 enddo
             enddo
             ResponseFn = ResponseFn*Lambda
-            write(iunit,*) Omega,ResponseFn
-            write(iunit2,*) Omega,ResponseFnPosW
+            write(iunit,*) Omega,real(ResponseFn),-aimag(ResponseFn)
+            write(iunit2,*) Omega,real(ResponseFnPosW),-aimag(ResponseFnPosW)
 
             Omega = Omega + Omega_Step
 
@@ -3457,7 +3490,8 @@ module LinearResponse
         integer :: state,iunit,a_spat,highbound
         logical :: tSign
         integer, allocatable :: detHF(:),detR(:),detL(:)
-        real(dp) :: HEl1,GetHFAntisymInt_spinorb,GetHFInt_spinorb,Omega,ResponseFn
+        real(dp) :: HEl1,GetHFAntisymInt_spinorb,GetHFInt_spinorb,Omega
+        complex(dp) :: ResponseFn
         real(dp), allocatable :: A_mat(:,:),W(:),Work(:),temp(:,:),Residues(:)
         real(dp), allocatable :: DM(:,:),DM_conj(:,:),DM_AO(:,:),DM_AO_conj(:,:)
         character(len=*), parameter :: t_r='TDA_LR'
@@ -3735,11 +3769,12 @@ module LinearResponse
         Omega = Start_Omega
         do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
 
-            ResponseFn = 0.0_dp
+            ResponseFn = complex(0.0_dp,0.0_dp)
             do i=1,ov_space
-                ResponseFn = ResponseFn + ((Residues(i)/(Omega-W(i))) - (Residues(i)/(Omega+W(i))))
+                ResponseFn = ResponseFn + ((complex(Residues(i),0.0_dp)/(complex(Omega,dDelta)-complex(W(i),0.0_dp))) - &
+                    (complex(Residues(i),0.0_dp)/(complex(Omega,dDelta)+complex(W(i),0.0_dp))))
             enddo
-            write(iunit,*) Omega,ResponseFn
+            write(iunit,*) Omega,real(ResponseFn),-aimag(ResponseFn)
 
             Omega = Omega + Omega_Step
 
@@ -3759,7 +3794,8 @@ module LinearResponse
         implicit none
         integer :: ov_space,virt_start,ierr,j,ex(2,2),ex2(2,2),n,i,m,nj_ind,mi_ind,info,lwork
         integer :: m_spat,i_spat,StabilitySize,mu,gtid,j_spat,ai_ind,iunit,a,excit,highbound
-        real(dp) :: HEl1,HEl2,X_norm,Y_norm,norm,Energy_stab,DMEl1,DMEl2,Omega,ResponseFn
+        real(dp) :: HEl1,HEl2,X_norm,Y_norm,norm,Energy_stab,DMEl1,DMEl2,Omega
+        complex(dp) :: ResponseFn
         real(dp) :: GetHFAntisymInt_spinorb
         real(dp), allocatable :: A_mat(:,:),B_mat(:,:),Stability(:,:),StabilityCopy(:,:),W(:),Work(:)
         real(dp), allocatable :: S_half(:,:),temp(:,:),temp2(:,:),W2(:),X_stab(:,:),Y_stab(:,:)
@@ -4220,11 +4256,13 @@ module LinearResponse
         Omega = Start_Omega
         do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
 
-            ResponseFn = 0.0_dp
+            ResponseFn = complex(0.0_dp,0.0_dp)
             do i=1,ov_space
-                ResponseFn = ResponseFn + ((trans_moment(i)/(Omega-W2(ov_space+i))) - (trans_moment(i)/(Omega+W2(ov_space+i))))
+                ResponseFn = ResponseFn + ((complex(trans_moment(i),0.0_dp)/    &
+                    (complex(Omega,dDelta)-complex(W2(ov_space+i),0.0_dp))) &
+                    - (complex(trans_moment(i),0.0_dp)/(complex(Omega,dDelta)+complex(W2(ov_space+i),0.0_dp))))
             enddo
-            write(iunit,*) Omega,ResponseFn
+            write(iunit,*) Omega,real(ResponseFn),-aimag(ResponseFn)
 
             Omega = Omega + Omega_Step
 
@@ -4391,8 +4429,23 @@ module LinearResponse
         enddo
 
     end subroutine non_interactingLR
+            
+    !Copy from real array, to the real part of a complex array
+    pure subroutine R_C_Copy_2D(Arr_To,Arr_From,dim1,dim2)
+        implicit none
+        integer, intent(in) :: dim1,dim2
+        real(dp), intent(in) :: Arr_From(dim1,dim2)
+        complex(dp), intent(out) :: Arr_To(dim1,dim2)
+        integer :: i,j
 
-                    
+        do i=1,dim2
+            do j=1,dim1
+                Arr_To(j,i) = complex(Arr_From(j,i),0.0_dp)
+            enddo
+        enddo
+
+    end subroutine R_C_Copy_2D
+
 !    !Calculate density density response to perturbation of frequency omega at site pertsite 
 !    subroutine calc_mf_dd_response()
 !        implicit none

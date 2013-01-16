@@ -38,6 +38,7 @@ module Globals
     logical :: tDumpFCIDUMP
 
     real(dp) :: HFEnergy    !Calculated HF energy
+    real(dp) :: dDelta      !Broadening for spectral functions
 
     integer , allocatable :: allowed_occs(:)   !The list of CS occupations for the mean-field solution
     real(dp) , allocatable :: v_loc(:,:)    !The local correlation potential over the impurity sites
@@ -68,7 +69,7 @@ module Globals
     real(dp) , allocatable :: MFEmbOccs(:)      !The occupation numbers over the embedded system solved by the Emb_Fock
     real(dp) , allocatable :: vloc_change(:,:) !The change in the correlation potential over the impurity sites
     real(dp) , allocatable :: ResponseBasis(:,:)    !The impurity site + first order change in the bath wavefunction
-    real(dp) , allocatable :: SchmidtPert(:,:)
+    complex(dp) , allocatable :: SchmidtPert(:,:)
     real(dp) , allocatable :: FullHamil(:,:)    !In case we do a complete diagonalization
     real(dp) , allocatable :: Spectrum(:)       !Eigenvalues in case of a complete diagonalization
 
