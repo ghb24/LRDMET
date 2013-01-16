@@ -11,6 +11,7 @@ module mat_tools
     subroutine make_hop_mat()
         implicit none
         integer :: i
+        character(len=*), parameter :: t_r='make_hop_mat'
 
         if(LatticeDim.eq.1) then
             !Tridiagonal matrix
@@ -25,6 +26,12 @@ module mat_tools
             elseif(tAntiPeriodic) then
                 h0(1,nSites) = 1.0_dp
                 h0(nSites,1) = 1.0_dp
+            endif
+
+            if(tAnderson) then
+                !Introduce chemical potential at impurity site
+                if(nImp.gt.1) call stop_all(t_r,'How to introduce chemical potential in multi-site anderson model?')
+                h0(1,1) = h0(1,1) - U/2.0_dp
             endif
         endif
 

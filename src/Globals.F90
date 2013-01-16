@@ -37,6 +37,7 @@ module Globals
     real(dp) :: ZerothBathNorm  !Normalization of the original bath orbital (required for correct normalization in the linear response)
     logical :: tDumpFCIDUMP
     logical :: tAnderson        !Whether to do anderson model, rather than hubbard model
+    logical :: tChemPot         !Whether to include a chemical potential of U/2 at the impurity site of the anderson model
 
     real(dp) :: HFEnergy    !Calculated HF energy
     real(dp) :: dDelta      !Broadening for spectral functions

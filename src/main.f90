@@ -45,6 +45,7 @@ call run_DMETcalc()
         tDiagFullSystem = .false.
         dDelta = 0.001_dp
         tAnderson = .true.
+        tChemPot = .true.
 
     end subroutine set_defaults
 
@@ -63,6 +64,8 @@ call run_DMETcalc()
 !    else
         call set_defaults()
 !    endif
+
+     call check_input()
 
     end subroutine init_calc
 
@@ -773,5 +776,15 @@ call run_DMETcalc()
         close(iunit)
 
     end subroutine DumpFCIDUMP
+
+    subroutine check_input()
+        implicit none
+        character(len=*), parameter :: t_r='check_input'
+
+        if(tChemPot.and.(.not.tAnderson)) then
+            call stop_all(t_r,'A chemical potential can only be applied to the 1-site Anderson model')
+        endif
+
+    end subroutine check_input
 
 End Program RealHub
