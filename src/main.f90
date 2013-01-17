@@ -31,8 +31,8 @@ call run_DMETcalc()
         LatticeDim = 1
         nImp = 1
         StartU = 0.0_dp
-        EndU = 1.1_dp
-        UStep = 0.25_dp
+        EndU = 2.1_dp
+        UStep = 0.3_dp
         tPeriodic = .false.
         tAntiPeriodic = .true.  
         tRampDownOcc = .true.
@@ -46,6 +46,8 @@ call run_DMETcalc()
         dDelta = 0.001_dp
         tAnderson = .true.
         tChemPot = .true.
+        tProjectOutNull = .true. 
+        tLR_ReoptGS = .false.
 
     end subroutine set_defaults
 
