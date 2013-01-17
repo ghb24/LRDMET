@@ -27,7 +27,7 @@ call run_DMETcalc()
         tConstructFullSchmidtBasis = .true. 
         tMFResponse = .false. 
         tHalfFill = .true. 
-        nSites = 20   
+        nSites = 8    
         LatticeDim = 1
         nImp = 1
         StartU = 0.0_dp
@@ -47,7 +47,7 @@ call run_DMETcalc()
         tAnderson = .true.
         tChemPot = .true.
         tProjectOutNull = .true. 
-        tLR_ReoptGS = .false.
+        tLR_ReoptGS = .true. 
 
     end subroutine set_defaults
 

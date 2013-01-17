@@ -1086,77 +1086,12 @@ module LinearResponse
                 deallocate(temp_vecc)
                 allocate(temp_vecc(lwork))
                 call zheev('V','U',nSize,S_EigVec,nSize,S_Eigval,temp_vecc,lWork,Work,info)
-                if (info.ne.0) call stop_all(t_r,"Diag failed")
+                if (info.ne.0) call stop_all(t_r,"Diag failed 1")
                 deallocate(work,temp_vecc)
 
                 call writevector(S_Eigval,'Overlap EVals')
 
             endif
-
-            allocate(Psi_0(nLinearSystem))  !To store the ground state in the full basis
-            Psi_0(:) = complex(0.0_dp,0.0_dp)
-
-            if(tLR_ReoptGS) then
-                !Reoptimize the GS in this new space
-
-                !Transform to the canonically orthogonalized representation
-                allocate(CanTrans(nLinearSystem,nLinearSystem))
-                allocate(tempc(nLinearSystem,nLinearSystem))
-                tempc(:,:) = complex(0.0_dp,0.0_dp)
-                do i=1,nLinearSystem
-                    tempc(i,i) = complex(1.0_dp/sqrt(S_EigVal(i)),0.0_dp)
-                enddo
-                call ZGEMM('N','N',nLinearSystem,nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),    &
-                    S_EigVec,nLinearSystem,tempc,nLinearSystem,complex(0.0_dp,0.0_dp),CanTrans,nLinearSystem)
-
-                !Now, transform that hamiltonian into this new basis
-                allocate(OrthogHam(nLinearSystem,nLinearSystem))
-                call ZGEMM('N','N',nLinearSystem,nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),    &
-                    LinearSystem,nLinearSystem,CanTrans,nLinearSystem,complex(0.0_dp,0.0_dp),tempc,nLinearSystem)
-                call ZGEMM('C','N',nLinearSystem,nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),    &
-                    CanTrans,nLinearSystem,tempc,nLinearSystem,complex(0.0_dp,0.0_dp),OrthogHam,nLinearSystem)
-
-                !Rediagonalize this new hamiltonian
-                allocate(Work(max(1,3*nLinearSystem-2)))
-                allocate(temp_vecc(1))
-                allocate(H_Vals(nLinearSystem))
-                H_Vals(:)=0.0_dp
-                lWork=-1
-                info=0
-                call zheev('V','U',nLinearSystem,OrthogHam,nLinearSystem,H_Vals,temp_vecc,lWork,Work,info)
-                if(info.ne.0) call stop_all(t_r,'workspace query failed')
-                lwork=int(temp_vecc(1))+1
-                deallocate(temp_vecc)
-                allocate(temp_vecc(lwork))
-                call zheev('V','U',nLinearSystem,OrthogHam,nLinearSystem,H_Vals,temp_vecc,lWork,Work,info)
-                if (info.ne.0) call stop_all(t_r,"Diag failed")
-                deallocate(work,temp_vecc)
-
-                GSEnergy = H_Vals(1)
-                write(6,*) "Reoptimized ground state energy is: ",GSEnergy
-                if(tDiagHam) write(iunit2,*) Omega,H_Vals(:)
-
-                !Store the eigenvector in the original basis
-                !However, just rotate the ground state, not all the eigenvectors
-                call ZGEMM('N','N',nLinearSystem,1,nLinearSystem,complex(1.0_dp,0.0_dp),CanTrans,nLinearSystem, &
-                    OrthogHam(:,1),nLinearSystem,complex(0.0_dp,0.0_dp),Psi_0,nLinearSystem)
-
-                deallocate(OrthogHam,H_Vals,tempc,CanTrans)
-            else
-                !We are not reoptimizing the GS
-                GSEnergy = Spectrum(1)
-                do i = 1,nFCIDet
-                    Psi_0(i) = complex(FullHamil(i,1),0.0_dp)
-                enddo
-            endif
-
-            !Now construct the lhs of the equations
-            !Now, we want to calculate H - (E_0 + Omega)S
-            do i=1,nLinearSystem
-                do j=1,nLinearSystem
-                    LinearSystem(j,i) = LinearSystem(j,i) - (Overlap(j,i)*(GSEnergy + complex(Omega,dDelta)))
-                enddo
-            enddo
 
             if(tProjectOutNull) then
                 !Project out the null space from the equations to ensure unique representation.
@@ -1197,6 +1132,79 @@ module LinearResponse
                 nSpan = nLinearSystem
             endif
 
+            allocate(Psi_0(nLinearSystem))  !To store the ground state in the full basis
+            Psi_0(:) = complex(0.0_dp,0.0_dp)
+
+            if(tLR_ReoptGS) then
+                !Reoptimize the GS in this new space
+
+                !First, transform into the linear span of S
+                !TODO
+
+                !Transform to the canonically orthogonalized representation
+                allocate(CanTrans(nLinearSystem,nLinearSystem))
+                allocate(tempc(nLinearSystem,nLinearSystem))
+                tempc(:,:) = complex(0.0_dp,0.0_dp)
+                do i=1,nLinearSystem
+                    tempc(i,i) = complex(1.0_dp/sqrt(S_EigVal(i)),0.0_dp)
+                enddo
+                call ZGEMM('N','N',nLinearSystem,nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),    &
+                    S_EigVec,nLinearSystem,tempc,nLinearSystem,complex(0.0_dp,0.0_dp),CanTrans,nLinearSystem)
+
+                !Now, transform that hamiltonian into this new basis
+                allocate(OrthogHam(nLinearSystem,nLinearSystem))
+                call writematrixcomp(CanTrans,'CanTrans',.true.)
+                call ZGEMM('N','N',nLinearSystem,nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),    &
+                    LinearSystem,nLinearSystem,CanTrans,nLinearSystem,complex(0.0_dp,0.0_dp),tempc,nLinearSystem)
+                call ZGEMM('C','N',nLinearSystem,nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),    &
+                    CanTrans,nLinearSystem,tempc,nLinearSystem,complex(0.0_dp,0.0_dp),OrthogHam,nLinearSystem)
+                !call writematrixcomp(OrthogHam,'OrthogHam',.true.)
+
+                !Rediagonalize this new hamiltonian
+                allocate(Work(max(1,3*nLinearSystem-2)))
+                allocate(temp_vecc(1))
+                allocate(H_Vals(nLinearSystem))
+                H_Vals(:)=0.0_dp
+                lWork=-1
+                info=0
+                call zheev('V','U',nLinearSystem,OrthogHam,nLinearSystem,H_Vals,temp_vecc,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'workspace query failed')
+                lwork=int(abs(temp_vecc(1)))+1
+                deallocate(temp_vecc)
+                allocate(temp_vecc(lwork))
+                call zheev('V','U',nLinearSystem,OrthogHam,nLinearSystem,H_Vals,temp_vecc,lWork,Work,info)
+                if (info.ne.0) then
+                    write(6,*) "info: ",info
+                    call stop_all(t_r,"Diag failed 2")
+                endif
+                deallocate(work,temp_vecc)
+
+                GSEnergy = H_Vals(1)
+                write(6,*) "Reoptimized ground state energy is: ",GSEnergy
+                if(tDiagHam) write(iunit2,*) Omega,H_Vals(:)
+
+                !Store the eigenvector in the original basis
+                !However, just rotate the ground state, not all the eigenvectors
+                call ZGEMM('N','N',nLinearSystem,1,nLinearSystem,complex(1.0_dp,0.0_dp),CanTrans,nLinearSystem, &
+                    OrthogHam(:,1),nLinearSystem,complex(0.0_dp,0.0_dp),Psi_0,nLinearSystem)
+
+                deallocate(OrthogHam,H_Vals,tempc,CanTrans)
+            else
+                !We are not reoptimizing the GS
+                GSEnergy = Spectrum(1)
+                do i = 1,nFCIDet
+                    Psi_0(i) = complex(FullHamil(i,1),0.0_dp)
+                enddo
+            endif
+
+            !Now construct the lhs of the equations
+            !Now, we want to calculate H - (E_0 + Omega)S
+            do i=1,nLinearSystem
+                do j=1,nLinearSystem
+                    LinearSystem(j,i) = LinearSystem(j,i) - (Overlap(j,i)*(GSEnergy + complex(Omega,dDelta)))
+                enddo
+            enddo
+
             allocate(LHS(nSpan,nSpan))
             if(tTransformSpace) then
                 !Transform the LHS to the linear span of S
@@ -1214,8 +1222,8 @@ module LinearResponse
             !First, find V |0> and store it in temp_vecc
             allocate(temp_vecc(nLinearSystem))
             call ApplyDensityPert_EC(Psi_0,temp_vecc,nLinearSystem)
-            call writevectorcomp(Psi_0,'Psi_0')
-            call writevectorcomp(temp_vecc,'V|0>')
+            !call writevectorcomp(Psi_0,'Psi_0')
+            !call writevectorcomp(temp_vecc,'V|0>')
 
             !Project out the ground state by performing the outer product: S - |psi_0><psi_0|
             allocate(Projector(nLinearSystem,nLinearSystem))
