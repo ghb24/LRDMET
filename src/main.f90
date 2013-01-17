@@ -48,7 +48,7 @@ call run_DMETcalc()
         tChemPot = .true.
         tProjectOutNull = .true. 
         tLR_ReoptGS = .true. 
-        MinS_Eigval = 1.0e-7_dp
+        MinS_Eigval = 1.0e-9_dp
 
     end subroutine set_defaults
 
