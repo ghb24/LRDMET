@@ -157,7 +157,7 @@ module LinearResponse
         iunit = get_free_unit()
         call append_ext_real('EC-TDA_DDResponse',U,filename)
         open(unit=iunit,file=filename,status='unknown')
-        write(iunit,"(A)") "# Frequency     DD_LinearResponse(Re)    DD_LinearResponse(Im)"
+        write(iunit,"(A)") "# Frequency     DD_LinearResponse(Re)    DD_LinearResponse(Im)    Orthog    Norm    NewGS   OldGS"
         
         if(tDiagHam) then
             iunit2 = get_free_unit()
@@ -1089,8 +1089,7 @@ module LinearResponse
                 if (info.ne.0) call stop_all(t_r,"Diag failed 1")
                 deallocate(work,temp_vecc)
 
-                call writevector(S_Eigval,'Overlap EVals')
-
+                !call writevector(S_Eigval,'Overlap EVals')
             endif
 
             if(tProjectOutNull) then
@@ -1101,7 +1100,7 @@ module LinearResponse
                 do i=1,nLinearSystem
                     if(S_Eigval(i).lt.(-1.0e-8_dp)) then
                         call stop_all(t_r,'Error - shouldnt have negative eigenvalues in overlap spectrum')
-                    elseif(S_Eigval(i).gt.1.0e-9_dp) then
+                    elseif(S_Eigval(i).gt.MinS_Eigval) then
                         !Include this eigenvector
                         nSpan = nSpan + 1
                     endif
@@ -1109,6 +1108,8 @@ module LinearResponse
                 if(nSpan.eq.nLinearSystem) then
                     write(6,*) "No linear dependencies found in overlap"
                     tTransformSpace = .false.
+                    allocate(Transform(nLinearSystem,nLinearSystem))
+                    Transform(:,:) = S_EigVec(:,:)
                 else
                     tTransformSpace = .true.
                     write(6,*) "Removing linear dependencies in overlap. Vectors removed: ",nLinearSystem-nSpan
@@ -1118,7 +1119,7 @@ module LinearResponse
                     Transform(:,:) = complex(0.0_dp,0.0_dp)
                     nSpan = 0
                     do i=1,nLinearSystem
-                        if(S_Eigval(i).gt.1.0e-9_dp) then
+                        if(S_Eigval(i).gt.MinS_Eigval) then
                             nSpan = nSpan + 1
                             !Include vector
                             Transform(:,nSpan) = S_EigVec(:,i)
@@ -1130,6 +1131,10 @@ module LinearResponse
                 !Do not project out null space
                 tTransformSpace = .false.
                 nSpan = nLinearSystem
+                if(tLR_ReoptGS) then
+                    allocate(Transform(nLinearSystem,nLinearSystem))
+                    Transform(:,:) = S_EigVec(:,:)
+                endif
             endif
 
             allocate(Psi_0(nLinearSystem))  !To store the ground state in the full basis
@@ -1138,41 +1143,50 @@ module LinearResponse
             if(tLR_ReoptGS) then
                 !Reoptimize the GS in this new space
 
-                !First, transform into the linear span of S
-                !TODO
-
-                !Transform to the canonically orthogonalized representation
-                allocate(CanTrans(nLinearSystem,nLinearSystem))
-                allocate(tempc(nLinearSystem,nLinearSystem))
+                !Transform to the canonically orthogonalized representation in the non-null space of S
+                allocate(CanTrans(nLinearSystem,nSpan))
+                allocate(tempc(nSpan,nSpan))
                 tempc(:,:) = complex(0.0_dp,0.0_dp)
+                j = 1
                 do i=1,nLinearSystem
-                    tempc(i,i) = complex(1.0_dp/sqrt(S_EigVal(i)),0.0_dp)
+                    if(S_EigVal(i).gt.MinS_Eigval) then
+                        tempc(j,j) = complex(1.0_dp/sqrt(S_Eigval(i)),0.0_dp)
+                        j=j+1
+                    elseif(.not.tProjectOutNull) then
+                        write(6,*) "Small overlap eigenvalue: ",S_EigVal(i)
+                        call stop_all(t_r,  &
+                            'Cannot reoptimize ground state without projecting out null space due to small overlap eigenvals')
+                    endif
                 enddo
-                call ZGEMM('N','N',nLinearSystem,nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),    &
-                    S_EigVec,nLinearSystem,tempc,nLinearSystem,complex(0.0_dp,0.0_dp),CanTrans,nLinearSystem)
+                if(j.ne.(nSpan+1)) call stop_all(t_r,'Error in indexing when reoptimizing ground state')
+
+                call ZGEMM('N','N',nLinearSystem,nSpan,nSpan,complex(1.0_dp,0.0_dp),    &
+                    Transform,nLinearSystem,tempc,nSpan,complex(0.0_dp,0.0_dp),CanTrans,nLinearSystem)
 
                 !Now, transform that hamiltonian into this new basis
-                allocate(OrthogHam(nLinearSystem,nLinearSystem))
-                call writematrixcomp(CanTrans,'CanTrans',.true.)
-                call ZGEMM('N','N',nLinearSystem,nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),    &
+                allocate(OrthogHam(nSpan,nSpan))
+                deallocate(tempc)
+                allocate(tempc(nLinearSystem,nSpan))
+                !call writematrixcomp(CanTrans,'CanTrans',.true.)
+                call ZGEMM('N','N',nLinearSystem,nSpan,nLinearSystem,complex(1.0_dp,0.0_dp),    &
                     LinearSystem,nLinearSystem,CanTrans,nLinearSystem,complex(0.0_dp,0.0_dp),tempc,nLinearSystem)
-                call ZGEMM('C','N',nLinearSystem,nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),    &
-                    CanTrans,nLinearSystem,tempc,nLinearSystem,complex(0.0_dp,0.0_dp),OrthogHam,nLinearSystem)
+                call ZGEMM('C','N',nSpan,nSpan,nLinearSystem,complex(1.0_dp,0.0_dp),    &
+                    CanTrans,nLinearSystem,tempc,nLinearSystem,complex(0.0_dp,0.0_dp),OrthogHam,nSpan)
                 !call writematrixcomp(OrthogHam,'OrthogHam',.true.)
 
                 !Rediagonalize this new hamiltonian
-                allocate(Work(max(1,3*nLinearSystem-2)))
+                allocate(Work(max(1,3*nSpan-2)))
                 allocate(temp_vecc(1))
-                allocate(H_Vals(nLinearSystem))
+                allocate(H_Vals(nSpan))
                 H_Vals(:)=0.0_dp
                 lWork=-1
                 info=0
-                call zheev('V','U',nLinearSystem,OrthogHam,nLinearSystem,H_Vals,temp_vecc,lWork,Work,info)
+                call zheev('V','U',nSpan,OrthogHam,nSpan,H_Vals,temp_vecc,lWork,Work,info)
                 if(info.ne.0) call stop_all(t_r,'workspace query failed')
                 lwork=int(abs(temp_vecc(1)))+1
                 deallocate(temp_vecc)
                 allocate(temp_vecc(lwork))
-                call zheev('V','U',nLinearSystem,OrthogHam,nLinearSystem,H_Vals,temp_vecc,lWork,Work,info)
+                call zheev('V','U',nSpan,OrthogHam,nSpan,H_Vals,temp_vecc,lWork,Work,info)
                 if (info.ne.0) then
                     write(6,*) "info: ",info
                     call stop_all(t_r,"Diag failed 2")
@@ -1180,13 +1194,14 @@ module LinearResponse
                 deallocate(work,temp_vecc)
 
                 GSEnergy = H_Vals(1)
-                write(6,*) "Reoptimized ground state energy is: ",GSEnergy
+                write(6,"(A,G20.10,A,G20.10,A)") "Reoptimized ground state energy is: ",GSEnergy, &  
+                    " (old = ",Spectrum(1),")"
                 if(tDiagHam) write(iunit2,*) Omega,H_Vals(:)
 
                 !Store the eigenvector in the original basis
                 !However, just rotate the ground state, not all the eigenvectors
-                call ZGEMM('N','N',nLinearSystem,1,nLinearSystem,complex(1.0_dp,0.0_dp),CanTrans,nLinearSystem, &
-                    OrthogHam(:,1),nLinearSystem,complex(0.0_dp,0.0_dp),Psi_0,nLinearSystem)
+                call ZGEMM('N','N',nLinearSystem,1,nSpan,complex(1.0_dp,0.0_dp),CanTrans,nLinearSystem, &
+                    OrthogHam(:,1),nSpan,complex(0.0_dp,0.0_dp),Psi_0,nLinearSystem)
 
                 deallocate(OrthogHam,H_Vals,tempc,CanTrans)
             else
@@ -1278,7 +1293,7 @@ module LinearResponse
                 write(6,*) "Orthogonality of first-order wavefunction: ",dOrthog
 
                 tCalcResponse = .true.
-                write(20,*) U,Omega,abs(dOrthog),abs(dNorm),real(dOrthog/dNorm),aimag(dOrthog/dNorm),abs(dOrthog/dNorm)
+                !write(20,*) U,Omega,abs(dOrthog),abs(dNorm),real(dOrthog/dNorm),aimag(dOrthog/dNorm),abs(dOrthog/dNorm)
                 if(abs(dOrthog).gt.1.0e-4_dp) then
                     !call warning(t_r,'First order wavefunction not orthogonal - skipping this frequency')
                     call warning(t_r,'First order wavefunction not orthogonal')
@@ -1296,7 +1311,8 @@ module LinearResponse
                             ResponseFn = ResponseFn + Overlap(i,j)*conjg(Psi_0(i))*temp_vecc(j)
                         enddo
                     enddo
-                    write(iunit,*) Omega,real(ResponseFn),-aimag(ResponseFn)
+                    write(iunit,"(7G25.10)") Omega,real(ResponseFn),-aimag(ResponseFn), &
+                        abs(dOrthog),abs(dNorm),GSEnergy,Spectrum(1)
                     deallocate(temp_vecc)
                 endif
 

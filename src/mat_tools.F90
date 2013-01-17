@@ -1,7 +1,7 @@
 !tools for matrix construction, manipulation and HF solver for DMET
 module mat_tools
     use const
-    use errors, only: stop_all
+    use errors, only: stop_all, warning
     use globals
     implicit none
 
@@ -183,7 +183,8 @@ module mat_tools
         real(dp) :: HEl,GetHFAntisymInt_spinorb,PDiff,fockel
         real(dp), allocatable :: Work(:),OccOrbs_HF(:,:),PMatrix_old(:,:),PMatrix(:,:)
         real(dp), allocatable :: fock(:,:),temp(:,:),h0HF(:,:)
-        integer :: i,lWork,info,ex(2,2),j
+        integer :: i,lWork,info,ex(2,2),j,nIter
+        logical :: tFailedSCF
         character(len=*), parameter :: t_r='run_hf'
 
         write(6,"(A)") "Constructing full HF solution. DMET will start from core hamiltonian solution."
@@ -192,10 +193,12 @@ module mat_tools
         !The fock matrix is just the core hamiltonian (without the fitted potential) + diag(1/2 U * rdm(i,i)) on the diagonals
         allocate(fock(nSites,nSites))
         fock(:,:) = h0(:,:) !Core hamiltonian
-        do i=1,nSites
-            !Include the on-site repulsion
-            fock(i,i) = fock(i,i) + U * 0.5_dp * (NEl/real(nSites))
-        enddo
+        if(.not.tAnderson) then
+            do i=1,nSites
+                !Include the on-site repulsion
+                fock(i,i) = fock(i,i) + U * 0.5_dp * (NEl/real(nSites))
+            enddo
+        endif
         
         if(allocated(FullHFOrbs)) then
             deallocate(FullHFOrbs,FullHFEnergies)
@@ -231,11 +234,24 @@ module mat_tools
         call dgemm('N','T',nSites,nSites,nOcc,1.0_dp,OccOrbs_HF,nSites,OccOrbs_HF,nSites,0.0_dp,PMatrix_old,nSites)
         !call writevector(FullHFEnergies(1:10),'Initial HF eigenvalues')
 
+        tFailedSCF = .false.
+        nIter = 0
         do while(PDiff.gt.1.0e-8_dp)
+            nIter = nIter + 1
+            if(nIter.gt.1000) then
+                call warning(t_r,'Failed to converge SCF. Exiting calculation of true HF orbitals...')
+                tFailedSCF = .true.
+                exit
+            endif
             FullHFOrbs(:,:) = h0(:,:)
-            do i=1,nSites
-                FullHFOrbs(i,i) = FullHFOrbs(i,i) + PMatrix_old(i,i)*U
-            enddo
+            if(.not.tAnderson) then
+                do i=1,nSites
+                    FullHFOrbs(i,i) = FullHFOrbs(i,i) + PMatrix_old(i,i)*U
+                enddo
+            else
+                !In the anderson model, we only have an on-site repulsion on the first site
+                FullHFOrbs(1,1) = FullHFOrbs(1,1) + PMatrix_old(1,1)*U
+            endif
             FullHFEnergies(:) = 0.0_dp
             allocate(Work(1))
             lWork=-1
@@ -269,76 +285,80 @@ module mat_tools
         !write(6,*) "Full HF Orbs: "
         !call writematrix(FullHFOrbs,'FullHFOrbs',.true.)
             
-        write(6,*) "nOCC", nOcc
-        write(6,*) "*True* Fock eigenvalues around fermi level: "
-        do i=max(1,nOcc-3),nOcc
-            write(6,*) FullHFEnergies(i),"*"
-        enddo
-        do i=nOcc+1,min(nSites,nOcc+3)
-            write(6,*) FullHFEnergies(i)
-        enddo
-
-        !Convert core hamiltonian into HF basis
-        allocate(temp(nSites,nSites))
-        allocate(h0HF(nSites,nSites))
-        call dgemm('t','n',nSites,nSites,nSites,1.0_dp,FullHFOrbs,nSites,h0,nSites,0.0_dp,temp,nSites)
-        call dgemm('n','n',nSites,nSites,nSites,1.0_dp,temp,nSites,FullHFOrbs,nSites,0.0_dp,h0HF,nSites)
-        deallocate(temp)
-
-        if(.true.) then
-            !Generate fock eigenvalues and see if they are the same
-            do i=1,nSites
-                fockel = h0HF(i,i)
-                do j=1,nel
-                    ex(1,1) = j
-                    ex(1,2) = i*2
-                    ex(2,1) = j
-                    ex(2,2) = i*2
-                    HEl = GetHFAntisymInt_spinorb(ex,FullHFOrbs)
-                    fockel = fockel + HEl
-                enddo
-                !write(6,*) "Fock eigenvalue calculated: ",i,fockel
-                if(abs(fockel-FullHFEnergies(i)).gt.1.0e-7_dp) then
-                    call stop_all(t_r,'HF solution not correct - fock eigenvalues do not agree')
-                endif
+        if(.not.tFailedSCF) then
+            write(6,*) "nOCC", nOcc
+            write(6,*) "*True* Fock eigenvalues around fermi level: "
+            do i=max(1,nOcc-3),nOcc
+                write(6,*) FullHFEnergies(i),"*"
             enddo
+            do i=nOcc+1,min(nSites,nOcc+3)
+                write(6,*) FullHFEnergies(i)
+            enddo
+
+            !Convert core hamiltonian into HF basis
+            allocate(temp(nSites,nSites))
+            allocate(h0HF(nSites,nSites))
+            call dgemm('t','n',nSites,nSites,nSites,1.0_dp,FullHFOrbs,nSites,h0,nSites,0.0_dp,temp,nSites)
+            call dgemm('n','n',nSites,nSites,nSites,1.0_dp,temp,nSites,FullHFOrbs,nSites,0.0_dp,h0HF,nSites)
+            deallocate(temp)
+
+            if(.true.) then
+                !Generate fock eigenvalues and see if they are the same
+                do i=1,nSites
+                    fockel = h0HF(i,i)
+                    do j=1,nel
+                        ex(1,1) = j
+                        ex(1,2) = i*2
+                        ex(2,1) = j
+                        ex(2,2) = i*2
+                        HEl = GetHFAntisymInt_spinorb(ex,FullHFOrbs)
+                        fockel = fockel + HEl
+                    enddo
+                    !write(6,*) "Fock eigenvalue calculated: ",i,fockel
+                    if(abs(fockel-FullHFEnergies(i)).gt.1.0e-7_dp) then
+                        call stop_all(t_r,'HF solution not correct - fock eigenvalues do not agree')
+                    endif
+                enddo
+            endif
+
+            !Now calculate HF energy:
+            HFEnergy = 0.0_dp
+            do i=1,nOcc
+                HFEnergy = HFEnergy + h0HF(i,i)*2.0_dp
+            enddo
+            do i=1,nel
+                do j=1,nel
+                    ex(1,1) = i
+                    ex(1,2) = j
+                    ex(2,1) = i
+                    ex(2,2) = j
+                    HEl = GetHFAntisymInt_spinorb(ex,FullHFOrbs)
+
+                    HFEnergy = HFEnergy + 0.5_dp*HEl 
+                enddo
+            enddo
+            write(6,*) "HF energy from core hamiltonian: ",HFEnergy
+
+            HFEnergy = 0.0_dp
+            do i=1,nOcc
+                HFEnergy = HFEnergy + 2.0_dp*FullHFEnergies(i)
+            enddo
+            do i=1,nel
+                do j=1,nel
+                    ex(1,1) = i
+                    ex(1,2) = j
+                    ex(2,1) = i
+                    ex(2,2) = j
+                    HEl = GetHFAntisymInt_spinorb(ex,FullHFOrbs)
+                    HFEnergy = HFEnergy - HEl*0.5_dp
+                enddo
+            enddo
+            write(6,*) "HF energy from fock eigenvalues: ",HFEnergy
+
+            deallocate(h0HF)
         endif
 
-        !Now calculate HF energy:
-        HFEnergy = 0.0_dp
-        do i=1,nOcc
-            HFEnergy = HFEnergy + h0HF(i,i)*2.0_dp
-        enddo
-        do i=1,nel
-            do j=1,nel
-                ex(1,1) = i
-                ex(1,2) = j
-                ex(2,1) = i
-                ex(2,2) = j
-                HEl = GetHFAntisymInt_spinorb(ex,FullHFOrbs)
-
-                HFEnergy = HFEnergy + 0.5_dp*HEl 
-            enddo
-        enddo
-        write(6,*) "HF energy from core hamiltonian: ",HFEnergy
-
-        HFEnergy = 0.0_dp
-        do i=1,nOcc
-            HFEnergy = HFEnergy + 2.0_dp*FullHFEnergies(i)
-        enddo
-        do i=1,nel
-            do j=1,nel
-                ex(1,1) = i
-                ex(1,2) = j
-                ex(2,1) = i
-                ex(2,2) = j
-                HEl = GetHFAntisymInt_spinorb(ex,FullHFOrbs)
-                HFEnergy = HFEnergy - HEl*0.5_dp
-            enddo
-        enddo
-        write(6,*) "HF energy from fock eigenvalues: ",HFEnergy
-
-        deallocate(fock,h0HF)
+        deallocate(fock)
 
     end subroutine run_true_hf
 

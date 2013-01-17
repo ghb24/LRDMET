@@ -529,12 +529,13 @@ end function gtid
 ! < ex(1,1) ex(1,2) || ex(2,1) ex(2,2) >
 function GetHFAntisymInt_spinorb(ex,AOBasisTrans) result(HEl)
     use const
-    use Globals, only: U, nSites
+    use Globals, only: U, nSites, tAnderson
     implicit none
     integer, intent(in) :: ex(2,2)
     real(dp), intent(in) :: AOBasisTrans(nSites,nSites)
     real(dp) :: HEl,HEl_coul,HEl_exch
     integer :: i,j,k,l,i_spat,j_spat,k_spat,l_spat,gtid,alpha
+    integer :: Corr_sites
 
     i = ex(1,1)
     j = ex(1,2)
@@ -552,7 +553,13 @@ function GetHFAntisymInt_spinorb(ex,AOBasisTrans) result(HEl)
     if((mod(i,2).eq.mod(k,2)).and.(mod(j,2).eq.mod(l,2))) then
         !Integral is allowed
         
-        do alpha = 1,nSites
+        if(tAnderson) then
+            Corr_sites = 1
+        else
+            !Hubbard model
+            Corr_sites = nSites
+        endif
+        do alpha = 1,Corr_sites
             HEl_coul = HEl_coul + AOBasisTrans(alpha,i_spat)*AOBasisTrans(alpha,j_spat)*    &
                 AOBasisTrans(alpha,k_spat)*AOBasisTrans(alpha,l_spat)
         enddo
@@ -562,7 +569,13 @@ function GetHFAntisymInt_spinorb(ex,AOBasisTrans) result(HEl)
     !Now, the exchange component if spin allowed <i j | l k>
     if((mod(i,2).eq.mod(l,2)).and.(mod(j,2).eq.mod(k,2))) then
         !Integral is allowed. It will of course be the same as the coulomb term
-        do alpha = 1,nSites
+        if(tAnderson) then
+            Corr_sites = 1
+        else
+            !Hubbard model
+            Corr_sites = nSites
+        endif
+        do alpha = 1,Corr_sites
             HEl_exch = HEl_exch + AOBasisTrans(alpha,i_spat)*AOBasisTrans(alpha,j_spat)*    &
                 AOBasisTrans(alpha,k_spat)*AOBasisTrans(alpha,l_spat)
         enddo
@@ -578,12 +591,13 @@ end function GetHFAntisymInt_spinorb
 ! < ex(1,1) ex(1,2) || ex(2,1) ex(2,2) >
 function GetHFInt_spinorb(ex,AOBasisTrans) result(HEl)
     use const
-    use Globals, only: U, nSites
+    use Globals, only: U, nSites, tAnderson
     implicit none
     integer, intent(in) :: ex(2,2)
     real(dp), intent(in) :: AOBasisTrans(nSites,nSites)
     real(dp) :: HEl
     integer :: i,j,k,l,i_spat,j_spat,k_spat,l_spat,gtid,alpha
+    integer :: Corr_sites
 
     i = ex(1,1)
     j = ex(1,2)
@@ -599,8 +613,14 @@ function GetHFInt_spinorb(ex,AOBasisTrans) result(HEl)
     !First, calculate <ij|kl> if spin allowed
     if((mod(i,2).eq.mod(k,2)).and.(mod(j,2).eq.mod(l,2))) then
         !Integral is allowed
-        
-        do alpha = 1,nSites
+
+        if(tAnderson) then
+            Corr_sites = 1
+        else
+            !Hubbard model
+            Corr_sites = nSites
+        endif
+        do alpha = 1,Corr_sites
             HEl = HEl + AOBasisTrans(alpha,i_spat)*AOBasisTrans(alpha,j_spat)*    &
                 AOBasisTrans(alpha,k_spat)*AOBasisTrans(alpha,l_spat)
         enddo

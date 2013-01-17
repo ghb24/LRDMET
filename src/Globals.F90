@@ -40,6 +40,7 @@ module Globals
     logical :: tChemPot         !Whether to include a chemical potential of U/2 at the impurity site of the anderson model
     logical :: tProjectOutNull  !For the LR - whether to attempt to remove linear dependencies in the basis before solving the equations
     logical :: tLR_ReoptGS      !For the LR - whether to reoptimize the ground state in the full space
+    real(dp) :: MinS_Eigval     !For the LR - the smallest eigenvalue of S to keep
 
     real(dp) :: HFEnergy    !Calculated HF energy
     real(dp) :: dDelta      !Broadening for spectral functions

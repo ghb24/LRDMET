@@ -27,12 +27,12 @@ call run_DMETcalc()
         tConstructFullSchmidtBasis = .true. 
         tMFResponse = .false. 
         tHalfFill = .true. 
-        nSites = 8    
+        nSites = 20   
         LatticeDim = 1
         nImp = 1
         StartU = 0.0_dp
-        EndU = 2.1_dp
-        UStep = 0.3_dp
+        EndU = 4.1_dp
+        UStep = 0.5_dp
         tPeriodic = .false.
         tAntiPeriodic = .true.  
         tRampDownOcc = .true.
@@ -48,6 +48,7 @@ call run_DMETcalc()
         tChemPot = .true.
         tProjectOutNull = .true. 
         tLR_ReoptGS = .true. 
+        MinS_Eigval = 1.0e-7_dp
 
     end subroutine set_defaults
 
