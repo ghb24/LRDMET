@@ -7,10 +7,11 @@ module Globals
     integer :: LatticeDim   !Dimensionality
     integer :: N_occs   !Number of CS orbital occupations to loop over
     integer :: nSites   !The number of sites in the full system
+    integer :: nSites_x   !The number of sites in the x direction
+    integer :: nSites_y   !The number of sites in the y direction
     integer :: nImp     !The number of impurity sites
     integer :: nSys     !The number of bath sites
     real(dp) :: U       !Hubbard U
-    logical :: tGSFCI   !Use Geralds FCI impurity solver
     logical :: tPeriodic !Use PBEs
     logical :: tAntiPeriodic !Use Anti-PBEs
     real(dp) :: ChemPot !The chemical potential of the system
@@ -29,8 +30,13 @@ module Globals
     integer :: nImpCombs,EmbCombs   !The size of triangular packed arrays (over impurity sites and embedding sites respectively)
     logical :: tHalfFill        !Half filling only
     logical :: tDiagFullSystem  !Diagonalize full system before DMET
-    logical :: tMFResponse      !Calculate mean-field response
+    logical :: tMFResponse      !Calculate any mean-field response
+    logical :: tNIResponse      !Calculate NI response
+    logical :: tTDAResponse      !Calculate TDA response
+    logical :: tRPAResponse      !Calculate RPA response
     logical :: tLR_DMET     !Attempt linear response based on partitioning of the perturbation into the schmidt basis of phi^0
+    logical :: tEC_TDA_Response !Externally contracted response of DMET
+    logical :: tIC_TDA_Response !Internall contracted response of DMET
     logical :: tCompleteDiag    !Complete rather than iterative diagonalization of the embedded system
 !    real(dp) :: Omega=1.0_dp           !Perturbation frequency
     real(dp) :: Lambda=1.0_dp          !Strength of perturbation

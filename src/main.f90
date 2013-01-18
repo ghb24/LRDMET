@@ -7,6 +7,7 @@ Program RealHub
     use Solvers
     use fitting
     use mat_tools
+    use input
     implicit none
     logical, parameter :: tDebug = .false.
 
@@ -22,31 +23,42 @@ Program RealHub
     subroutine set_defaults()
         implicit none
 
-        tLR_DMET = .true. 
-        tConstructFullSchmidtBasis = .true. 
-        tMFResponse = .false. 
+        !Main options
+        tAnderson = .false. !Hubbard by default
+        tChemPot = .false.
         tHalfFill = .true. 
-        nSites = 20   
+        nSites = 24  
+        nSites_y = 0
         LatticeDim = 1
         nImp = 1
         StartU = 0.0_dp
         EndU = 4.1_dp
-        UStep = 0.5_dp
+        UStep = 1.0_dp
         tPeriodic = .false.
-        tAntiPeriodic = .true.  
+        tAntiPeriodic = .false. 
         tRampDownOcc = .true.
         tCompleteDiag = .true. 
-        tGSFCI = .not.tCompleteDiag 
-        Start_Omega = 0.0_dp
-        End_Omega = 4.0_dp
-        Omega_Step = 0.01_dp
         tDumpFCIDUMP = .false.
         tDiagFullSystem = .false.
-        dDelta = 0.001_dp
-        tAnderson = .true.
-        tChemPot = .true.
-        tProjectOutNull = .true. 
-        tLR_ReoptGS = .true. 
+
+        !General LR options
+        Start_Omega = 0.0_dp
+        End_Omega = 4.05_dp
+        Omega_Step = 0.1_dp
+        dDelta = 0.01_dp
+
+        !SR Response
+        tMFResponse = .false. 
+        tNIResponse = .false.
+        tTDAResponse = .false.
+        tRPAResponse = .false.
+
+        !MR Response
+        tEC_TDA_Response = .false.
+        tLR_DMET = .false. 
+        tConstructFullSchmidtBasis = .true. 
+        tProjectOutNull = .false.
+        tLR_ReoptGS = .false. 
         MinS_Eigval = 1.0e-9_dp
 
     end subroutine set_defaults
@@ -55,7 +67,8 @@ Program RealHub
         use report, only: environment_report
         use timing, only: init_timing
         implicit none
-    !    logical :: exists
+        real(dp) :: U_tmp
+        character(len=*), parameter :: t_r='init_calc'
 
         write(6,"(A)") "***  Starting real-space hubbard/anderson calculation  ***"
 
@@ -65,16 +78,286 @@ Program RealHub
 
         call environment_report()
 
-    !    inquire(file='input.hub',exist=exists)
-    !    if(exists) then
-    !        call read_input()
-    !    else
-            call set_defaults()
-    !    endif
+        call set_defaults()
 
         call check_input()
 
+        if(tAnderson) then
+            write(6,"(A)") "Running:    o Anderson Model (single site)"
+        else
+            write(6,"(A)") "Running:    o Hubbard Model"
+        endif
+        if(tChemPot) then
+            write(6,"(A)") "            o Chemical potential of -U/2 at site"
+        endif
+        if(tPeriodic) then
+            write(6,"(A)") "            o PBCs employed"
+        elseif(tAntiPeriodic) then
+            write(6,"(A)") "            o PBCs employed"
+        elseif(.not.(tPeriodic.or.tAntiPeriodic)) then
+            write(6,"(A)") "            o Open boundary conditions employed"
+        endif
+        if(LatticeDim.eq.2) then
+            write(6,"(A)") "            o 2-dimensional model" 
+            write(6,"(A,I7,A,I7)") "            o Size of lattice: ",nSites_x,' x ',nSites_y 
+            write(6,"(A,I7)") "            o Total lattice sites: ",nSites
+        elseif(LatticeDim.eq.1) then
+            write(6,"(A)") "            o 1-dimensional model" 
+            write(6,"(A,I7)") "            o Size of lattice: ",nSites 
+        else
+            call stop_all(t_r,"Cannot determine dimensionality of system")
+        endif
+        write(6,"(A)") "            o Range of U values to consider: " 
+        U_tmp=StartU
+        do while((U_tmp.lt.max(StartU,EndU)+1.0e-5_dp).and.(U_tmp.gt.min(StartU,EndU)-1.0e-5_dp))
+            write(6,"(A,F10.5)") "            o U = ",U_tmp 
+            U_tmp=U_tmp+UStep
+        enddo
+        if(tHalfFill) then
+            write(6,"(A)") "            o Only half filling to be considered"
+        else
+            if(tRampDownOcc) then
+                write(6,"(A)") "            o Ramping down from half filling occupation of lattice"
+            else
+                write(6,"(A)") "            o Ramping up to half filling occupation of lattice"
+            endif
+        endif
+        write(6,"(A,I7)") "            o Number of impurity sites: ",nImp 
+        if(tDumpFCIDump) then
+            write(6,"(A)") "            o Creating FCIDUMPs for system" 
+        endif
+        
     end subroutine init_calc
+
+    subroutine read_input()
+        implicit none
+        integer :: command_argument_count,ir,ios
+        character(len=255) :: cInp
+        character(len=100) :: w
+        logical :: tEOF,tExists
+        character(len=*), parameter :: t_r='read_input'
+
+        if(command_argument_count().le.0) then
+            write(6,"(A)") "No input file found. Running from defaults."
+            return
+        endif
+        call get_command_argument(1,cInp)
+        write(6,*) "Reading from file: ",trim(cInp)
+        inquire(file=cInp,exist=tExists)
+        if(.not.texists) call stop_all(t_r,'File '//trim(cInp)//' does not exist.')
+        open(ir,file=cInp,status='old',form='formatted',err=99,iostat=ios)
+        call input_options(echo_lines=.true.,skip_blank_lines=.true.)
+        write(6,'(/,64("*"),/)')
+
+        
+        do while(.true.)
+            call read_line(tEOF)
+            if(tEOF) exit
+            call readu(w)
+            !First, search for block
+            select case(w)
+            case("MODEL")
+                call ModelReadInput()
+            case("LINEAR_RESPONSE")
+                call LRReadInput()
+            case("END")
+                exit
+            case default
+                call stop_all(t_r,'Input block: '//trim(w)//' not recognized')
+            end select
+        enddo
+        write(6,'(/,64("*"),/)')
+        close(ir)
+99      if(ios.ne.0) then
+            call stop_all(t_r,'Problem reading input file'//trim(cInp))
+        endif
+
+    end subroutine read_input
+
+    subroutine ModelReadInput()
+        implicit none
+        logical :: teof
+        character(len=100) :: w
+        logical :: tSpecifiedHub,tSpecifiedAnd,tMultipleOccs
+        character(len=*), parameter :: t_r='ModelReadInput'
+
+        tSpecifiedHub = .false.
+        tSpecifiedAnd = .false.
+        LatticeDim = 1
+        tMultipleOccs = .false.
+
+        Model: do
+            call read_line(teof)
+            if(teof) exit
+            call readu(w)
+            select case(w)
+            case("HUBBARD")
+                tAnderson = .false.
+                tSpecifiedHub = .true.
+            case("ANDERSON")
+                tAnderson = .true.
+                tSpecifiedAnd = .true.
+            case("CHEMPOT")
+                tChemPot = .true.
+            case("SITES")
+                call readi(nSites)
+                if(item.lt.nitems) then
+                    call readi(nSites_y)
+                    LatticeDim = 2
+                    nSites_x = nSites
+                    nSites = nSites_x * nSites_y
+                endif
+            case("U")
+                call readf(StartU)
+                call readf(EndU)
+                call readf(UStep)
+            case("PBC")
+                tPeriodic = .true.
+            case("APBC")
+                tAntiPeriodic = .true.
+            case("IMP_SITES")
+                call readi(nImp)
+            case("HALF_FILL")
+                tHalfFill = .true.
+            case("COMPLETE_DIAG")
+                tCompleteDiag = .true.
+            case("DAVIDSON")
+                tCompleteDiag = .false.
+            case("DIAG_SYSTEM")
+                tDiagFullSystem = .true.
+            case("REDUCE_OCC")
+                tMultipleOccs = .true.
+                tRampDownOcc = .true.
+                tHalfFill = .false.
+            case("INCREASE_OCC")
+                tMultipleOccs = .true.
+                tRampDownOcc = .false.
+                tHalfFill = .false.
+            case("FCIDUMP")
+                tDumpFCIDUMP = .true.
+            case("END")
+                exit
+            case default
+                write(6,"(A)") "ALLOWED KEYWORDS IN MODEL BLOCK: "
+                write(6,"(A)") "HUBBARD"
+                write(6,"(A)") "ANDERSON"
+                write(6,"(A)") "CHEMPOT"
+                write(6,"(A)") "SITES"
+                write(6,"(A)") "U"
+                write(6,"(A)") "PBC"
+                write(6,"(A)") "APBC"
+                write(6,"(A)") "IMP_SITES"
+                write(6,"(A)") "HALF_FILL"
+                write(6,"(A)") "COMPLETE_DIAG"
+                write(6,"(A)") "DAVIDSON"
+                write(6,"(A)") "DIAG_SYSTEM"
+                write(6,"(A)") "REDUCE_OCC"
+                write(6,"(A)") "INCREASE_OCC"
+                write(6,"(A)") "FCIDUMP"
+                call stop_all(t_r,'Keyword '//trim(w)//' not recognized')
+            end select
+        enddo Model
+                
+        if(tMultipleOccs.and.tHalfFill) then
+            call stop_all(t_r,'Loops over lattice occupations, as well half-filling only specified in input')
+        endif
+
+        if(tSpecifiedAnd.and.tSpecifiedHub) then
+            call stop_all(t_r,'Cannot specify both HUBBARD and ANDERSON in MODEL input block')
+        endif
+
+    end subroutine ModelReadInput
+
+    subroutine LRReadInput()
+        implicit none
+        logical :: teof
+        character(len=100) :: w
+        character(len=*), parameter :: t_r='LRReadInput'
+
+        !If MR, need full schmidt basis
+        LR: do
+            call read_line(teof)
+            if(teof) exit
+            call readu(w)
+            select case(w)
+            case("NONINT")
+                tNIResponse = .true.
+            case("TDA")
+                tTDAResponse = .true.
+            case("RPA")
+                tRPAResponse = .true.
+            case("EC_TDA")
+                tEC_TDA_Response = .true.
+            case("IC_TDA")
+                tIC_TDA_Response = .true.
+            case("FREQ")
+                call readf(Start_Omega)
+                call readf(End_Omega)
+                call readf(Omega_Step)
+            case("BROADENING")
+                call readf(dDelta)
+            case("NON_NULL")
+                tProjectOutNull = .true.
+            case("REOPT_GS")
+                tLR_ReoptGS = .true.
+            case("OVERLAP_CUTOFF")
+                call readf(MinS_Eigval)
+            case("END")
+                exit
+            case default
+                write(6,"(A)") "ALLOWED KEYWORDS IN LINEAR_RESPONSE BLOCK: "
+                write(6,"(A)") "NONINT"
+                write(6,"(A)") "TDA"
+                write(6,"(A)") "RPA"
+                write(6,"(A)") "EC_TDA"
+                write(6,"(A)") "IC_TDA"
+                write(6,"(A)") "FREQ"
+                write(6,"(A)") "BROADENING"
+                write(6,"(A)") "NON_NULL"
+                write(6,"(A)") "REOPT_GS"
+                write(6,"(A)") "OVERLAP_CUTOFF"
+                call stop_all(t_r,'Keyword '//trim(w)//' not recognized')
+            end select
+        enddo LR
+        
+    end subroutine LRReadInput
+
+    subroutine check_input()
+        implicit none
+        character(len=*), parameter :: t_r='check_input'
+
+        if(tIC_TDA_Response.or.tEC_TDA_Response) then
+            tLR_DMET = .true.
+            tConstructFullSchmidtBasis = .true.
+        else
+            tLR_DMET = .false.
+            tConstructFullSchmidtBasis = .false.
+        endif
+
+        if(tNIResponse.or.tTDAResponse.or.tRPAResponse) then
+            tMFResponse = .true. 
+        else
+            tMFResponse = .false.
+        endif
+
+        if(tPeriodic.and.tAntiPeriodic) then
+            call stop_all(t_r,'Both PBCs and APBCs specified in input')
+        endif
+
+        if(tAnderson.and.(nImp.gt.1)) then
+            call stop_all(t_r,'Anderson model only coded up for a single impurity site')
+        endif
+
+        if(tChemPot.and.(.not.tAnderson)) then
+            call stop_all(t_r,'A chemical potential can only be applied to the 1-site Anderson model')
+        endif
+
+    end subroutine check_input
+
+    subroutine checkinput()
+        implicit none
+
+    end subroutine checkinput
 
     subroutine name_timers()
         implicit none
@@ -187,7 +470,7 @@ Program RealHub
                 call halt_timer(FCIDUMP)
 
                 !Calculate single reference linear response - non-interacting, TDA and RPA
-                if(tLR_DMET) then
+                if(tMFResponse) then
                     call SR_LinearResponse()
                 endif
 
@@ -820,9 +1103,14 @@ Program RealHub
         write(iunit,*) ""
         WRITE(iunit,'(A7,I1)') 'ISYM=',1
         WRITE(iunit,'(A5)') '&END'
-        do i=1,nSites
-            write(iunit,'(1X,G20.14,4I3)') U,i,i,i,i
-        enddo
+        if(tAnderson) then
+            !Only first site correlated
+            write(iunit,'(1X,G20.14,4I3)') U,1,1,1,1
+        else
+            do i=1,nSites
+                write(iunit,'(1X,G20.14,4I3)') U,i,i,i,i
+            enddo
+        endif
         do i=1,nSites
             do j=1,i
                 if(abs(h0(i,j)).gt.1.0e-8_dp) then
@@ -834,15 +1122,5 @@ Program RealHub
         close(iunit)
 
     end subroutine DumpFCIDUMP
-
-    subroutine check_input()
-        implicit none
-        character(len=*), parameter :: t_r='check_input'
-
-        if(tChemPot.and.(.not.tAnderson)) then
-            call stop_all(t_r,'A chemical potential can only be applied to the 1-site Anderson model')
-        endif
-
-    end subroutine check_input
 
 End Program RealHub

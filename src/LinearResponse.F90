@@ -20,18 +20,23 @@ module LinearResponse
     !   Perhaps look at CC2 to get a deeper understanding
     subroutine MR_LinearResponse()
         implicit none
-        !Create contracted single excitation space using the non-interacting reference for the contractions
-        !The matrix is then created in a CI fashion
-        !The difference between this and the one below is that it does not include any operators in the active space, and therefore relies on coupling between
-        !the N and N+1 and N-1 active spaces.
-        !call NonIntContracted_TDA_MCLR()
+        
+        if(tIC_TDA_Response) then
+            !Create contracted single excitation space using the non-interacting reference for the contractions
+            !The matrix is then created in a CI fashion
+            !The difference between this and the one below is that it does not include any operators in the active space, and therefore relies on coupling between
+            !the N and N+1 and N-1 active spaces.
+            call NonIntContracted_TDA_MCLR()
+        endif
 
-        !Externally contracted
-        call NonIntExContracted_TDA_MCLR()
+        if(tEC_TDA_Response) then
+            !Externally contracted
+            call NonIntExContracted_TDA_MCLR()
+        endif
 
         !Create contracted single excitation space using the non-interacting reference for the contractions
         !The matrix is then created in an RPA fashion
-!        call NonIntContracted_RPA_MCLR()
+        !call NonIntContracted_RPA_MCLR()
 
         !Full MCLR, creating excitations in a CI fashion, rather than with commutators. Should reduce to TDA in single reference limit
 !        call TDA_MCLR()
@@ -45,18 +50,24 @@ module LinearResponse
     subroutine SR_LinearResponse()
         implicit none
         
-        !Non-interacting linear response
-        call set_timer(LR_SR_NonInt) 
-        call NonInteractingLR()
-        call halt_timer(LR_SR_NonInt)
-        !Single reference TDA
-        call set_timer(LR_SR_TDA) 
-        !call TDA_LR()
-        call halt_timer(LR_SR_TDA)
-        !Single reference RPA
-        call set_timer(LR_SR_RPA) 
-        !call RPA_LR()
-        call halt_timer(LR_SR_RPA)
+        if(tNIResponse) then
+            !Non-interacting linear response
+            call set_timer(LR_SR_NonInt) 
+            call NonInteractingLR()
+            call halt_timer(LR_SR_NonInt)
+        endif
+        if(tTDAResponse) then
+            !Single reference TDA
+            call set_timer(LR_SR_TDA) 
+            call TDA_LR()
+            call halt_timer(LR_SR_TDA)
+        endif
+        if(tRPAResponse) then
+            !Single reference RPA
+            call set_timer(LR_SR_RPA) 
+            call RPA_LR()
+            call halt_timer(LR_SR_RPA)
+        endif
 
     end subroutine SR_LinearResponse
 
@@ -69,7 +80,7 @@ module LinearResponse
         integer :: CoreEnd,VirtStart,VirtEnd,CVInd_tmp,iunit,iunit2
         integer :: DiffOrb,nOrbs,gam,gam1,gam1_ind,gam1_spat,gam2,gam2_ind,gam2_spat,ierr
         integer :: gam_spat,nLinearSystem,tempK,gtid,nSpan
-        integer :: orbdum(1),CAInd_tmp,lwork,info,nSize
+        integer :: orbdum(1),CAInd_tmp,lwork,info,nSize,nCore,nVirt
         logical :: tParity,tCalcResponse,tTransformSpace
         real(dp) :: Omega,CVNorm,GSEnergy
         complex(dp) :: tempel,ResponseFn,dOrthog,dNorm,testc
@@ -186,6 +197,8 @@ module LinearResponse
         CoreEnd = nOcc-nImp
         VirtStart = nOcc+nImp+1
         VirtEnd = nSites
+        nCore = nOcc-nImp
+        nVirt = nOcc-nImp   !nVirt = nCore
 
         !Set up indices for the block of the linear system
         CVIndex = nFCIDet + 1   !Beginning of EC Core virtual excitations
@@ -200,13 +213,15 @@ module LinearResponse
         !Allocate memory for normalization constants
         allocate(AVNorm(1:nImp*2))
         allocate(CANorm(1:nImp*2))
-        
+
         call halt_timer(LR_EC_TDA_Precom)
 
         Omega = Start_Omega
         do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
 
             call set_timer(LR_EC_TDA_HBuild)
+        
+            allocate(tempc(nCore,nCore))
 
             LinearSystem(:,:) = complex(0.0_dp,0.0_dp)
             Overlap(:,:) = complex(0.0_dp,0.0_dp)
@@ -235,10 +250,11 @@ module LinearResponse
             CVNorm = 0.0_dp
             do i=1,CoreEnd
                 do a=VirtStart,VirtEnd
-                    CVNorm = CVNorm + real(SchmidtPert(i,a))**2 + aimag(SchmidtPert(i,a))**2
+!                    CVNorm = CVNorm + real(SchmidtPert(i,a))**2 + aimag(SchmidtPert(i,a))**2
+                    CVNorm = CVNorm + conjg(SchmidtPert(i,a))*SchmidtPert(i,a)
                 enddo
             enddo
-            CVNorm = CVNorm * 2.0_dp    
+            CVNorm = CVNorm * 2.0_dp
 
             !*****************************   Block 2   *****************************
             !Copy the uncontracted FCI hamiltonian space
@@ -1082,6 +1098,7 @@ module LinearResponse
                 endif
             enddo
 
+            deallocate(tempc)
             write(6,*) "Overlap matrix constructed successfully..."
 
             call halt_timer(LR_EC_TDA_SBuild)

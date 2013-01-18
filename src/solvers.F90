@@ -47,7 +47,7 @@ module solvers
 
         if(nSys.gt.EmbSize) call stop_all(t_r,"Error in determining basis")
 
-        if(tGSFCI) then
+        if(.not.tCompleteDiag) then
             call WriteFCIDUMP()
 
             !Solve with Geralds FCI code
@@ -144,7 +144,7 @@ module solvers
 
             endif
 
-        elseif(tCompleteDiag) then
+        else
             !Do a complete diagonalization
             !Do not need to write FCIDUMP, since would only read it back in...
             call CompleteDiag(tCreate2RDM)
@@ -556,7 +556,7 @@ module solvers
         character(len=*), parameter :: t_r="SolveFullSystem"
 
         write(6,"(A,I5)") "Number of electrons in full system: ",NEl
-        if(tGSFCI) then
+        if(.not.tCompleteDiag) then
         
             iunit = get_free_unit()
             open(iunit,file='FCIDUMP',status='unknown')
@@ -626,6 +626,9 @@ module solvers
 
             write(6,"(A,F20.10)") "Complete system energy is: ",HL_Energy
 
+        else
+            write(6,*) "Cannot currently diagonalize full system with complete diagonalizer. Use DAVIDSON."
+            write(6,*) "Skipping diagonalization of full system (though won't be difficult to code up)."
         endif
 
     end subroutine DiagFullSystem
