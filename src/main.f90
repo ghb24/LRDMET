@@ -43,7 +43,7 @@ call run_DMETcalc()
         Omega_Step = 0.01_dp
         tDumpFCIDUMP = .false.
         tDiagFullSystem = .false.
-        dDelta = 0.001_dp
+        dDelta = 0.00_dp
         tAnderson = .true.
         tChemPot = .true.
         tProjectOutNull = .true. 
