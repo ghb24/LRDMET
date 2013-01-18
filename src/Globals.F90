@@ -1,6 +1,8 @@
 module Globals
     use const
+    use timing, only: timer
     implicit none
+    save
 
     integer :: LatticeDim   !Dimensionality
     integer :: N_occs   !Number of CS orbital occupations to loop over
@@ -77,5 +79,31 @@ module Globals
     complex(dp) , allocatable :: SchmidtPert(:,:)
     real(dp) , allocatable :: FullHamil(:,:)    !In case we do a complete diagonalization
     real(dp) , allocatable :: Spectrum(:)       !Eigenvalues in case of a complete diagonalization
+
+    !timers
+    type(timer) :: Full_timer   !All routines 
+    type(timer) :: FullSCF 
+    type(timer) :: FCIDUMP
+    type(timer) :: DiagT
+    type(timer) :: ConstEmb
+    type(timer) :: Trans1e
+    type(timer) :: HL_Time
+    type(timer) :: Fit_v_time
+    !LR_SR
+    type(timer) :: LR_SR_NonInt
+    type(timer) :: LR_SR_TDA
+    type(timer) :: LR_SR_RPA
+    !LR_SR_EC
+    type(timer) :: LR_EC_TDA_Precom !Precomputing (outside omega loop) various hamiltonians & generating det lists 
+    type(timer) :: LR_EC_TDA_HBuild     !Building the hamiltonian at each omega 
+    type(timer) :: LR_EC_TDA_SBuild     !Building the overlap at each omega
+    type(timer) :: LR_EC_TDA_Project    !Diag S and project out null space
+    type(timer) :: LR_EC_TDA_OptGS      !Diag H and 
+    type(timer) :: LR_EC_TDA_BuildLR    !Construct LR equations
+    type(timer) :: LR_EC_TDA_SolveLR    !Solve LR equations
+
+
+
+
 
 end module Globals

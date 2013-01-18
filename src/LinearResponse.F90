@@ -1,5 +1,6 @@
 module LinearResponse
     use const
+    use timing
     use errors, only: stop_all,warning
     use mat_tools, only: WriteVector,WriteMatrix,WriteVectorInt,WriteMatrixComp,WriteVectorComp
     use globals
@@ -45,11 +46,17 @@ module LinearResponse
         implicit none
         
         !Non-interacting linear response
+        call set_timer(LR_SR_NonInt) 
         call NonInteractingLR()
+        call halt_timer(LR_SR_NonInt)
         !Single reference TDA
+        call set_timer(LR_SR_TDA) 
         !call TDA_LR()
+        call halt_timer(LR_SR_TDA)
         !Single reference RPA
+        call set_timer(LR_SR_RPA) 
         !call RPA_LR()
+        call halt_timer(LR_SR_RPA)
 
     end subroutine SR_LinearResponse
 
@@ -76,6 +83,8 @@ module LinearResponse
         character(64) :: filename
         character(len=*), parameter :: t_r='NonIntExContracted_TDA_MCLR'
         logical, parameter :: tDiagHam = .false.
+
+        call set_timer(LR_EC_TDA_Precom)
 
         write(6,*) "Calculating non-interacting EC MR-TDA LR system..."
         if(.not.tConstructFullSchmidtBasis) call stop_all(t_r,'To solve LR, must construct full schmidt basis')
@@ -157,7 +166,8 @@ module LinearResponse
         iunit = get_free_unit()
         call append_ext_real('EC-TDA_DDResponse',U,filename)
         open(unit=iunit,file=filename,status='unknown')
-        write(iunit,"(A)") "# Frequency     DD_LinearResponse(Re)    DD_LinearResponse(Im)    Orthog    Norm    NewGS   OldGS"
+        write(iunit,"(A)") "# Frequency     DD_LinearResponse(Re)    DD_LinearResponse(Im)    " &
+            & //"Orthog    Norm    NewGS   OldGS  OrthogRHS"
         
         if(tDiagHam) then
             iunit2 = get_free_unit()
@@ -190,9 +200,13 @@ module LinearResponse
         !Allocate memory for normalization constants
         allocate(AVNorm(1:nImp*2))
         allocate(CANorm(1:nImp*2))
+        
+        call halt_timer(LR_EC_TDA_Precom)
 
         Omega = Start_Omega
         do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+
+            call set_timer(LR_EC_TDA_HBuild)
 
             LinearSystem(:,:) = complex(0.0_dp,0.0_dp)
             Overlap(:,:) = complex(0.0_dp,0.0_dp)
@@ -283,7 +297,7 @@ module LinearResponse
                     AVNorm(gam) = AVNorm(gam) + real(SchmidtPert(gam_spat,a))**2 + aimag(SchmidtPert(gam_spat,a))**2
                 enddo
             enddo
-            call writevector(AVNorm,'AV Norm')
+            !call writevector(AVNorm,'AV Norm')
 
             !This starts at 'AVIndex'
             !'Diagonal' block
@@ -627,7 +641,7 @@ module LinearResponse
                     CANorm(gam) = CANorm(gam) + real(SchmidtPert(i,gam_spat))**2 + aimag(SchmidtPert(i,gam_spat))**2
                 enddo
             enddo
-            call writevector(CANorm,'CA Norm')
+            !call writevector(CANorm,'CA Norm')
 
             !This starts at 'CAIndex'
             !'Diagonal' block
@@ -974,6 +988,7 @@ module LinearResponse
             enddo
 
             write(6,*) "Hessian constructed successfully...",Omega
+            call halt_timer(LR_EC_TDA_HBuild)
 
             !*********************   Hessian construction finished   **********************
             !call writematrix(LinearSystem(1:nFCIDet,1:nFCIDet),'Hessian_N',.true.)
@@ -981,6 +996,7 @@ module LinearResponse
             !****************************************************************************
             !************    OVERLAP MATRIX   *******************************************
             !****************************************************************************
+            call set_timer(LR_EC_TDA_SBuild)
 
             ! Block 1 and 2 are equal to the identity
             do i = 1,AVIndex-1
@@ -1068,6 +1084,9 @@ module LinearResponse
 
             write(6,*) "Overlap matrix constructed successfully..."
 
+            call halt_timer(LR_EC_TDA_SBuild)
+            call set_timer(LR_EC_TDA_Project)
+
             if(tProjectOutNull.or.tLR_ReoptGS) then
                 !We need eigenvalues and vectors of S
                 !TODO: Optimize this - we can block diagonalize the overlap, which will be much cheaper
@@ -1136,7 +1155,9 @@ module LinearResponse
                     Transform(:,:) = S_EigVec(:,:)
                 endif
             endif
+            call halt_timer(LR_EC_TDA_Project)
 
+            call set_timer(LR_EC_TDA_OptGS)
             allocate(Psi_0(nLinearSystem))  !To store the ground state in the full basis
             Psi_0(:) = complex(0.0_dp,0.0_dp)
 
@@ -1197,6 +1218,9 @@ module LinearResponse
                 write(6,"(A,G20.10,A,G20.10,A)") "Reoptimized ground state energy is: ",GSEnergy, &  
                     " (old = ",Spectrum(1),")"
                 if(tDiagHam) write(iunit2,*) Omega,H_Vals(:)
+                if(GSEnergy-Spectrum(1).gt.1.0e-8_dp) then
+                    call stop_all(t_r,'Reoptimized GS energy lower than original GS energy - this should not be possible')
+                endif
 
                 !Store the eigenvector in the original basis
                 !However, just rotate the ground state, not all the eigenvectors
@@ -1211,7 +1235,9 @@ module LinearResponse
                     Psi_0(i) = complex(FullHamil(i,1),0.0_dp)
                 enddo
             endif
+            call halt_timer(LR_EC_TDA_OptGS)
 
+            call set_timer(LR_EC_TDA_BuildLR)
             !Remove the ground state from the hamiltonian
             !TODO This should be zgemmed and combined with the previous calculation of the projector
             allocate(Projector(nLinearSystem,nLinearSystem))
@@ -1367,7 +1393,9 @@ module LinearResponse
             else
                 RHS(:) = VGS(:)
             endif
+            call halt_timer(LR_EC_TDA_BuildLR)
 
+            call set_timer(LR_EC_TDA_SolveLR)
             !Now solve these linear equations
             allocate(Pivots(nSpan))
             call ZGESV(nSpan,1,LHS,nSpan,Pivots,RHS,nSpan,info)
@@ -1433,6 +1461,7 @@ module LinearResponse
 
             Omega = Omega + Omega_Step
 
+            call halt_timer(LR_EC_TDA_SolveLR)
         enddo   !End loop over omega
 
         deallocate(LinearSystem,Overlap)

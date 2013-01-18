@@ -1,21 +1,20 @@
 Program RealHub
+    use const
+    use timing
+    use errors, only: stop_all
+    use globals
+    use LinearResponse
+    use Solvers
+    use fitting
+    use mat_tools
+    implicit none
+    logical, parameter :: tDebug = .false.
 
-use const
-use timing
-use errors, only: stop_all
-use globals
-use LinearResponse
-use Solvers
-use fitting
-use mat_tools
-implicit none
-
-real :: start_time
-logical, parameter :: tDebug = .false.
-
-call init_calc()
-
-call run_DMETcalc()
+    call init_calc()
+    call set_timer(full_timer)
+    call run_DMETcalc()
+    call halt_timer(full_timer)
+    call end_calc()
 
     contains
     
@@ -53,24 +52,67 @@ call run_DMETcalc()
     end subroutine set_defaults
 
     subroutine init_calc()
-    use report, only: environment_report
-    implicit none
-!    logical :: exists
+        use report, only: environment_report
+        use timing, only: init_timing
+        implicit none
+    !    logical :: exists
 
-    write(6,"(A)") "***  Starting real-space hubbard/anderson calculation  ***"
-    call cpu_time(start_time)
-    call environment_report()
+        write(6,"(A)") "***  Starting real-space hubbard/anderson calculation  ***"
 
-!    inquire(file='input.hub',exist=exists)
-!    if(exists) then
-!        call read_input()
-!    else
-        call set_defaults()
-!    endif
+        call init_timing()
 
-     call check_input()
+        call name_timers()
+
+        call environment_report()
+
+    !    inquire(file='input.hub',exist=exists)
+    !    if(exists) then
+    !        call read_input()
+    !    else
+            call set_defaults()
+    !    endif
+
+        call check_input()
 
     end subroutine init_calc
+
+    subroutine name_timers()
+        implicit none
+
+        !From main subroutine
+        Full_timer%timer_name='Main'
+        FullSCF%timer_name='FullSCF'
+        FCIDUMP%timer_name='FCIDUMP'
+        DiagT%timer_name='DiagHopping'
+        ConstEmb%timer_name='Const_Emb'
+        Trans1e%timer_name='1eTransform'
+        HL_Time%timer_name='HL_Solver'
+        Fit_v_time%timer_name='Fit_corrpot'
+
+        !SR_LR
+        LR_SR_NonInt%timer_name='LR_SR_NonInt'
+        LR_SR_TDA%timer_name='LR_SR_TDA'
+        LR_SR_RPA%timer_name='LR_SR_RPA'
+
+        !MR_LR_EC
+        LR_EC_TDA_Precom%timer_name='LR_EC_Precom'
+        LR_EC_TDA_HBuild%timer_name='LR_EC_HBuild'
+        LR_EC_TDA_SBuild%timer_name='LR_EC_SBuild'
+        LR_EC_TDA_Project%timer_name='LR_EC_NullProj'
+        LR_EC_TDA_OptGS%timer_name='LR_EC_SolveGS'
+        LR_EC_TDA_BuildLR%timer_name='LR_EC_BuildLR'
+        LR_EC_TDA_SolveLR%timer_name='LR_EC_SolveLR'
+
+    end subroutine name_timers
+
+    subroutine end_calc()
+        use timing, only: end_timing, print_timing_report
+        implicit none
+
+        call end_timing()
+        call print_timing_report()
+
+    end subroutine end_calc
 
     subroutine run_DMETcalc()
         implicit none
@@ -134,11 +176,15 @@ call run_DMETcalc()
                 endif
 
                 !Calculate full hf, including mean-field on-site repulsion (which is included in correlation potential in DMET
+                call set_timer(FullSCF)
                 call run_true_hf()
+                call halt_timer(FullSCF)
 
+                call set_timer(FCIDUMP)
                 if(tDumpFCIDUMP) then
                     call DumpFCIDUMP()
                 endif
+                call halt_timer(FCIDUMP)
 
                 !Calculate single reference linear response - non-interacting, TDA and RPA
                 if(tLR_DMET) then
@@ -154,32 +200,40 @@ call run_DMETcalc()
                     !Do 150 microiterations to converge the DMET for this occupation number
                     call add_localpot(h0,h0v,v_loc)
 
+                    call set_timer(DiagT)
                     !Now run a HF calculation by constructing and diagonalizing the fock matrix
                     !This will also return the RDM in the AO basis
                     call run_hf(it)
+                    call halt_timer(DiagT)
 
+                    call set_timer(ConstEmb)
                     !Construct the embedded basis
                     if(tConstructFullSchmidtBasis) then
                         call ConstructFullSchmidtBasis()
                     else
                         call CalcEmbedding()
                     endif
-
                     call writematrix(EmbeddedBasis,'EmbeddedBasis',.true.)
+                    call halt_timer(ConstEmb)
                     
                     !Now transform the 1 electron quantities into the embedded basis
                     !This should be exactly correct, i.e. we can now diagonalize the fock matrix in this basis
                     !to get the same result. We could also check that the number of electrons adds to the correct thing
+                    call set_timer(Trans1e)
                     call Transform1e()
+                    call halt_timer(Trans1e)
                     
+                    call set_timer(HL_Time)
                     !Construct the two electron integrals in the system, and solve embedded system with high-level method
                     call SolveSystem(.true.)
+                    call halt_timer(HL_Time)
 
                     if(.not.tAnderson) then
                         !Fit new potential
                         !vloc_change (global) is updated in here to reflect the optimal change
                         !VarVloc is a meansure of the change in the potential
                         !ErrRDM is a measure of the initial difference in the RDMs
+                        call set_timer(Fit_v_time)
                         call Fit_vloc(VarVloc,ErrRDM)
 
                         if(tDebug) call writematrix(vloc_change,'vloc_change',.true.)
@@ -190,6 +244,7 @@ call run_DMETcalc()
                             mean_vloc = mean_vloc + v_loc(i,i)
                         enddo
                         mean_vloc = mean_vloc/real(nImp)
+                        call halt_timer(Fit_v_time)
 
 
                         !Write out stats:
