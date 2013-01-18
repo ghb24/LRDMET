@@ -32,7 +32,7 @@ call run_DMETcalc()
         nImp = 1
         StartU = 0.0_dp
         EndU = 4.1_dp
-        UStep = 1.0_dp
+        UStep = 0.5_dp
         tPeriodic = .false.
         tAntiPeriodic = .true.  
         tRampDownOcc = .true.

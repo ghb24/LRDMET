@@ -1212,6 +1212,19 @@ module LinearResponse
                 enddo
             endif
 
+            !Remove the ground state from the hamiltonian
+            !TODO This should be zgemmed and combined with the previous calculation of the projector
+            allocate(Projector(nLinearSystem,nLinearSystem))
+            Projector(:,:) = complex(0.0_dp,0.0_dp)
+            do i = 1,nLinearSystem
+                do j = 1,nLinearSystem
+                    do k = 1,nLinearSystem
+                        Projector(i,j) = Projector(i,j) + conjg(Psi_0(k))*Psi_0(i)*Overlap(k,j)
+                    enddo
+                enddo
+            enddo
+            LinearSystem(:,:) = LinearSystem(:,:) - Projector(:,:)*GSEnergy
+
             !Now construct the lhs of the equations
             !Now, we want to calculate H - (E_0 + Omega)S
             do i=1,nLinearSystem
@@ -1241,7 +1254,6 @@ module LinearResponse
             !call writevectorcomp(temp_vecc,'V|0>')
 
             !Project out the ground state by performing the outer product: 
-            allocate(Projector(nLinearSystem,nLinearSystem))
             Projector(:,:) = complex(0.0_dp,0.0_dp)
             do i = 1,nLinearSystem
                 Projector(i,i) = complex(1.0_dp,0.0_dp)
