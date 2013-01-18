@@ -215,7 +215,7 @@ Program RealHub
                 tPeriodic = .true.
             case("APBC")
                 tAntiPeriodic = .true.
-            case("IMP_SITES")
+            case("IMPSITES")
                 call readi(nImp)
             case("HALF_FILL")
                 tHalfFill = .true.
@@ -246,7 +246,7 @@ Program RealHub
                 write(6,"(A)") "U"
                 write(6,"(A)") "PBC"
                 write(6,"(A)") "APBC"
-                write(6,"(A)") "IMP_SITES"
+                write(6,"(A)") "IMPSITES"
                 write(6,"(A)") "HALF_FILL"
                 write(6,"(A)") "COMPLETE_DIAG"
                 write(6,"(A)") "DAVIDSON"
