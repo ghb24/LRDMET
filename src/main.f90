@@ -157,7 +157,7 @@ Program RealHub
     subroutine read_input()
         use utils, only: get_free_unit
         implicit none
-        integer :: command_argument_count,ir,ios
+        integer :: command_argument_count,ios
         character(len=255) :: cInp
         character(len=100) :: w
         logical :: tEOF,tExists
