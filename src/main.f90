@@ -55,6 +55,7 @@ Program RealHub
 
         !MR Response
         tEC_TDA_Response = .false.
+        tIC_TDA_Response = .false.
         tLR_DMET = .false. 
         tConstructFullSchmidtBasis = .true. 
         tProjectOutNull = .false.
@@ -79,6 +80,8 @@ Program RealHub
         call environment_report()
 
         call set_defaults()
+
+        call read_input()
 
         call check_input()
 
@@ -126,10 +129,33 @@ Program RealHub
         if(tDumpFCIDump) then
             write(6,"(A)") "            o Creating FCIDUMPs for system" 
         endif
+        if(tNIResponse) then
+            write(6,"(A)") "            o Calculating non-interacting linear response function" 
+        endif
+        if(tTDAResponse) then
+            write(6,"(A)") "            o Calculating TDA linear response function" 
+        endif
+        if(tRPAResponse) then
+            write(6,"(A)") "            o Calculating RPA linear response function" 
+        endif
+        if(tEC_TDA_Response) then
+            write(6,"(A)") "            o Calculating externally-contracted MC-TDA DMET linear response function" 
+        endif
+        if(tIC_TDA_Response) then
+            write(6,"(A)") "            o Calculating internally-contracted MC-TDA DMET linear response function" 
+        endif
+        if(tMFResponse.or.tLR_DMET) then
+            write(6,"(A,F13.8)") "            o Spectral broadening for linear response functions: ",dDelta
+        endif
+        write(6,"(A)") ""
+        write(6,"(A)") ""
+
+
         
     end subroutine init_calc
 
     subroutine read_input()
+        use utils, only: get_free_unit
         implicit none
         integer :: command_argument_count,ir,ios
         character(len=255) :: cInp
@@ -145,6 +171,7 @@ Program RealHub
         write(6,*) "Reading from file: ",trim(cInp)
         inquire(file=cInp,exist=tExists)
         if(.not.texists) call stop_all(t_r,'File '//trim(cInp)//' does not exist.')
+        ir = get_free_unit()
         open(ir,file=cInp,status='old',form='formatted',err=99,iostat=ios)
         call input_options(echo_lines=.true.,skip_blank_lines=.true.)
         write(6,'(/,64("*"),/)')
