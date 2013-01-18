@@ -1033,11 +1033,12 @@ Program RealHub
     end subroutine CalcEmbedding
 
     subroutine DumpFCIDUMP()
-        use utils, only: get_free_unit
+        use utils, only: get_free_unit,append_ext_real
         implicit none
         integer :: iunit,i,j,k,l,A,B,ex(2,2)
         real(dp) :: hel,GetHFInt_spinorb
         real(dp), allocatable :: temp(:,:),h0HF(:,:)
+        character(len=64) :: filename
         
         !Calculate hopping matrix in MO basis
         allocate(temp(nSites,nSites))
@@ -1047,7 +1048,8 @@ Program RealHub
         deallocate(temp)
 
         iunit = get_free_unit()
-        open(unit=iunit,file='FCIDUMP',status='unknown')
+        call append_ext_real('FCIDUMP',U,filename)
+        open(unit=iunit,file=filename,status='unknown')
         write(iunit,'(2A6,I3,A7,I3,A5,I2,A)') '&FCI ','NORB=',nSites,'NELEC=',NEl,',MS2=',0,','
         WRITE(iunit,'(A9)',advance='no') 'ORBSYM='
         do i=1,nSites
@@ -1094,7 +1096,8 @@ Program RealHub
         deallocate(h0HF)
 
         !Now dump in the AO basis
-        open(unit=iunit,file='AO_FCIDUMP',status='unknown')
+        call append_ext_real('AO_FCIDUMP',U,filename)
+        open(unit=iunit,file=filename,status='unknown')
         write(iunit,'(2A6,I3,A7,I3,A5,I2,A)') '&FCI ','NORB=',nSites,'NELEC=',NEl,',MS2=',0,','
         WRITE(iunit,'(A9)',advance='no') 'ORBSYM='
         do i=1,nSites
