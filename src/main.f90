@@ -32,7 +32,7 @@ call run_DMETcalc()
         nImp = 1
         StartU = 0.0_dp
         EndU = 4.1_dp
-        UStep = 0.5_dp
+        UStep = 1.0_dp
         tPeriodic = .false.
         tAntiPeriodic = .true.  
         tRampDownOcc = .true.
@@ -43,7 +43,7 @@ call run_DMETcalc()
         Omega_Step = 0.01_dp
         tDumpFCIDUMP = .false.
         tDiagFullSystem = .false.
-        dDelta = 0.00_dp
+        dDelta = 0.001_dp
         tAnderson = .true.
         tChemPot = .true.
         tProjectOutNull = .true. 
