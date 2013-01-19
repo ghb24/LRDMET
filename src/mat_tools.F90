@@ -28,11 +28,14 @@ module mat_tools
                 h0(nSites,1) = 1.0_dp
             endif
 
-            if(tAnderson) then
+            if(tChemPot) then
                 !Introduce chemical potential at impurity site
+                write(6,*) "Adding chemical potential to core hamiltonian"
                 if(nImp.gt.1) call stop_all(t_r,'How to introduce chemical potential in multi-site anderson model?')
                 h0(1,1) = h0(1,1) - U/2.0_dp
             endif
+        else
+            call stop_all(t_r,'Higher dimensional integrals not coded up')
         endif
 
     end subroutine make_hop_mat
