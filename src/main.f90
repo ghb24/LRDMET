@@ -92,6 +92,8 @@ Program RealHub
         endif
         if(tChemPot) then
             write(6,"(A)") "            o Chemical potential of -U/2 at site"
+        else
+            write(6,"(A)") "            o No chemical potential applied at site"
         endif
         if(tPeriodic) then
             write(6,"(A)") "            o PBCs employed"
