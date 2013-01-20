@@ -51,8 +51,8 @@ def ph_greens():
     nimp=1
 
     nimp_sp=2*nimp
-    nocc=12
-    nsites=24
+    nocc=4 #12
+    nsites=8  #24
     nsites_sp=nsites*2
     ndim=2
     sz=0
@@ -69,7 +69,7 @@ def ph_greens():
     delta=0.01 # broadening
 
 #    for u in [0.0,4.0,10.0]:
-    for u in [0.1]:
+    for u in [1.0]:
 
         # Single impurity Anderson model
         mu=0.
@@ -83,6 +83,8 @@ def ph_greens():
 
         # g.s embedding basis
         pemb,pcore,pvirt=embed.embed(hlat,nimp,nocc)
+        #print 'pemb: '
+        #print pemb
 
         # perturbation operator
         perturb=utils.zeros([nsites,nsites])
@@ -93,8 +95,13 @@ def ph_greens():
         p_coeffs[1,1]=1.
         perturbop=models.ContractedCD(p_coeffs)
 
+#        print 'hlat: '
+#        print hlat
+#        print 'U: ',u
+#        print 'mu: ',mu
+
         fd=file("ph_siam.out."+str(u),"w")
-        for omega in N.arange(0.0,4.0,0.1):
+        for omega in N.arange(0.0,5.001,0.01):
     
             ops_dict=response_embed.mb_ph_ops(hlat,perturb,omega+1j*delta,nimp,nocc,pemb,pcore,pvirt)
             configs_dict=response_embed.mb_configs(nsites,nimp,nimp_sp,2*nocc-nimp_sp,0)
@@ -107,15 +114,33 @@ def ph_greens():
             himp_mat=opbasis_ni.oimp_matrix_form(himp,neutral_ops_configs,cocc,vocc)
             himp_ext_mat=opbasis_ni.himp_ext_matrix_form(hcs_imp,hds_ext,hds_imp,hcs_ext,neutral_ops_configs,cocc,vocc)
             hext_mat=opbasis_ni.hext_matrix_form(hext,neutral_ops_configs,cocc,vocc,e0)
+
+            #print 'neutral ops: ',neutral_ops_configs
             
             hmat=himp_mat+himp_ext_mat+hext_mat
 
             unit_mat=opbasis_ni.oimp_matrix_form(models.Unit(),neutral_ops_configs,cocc,vocc)
 
             # get neutral ground-state energy
+#            print 'overlap: '
+#            for i,w in enumerate(unit_mat):
+#                for j,v in enumerate(w):
+#                    if abs(unit_mat[i,j]) > 1.e-12:
+#                        print i+1,j+1,unit_mat[i,j]
+            #hmat[4:,:] = 0.
+            #hmat[:,4:] = 0.
+            #print 'hamil: '
+            #for i,w in enumerate(hmat):
+            #    for j,v in enumerate(w):
+            #        if abs(hmat[i,j]) > 1.e-12:
+            #            print i+1,j+1,hmat[i,j]
+#
             es,cs=la.peigh(hmat,unit_mat,thresh=1.e-10)
             e0=es[0]
             psi0=cs[:,0]
+            #print 'psi0:' 
+            #print psi0
+            #print 'energy: ',e0
             # all matrices setup, solve linear response (complex)
             psi1=la.solve_perturb(omega-1j*delta,unit_mat,hmat,e0,psi0,perturb_mat,project=True)
 

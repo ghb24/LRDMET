@@ -83,7 +83,7 @@ module LinearResponse
         integer :: orbdum(1),CAInd_tmp,lwork,info,nSize,nCore,nVirt
         logical :: tParity,tCalcResponse,tTransformSpace
         real(dp) :: Omega,CVNorm,GSEnergy
-        complex(dp) :: tempel,ResponseFn,dOrthog,dNorm,testc
+        complex(dp) :: tempel,ResponseFn,dOrthog,dNorm,testc,ni_lr
         complex(dp) , allocatable :: LinearSystem(:,:),Overlap(:,:),Projector(:,:),VGS(:),CanTrans(:,:)
         complex(dp) , allocatable :: temp_vecc(:),tempc(:,:),LHS(:,:),RHS(:),Transform(:,:),OrthogHam(:,:)
         complex(dp) , allocatable :: Psi_0(:),S_EigVec(:,:)
@@ -178,7 +178,7 @@ module LinearResponse
         call append_ext_real('EC-TDA_DDResponse',U,filename)
         open(unit=iunit,file=filename,status='unknown')
         write(iunit,"(A)") "# Frequency     DD_LinearResponse(Re)    DD_LinearResponse(Im)    " &
-            & //"Orthog    Norm    NewGS   OldGS  OrthogRHS"
+            & //"Orthog    Norm    NewGS   OldGS  OrthogRHS    NI_LR"
         
         if(tDiagHam) then
             iunit2 = get_free_unit()
@@ -228,7 +228,7 @@ module LinearResponse
             write(6,*) "Calculating linear response for frequency: ",Omega
 
             !First, find the non-interacting solution expressed in the schmidt basis
-            call FindSchmidtPert(.false.,Omega)
+            call FindSchmidtPert(.false.,Omega,ni_lr)
 
             !call writematrixcomp(SchmidtPert,'SchmidtPert',.true.)
 !            call writematrix(SchmidtPert,'SchmidtPert',.true.)
@@ -1462,8 +1462,8 @@ module LinearResponse
                             ResponseFn = ResponseFn + Overlap(i,j)*conjg(Psi_0(i))*temp_vecc(j)
                         enddo
                     enddo
-                    write(iunit,"(8G25.10)") Omega,real(ResponseFn),-aimag(ResponseFn), &
-                        abs(dOrthog),abs(dNorm),GSEnergy,Spectrum(1),abs(testc)
+                    write(iunit,"(10G22.10)") Omega,real(ResponseFn),-aimag(ResponseFn), &
+                        abs(dOrthog),abs(dNorm),GSEnergy,Spectrum(1),abs(testc),real(ni_lr),-aimag(ni_lr)
                     deallocate(temp_vecc)
                 endif
 
@@ -1615,6 +1615,7 @@ module LinearResponse
         integer :: pertsitealpha,pertsitebeta,nSize,iunit2
         integer, allocatable :: Pivots(:)
         logical :: tSign
+        complex(dp) :: ni_lr
         real(dp) :: CoreCoupling,CoreVirtualNorm,Omega,Res1,Res2,EDiff,ResponseFn 
         real(dp) :: testham,testnorm,tmp,ParityFac
         real(dp), allocatable :: LinearSystem(:,:),temp(:,:),Work(:),W(:),Residues(:)
@@ -1701,7 +1702,7 @@ module LinearResponse
             write(6,*) "Calculating linear response for frequency: ",Omega
 
             !First, find the non-interacting solution expressed in the schmidt basis
-            call FindSchmidtPert(tNonIntTest,Omega)
+            call FindSchmidtPert(tNonIntTest,Omega,ni_lr)
 
 !            call writematrix(SchmidtPert,'SchmidtPert',.true.)
 !            call writematrix(FockSchmidt,'FockSchmidt',.true.)
@@ -3763,13 +3764,14 @@ module LinearResponse
     end subroutine TDA_MCLR
 
     !Find the non-interacting perturbation, and project this operator into the schmidt basis of phi^0 + its virtual space
-    subroutine FindSchmidtPert(tNonIntTest,Omega)
+    subroutine FindSchmidtPert(tNonIntTest,Omega,ni_lr)
         implicit none
         logical, intent(in) :: tNonIntTest  !Test to return just the perturbation in the normal HF basis
+        real(dp), intent(in) :: Omega
+        complex(dp) , intent(out) :: ni_lr
         complex(dp), allocatable :: HFPertBasis(:,:),temp(:,:)
         complex(dp), allocatable :: C_HFtoSTrans(:,:)
         real(dp) :: EDiff
-        real(dp), intent(in) :: Omega
         integer :: a,i
         character(len=*), parameter :: t_r='FindSchmidtBasis'
 
@@ -3782,6 +3784,8 @@ module LinearResponse
         allocate(HFPertBasis(nSites,nSites))
         HFPertBasis(:,:) = complex(0.0_dp,0.0_dp)
 
+        ni_lr = complex(0.0_dp,0.0_dp)
+
         !Assume perturbation is local to the first impurity site (pertsite = 1).
         if(pertsite.ne.1) call stop_all(t_r,'Perturbation is not local to the impurity site')
         !Assuming that MF DD operator is V_ia/e_a-e_i-w + V_ia/e_a-e_i+w
@@ -3792,8 +3796,11 @@ module LinearResponse
                     complex(Lambda,0.0_dp)*(complex(1.0_dp,0.0_dp) / &
                     (complex(Omega,dDelta)-complex(EDiff,0.0_dp)))
                 HFPertBasis(a,i) = HFPertBasis(i,a)
+                ni_lr = ni_lr + complex((HFOrbs(pertsite,i)*HFOrbs(pertsite,a))**2,0.0_dp) / &
+                    (complex(Omega,dDelta)-complex(EDiff,0.0_dp))
             enddo
         enddo
+        ni_lr = ni_lr * 2.0_dp
 
         !call writematrixcomp(HFPertBasis,'Perturbation in HF basis',.true.)
         !write(6,*) "Transforming non-interacting response operator into full schmidt basis..."
