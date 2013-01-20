@@ -1309,90 +1309,9 @@ module LinearResponse
                 enddo
             enddo
 
-!
-!            call ZGEMM('N','C',nLinearSystem,nLinearSystem,1,complex(1.0_dp,0.0_dp),Psi_0,nLinearSystem,Psi_0,nLinearSystem,    &
-!                complex(0.0_dp,0.0_dp),Projector,nLinearSystem)
-!            !Now multiply with the *inverse* of the overlap matrix
-!            allocate(tempc(nLinearSystem,nLinearSystem))
-!            tempc(:,:) = complex(0.0_dp,0.0_dp)
-!            if(.not.tLR_ReoptGS) then
-!                !GS only exists in the orthogonal part of the space. Easy to just assume that the inverse metric is just unity
-!                do i=1,nLinearSystem
-!                    tempc(i,i) = complex(1.0_dp,0.0_dp)
-!                enddo
-!            else
-!                !Form inverse initially in non-null part of space
-!                allocate(CanTrans(nSpan,nSpan))
-!                CanTrans(:,:) = complex(0.0_dp,0.0_dp)
-!                j = 1
-!                do i=1,nLinearSystem
-!                    if(S_EigVal(i).gt.MinS_Eigval) then
-!                        CanTrans(j,j) = complex(1.0_dp/S_Eigval(i),0.0_dp)
-!                        j=j+1
-!                    elseif(.not.tProjectOutNull) then
-!                        write(6,*) "Small overlap eigenvalue: ",S_EigVal(i)
-!                        call stop_all(t_r,  &
-!                            'Cannot reoptimize ground state without projecting out null space due to small overlap eigenvals')
-!                    endif
-!                enddo
-!                if(j.ne.(nSpan+1)) call stop_all(t_r,'Error in indexing when reoptimizing ground state')
-!                !Now transform this back into the full space
-!                allocate(OrthogHam(nSpan,nLinearSystem))
-!                call ZGEMM('N','C',nSpan,nLinearSystem,nSpan,complex(1.0_dp,0.0_dp),CanTrans,nSpan,    &
-!                    Transform,nLinearSystem,complex(0.0_dp,0.0_dp),OrthogHam,nSpan)
-!                deallocate(CanTrans)
-!                call ZGEMM('N','N',nLinearSystem,nLinearSystem,nSpan,complex(1.0_dp,0.0_dp),Transform,nLinearSystem,    &
-!                    OrthogHam,nSpan,complex(0.0_dp,0.0_dp),tempc,nLinearSystem)
-!                deallocate(OrthogHam)
-!            endif
-!            !tempc is now S^-1 in the original basis
-!
-!            !TODO: REMOVE
-!            !Check inverse is correct
-!            allocate(OrthogHam(nLinearSystem,nLinearSystem))
-!            call ZGEMM('N','N',nLinearSystem,nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),Overlap,nLinearSystem,    &
-!                tempc,nLinearSystem,complex(0.0_dp,0.0_dp),OrthogHam,nLinearSystem)
-!            do i=1,nLinearSystem
-!                do j=1,nLinearSystem
-!                    if(i.ne.j.and.(abs(OrthogHam(i,j)).gt.1.0e-8_dp)) then
-!                        call stop_all(t_r,'Inverse metric not correct')
-!                    elseif(i.eq.j.and.(abs(complex(1.0_dp,0.0_dp)-OrthogHam(i,j)).gt.1.0e-8_dp)) then
-!                        write(6,*) i,j, OrthogHam(i,j) 
-!                        call stop_all(t_r,'Inverse metric not correct 2')
-!                    endif
-!                enddo
-!            enddo
-!            !Contract this with the original projector
-!            call ZGEMM('N','N',nLinearSystem,nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),Projector,nLinearSystem,    &
-!                tempc,nLinearSystem,complex(0.0_dp,0.0_dp),OrthogHam,nLinearSystem)
-!            Projector(:,:) = complex(0.0_dp,0.0_dp)
-!            do i = 1,nLinearSystem
-!                Projector(i,i) = complex(1.0_dp,0.0_dp)
-!            enddo
-!            Projector(:,:) = Projector(:,:) - OrthogHam(:,:)
-!
-!            !TODO: REMOVE
-!            !Find out if the projector squared is itself
-!            allocate(OrthogHam(nLinearSystem,nLinearSystem))
-!            call ZGEMM('N','N',nLinearSystem,nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),Projector,nLinearSystem,    &
-!                Projector,nLinearSystem,complex(0.0_dp,0.0_dp),OrthogHam,nLinearSystem)
-!            do i=1,nLinearSystem
-!                do j=1,nLinearSystem
-!                    if(abs(OrthogHam(j,i)-Projector(j,i)).gt.1.0e-8_dp) then
-!                        write(6,*) "i,j: ",i,j
-!                        write(6,*) OrthogHam(j,i),Projector(j,i),abs(OrthogHam(j,i)-Projector(j,i))
-!                        call stop_all(t_r,'Projector not idempotent')
-!                    endif
-!                enddo
-!            enddo
-!            deallocate(OrthogHam)
-
             !Now, calculate -QV|0> and put into VGS
-            VGS(:) = complex(0.0_dp,0.0_dp)
             call ZGEMM('N','N',nLinearSystem,1,nLinearSystem,complex(-1.0_dp,0.0_dp),Projector,nLinearSystem,   &
                 temp_vecc,nLinearSystem,complex(0.0_dp,0.0_dp),VGS,nLinearSystem)
-
-            deallocate(temp_vecc,Projector)
 
             !Check that RHS is orthogonal to the ground state
             testc = complex(0.0_dp,0.0_dp)
@@ -1430,6 +1349,13 @@ module LinearResponse
                     VGS(:) = RHS(:)
                 endif
 
+                if(tExplicitlyOrthog) then
+                    !Explicitly project out any component on psi_0
+                    call ZGEMM('N','N',nLinearSystem,1,nLinearSystem,complex(1.0_dp,0.0_dp),Projector,nLinearSystem,   &
+                        VGS,nLinearSystem,complex(0.0_dp,0.0_dp),temp_vecc,nLinearSystem)
+                    VGS(:) = temp_vecc(:)
+                endif
+
                 !Find normalization of first-order wavefunction
                 !Test whether the perturbed wavefunction is orthogonal to the ground state wavefunction
                 dNorm = complex(0.0_dp,0.0_dp)
@@ -1454,7 +1380,7 @@ module LinearResponse
                 endif
 
                 if(tCalcResponse) then
-                    allocate(temp_vecc(nLinearSystem))  !To hold V|1>
+                    !Now, use temp_vecc to hold V|1>
                     call ApplyDensityPert_EC(VGS,temp_vecc,nLinearSystem)
                     ResponseFn = complex(0.0_dp,0.0_dp)
                     do j = 1,nLinearSystem
@@ -1474,7 +1400,7 @@ module LinearResponse
                 deallocate(S_EigVec)
                 deallocate(S_EigVal)
             endif
-            deallocate(LHS,RHS,Pivots,Psi_0)
+            deallocate(LHS,RHS,Pivots,Psi_0,Projector)
 
             Omega = Omega + Omega_Step
 

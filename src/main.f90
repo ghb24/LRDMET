@@ -61,6 +61,7 @@ Program RealHub
         tProjectOutNull = .false.
         tLR_ReoptGS = .false. 
         MinS_Eigval = 1.0e-9_dp
+        tExplicitlyOrthog = .false.
 
     end subroutine set_defaults
 
@@ -331,6 +332,8 @@ Program RealHub
                 tLR_ReoptGS = .true.
             case("OVERLAP_CUTOFF")
                 call readf(MinS_Eigval)
+            case("EXPLICIT_ORTHOG")
+                tExplicitlyOrthog = .true.
             case("END")
                 exit
             case default
@@ -345,6 +348,7 @@ Program RealHub
                 write(6,"(A)") "NON_NULL"
                 write(6,"(A)") "REOPT_GS"
                 write(6,"(A)") "OVERLAP_CUTOFF"
+                write(6,"(A)") "EXPLICIT_ORTHOG"
                 call stop_all(t_r,'Keyword '//trim(w)//' not recognized')
             end select
         enddo LR

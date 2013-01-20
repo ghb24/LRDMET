@@ -49,6 +49,7 @@ module Globals
     logical :: tProjectOutNull  !For the LR - whether to attempt to remove linear dependencies in the basis before solving the equations
     logical :: tLR_ReoptGS      !For the LR - whether to reoptimize the ground state in the full space
     real(dp) :: MinS_Eigval     !For the LR - the smallest eigenvalue of S to keep
+    logical :: tExplicitlyOrthog    !For the LR - explicitly orthogonalize the first-order solution
 
     real(dp) :: HFEnergy    !Calculated HF energy
     real(dp) :: dDelta      !Broadening for spectral functions
