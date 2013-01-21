@@ -72,7 +72,7 @@ module LinearResponse
     end subroutine SR_LinearResponse
 
     subroutine NonIntExContracted_TDA_MCLR()
-        use utils, only: get_free_unit,append_ext_real
+        use utils, only: get_free_unit,append_ext_real,append_ext
         use DetBitOps, only: DecodeBitDet,SQOperator,CountBits
         use DetToolsData
         implicit none
@@ -91,7 +91,7 @@ module LinearResponse
         real(dp), allocatable :: Np1FCIHam_alpha(:,:),Np1FCIHam_beta(:,:)
         real(dp), allocatable :: AVNorm(:),CANorm(:),Work(:),H_Vals(:),S_EigVal(:)
         integer, allocatable :: Pivots(:)
-        character(64) :: filename
+        character(64) :: filename,filename2
         character(len=*), parameter :: t_r='NonIntExContracted_TDA_MCLR'
         logical, parameter :: tDiagHam = .false.
 
@@ -179,14 +179,26 @@ module LinearResponse
         
         iunit = get_free_unit()
         call append_ext_real('EC-TDA_DDResponse',U,filename)
-        open(unit=iunit,file=filename,status='unknown')
+        if(.not.tHalfFill) then
+            !Also append occupation of lattice to the filename
+            call append_ext(filename,nOcc,filename2)
+        else
+            filename2 = filename
+        endif
+        open(unit=iunit,file=filename2,status='unknown')
         write(iunit,"(A)") "# Frequency     DD_LinearResponse(Re)    DD_LinearResponse(Im)    " &
             & //"Orthog    Norm    NewGS   OldGS  OrthogRHS    NI_LR"
         
         if(tDiagHam) then
             iunit2 = get_free_unit()
             call append_ext_real('EC-TDA_EValues',U,filename)
-            open(unit=iunit2,file=filename,status='unknown')
+            if(.not.tHalfFill) then
+                !Also append occupation of lattice to the filename
+                call append_ext(filename,nOcc,filename2)
+            else
+                filename2 = filename
+            endif
+            open(unit=iunit2,file=filename2,status='unknown')
             write(iunit2,"(A)") "# Frequency     EValues..."
         endif
 
@@ -201,7 +213,10 @@ module LinearResponse
         VirtStart = nOcc+nImp+1
         VirtEnd = nSites
         nCore = nOcc-nImp
-        nVirt = nOcc-nImp   !nVirt = nCore
+        nVirt = nSites-nOcc-nImp   
+        if(tHalfFill.and.(nCore.ne.nVirt)) then
+            call stop_all(t_r,'Error in setting up half filled lattice')
+        endif
 
         !Set up indices for the block of the linear system
         CVIndex = nFCIDet + 1   !Beginning of EC Core virtual excitations
@@ -224,8 +239,6 @@ module LinearResponse
 
             call set_timer(LR_EC_TDA_HBuild)
         
-            allocate(tempc(nCore,nCore))
-
             LinearSystem(:,:) = complex(0.0_dp,0.0_dp)
             Overlap(:,:) = complex(0.0_dp,0.0_dp)
             write(6,*) "Calculating linear response for frequency: ",Omega
@@ -1101,7 +1114,6 @@ module LinearResponse
                 endif
             enddo
 
-            deallocate(tempc)
             write(6,*) "Overlap matrix constructed successfully..."
 
             call halt_timer(LR_EC_TDA_SBuild)
@@ -3782,14 +3794,14 @@ module LinearResponse
     end subroutine FindSchmidtPert
 
     subroutine NonInteractingLR()
-        use utils, only: get_free_unit,append_ext_real
+        use utils, only: get_free_unit,append_ext_real,append_ext
         implicit none
         integer :: ov_space,virt_start,i,a,a_spat,i_spat,ai_ind,gtid,iunit
         integer :: highbound,iunit2
         real(dp) :: Omega,EDiff
         complex(dp) :: ResponseFn,ResponseFnPosW
         real(dp), allocatable :: transitions(:,:)   !(ov_space,2)   !1 = transition frequencies, 2 = moments
-        character(len=64) :: filename,filename2
+        character(len=64) :: filename,filename2,filename3
         !character(len=*), parameter :: t_r='NonInteractingLR'
 
         write(6,*) "Calculating the non-interacting linear response function"
@@ -3819,9 +3831,15 @@ module LinearResponse
         call sort_real2(transitions,ov_space,2)
 
         call append_ext_real('NonInt_Transitions',U,filename)
+        if(.not.tHalfFill) then
+            !Also append occupation of lattice to the filename
+            call append_ext(filename,nOcc,filename2)
+        else
+            filename2 = filename
+        endif
 
         iunit = get_free_unit()
-        open(unit=iunit,file=filename,status='unknown')
+        open(unit=iunit,file=filename2,status='unknown')
         write(iunit,"(A)") "#Excitation     Transition_Frequency       Transition_Moment"
         do i=1,ov_space
             write(iunit,"(I8,2G22.12)") i,transitions(i,1),transitions(i,2)
@@ -3835,11 +3853,23 @@ module LinearResponse
         write(6,*) "Writing non-interacting linear response function to disk..."
 
         call append_ext_real('NonInt_DDResponse',U,filename)
-        open(unit=iunit,file=filename,status='unknown')
+        if(.not.tHalfFill) then
+            !Also append occupation of lattice to the filename
+            call append_ext(filename,nOcc,filename2)
+        else
+            filename2 = filename
+        endif
+        open(unit=iunit,file=filename2,status='unknown')
         write(iunit,"(A)") "# Frequency     DD_LinearResponse"
         iunit2 = get_free_unit()
         call append_ext_real('NonInt_DDResponse_posW',U,filename2)
-        open(unit=iunit2,file=filename2,status='unknown')
+        if(.not.tHalfFill) then
+            !Also append occupation of lattice to the filename
+            call append_ext(filename2,nOcc,filename3)
+        else
+            filename3 = filename2
+        endif
+        open(unit=iunit2,file=filename3,status='unknown')
         write(iunit2,"(A)") "# Frequency     DD_LinearResponse"
 
         Omega = Start_Omega
@@ -3878,7 +3908,7 @@ module LinearResponse
     end subroutine NonInteractingLR
 
     subroutine TDA_LR()
-        use utils, only: get_free_unit,append_ext_real
+        use utils, only: get_free_unit,append_ext_real,append_ext
         use DetToolsData, only: tmat,umat
         implicit none
         integer :: ov_space,virt_start,ierr,i,j,n,m,nj_ind,mi_ind,ex(2,2),gtid
@@ -3890,7 +3920,7 @@ module LinearResponse
         complex(dp) :: ResponseFn
         real(dp), allocatable :: A_mat(:,:),W(:),Work(:),temp(:,:),Residues(:)
         real(dp), allocatable :: DM(:,:),DM_conj(:,:),DM_AO(:,:),DM_AO_conj(:,:)
-        character(64) :: filename
+        character(64) :: filename,filename2
         character(len=*), parameter :: t_r='TDA_LR'
 
         write(6,*) "Calculating the linear response function via the Tamm-Dancoff approximation"
@@ -4152,7 +4182,13 @@ module LinearResponse
         
         iunit = get_free_unit()
         call append_ext_real('TDA_Transitions',U,filename)
-        open(unit=iunit,file=filename,status='unknown')
+        if(.not.tHalfFill) then
+            !Also append occupation of lattice to the filename
+            call append_ext(filename,nOcc,filename2)
+        else
+            filename2 = filename
+        endif
+        open(unit=iunit,file=filename2,status='unknown')
         write(iunit,"(A)") "#Excitation     Transition_Frequency       Transition_Moment"
         do i=1,ov_space
             write(iunit,"(I8,2G22.12)") i,W(i),Residues(i)
@@ -4162,7 +4198,13 @@ module LinearResponse
         write(6,*) "Writing TDA linear response function to disk..."
 
         call append_ext_real('TDA_DDResponse',U,filename)
-        open(unit=iunit,file=filename,status='unknown')
+        if(.not.tHalfFill) then
+            !Also append occupation of lattice to the filename
+            call append_ext(filename,nOcc,filename2)
+        else
+            filename2 = filename
+        endif
+        open(unit=iunit,file=filename2,status='unknown')
         write(iunit,"(A)") "# Frequency     DD_LinearResponse"
 
         Omega = Start_Omega
@@ -4188,7 +4230,7 @@ module LinearResponse
     !Finally, create the density-density linear response function from the resulting excitations/deexcitations
     !This is done in the spin-orbital space
     subroutine RPA_LR()
-        use utils, only: get_free_unit,append_ext_real
+        use utils, only: get_free_unit,append_ext_real,append_ext
         use matrixops, only: d_inv
         implicit none
         integer :: ov_space,virt_start,ierr,j,ex(2,2),ex2(2,2),n,i,m,nj_ind,mi_ind,info,lwork
@@ -4199,7 +4241,7 @@ module LinearResponse
         real(dp), allocatable :: A_mat(:,:),B_mat(:,:),Stability(:,:),StabilityCopy(:,:),W(:),Work(:)
         real(dp), allocatable :: S_half(:,:),temp(:,:),temp2(:,:),W2(:),X_stab(:,:),Y_stab(:,:)
         real(dp), allocatable :: trans_moment(:),AOMO_Spin(:,:),DM(:,:)
-        character(64) :: filename
+        character(64) :: filename,filename2
         character(len=*), parameter :: t_r='RPA_LR'
 
         ov_space = 2*nOcc*(nSites-nOcc)
@@ -4639,7 +4681,13 @@ module LinearResponse
 
         iunit = get_free_unit()
         call append_ext_real('RPA_Transitions',U,filename)
-        open(unit=iunit,file=filename,status='unknown')
+        if(.not.tHalfFill) then
+            !Also append occupation of lattice to the filename
+            call append_ext(filename,nOcc,filename2)
+        else
+            filename2 = filename
+        endif
+        open(unit=iunit,file=filename2,status='unknown')
         write(iunit,"(A)") "#Excitation     Transition_Frequency       Transition_Moment"
         do i=1,ov_space
             write(iunit,"(I8,2G22.12)") i,W2(ov_space+i),trans_moment(i)
@@ -4652,7 +4700,13 @@ module LinearResponse
         write(6,*) "Writing RPA linear response function to disk..."
 
         call append_ext_real('RPA_DDResponse',U,filename)
-        open(unit=iunit,file=filename,status='unknown')
+        if(.not.tHalfFill) then
+            !Also append occupation of lattice to the filename
+            call append_ext(filename,nOcc,filename2)
+        else
+            filename2 = filename
+        endif
+        open(unit=iunit,file=filename2,status='unknown')
         write(iunit,"(A)") "# Frequency     DD_LinearResponse"
 
         Omega = Start_Omega

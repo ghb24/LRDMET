@@ -647,7 +647,7 @@ Program RealHub
         real(dp), allocatable :: RotOccOrbs(:,:),ImpurityOrbs(:,:),ProjOverlapVirt(:,:)
         real(dp), allocatable :: OverlapVirt(:,:),VirtSpace(:,:),temp(:,:) 
         real(dp) :: norm,DDOT,Overlap
-        integer :: lwork,info,i,j
+        integer :: lwork,info,i,j,nVirt
         character(len=*), parameter :: t_r='ConstructFullSchmidtBasis'
         integer :: nbath
 
@@ -750,11 +750,12 @@ Program RealHub
         !Calculate the overlap of the virtual space with a projection onto the embedded system.
         !From the diagonalization of this, we expect exactly *nImp* non-zero eigenvalues, which are the redundant orbitals.
         !Remove these, and the rest are the now non-canonical virtual orbital space.
-        allocate(ProjOverlapVirt(nOcc,nOcc))
+        nVirt = nSites - nOcc
+        allocate(ProjOverlapVirt(nVirt,nVirt))
 
         !This array is used to calculate the overlap of each virtual space function with each impurity
         !function
-        allocate(OverlapVirt(2*nImp,nOcc))
+        allocate(OverlapVirt(2*nImp,nVirt))
         !The first nImp correspond to the impurity orbital, and the next two correspond to the bath orbitals
         OverlapVirt(:,:) = 0.0_dp
         do i=nOcc+1,nSites  !run through virtual space
@@ -764,32 +765,32 @@ Program RealHub
         enddo
 
         !Now calculate overlap with bath orbitals
-        call DGEMM('T','N',nImp,nOcc,nSites,1.0_dp,RotOccOrbs(:,nOcc-nImp+1:nOcc),nSites,HFOrbs(:,nOcc+1:nOcc), &
-            nSites,0.0_dp,OverlapVirt(nImp+1:2*nImp,1:nOcc),2*nImp-nImp)
+        call DGEMM('T','N',nImp,nVirt,nSites,1.0_dp,RotOccOrbs(:,nOcc-nImp+1:nOcc),nSites,HFOrbs(:,nOcc+1:nSites), &
+            nSites,0.0_dp,OverlapVirt(nImp+1:2*nImp,1:nVirt),2*nImp-nImp)
 
         !Combine overlaps to get full projected overlap matrix
-        call DGEMM('T','N',nOcc,nOcc,2*nImp,1.0_dp,OverlapVirt,2*nImp,OverlapVirt,2*nImp,0.0_dp,ProjOverlapVirt,nOcc)
+        call DGEMM('T','N',nVirt,nVirt,2*nImp,1.0_dp,OverlapVirt,2*nImp,OverlapVirt,2*nImp,0.0_dp,ProjOverlapVirt,nVirt)
 
         !Diagonalize this
         deallocate(ProjOverlapEVals)
-        allocate(ProjOverlapEVals(nOcc))
+        allocate(ProjOverlapEVals(nVirt))
         ProjOverlapEVals(:)=0.0_dp
         allocate(Work(1))
         lWork=-1
         info=0
-        call dsyev('V','U',nOcc,ProjOverlapVirt,nOcc,ProjOverlapEVals,Work,lWork,info)
+        call dsyev('V','U',nVirt,ProjOverlapVirt,nVirt,ProjOverlapEVals,Work,lWork,info)
         if(info.ne.0) call stop_all(t_r,'Workspace queiry failed')
         lwork=int(work(1))+1
         deallocate(work)
         allocate(work(lwork))
-        call dsyev('V','U',nOcc,ProjOverlapVirt,nOcc,ProjOverlapEVals,Work,lWork,info)
+        call dsyev('V','U',nVirt,ProjOverlapVirt,nVirt,ProjOverlapEVals,Work,lWork,info)
         if(info.ne.0) call stop_all(t_r,'Diag failed')
         deallocate(work)
 
 !        call writevector(ProjOverlapEVals,'virtual overlap eigenvalues')
 
         nbath = 0   !Count the number of virtual functions which span the space of the embedded system
-        do i=1,nOcc
+        do i=1,nVirt
             if(abs(ProjOverlapEVals(i)).gt.1.0e-7_dp) then
                 nbath = nbath + 1
             endif
@@ -800,15 +801,15 @@ Program RealHub
 
         !Now rotate orbitals such that they are orthogonal, while deleting the redundant ones
         !Assume the last nImp are redundant
-        allocate(VirtSpace(nSites,nOcc-nImp))
-        call DGEMM('N','N',nSites,nOcc-nImp,nOcc,1.0_dp,HFOrbs(:,nOcc+1:nSites),nSites,ProjOverlapVirt(1:nOcc,1:nOcc-nImp),nOcc, &
-            0.0_dp,VirtSpace,nSites)
+        allocate(VirtSpace(nSites,nVirt-nImp))
+        call DGEMM('N','N',nSites,nVirt-nImp,nVirt,1.0_dp,HFOrbs(:,nOcc+1:nSites),nSites,   &
+            ProjOverlapVirt(1:nVirt,1:nVirt-nImp),nVirt,0.0_dp,VirtSpace,nSites)
 
         !Check now that the virtual space is now orthogonal to all occupied HF orbitals, as well as the impurity and bath sites
 
         !First against the impurity sites
         do i=1,nImp
-            do j=1,nOcc-nImp
+            do j=1,nVirt-nImp
                 Overlap = DDOT(nSites,ImpurityOrbs(:,i),1,VirtSpace(:,j),1)
                 if(abs(Overlap).gt.1.0e-7_dp) then
                     call stop_all(t_r,'virtual orbitals not orthogonal to impurity orbitals')
@@ -817,7 +818,7 @@ Program RealHub
         enddo
 
         do i=1,nOcc
-            do j=1,nOcc-nImp
+            do j=1,nVirt-nImp
                 Overlap = DDOT(nSites,RotOccOrbs(:,i),1,VirtSpace(:,j),1)
                 if(abs(Overlap).gt.1.0e-7_dp) then
                     if(i.gt.(nOcc-nImp)) then

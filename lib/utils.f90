@@ -80,6 +80,30 @@ contains
 
     end function get_free_unit
 
+    elemental function char_in_int(i) result(chars)
+        integer, intent(in) :: i
+        integer :: chars
+
+        if(i < 10) then
+            chars = 1
+        elseif(i < 100) then
+            chars = 2
+        elseif(i < 1000) then
+            chars = 3
+        elseif(i < 10000) then
+            chars = 4
+        elseif(i < 100000) then
+            chars = 5
+        elseif(i < 1000000) then
+            chars = 6
+        elseif(i < 10000000) then
+            chars = 7
+        elseif(i < 100000000) then
+            chars = 8
+        endif
+
+    end function char_in_int
+
     elemental function int_fmt(i, padding) result(fmt1)
     
         ! In:
@@ -131,9 +155,45 @@ contains
         integer, intent(in) :: n
         character(*), intent(out) :: s
         character(10) :: ext
+        !character(len=*), parameter :: t_r='append_ext'
 
+!        i=1
+!        do while(.true.)
+!            if(stem(i:i).eq.' ') then
+!                exit
+!            else
+!                s(i:i) = stem(i:i)
+!            endif
+!            i=i+1
+!            if(i.gt.256) stop 'error in append_ext'
+!        enddo
+!        !i is first empty slot
+!
+!        s(i:i) = '_'
+!        i=i+1
+!
+!        write (ext,'('//int_fmt(n,0)//')') n
+!        do k=1,10
+!            write(6,*) 'sss',ext,k,ext(k:k),char_in_int(n)
+!        enddo
+!        
+!        do k=i,i+char_in_int(n)
+!            s(k:k) = ext(k-i+1:k-i+1)
+!        enddo
+!
+!
+!        do i=1,64
+!            write(6,*) stem,i,stem(i:i)
+!        enddo
+!
+!        s = trim(s)
+        ext = ''
+!        !s = ''
+!        !write(ext,'(I6)') n
+!        !write(6,*) "S:",s
         write (ext,'('//int_fmt(n,0)//')') n
-        s = stem//'.'//ext
+        s = adjustr(trim(stem))//'_'//adjustl(ext)
+!        write(6,*) "s: ",s,int_fmt(n,0),ext
 
     end subroutine append_ext
 
