@@ -86,7 +86,7 @@ module LinearResponse
         complex(dp) :: tempel,ResponseFn,dOrthog,dNorm,testc,ni_lr
         complex(dp) , allocatable :: LinearSystem(:,:),Overlap(:,:),Projector(:,:),VGS(:),CanTrans(:,:)
         complex(dp) , allocatable :: temp_vecc(:),tempc(:,:),LHS(:,:),RHS(:),Transform(:,:),OrthogHam(:,:)
-        complex(dp) , allocatable :: Psi_0(:),S_EigVec(:,:)
+        complex(dp) , allocatable :: Psi_0(:),S_EigVec(:,:),cWork(:)
         real(dp), allocatable :: NFCIHam(:,:),temp(:,:),Nm1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
         real(dp), allocatable :: Np1FCIHam_alpha(:,:),Np1FCIHam_beta(:,:)
         real(dp), allocatable :: AVNorm(:),CANorm(:),Work(:),H_Vals(:),S_EigVal(:)
@@ -1336,8 +1336,22 @@ module LinearResponse
 
             call set_timer(LR_EC_TDA_SolveLR)
             !Now solve these linear equations
-            allocate(Pivots(nSpan))
-            call ZGESV(nSpan,1,LHS,nSpan,Pivots,RHS,nSpan,info)
+            if(tZGELS) then
+                info = 0
+                lWork = -1
+                allocate(cWork(1))
+                call ZGELS('N',nSpan,nSpan,1,LHS,nSpan,RHS,nSpan,cWork,lWork,info)
+                if(info.ne.0) call stop_all(t_r,'workspace query for ZGELS failed')
+                lwork = int(abs(cWork(1))) + 1
+                deallocate(cWork)
+                allocate(cWork(lWork))
+                call ZGELS('N',nSpan,nSpan,1,LHS,nSpan,RHS,nSpan,cWork,lWork,info)
+                deallocate(cWork)
+            else
+                allocate(Pivots(nSpan))
+                call ZGESV(nSpan,1,LHS,nSpan,Pivots,RHS,nSpan,info)
+                deallocate(Pivots)
+            endif
             if(info.ne.0) then 
                 write(6,*) "INFO: ",info
                 !call stop_all(t_r,'Solving Linear system failed') 
@@ -1403,7 +1417,7 @@ module LinearResponse
                 deallocate(S_EigVec)
                 deallocate(S_EigVal)
             endif
-            deallocate(LHS,RHS,Pivots,Psi_0,Projector)
+            deallocate(LHS,RHS,Psi_0,Projector)
 
             Omega = Omega + Omega_Step
 

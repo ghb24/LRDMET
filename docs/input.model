@@ -20,7 +20,7 @@ LINEAR_RESPONSE
     NONINT
     TDA
     RPA
-    EC_TDA
+    EC_TDA 2
     IC_TDA
     FREQ 0.0 8.0 0.01
     BROADENING 0.01

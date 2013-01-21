@@ -53,6 +53,8 @@ module Globals
     logical :: tLR_ReoptGS      !For the LR - whether to reoptimize the ground state in the full space
     real(dp) :: MinS_Eigval     !For the LR - the smallest eigenvalue of S to keep
     logical :: tExplicitlyOrthog    !For the LR - explicitly orthogonalize the first-order solution
+    logical :: tZGELS           !For the LR - which routine to use to solve the LR equations.
+                                !tZGELS = .T. should be better for a hamiltonian which is nearly singular
 
     real(dp) :: HFEnergy    !Calculated HF energy
     real(dp) :: dDelta      !Broadening for spectral functions

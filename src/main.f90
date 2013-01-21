@@ -62,6 +62,7 @@ Program RealHub
         tLR_ReoptGS = .false. 
         MinS_Eigval = 1.0e-9_dp
         tExplicitlyOrthog = .false.
+        tZGELS = .true. 
 
     end subroutine set_defaults
 
@@ -301,6 +302,7 @@ Program RealHub
     subroutine LRReadInput()
         implicit none
         logical :: teof
+        integer :: itemp
         character(len=100) :: w
         character(len=*), parameter :: t_r='LRReadInput'
 
@@ -318,6 +320,14 @@ Program RealHub
                 tRPAResponse = .true.
             case("EC_TDA")
                 tEC_TDA_Response = .true.
+                if(item.le.nitems) then
+                    call readi(itemp)
+                    if(itemp.eq.2) then
+                        tZGELS = .true.
+                    else
+                        tZGELS = .false.
+                    endif
+                endif
             case("IC_TDA")
                 tIC_TDA_Response = .true.
             case("FREQ")
