@@ -1,1 +1,5 @@
 config/.default
+utils/v2/*.pyc
+utils/v2/ph_siam*
+utils/*.pyc
+utils/ph_siam.out*

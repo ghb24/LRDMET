@@ -13,6 +13,7 @@ module mat_tools
         integer :: i
         character(len=*), parameter :: t_r='make_hop_mat'
 
+        h0(:,:) = 0.0_dp
         if(LatticeDim.eq.1) then
             !Tridiagonal matrix
             do i=1,nSites-1
@@ -27,15 +28,8 @@ module mat_tools
                 h0(1,nSites) = 1.0_dp
                 h0(nSites,1) = 1.0_dp
             endif
-
-            if(tChemPot) then
-                !Introduce chemical potential at impurity site
-                write(6,*) "Adding chemical potential to core hamiltonian"
-                if(nImp.gt.1) call stop_all(t_r,'How to introduce chemical potential in multi-site anderson model?')
-                h0(1,1) = h0(1,1) - U/2.0_dp
-            endif
         else
-            call stop_all(t_r,'Higher dimensional integrals not coded up')
+            call stop_all(t_r,'Higher dimensional models not coded up')
         endif
 
     end subroutine make_hop_mat

@@ -142,6 +142,7 @@ def si_anderson_imp_ext_h(h0,u,nocc,nimp,nsites):
 
     t_imp[0,0]=-u/2
     t_imp[1,1]=-u/2
+    #print 'sites_imp: ',sites_imp
 
     t_ext={}
     for i in sites_ext:

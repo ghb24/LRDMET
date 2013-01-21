@@ -220,7 +220,7 @@ module solvers
             if(abs(Check2eEnergy-Two_ElecE).gt.1.0e-7_dp) then
                 write(6,*) "Check2eEnergy: ",Check2eEnergy
                 write(6,*) "Two_ElecE: ",Two_ElecE
-                call stop_all(t_r,'2RDM calculated incorrectly')
+                !call stop_all(t_r,'2RDM calculated incorrectly')
             endif
 
             !Also check that trace condition is satisfied
@@ -663,6 +663,9 @@ module solvers
                 endif
             enddo
         enddo
+        if(tChemPot) then
+            tmat(1,1) = tmat(1,1) - U/2.0_dp
+        endif
         call writematrix(tmat,'tmat',.true.)
 
         !Now generate all determinants in the active space
@@ -1078,7 +1081,9 @@ module solvers
         !Now for 1electron contributions
         do i=1,EmbSize
             do j=1,i
-                if(abs(Emb_h0v(i,j)).gt.1.0e-10_dp) then
+                if(tChemPot.and.(i.eq.1).and.(j.eq.1)) then
+                    write(iunit,"(F16.12,4I8)") Emb_h0v(i,j)-(U/2.0_dp),i,j,0,0
+                elseif(abs(Emb_h0v(i,j)).gt.1.0e-10_dp) then
                     write(iunit,"(F16.12,4I8)") Emb_h0v(i,j),i,j,0,0
                 endif
             enddo

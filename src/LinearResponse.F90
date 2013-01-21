@@ -119,6 +119,9 @@ module LinearResponse
                 endif
             enddo
         enddo
+        if(tChemPot) then
+            tmat(1,1) = tmat(1,1) - U/2.0_dp
+        endif
         
         !Enumerate excitations for fully coupled space
         !Seperate the lists into different Ms sectors in the N+- lists

@@ -46,6 +46,9 @@ module Globals
     logical :: tDumpFCIDUMP
     logical :: tAnderson        !Whether to do anderson model, rather than hubbard model
     logical :: tChemPot         !Whether to include a chemical potential of U/2 at the impurity site of the anderson model
+                                !Note that this potential only acts on the impurity site, and only acts on the interacting system.
+                                !At half-filling, the system is naturally correct, so the chemical potential only wants to be added to the
+                                !interacting case to stop the electrons fleeing the impurity site.
     logical :: tProjectOutNull  !For the LR - whether to attempt to remove linear dependencies in the basis before solving the equations
     logical :: tLR_ReoptGS      !For the LR - whether to reoptimize the ground state in the full space
     real(dp) :: MinS_Eigval     !For the LR - the smallest eigenvalue of S to keep

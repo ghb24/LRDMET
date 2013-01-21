@@ -92,9 +92,9 @@ Program RealHub
             write(6,"(A)") "Running:    o Hubbard Model"
         endif
         if(tChemPot) then
-            write(6,"(A)") "            o Chemical potential of -U/2 at site"
+            write(6,"(A)") "            o Chemical potential of -U/2 at impurity site for interacting system"
         else
-            write(6,"(A)") "            o No chemical potential applied at site"
+            write(6,"(A)") "            o No chemical potential applied at impurity site"
         endif
         if(tPeriodic) then
             write(6,"(A)") "            o PBCs employed"
@@ -328,10 +328,11 @@ Program RealHub
                 call readf(dDelta)
             case("NON_NULL")
                 tProjectOutNull = .true.
+                if(item.lt.nitems) then
+                    call readf(MinS_Eigval)
+                endif
             case("REOPT_GS")
                 tLR_ReoptGS = .true.
-            case("OVERLAP_CUTOFF")
-                call readf(MinS_Eigval)
             case("EXPLICIT_ORTHOG")
                 tExplicitlyOrthog = .true.
             case("END")
@@ -347,7 +348,6 @@ Program RealHub
                 write(6,"(A)") "BROADENING"
                 write(6,"(A)") "NON_NULL"
                 write(6,"(A)") "REOPT_GS"
-                write(6,"(A)") "OVERLAP_CUTOFF"
                 write(6,"(A)") "EXPLICIT_ORTHOG"
                 call stop_all(t_r,'Keyword '//trim(w)//' not recognized')
             end select
@@ -359,6 +359,12 @@ Program RealHub
         implicit none
         character(len=*), parameter :: t_r='check_input'
 
+        if(tChemPot.and.tTDAResponse) then
+            call stop_all(t_r,'Chemical potential not coded up yet for SR-TDA calculations')
+        endif
+        if(tChemPot.and.tRPAResponse) then
+            call stop_all(t_r,'Chemical potential not coded up yet for SR-RPA calculations')
+        endif
         if(tIC_TDA_Response.or.tEC_TDA_Response) then
             tLR_DMET = .true.
             tConstructFullSchmidtBasis = .true.
@@ -366,21 +372,17 @@ Program RealHub
             tLR_DMET = .false.
             tConstructFullSchmidtBasis = .false.
         endif
-
         if(tNIResponse.or.tTDAResponse.or.tRPAResponse) then
             tMFResponse = .true. 
         else
             tMFResponse = .false.
         endif
-
         if(tPeriodic.and.tAntiPeriodic) then
             call stop_all(t_r,'Both PBCs and APBCs specified in input')
         endif
-
         if(tAnderson.and.(nImp.gt.1)) then
             call stop_all(t_r,'Anderson model only coded up for a single impurity site')
         endif
-
         if(tChemPot.and.(.not.tAnderson)) then
             call stop_all(t_r,'A chemical potential can only be applied to the 1-site Anderson model')
         endif
