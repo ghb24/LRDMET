@@ -80,18 +80,21 @@ module LinearResponse
         integer :: CoreEnd,VirtStart,VirtEnd,CVInd_tmp,iunit,iunit2
         integer :: DiffOrb,nOrbs,gam,gam1,gam1_ind,gam1_spat,gam2,gam2_ind,gam2_spat,ierr
         integer :: gam_spat,nLinearSystem,tempK,gtid,nSpan,ActiveEnd,ActiveStart
-        integer :: orbdum(1),CAInd_tmp,lwork,info,nSize,nCore,nVirt
+        integer :: orbdum(1),CAInd_tmp,lwork,info,nSize,nCore,nVirt,nFullNm1,nFullNp1
         logical :: tParity,tCalcResponse,tTransformSpace
         real(dp) :: Omega,CVNorm,GSEnergy
         complex(dp) :: tempel,ResponseFn,dOrthog,dNorm,testc,ni_lr
         complex(dp) , allocatable :: LinearSystem(:,:),Overlap(:,:),Projector(:,:),VGS(:),CanTrans(:,:)
         complex(dp) , allocatable :: temp_vecc(:),tempc(:,:),LHS(:,:),RHS(:),Transform(:,:),OrthogHam(:,:)
         complex(dp) , allocatable :: Psi_0(:),S_EigVec(:,:),cWork(:),G_ai_G_aj(:,:),G_ai_G_bi(:,:),G_xa_G_ya(:,:)
-        complex(dp) , allocatable :: G_xa_F_ab(:,:),G_xa_G_yb_F_ab(:,:),FockSchmidtComp(:,:)
+        complex(dp) , allocatable :: G_xa_F_ab(:,:),G_xa_G_yb_F_ab(:,:),FockSchmidtComp(:,:),G_ia_G_xa(:,:)
+        complex(dp) , allocatable :: F_xi_G_ia_G_ya(:,:),G_xa_F_ya(:,:),G_xi_G_yi(:,:),G_ix_F_ij(:,:)
+        complex(dp) , allocatable :: G_ix_G_jy_F_ji(:,:),G_ia_G_ix(:,:),F_ax_G_ia_G_iy(:,:),G_ix_F_iy(:,:)
         real(dp), allocatable :: NFCIHam(:,:),temp(:,:),Nm1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
         real(dp), allocatable :: Np1FCIHam_alpha(:,:),Np1FCIHam_beta(:,:)
         real(dp), allocatable :: AVNorm(:),CANorm(:),Work(:),H_Vals(:),S_EigVal(:)
-        integer, allocatable :: Pivots(:)
+        integer, allocatable :: Pivots(:),Coup_Ann_alpha(:,:,:),Coup_Ann_beta(:,:,:)
+        integer, allocatable :: Coup_Create_alpha(:,:,:),Coup_Create_beta(:,:,:)
         character(64) :: filename,filename2
         character(len=*), parameter :: t_r='NonIntExContracted_TDA_MCLR'
         logical, parameter :: tDiagHam = .false.
@@ -220,11 +223,14 @@ module LinearResponse
         if(tHalfFill.and.(nCore.ne.nVirt)) then
             call stop_all(t_r,'Error in setting up half filled lattice')
         endif
+        !And full N pm 1 space sizes
+        nFullNm1 = nNm1FCIDet + nNm1bFCIDet
+        nFullNp1 = nNp1FCIDet + nNp1bFCIDet
 
         !Set up indices for the block of the linear system
         CVIndex = nFCIDet + 1   !Beginning of EC Core virtual excitations
         AVIndex = nFCIDet + nFCIDet + 1 !Beginning of EC Active Virtual excitations
-        CAIndex = AVIndex + (nImp*2)*(nNm1FCIDet+nNm1bFCIDet) !Beginning of EC Core Active excitations
+        CAIndex = AVIndex + (nImp*2)*nFullNm1 !Beginning of EC Core Active excitations
 
         write(6,*) "CV indices start from: ",CVIndex
         write(6,*) "AV indices start from: ",AVIndex
@@ -234,14 +240,157 @@ module LinearResponse
         !Allocate memory for normalization constants
         allocate(AVNorm(1:nImp*2))
         allocate(CANorm(1:nImp*2))
+
+        !Allocate and precompute 1-operator coupling coefficients between the different sized spaces.
+        !First number is the index of operator, and the second is the parity change when applying the operator
+        allocate(Coup_Create_alpha(2,nFCIDet,nNm1bFCIDet))
+        allocate(Coup_Create_beta(2,nFCIDet,nNm1FCIDet))
+        allocate(Coup_Ann_alpha(2,nFCIDet,nNp1FCIDet))
+        allocate(Coup_Ann_beta(2,nFCIDet,nNp1bFCIDet))
+        Coup_Create_alpha(:,:,:) = 0
+        Coup_Create_beta(:,:,:) = 0
+        Coup_Ann_alpha(:,:,:) = 0
+        Coup_Ann_beta(:,:,:) = 0
+        !TODO: This can be largly sped up by considering single excitations in isolation, rather than running through all elements
+        !   This will result in an N_FCI * n_imp scaling, rather than N_FCI^2
+        do J = 1,nFCIDet
+            !Start with the creation of an alpha orbital
+            do K = 1,nNm1bFCIDet
+                DiffOrb = ieor(Nm1bBitList(K),FCIBitList(J))
+                nOrbs = CountBits(DiffOrb)
+                if(mod(nOrbs,2).ne.1) then 
+                    !There must be an odd number of orbital differences between the determinants
+                    !since they are of different electron number by one
+                    call stop_all(t_r,'Not odd number of electrons')
+                endif
+                if(nOrbs.ne.1) then
+                    !We only want one orbital different
+                    cycle
+                endif
+                !Now, find out what SPINorbital this one is from the bit number set
+                call DecodeBitDet(orbdum,1,DiffOrb)
+                gam = orbdum(1)
+                if(mod(gam,2).ne.1) then
+                    call stop_all(t_r,'differing orbital should be an alpha spin orbital')
+                endif
+                !Now find out the parity change when applying this creation operator to the original determinant
+                tempK = Nm1bBitList(K)
+                call SQOperator(tempK,gam,tParity,.false.)
+                Coup_Create_alpha(1,J,K) = gtid(gam)+CoreEnd
+                if(tParity) then
+                    Coup_Create_alpha(2,J,K) = -1
+                else
+                    Coup_Create_alpha(2,J,K) = 1
+                endif
+            enddo
+            !Now, creation of a beta orbital
+            do K = 1,nNm1FCIDet
+                DiffOrb = ieor(Nm1BitList(K),FCIBitList(J))
+                nOrbs = CountBits(DiffOrb)
+                if(mod(nOrbs,2).ne.1) then 
+                    !There must be an odd number of orbital differences between the determinants
+                    !since they are of different electron number by one
+                    call stop_all(t_r,'Not odd number of electrons 2')
+                endif
+                if(nOrbs.ne.1) then
+                    !We only want one orbital different
+                    cycle
+                endif
+                !Now, find out what SPINorbital this one is from the bit number set
+                call DecodeBitDet(orbdum,1,DiffOrb)
+                gam = orbdum(1)
+                if(mod(gam,2).ne.0) then
+                    call stop_all(t_r,'differing orbital should be an beta spin orbital')
+                endif
+                !Now find out the parity change when applying this creation operator to the original determinant
+                tempK = Nm1BitList(K)
+                call SQOperator(tempK,gam,tParity,.false.)
+                Coup_Create_beta(1,J,K) = gtid(gam)+CoreEnd
+                if(tParity) then
+                    Coup_Create_beta(2,J,K) = -1
+                else
+                    Coup_Create_beta(2,J,K) = 1
+                endif
+            enddo
+            !Now, annihilation of an alpha orbital
+            do K = 1,nNp1FCIDet
+                DiffOrb = ieor(Np1BitList(K),FCIBitList(J))
+                nOrbs = CountBits(DiffOrb)
+                if(mod(nOrbs,2).ne.1) then 
+                    !There must be an odd number of orbital differences between the determinants
+                    !since they are of different electron number by one
+                    call stop_all(t_r,'Not odd number of electrons 3')
+                endif
+                if(nOrbs.ne.1) then
+                    !We only want one orbital different
+                    cycle
+                endif
+                !Now, find out what SPINorbital this one is from the bit number set
+                call DecodeBitDet(orbdum,1,DiffOrb)
+                gam = orbdum(1)
+                if(mod(gam,2).ne.1) then
+                    call stop_all(t_r,'differing orbital should be an alpha spin orbital')
+                endif
+                !Now find out the parity change when applying this creation operator to the original determinant
+                tempK = Np1BitList(K)
+                call SQOperator(tempK,gam,tParity,.true.)
+                Coup_Ann_alpha(1,J,K) = gtid(gam)+CoreEnd
+                if(tParity) then
+                    Coup_Ann_alpha(2,J,K) = -1
+                else
+                    Coup_Ann_alpha(2,J,K) = 1
+                endif
+            enddo
+            !Now, annihilation of a beta orbital
+            do K = 1,nNp1bFCIDet
+                DiffOrb = ieor(Np1bBitList(K),FCIBitList(J))
+                nOrbs = CountBits(DiffOrb)
+                if(mod(nOrbs,2).ne.1) then 
+                    !There must be an odd number of orbital differences between the determinants
+                    !since they are of different electron number by one
+                    call stop_all(t_r,'Not odd number of electrons 4')
+                endif
+                if(nOrbs.ne.1) then
+                    !We only want one orbital different
+                    cycle
+                endif
+                !Now, find out what SPINorbital this one is from the bit number set
+                call DecodeBitDet(orbdum,1,DiffOrb)
+                gam = orbdum(1)
+                if(mod(gam,2).ne.0) then
+                    call stop_all(t_r,'differing orbital should be a beta spin orbital')
+                endif
+                !Now find out the parity change when applying this creation operator to the original determinant
+                tempK = Np1bBitList(K)
+                call SQOperator(tempK,gam,tParity,.true.)
+                Coup_Ann_beta(1,J,K) = gtid(gam)+CoreEnd
+                if(tParity) then
+                    Coup_Ann_beta(2,J,K) = -1
+                else
+                    Coup_Ann_beta(2,J,K) = 1
+                endif
+            enddo
+        enddo
             
-        !Space for useful intermediates
+        !Store the fock matrix in complex form, so that we can ZGEMM easily
         allocate(FockSchmidtComp(nSites,nSites))
+        call R_C_Copy_2D(FockSchmidtComp(:,:),FockSchmidt(:,:),nSites,nSites)
+
+        !Space for useful intermediates
         allocate(G_ai_G_aj(nCore,nCore))    !Core,Core, contracted over virtual space
         allocate(G_ai_G_bi(VirtStart:VirtEnd,VirtStart:VirtEnd))    !Virt,Virt, contracted over core space
         allocate(G_xa_G_ya(ActiveStart:ActiveEnd,ActiveStart:ActiveEnd))    !Active,Active, contracted over virtuals
         allocate(G_xa_F_ab(ActiveStart:ActiveEnd,VirtStart:VirtEnd))
         allocate(G_xa_G_yb_F_ab(ActiveStart:ActiveEnd,ActiveStart:ActiveEnd))
+        allocate(G_ia_G_xa(1:CoreEnd,ActiveStart:ActiveEnd))
+        allocate(F_xi_G_ia_G_ya(ActiveStart:ActiveEnd,ActiveStart:ActiveEnd))
+        allocate(G_xa_F_ya(ActiveStart:ActiveEnd,ActiveStart:ActiveEnd))
+        allocate(G_xi_G_yi(ActiveStart:ActiveEnd,ActiveStart:ActiveEnd))
+        allocate(G_ix_F_ij(ActiveStart:ActiveEnd,1:CoreEnd))
+        allocate(G_ix_G_jy_F_ji(ActiveStart:ActiveEnd,ActiveStart:ActiveEnd))
+        allocate(G_ia_G_ix(VirtStart:VirtEnd,ActiveStart:ActiveEnd))
+        allocate(F_ax_G_ia_G_iy(ActiveStart:ActiveEnd,ActiveStart:ActiveEnd))
+        allocate(G_ix_F_iy(ActiveStart:ActiveEnd,ActiveStart:ActiveEnd))
 
         call halt_timer(LR_EC_TDA_Precom)
 
@@ -271,7 +420,6 @@ module LinearResponse
                     endif
                 enddo
             enddo
-            call R_C_Copy_2D(FockSchmidtComp(:,:),FockSchmidt(:,:),nSites,nSites)
             !sum_a G_ai^* G_aj
             call ZGEMM('C','N',nCore,nCore,nVirt,complex(1.0_dp,0.0_dp),SchmidtPert(VirtStart:VirtEnd,1:CoreEnd),nVirt, &
                 SchmidtPert(VirtStart:VirtEnd,1:CoreEnd),nVirt,complex(0.0_dp,0.0_dp),G_ai_G_aj,nCore)
@@ -288,6 +436,34 @@ module LinearResponse
             !sum_ab G_xa^* G_yb F_ab
             call ZGEMM('C','T',EmbSize,EmbSize,nVirt,complex(1.0_dp,0.0_dp),SchmidtPert(VirtStart:VirtEnd,ActiveStart:ActiveEnd), &
                 nVirt,G_xa_F_ab(ActiveStart:ActiveEnd,VirtStart:VirtEnd),EmbSize,complex(0.0_dp,0.0_dp),G_xa_G_yb_F_ab,EmbSize)
+            !sum_a G_ia^* G_xa
+            call ZGEMM('C','T',nCore,EmbSize,nVirt,complex(1.0_dp,0.0_dp),SchmidtPert(VirtStart:VirtEnd,1:CoreEnd),nVirt,   &
+                SchmidtPert(ActiveStart:ActiveEnd,VirtStart:VirtEnd),EmbSize,complex(0.0_dp,0.0_dp),G_ia_G_xa,nCore)
+            !sum_ia F_xi G_ia^* G_ya
+            call ZGEMM('N','N',EmbSize,EmbSize,nCore,complex(1.0_dp,0.0_dp),FockSchmidtComp(ActiveStart:ActiveEnd,1:CoreEnd),   &
+                EmbSize,G_ia_G_xa,nCore,complex(0.0_dp,0.0_dp),F_xi_G_ia_G_ya,EmbSize)
+            !sum_a G_xa F_ya
+            call ZGEMM('N','T',EmbSize,EmbSize,nVirt,complex(1.0_dp,0.0_dp),SchmidtPert(ActiveStart:ActiveEnd,VirtStart:VirtEnd), &
+                EmbSize,FockSchmidtComp(ActiveStart:ActiveEnd,VirtStart:VirtEnd),EmbSize,complex(0.0_dp,0.0_dp),G_xa_F_ya,EmbSize)
+            !sum_i G_ix^* G_iy
+            call ZGEMM('C','N',EmbSize,EmbSize,nCore,complex(1.0_dp,0.0_dp),SchmidtPert(1:CoreEnd,ActiveStart:ActiveEnd),nCore, &
+                SchmidtPert(1:CoreEnd,ActiveStart:ActiveEnd),nCore,complex(0.0_dp,0.0_dp),G_xi_G_yi,EmbSize)
+            !sum_i G_ix F_ij
+            call ZGEMM('T','N',EmbSize,nCore,nCore,complex(1.0_dp,0.0_dp),SchmidtPert(1:CoreEnd,ActiveStart:ActiveEnd),nCore,   &
+                FockSchmidtComp(1:CoreEnd,1:CoreEnd),nCore,complex(0.0_dp,0.0_dp),G_ix_F_ij,EmbSize)
+            !sum_ij G_ix^* G_jy F_ji
+            call ZGEMM('C','T',EmbSize,EmbSize,nCore,complex(1.0_dp,0.0_dp),SchmidtPert(1:CoreEnd,ActiveStart:ActiveEnd),nCore, &
+                G_ix_F_ij,EmbSize,complex(0.0_dp,0.0_dp),G_ix_G_jy_F_ji,EmbSize)
+            !sum_i G_ia^* G_ix
+            call ZGEMM('C','N',nVirt,EmbSize,nCore,complex(1.0_dp,0.0_dp),SchmidtPert(1:CoreEnd,VirtStart:VirtEnd),nCore,   &
+                SchmidtPert(1:CoreEnd,ActiveStart:ActiveEnd),nCore,complex(0.0_dp,0.0_dp),G_ia_G_ix,nVirt)
+            !sum_ia F_ax G_ia^* G_iy
+            call ZGEMM('T','N',EmbSize,EmbSize,nVirt,complex(1.0_dp,0.0_dp),    &
+                FockSchmidtComp(VirtStart:VirtEnd,ActiveStart:ActiveEnd),nVirt,G_ia_G_ix,nVirt, &
+                complex(0.0_dp,0.0_dp),F_ax_G_ia_G_iy,EmbSize)
+            !sum_i G^ix F_iy
+            call ZGEMM('T','N',EmbSize,EmbSize,nCore,complex(1.0_dp,0.0_dp),SchmidtPert(1:CoreEnd,ActiveStart:ActiveEnd),nCore, &
+                FockSchmidtComp(1:CoreEnd,ActiveStart:ActiveEnd),nCore,complex(0.0_dp,0.0_dp),G_ix_F_iy,EmbSize)
 
             
             !First, construct FCI space, in determinant basis
@@ -303,7 +479,7 @@ module LinearResponse
             !Calc normalization for the CV block
             CVNorm = 0.0_dp
             do i=1,CoreEnd
-                CVNorm = CVNorm + G_ai_G_aj(i,i)
+                CVNorm = CVNorm + real(abs(G_ai_G_aj(i,i)))
             enddo
             !do a=VirtStart,VirtEnd
             !    do i=1,CoreEnd
@@ -371,8 +547,8 @@ module LinearResponse
             !First, get normalization constants
             AVNorm(:) = 0.0_dp
             do a = VirtStart,VirtEnd
-                do gam = 1,nImp*2
-                    gam_spat = gam+(nOcc-nImp)
+                do gam = 1,EmbSize
+                    gam_spat = gam+CoreEnd
                     !AVNorm(gam) = AVNorm(gam) + real(SchmidtPert(gam_spat,a))**2 + aimag(SchmidtPert(gam_spat,a))**2
                     AVNorm(gam) = AVNorm(gam) + conjg(SchmidtPert(gam_spat,a))*SchmidtPert(gam_spat,a)
                 enddo
@@ -382,18 +558,18 @@ module LinearResponse
             !This starts at 'AVIndex'
             !'Diagonal' block
             !*****************************   Block 4   *****************************
-            do gam1 = 1,nImp*2
+            do gam1 = 1,EmbSize
                 !Run through all active space orbitals
                 gam1_spat = gam1+(nOcc-nImp)
 
                 !gam1_ind now gives the starting index of the AV diagonal block
                 !for orbital gam1
-                gam1_ind = AVIndex + (gam1-1)*(nNm1FCIDet+nNm1bFCIDet)
+                gam1_ind = AVIndex + (gam1-1)*nFullNm1
 
-                do gam2 = 1,nImp*2
+                do gam2 = 1,EmbSize
                     gam2_spat = gam2+(nOcc-nImp)
 
-                    gam2_ind = AVIndex + (gam2-1)*(nNm1FCIDet+nNm1bFCIDet)
+                    gam2_ind = AVIndex + (gam2-1)*nFullNm1
 
                     !Construct appropriate weighting factor for the hamiltonian matrix element contribution
                     !tempel = complex(0.0_dp,0.0_dp)
@@ -406,16 +582,16 @@ module LinearResponse
                         Nm1FCIHam_beta(:,:),nNm1bFCIDet,nNm1bFCIDet)
 
                     !Now construct for the gam1_beta : gam2_beta block
-                    call R_C_Copy_2D(LinearSystem(gam1_ind+nNm1bFCIDet:gam1_ind+nNm1bFCIDet+nNm1FCIDet-1,   &
-                        gam2_ind+nNm1bFCIDet:gam2_ind+nNm1bFCIDet+nNm1FCIDet-1),Nm1FCIHam_alpha(:,:),nNm1FCIDet,nNm1FCIDet)
+                    call R_C_Copy_2D(LinearSystem(gam1_ind+nNm1bFCIDet:gam1_ind+nFullNm1-1,   &
+                        gam2_ind+nNm1bFCIDet:gam2_ind+nFullNm1-1),Nm1FCIHam_alpha(:,:),nNm1FCIDet,nNm1FCIDet)
                     
                     !Multiply every element by the appropriate weighting factor
                     !This weighting factor is the same for both spin blocks, so no need to do seperately
-                    LinearSystem(gam1_ind:gam1_ind+(nNm1bFCIDet+nNm1FCIDet)-1,gam2_ind:gam2_ind+(nNm1bFCIDet+nNm1FCIDet)-1) =   & 
-                        LinearSystem(gam1_ind:gam1_ind+(nNm1bFCIDet+nNm1FCIDet)-1,gam2_ind:gam2_ind+(nNm1bFCIDet+nNm1FCIDet)-1) &
+                    LinearSystem(gam1_ind:gam1_ind+nFullNm1-1,gam2_ind:gam2_ind+nFullNm1-1) =   & 
+                        LinearSystem(gam1_ind:gam1_ind+nFullNm1-1,gam2_ind:gam2_ind+nFullNm1-1) &
                         *G_xa_G_ya(gam1_spat,gam2_spat)
-                    !do i = gam1_ind,gam1_ind+(nNm1bFCIDet+nNm1FCIDet)-1
-                    !    do j = gam2_ind,gam2_ind+(nNm1bFCIDet+nNm1FCIDet)-1
+                    !do i = gam1_ind,gam1_ind+nFullNm1-1
+                    !    do j = gam2_ind,gam2_ind+nFullNm1-1
                     !        LinearSystem(i,j) = LinearSystem(i,j)*G_xa_G_ya(gam1_spat,gam2_spat)       !*tempel
                     !    enddo
                     !enddo
@@ -428,7 +604,7 @@ module LinearResponse
                     !    enddo
                     !enddo
                     !Add this term in to the diagonals of each block
-                    do i = 0,nNm1bFCIDet+nNm1FCIDet-1
+                    do i = 0,nFullNm1-1
                         LinearSystem(gam1_ind+i,gam2_ind+i) = LinearSystem(gam1_ind+i,gam2_ind+i) +     &
                             G_xa_G_yb_F_ab(gam1_spat,gam2_spat) 
                     enddo
@@ -436,11 +612,10 @@ module LinearResponse
                     !Finally, all the elements need to be normalized correctly.
                     !Again, the normalization condition is the same for both spins.
                     tempel = sqrt(AVNorm(gam1)*AVNorm(gam2))
-                    LinearSystem(gam1_ind:gam1_ind+nNm1bFCIDet+nNm1FCIDet-1,gam2_ind:gam2_ind+nNm1bFCIDet+nNm1FCIDet-1) =   &
-                        LinearSystem(gam1_ind:gam1_ind+nNm1bFCIDet+nNm1FCIDet-1,gam2_ind:gam2_ind+nNm1bFCIDet+nNm1FCIDet-1) /   &
-                        tempel
-                    !do i = 0,nNm1bFCIDet+nNm1FCIDet-1
-                    !    do j = 0,nNm1bFCIDet+nNm1FCIDet-1
+                    LinearSystem(gam1_ind:gam1_ind+nFullNm1-1,gam2_ind:gam2_ind+nFullNm1-1) =   &
+                        LinearSystem(gam1_ind:gam1_ind+nFullNm1-1,gam2_ind:gam2_ind+nFullNm1-1) / tempel
+                    !do i = 0,nFullNm1-1
+                    !    do j = 0,nFullNm1-1
                     !        LinearSystem(gam1_ind+j,gam2_ind+i) = LinearSystem(gam1_ind+j,gam2_ind+i) / &
                     !            sqrt(AVNorm(gam1)*AVNorm(gam2))
                     !    enddo
@@ -449,270 +624,320 @@ module LinearResponse
                 enddo   !End gam2
             enddo   !End gam1
 
-            !Now for the coupling to the active-virtual excitation block
-            !**********************   Block 5   ***************************
-            !TODO: Optimize this. Can be done more cheaply
+            !Now for the coupling to the active-virtual excitation and uncontracted blocks
+            !**********************   Block 5 & 6  ***************************
             !First, when the AV excitations are both alpha operators
             do J = 1,nFCIDet
                 CVInd_tmp = CVIndex + J - 1 
-                do K = 1,nNm1bFCIDet 
-                    !Find the single orbital that they differ by, or cycle if not
-                    DiffOrb = ieor(Nm1bBitList(K),FCIBitList(J))
-                    nOrbs = CountBits(DiffOrb)
-                    if(mod(nOrbs,2).ne.1) then
-                        !There must be an odd number of orbital differences between the determinants
-                        !since they are of different electron number by one
-                        call stop_all(t_r,'Not odd number of electrons')
-                    endif
-                    if(nOrbs.ne.1) then
-                        !We only want one orbital different
-                        cycle
-                    endif
-                    !Now, find out what SPINorbital this one is from the bit number set
-                    call DecodeBitDet(orbdum,1,DiffOrb)
-                    gam = orbdum(1)
-                    if(mod(gam,2).ne.1) then
-                        call stop_all(t_r,'differing orbital should be an alpha spin orbital')
-                    endif
-                    gam_spat = gtid(gam) + CoreEnd
+                do K = 1,nNm1bFCIDet
+                    if(Coup_Create_alpha(1,J,K).ne.0) then
+                        do beta = 1,EmbSize
+                            AVInd_tmp = AVIndex + (beta-1)*nFullNm1 + K -1
 
-                    !Now find out the parity change when applying this creation operator to the original determinant
-                    tempK = Nm1bBitList(K)
-                    call SQOperator(tempK,gam,tParity,.false.)
-                    !We now know that between J & K, the gam SPINorbital is created with parity tParity
+                            !Block 5
+                            LinearSystem(CVInd_tmp,AVInd_tmp) = LinearSystem(CVInd_tmp,AVInd_tmp) - &
+                                F_xi_G_ia_G_ya(Coup_Create_alpha(1,J,K),beta+CoreEnd)*Coup_Create_alpha(2,J,K) / &
+                                sqrt(CVNorm*AVNorm(beta))
 
-                    do beta = 1,2*nImp
-                        !Run over all active space orbitals
-                        AVInd_tmp = AVIndex + (beta-1)*(nNm1FCIDet+nNm1bFCIDet) + K - 1
-                        if((AVInd_tmp.ge.CAIndex).or.(AVInd_tmp.lt.AVIndex)) then
-                            call stop_all(t_r,'AVInd_tmp out of bounds')
-                        endif
-                        beta_spat = beta + (nOcc-nImp)
-                        !K is with a destroyed alpha orbital. beta must also correspond to alpha orbitals
-                        do i = 1,CoreEnd
-                            do a = VirtStart,VirtEnd
+                            !Hermiticity
+                            LinearSystem(AVInd_tmp,CVInd_tmp) = conjg(LinearSystem(CVInd_tmp,AVInd_tmp))
 
-                                if(tParity) then
-                                    LinearSystem(CVInd_tmp,AVInd_tmp) = LinearSystem(CVInd_tmp,AVInd_tmp) &
-                                        + conjg(SchmidtPert(a,i))*SchmidtPert(beta_spat,a)*FockSchmidt(gam_spat,i)
-                                else
-                                    LinearSystem(CVInd_tmp,AVInd_tmp) = LinearSystem(CVInd_tmp,AVInd_tmp) &
-                                        - conjg(SchmidtPert(a,i))*SchmidtPert(beta_spat,a)*FockSchmidt(gam_spat,i)
-                                endif
+                            !Block 6
+                            LinearSystem(J,AVInd_tmp) = LinearSystem(J,AVInd_tmp) + &
+                                G_xa_F_ya(beta+CoreEnd,Coup_Create_alpha(1,J,K))*Coup_Create_alpha(2,J,K) / &
+                                sqrt(AVNorm(beta))
 
-                            enddo
+                            !Hermiticity
+                            LinearSystem(AVInd_tmp,J) = conjg(LinearSystem(J,AVInd_tmp))
                         enddo
-                    enddo
+                    endif
                 enddo
-            enddo
-            !Now go through and normalize all of these matrix elements correctly
-            do J = 1,nFCIDet
-                CVInd_tmp = CVIndex + J - 1 
-                do beta = 1,2*nImp
-                    do K = 1,nNm1bFCIDet 
-                        AVInd_tmp = AVIndex + (beta-1)*(nNm1FCIDet+nNm1bFCIDet) + K - 1
+                !Now for other spin-type
+                do K = 1,nNm1FCIDet
+                    if(Coup_Create_beta(1,J,K).ne.0) then
+                        do beta = 1,EmbSize
+                            AVInd_tmp = AVIndex + (beta-1)*nFullNm1 + nNm1bFCIDet + K -1
 
-                        LinearSystem(CVInd_tmp,AVInd_tmp) = LinearSystem(CVInd_tmp,AVInd_tmp) / &
-                            sqrt(CVNorm*AVNorm(beta))
-                        !Copy to other half of matrix
-                        LinearSystem(AVInd_tmp,CVInd_tmp) = conjg(LinearSystem(CVInd_tmp,AVInd_tmp))
-                    enddo
-                enddo
-            enddo
-            !Now for the beta spin excitation operators
-            !TODO: This should be the same as the alpha block - we don't need to completely regenerate it, just copy
-            !TODO: Check that these are the same
-            do J = 1,nFCIDet
-                CVInd_tmp = CVIndex + J - 1 
-                do K = 1,nNm1FCIDet 
-                    !Find the single orbital that they differ by, or cycle if not
-                    DiffOrb = ieor(Nm1BitList(K),FCIBitList(J))
-                    nOrbs = CountBits(DiffOrb)
-                    if(mod(nOrbs,2).ne.1) then
-                        !There must be an odd number of orbital differences between the determinants
-                        !since they are of different electron number by one
-                        call stop_all(t_r,'Not odd number of electrons 2')
-                    endif
-                    if(nOrbs.ne.1) then
-                        !We only want one orbital different
-                        cycle
-                    endif
-                    !Now, find out what SPINorbital this one is from the bit number set
-                    call DecodeBitDet(orbdum,1,DiffOrb)
-                    gam = orbdum(1)
-                    if(mod(gam,2).ne.0) then
-                        call stop_all(t_r,'differing orbital should be a beta spin orbital')
-                    endif
-                    gam_spat = gtid(gam) + CoreEnd
+                            !Block 5
+                            LinearSystem(CVInd_tmp,AVInd_tmp) = LinearSystem(CVInd_tmp,AVInd_tmp) - &
+                                F_xi_G_ia_G_ya(Coup_Create_beta(1,J,K),beta+CoreEnd)*Coup_Create_beta(2,J,K) /  &
+                                sqrt(CVNorm*AVNorm(beta))
 
-                    !Now find out the parity change when applying this creation operator to the original determinant
-                    tempK = Nm1BitList(K)
-                    call SQOperator(tempK,gam,tParity,.false.)
-                    !We now know that between J & K, the gam SPINorbital is created with parity tParity
+                            !Hermiticity
+                            LinearSystem(AVInd_tmp,CVInd_tmp) = conjg(LinearSystem(CVInd_tmp,AVInd_tmp))
 
-                    do beta = 1,2*nImp
-                        !Run over all active space orbitals
-                        AVInd_tmp = AVIndex + (beta-1)*(nNm1FCIDet+nNm1bFCIDet) + nNm1bFCIDet + K - 1
-                        if((AVInd_tmp.ge.CAIndex).or.(AVInd_tmp.lt.AVIndex)) then
-                            call stop_all(t_r,'AVInd_tmp out of bounds 2')
-                        endif
-                        beta_spat = beta + (nOcc-nImp)
-                        !K is with a destroyed beta orbital. beta must also correspond to beta orbitals
-                        do i = 1,CoreEnd
-                            do a = VirtStart,VirtEnd
-                                if(tParity) then
-                                    LinearSystem(CVInd_tmp,AVInd_tmp) = LinearSystem(CVInd_tmp,AVInd_tmp) &
-                                        + conjg(SchmidtPert(a,i))*SchmidtPert(beta_spat,a)*FockSchmidt(gam_spat,i)
-                                else
-                                    LinearSystem(CVInd_tmp,AVInd_tmp) = LinearSystem(CVInd_tmp,AVInd_tmp) &
-                                        - conjg(SchmidtPert(a,i))*SchmidtPert(beta_spat,a)*FockSchmidt(gam_spat,i)
-                                endif
+                            !Block 6
+                            LinearSystem(J,AVInd_tmp) = LinearSystem(J,AVInd_tmp) + &
+                                G_xa_F_ya(beta+CoreEnd,Coup_Create_beta(1,J,K))*Coup_Create_beta(2,J,K) / &
+                                sqrt(AVNorm(beta))
 
-                            enddo
+                            !Hermiticity
+                            LinearSystem(AVInd_tmp,J) = conjg(LinearSystem(J,AVInd_tmp))
                         enddo
-                    enddo
-
+                    endif
                 enddo
             enddo
-            !Now go through and normalize all of these matrix elements correctly
-            do J = 1,nFCIDet
-                CVInd_tmp = CVIndex + J - 1 
-                do beta = 1,2*nImp
-                    do K = 1,nNm1FCIDet 
-                        AVInd_tmp = AVIndex + (beta-1)*(nNm1FCIDet+nNm1bFCIDet) + nNm1bFCIDet + K - 1
-
-                        LinearSystem(CVInd_tmp,AVInd_tmp) = LinearSystem(CVInd_tmp,AVInd_tmp) / &
-                            sqrt(CVNorm*AVNorm(beta))
-                        !Copy to other half of matrix
-                        LinearSystem(AVInd_tmp,CVInd_tmp) = conjg(LinearSystem(CVInd_tmp,AVInd_tmp))
-                    enddo
-                enddo
-            enddo
-
-            !Now for the coupling between the AV excitations and the uncontracted N-electron space. 
-            !********************   Block 6   ************************
-            !TODO: These loops can be largely combined with the previous loops for efficiency
-            do J = 1,nFCIDet
-                do K = 1,nNm1bFCIDet 
-                    !Find the single orbital that they differ by, or cycle if not
-                    DiffOrb = ieor(Nm1bBitList(K),FCIBitList(J))
-                    nOrbs = CountBits(DiffOrb)
-                    if(mod(nOrbs,2).ne.1) then
-                        !There must be an odd number of orbital differences between the determinants
-                        !since they are of different electron number by one
-                        call stop_all(t_r,'Not odd number of electrons')
-                    endif
-                    if(nOrbs.ne.1) then
-                        !We only want one orbital different
-                        cycle
-                    endif
-                    !Now, find out what SPINorbital this one is from the bit number set
-                    call DecodeBitDet(orbdum,1,DiffOrb)
-                    gam = orbdum(1)
-                    if(mod(gam,2).ne.1) then
-                        call stop_all(t_r,'differing orbital should be an alpha spin orbital')
-                    endif
-                    gam_spat = gtid(gam) + CoreEnd
-
-                    !Now find out the parity change when applying this creation operator to the original determinant
-                    tempK = Nm1bBitList(K)
-                    call SQOperator(tempK,gam,tParity,.false.)
-                    !We now know that between J & K, the gam SPINorbital is created with parity tParity
-
-                    do beta = 1,2*nImp
-                        !Run over all active space orbitals
-                        AVInd_tmp = AVIndex + (beta-1)*(nNm1FCIDet+nNm1bFCIDet) + K - 1
-                        if((AVInd_tmp.ge.CAIndex).or.(AVInd_tmp.lt.AVIndex)) then
-                            call stop_all(t_r,'AVInd_tmp out of bounds')
-                        endif
-                        beta_spat = beta + (nOcc-nImp)
-                        !K is with a destroyed alpha orbital. beta must also correspond to alpha orbitals
-                        do a = VirtStart,VirtEnd
-                            if(tParity) then
-                                LinearSystem(J,AVInd_tmp) = LinearSystem(J,AVInd_tmp) &
-                                    - SchmidtPert(beta_spat,a)*FockSchmidt(gam_spat,a)
-                            else
-                                LinearSystem(J,AVInd_tmp) = LinearSystem(J,AVInd_tmp) &
-                                    + SchmidtPert(beta_spat,a)*FockSchmidt(gam_spat,a)
-                            endif
-                        enddo
-                    enddo
-                enddo
-            enddo
-            !Normalize
-            do J = 1,nFCIDet
-                do beta = 1,2*nImp
-                    do K = 1,nNm1bFCIDet 
-                        AVInd_tmp = AVIndex + (beta-1)*(nNm1FCIDet+nNm1bFCIDet) + K - 1
-
-                        LinearSystem(J,AVInd_tmp) = LinearSystem(J,AVInd_tmp) / &
-                            sqrt(AVNorm(beta))
-                        !Copy to other half of matrix
-                        LinearSystem(AVInd_tmp,J) = conjg(LinearSystem(J,AVInd_tmp))
-                    enddo
-                enddo
-            enddo
-            !Now for other spin type
-            do J = 1,nFCIDet
-                do K = 1,nNm1FCIDet 
-                    !Find the single orbital that they differ by, or cycle if not
-                    DiffOrb = ieor(Nm1BitList(K),FCIBitList(J))
-                    nOrbs = CountBits(DiffOrb)
-                    if(mod(nOrbs,2).ne.1) then
-                        !There must be an odd number of orbital differences between the determinants
-                        !since they are of different electron number by one
-                        call stop_all(t_r,'Not odd number of electrons')
-                    endif
-                    if(nOrbs.ne.1) then
-                        !We only want one orbital different
-                        cycle
-                    endif
-                    !Now, find out what SPINorbital this one is from the bit number set
-                    call DecodeBitDet(orbdum,1,DiffOrb)
-                    gam = orbdum(1)
-                    if(mod(gam,2).ne.0) then
-                        call stop_all(t_r,'differing orbital should be a beta spin orbital')
-                    endif
-                    gam_spat = gtid(gam) + CoreEnd
-
-                    !Now find out the parity change when applying this creation operator to the original determinant
-                    tempK = Nm1BitList(K)
-                    call SQOperator(tempK,gam,tParity,.false.)
-                    !We now know that between J & K, the gam SPINorbital is created with parity tParity
-
-                    do beta = 1,2*nImp
-                        !Run over all active space orbitals
-                        AVInd_tmp = AVIndex + (beta-1)*(nNm1FCIDet+nNm1bFCIDet) + nNm1bFCIDet + K - 1
-                        if((AVInd_tmp.ge.CAIndex).or.(AVInd_tmp.lt.AVIndex)) then
-                            call stop_all(t_r,'AVInd_tmp out of bounds')
-                        endif
-                        beta_spat = beta + (nOcc-nImp)
-                        !K is with a destroyed alpha orbital. beta must also correspond to alpha orbitals
-                        do a = VirtStart,VirtEnd
-                            if(tParity) then
-                                LinearSystem(J,AVInd_tmp) = LinearSystem(J,AVInd_tmp) &
-                                    - SchmidtPert(beta_spat,a)*FockSchmidt(gam_spat,a)
-                            else
-                                LinearSystem(J,AVInd_tmp) = LinearSystem(J,AVInd_tmp) &
-                                    + SchmidtPert(beta_spat,a)*FockSchmidt(gam_spat,a)
-                            endif
-                        enddo
-                    enddo
-                enddo
-            enddo
-            !Normalize
-            do J = 1,nFCIDet
-                do beta = 1,2*nImp
-                    do K = 1,nNm1FCIDet 
-                        AVInd_tmp = AVIndex + (beta-1)*(nNm1FCIDet+nNm1bFCIDet) + nNm1bFCIDet + K - 1
-
-                        LinearSystem(J,AVInd_tmp) = LinearSystem(J,AVInd_tmp) / &
-                            sqrt(AVNorm(beta))
-                        !Copy to other half of matrix
-                        LinearSystem(AVInd_tmp,J) = conjg(LinearSystem(J,AVInd_tmp))
-                    enddo
-                enddo
-            enddo
+            
+!            do J = 1,nFCIDet
+!                CVInd_tmp = CVIndex + J - 1 
+!                do K = 1,nNm1bFCIDet 
+!                    !Find the single orbital that they differ by, or cycle if not
+!                    DiffOrb = ieor(Nm1bBitList(K),FCIBitList(J))
+!                    nOrbs = CountBits(DiffOrb)
+!                    if(mod(nOrbs,2).ne.1) then
+!                        !There must be an odd number of orbital differences between the determinants
+!                        !since they are of different electron number by one
+!                        call stop_all(t_r,'Not odd number of electrons')
+!                    endif
+!                    if(nOrbs.ne.1) then
+!                        !We only want one orbital different
+!                        cycle
+!                    endif
+!                    !Now, find out what SPINorbital this one is from the bit number set
+!                    call DecodeBitDet(orbdum,1,DiffOrb)
+!                    gam = orbdum(1)
+!                    if(mod(gam,2).ne.1) then
+!                        call stop_all(t_r,'differing orbital should be an alpha spin orbital')
+!                    endif
+!                    gam_spat = gtid(gam) + CoreEnd
+!
+!                    !Now find out the parity change when applying this creation operator to the original determinant
+!                    tempK = Nm1bBitList(K)
+!                    call SQOperator(tempK,gam,tParity,.false.)
+!                    !We now know that between J & K, the gam SPINorbital is created with parity tParity
+!
+!                    do beta = 1,2*nImp
+!                        !Run over all active space orbitals
+!                        AVInd_tmp = AVIndex + (beta-1)*nFullNm1 + K - 1
+!                        if((AVInd_tmp.ge.CAIndex).or.(AVInd_tmp.lt.AVIndex)) then
+!                            call stop_all(t_r,'AVInd_tmp out of bounds')
+!                        endif
+!                        beta_spat = beta + (nOcc-nImp)
+!                        !K is with a destroyed alpha orbital. beta must also correspond to alpha orbitals
+!                        do i = 1,CoreEnd
+!                            do a = VirtStart,VirtEnd
+!
+!                                if(tParity) then
+!                                    LinearSystem(CVInd_tmp,AVInd_tmp) = LinearSystem(CVInd_tmp,AVInd_tmp) &
+!                                        + conjg(SchmidtPert(a,i))*SchmidtPert(beta_spat,a)*FockSchmidt(gam_spat,i)
+!                                else
+!                                    LinearSystem(CVInd_tmp,AVInd_tmp) = LinearSystem(CVInd_tmp,AVInd_tmp) &
+!                                        - conjg(SchmidtPert(a,i))*SchmidtPert(beta_spat,a)*FockSchmidt(gam_spat,i)
+!                                endif
+!
+!                            enddo
+!                        enddo
+!                    enddo
+!                enddo
+!            enddo
+!            !Now go through and normalize all of these matrix elements correctly
+!            do J = 1,nFCIDet
+!                CVInd_tmp = CVIndex + J - 1 
+!                do beta = 1,2*nImp
+!                    do K = 1,nNm1bFCIDet 
+!                        AVInd_tmp = AVIndex + (beta-1)*nFullNm1 + K - 1
+!
+!                        LinearSystem(CVInd_tmp,AVInd_tmp) = LinearSystem(CVInd_tmp,AVInd_tmp) / &
+!                            sqrt(CVNorm*AVNorm(beta))
+!                        !Copy to other half of matrix
+!                        LinearSystem(AVInd_tmp,CVInd_tmp) = conjg(LinearSystem(CVInd_tmp,AVInd_tmp))
+!                    enddo
+!                enddo
+!            enddo
+!            !Now for the beta spin excitation operators
+!            !TODO: This should be the same as the alpha block - we don't need to completely regenerate it, just copy
+!            !TODO: Check that these are the same
+!            do J = 1,nFCIDet
+!                CVInd_tmp = CVIndex + J - 1 
+!                do K = 1,nNm1FCIDet 
+!                    !Find the single orbital that they differ by, or cycle if not
+!                    DiffOrb = ieor(Nm1BitList(K),FCIBitList(J))
+!                    nOrbs = CountBits(DiffOrb)
+!                    if(mod(nOrbs,2).ne.1) then
+!                        !There must be an odd number of orbital differences between the determinants
+!                        !since they are of different electron number by one
+!                        call stop_all(t_r,'Not odd number of electrons 2')
+!                    endif
+!                    if(nOrbs.ne.1) then
+!                        !We only want one orbital different
+!                        cycle
+!                    endif
+!                    !Now, find out what SPINorbital this one is from the bit number set
+!                    call DecodeBitDet(orbdum,1,DiffOrb)
+!                    gam = orbdum(1)
+!                    if(mod(gam,2).ne.0) then
+!                        call stop_all(t_r,'differing orbital should be a beta spin orbital')
+!                    endif
+!                    gam_spat = gtid(gam) + CoreEnd
+!
+!                    !Now find out the parity change when applying this creation operator to the original determinant
+!                    tempK = Nm1BitList(K)
+!                    call SQOperator(tempK,gam,tParity,.false.)
+!                    !We now know that between J & K, the gam SPINorbital is created with parity tParity
+!
+!                    do beta = 1,2*nImp
+!                        !Run over all active space orbitals
+!                        AVInd_tmp = AVIndex + (beta-1)*nFullNm1 + nNm1bFCIDet + K - 1
+!                        if((AVInd_tmp.ge.CAIndex).or.(AVInd_tmp.lt.AVIndex)) then
+!                            call stop_all(t_r,'AVInd_tmp out of bounds 2')
+!                        endif
+!                        beta_spat = beta + (nOcc-nImp)
+!                        !K is with a destroyed beta orbital. beta must also correspond to beta orbitals
+!                        do i = 1,CoreEnd
+!                            do a = VirtStart,VirtEnd
+!                                if(tParity) then
+!                                    LinearSystem(CVInd_tmp,AVInd_tmp) = LinearSystem(CVInd_tmp,AVInd_tmp) &
+!                                        + conjg(SchmidtPert(a,i))*SchmidtPert(beta_spat,a)*FockSchmidt(gam_spat,i)
+!                                else
+!                                    LinearSystem(CVInd_tmp,AVInd_tmp) = LinearSystem(CVInd_tmp,AVInd_tmp) &
+!                                        - conjg(SchmidtPert(a,i))*SchmidtPert(beta_spat,a)*FockSchmidt(gam_spat,i)
+!                                endif
+!
+!                            enddo
+!                        enddo
+!                    enddo
+!
+!                enddo
+!            enddo
+!            !Now go through and normalize all of these matrix elements correctly
+!            do J = 1,nFCIDet
+!                CVInd_tmp = CVIndex + J - 1 
+!                do beta = 1,2*nImp
+!                    do K = 1,nNm1FCIDet 
+!                        AVInd_tmp = AVIndex + (beta-1)*nFullNm1 + nNm1bFCIDet + K - 1
+!
+!                        LinearSystem(CVInd_tmp,AVInd_tmp) = LinearSystem(CVInd_tmp,AVInd_tmp) / &
+!                            sqrt(CVNorm*AVNorm(beta))
+!                        !Copy to other half of matrix
+!                        LinearSystem(AVInd_tmp,CVInd_tmp) = conjg(LinearSystem(CVInd_tmp,AVInd_tmp))
+!                    enddo
+!                enddo
+!            enddo
+!
+!            !Now for the coupling between the AV excitations and the uncontracted N-electron space. 
+!            !********************   Block 6   ************************
+!            !TODO: These loops can be largely combined with the previous loops for efficiency
+!            do J = 1,nFCIDet
+!                do K = 1,nNm1bFCIDet 
+!                    !Find the single orbital that they differ by, or cycle if not
+!                    DiffOrb = ieor(Nm1bBitList(K),FCIBitList(J))
+!                    nOrbs = CountBits(DiffOrb)
+!                    if(mod(nOrbs,2).ne.1) then
+!                        !There must be an odd number of orbital differences between the determinants
+!                        !since they are of different electron number by one
+!                        call stop_all(t_r,'Not odd number of electrons')
+!                    endif
+!                    if(nOrbs.ne.1) then
+!                        !We only want one orbital different
+!                        cycle
+!                    endif
+!                    !Now, find out what SPINorbital this one is from the bit number set
+!                    call DecodeBitDet(orbdum,1,DiffOrb)
+!                    gam = orbdum(1)
+!                    if(mod(gam,2).ne.1) then
+!                        call stop_all(t_r,'differing orbital should be an alpha spin orbital')
+!                    endif
+!                    gam_spat = gtid(gam) + CoreEnd
+!
+!                    !Now find out the parity change when applying this creation operator to the original determinant
+!                    tempK = Nm1bBitList(K)
+!                    call SQOperator(tempK,gam,tParity,.false.)
+!                    !We now know that between J & K, the gam SPINorbital is created with parity tParity
+!
+!                    do beta = 1,2*nImp
+!                        !Run over all active space orbitals
+!                        AVInd_tmp = AVIndex + (beta-1)*nFullNm1 + K - 1
+!                        if((AVInd_tmp.ge.CAIndex).or.(AVInd_tmp.lt.AVIndex)) then
+!                            call stop_all(t_r,'AVInd_tmp out of bounds')
+!                        endif
+!                        beta_spat = beta + (nOcc-nImp)
+!                        !K is with a destroyed alpha orbital. beta must also correspond to alpha orbitals
+!                        do a = VirtStart,VirtEnd
+!                            if(tParity) then
+!                                LinearSystem(J,AVInd_tmp) = LinearSystem(J,AVInd_tmp) &
+!                                    - SchmidtPert(beta_spat,a)*FockSchmidt(gam_spat,a)
+!                            else
+!                                LinearSystem(J,AVInd_tmp) = LinearSystem(J,AVInd_tmp) &
+!                                    + SchmidtPert(beta_spat,a)*FockSchmidt(gam_spat,a)
+!                            endif
+!                        enddo
+!                    enddo
+!                enddo
+!            enddo
+!            !Normalize
+!            do J = 1,nFCIDet
+!                do beta = 1,2*nImp
+!                    do K = 1,nNm1bFCIDet 
+!                        AVInd_tmp = AVIndex + (beta-1)*nFullNm1 + K - 1
+!
+!                        LinearSystem(J,AVInd_tmp) = LinearSystem(J,AVInd_tmp) / &
+!                            sqrt(AVNorm(beta))
+!                        !Copy to other half of matrix
+!                        LinearSystem(AVInd_tmp,J) = conjg(LinearSystem(J,AVInd_tmp))
+!                    enddo
+!                enddo
+!            enddo
+!            !Now for other spin type
+!            do J = 1,nFCIDet
+!                do K = 1,nNm1FCIDet 
+!                    !Find the single orbital that they differ by, or cycle if not
+!                    DiffOrb = ieor(Nm1BitList(K),FCIBitList(J))
+!                    nOrbs = CountBits(DiffOrb)
+!                    if(mod(nOrbs,2).ne.1) then
+!                        !There must be an odd number of orbital differences between the determinants
+!                        !since they are of different electron number by one
+!                        call stop_all(t_r,'Not odd number of electrons')
+!                    endif
+!                    if(nOrbs.ne.1) then
+!                        !We only want one orbital different
+!                        cycle
+!                    endif
+!                    !Now, find out what SPINorbital this one is from the bit number set
+!                    call DecodeBitDet(orbdum,1,DiffOrb)
+!                    gam = orbdum(1)
+!                    if(mod(gam,2).ne.0) then
+!                        call stop_all(t_r,'differing orbital should be a beta spin orbital')
+!                    endif
+!                    gam_spat = gtid(gam) + CoreEnd
+!
+!                    !Now find out the parity change when applying this creation operator to the original determinant
+!                    tempK = Nm1BitList(K)
+!                    call SQOperator(tempK,gam,tParity,.false.)
+!                    !We now know that between J & K, the gam SPINorbital is created with parity tParity
+!
+!                    do beta = 1,2*nImp
+!                        !Run over all active space orbitals
+!                        AVInd_tmp = AVIndex + (beta-1)*nFullNm1 + nNm1bFCIDet + K - 1
+!                        if((AVInd_tmp.ge.CAIndex).or.(AVInd_tmp.lt.AVIndex)) then
+!                            call stop_all(t_r,'AVInd_tmp out of bounds')
+!                        endif
+!                        beta_spat = beta + (nOcc-nImp)
+!                        !K is with a destroyed alpha orbital. beta must also correspond to alpha orbitals
+!                        do a = VirtStart,VirtEnd
+!                            if(tParity) then
+!                                LinearSystem(J,AVInd_tmp) = LinearSystem(J,AVInd_tmp) &
+!                                    - SchmidtPert(beta_spat,a)*FockSchmidt(gam_spat,a)
+!                            else
+!                                LinearSystem(J,AVInd_tmp) = LinearSystem(J,AVInd_tmp) &
+!                                    + SchmidtPert(beta_spat,a)*FockSchmidt(gam_spat,a)
+!                            endif
+!                        enddo
+!                    enddo
+!                enddo
+!            enddo
+!            !Normalize
+!            do J = 1,nFCIDet
+!                do beta = 1,2*nImp
+!                    do K = 1,nNm1FCIDet 
+!                        AVInd_tmp = AVIndex + (beta-1)*nFullNm1 + nNm1bFCIDet + K - 1
+!
+!                        LinearSystem(J,AVInd_tmp) = LinearSystem(J,AVInd_tmp) / &
+!                            sqrt(AVNorm(beta))
+!                        !Copy to other half of matrix
+!                        LinearSystem(AVInd_tmp,J) = conjg(LinearSystem(J,AVInd_tmp))
+!                    enddo
+!                enddo
+!            enddo
 
             !****************************************************************************
             !************    CORE-ACTIVE EXCITATION BLOCK *******************************
@@ -728,6 +953,7 @@ module LinearResponse
             enddo
             !call writevector(CANorm,'CA Norm')
 
+
             !This starts at 'CAIndex'
             !'Diagonal' block
             !*****************************   Block 7   *****************************
@@ -738,332 +964,386 @@ module LinearResponse
 
                 !gam1_ind now gives the starting index of the AV diagonal block
                 !for orbital gam1
-                gam1_ind = CAIndex + (gam1-1)*(nNp1FCIDet+nNp1bFCIDet)
+                gam1_ind = CAIndex + (gam1-1)*nFullNp1
 
                 do gam2 = 1,nImp*2
                     gam2_spat = gam2+(nOcc-nImp)
 
-                    gam2_ind = CAIndex + (gam2-1)*(nNp1FCIDet+nNp1bFCIDet)
+                    gam2_ind = CAIndex + (gam2-1)*nFullNp1
 
                     !Construct appropriate weighting factor for the hamiltonian matrix element contribution
-                    tempel = complex(0.0_dp,0.0_dp)
-                    do i = 1,CoreEnd
-                        tempel = tempel + conjg(SchmidtPert(gam1_spat,i))*SchmidtPert(gam2_spat,i)
-                    enddo
+!                    tempel = complex(0.0_dp,0.0_dp)
+!                    do i = 1,CoreEnd
+!                        tempel = tempel + conjg(SchmidtPert(gam1_spat,i))*SchmidtPert(gam2_spat,i)
+!                    enddo
 
                     !Fill with appropriate FCI hamiltonian block
                     call R_C_Copy_2D(LinearSystem(gam1_ind:gam1_ind+nNp1FCIDet-1,gam2_ind:gam2_ind+nNp1FCIDet-1),   &
                         Np1FCIHam_alpha(:,:),nNp1FCIDet,nNp1FCIDet)
-                    !LinearSystem(gam1_ind:gam1_ind+nNp1FCIDet-1,gam2_ind:gam2_ind+nNp1FCIDet-1) = Np1FCIHam_alpha(:,:)
 
                     !Now construct for the gam1_beta : gam2_beta block
-                    call R_C_Copy_2D(LinearSystem(gam1_ind+nNp1FCIDet:gam1_ind+nNp1FCIDet+nNp1bFCIDet-1,    &
-                        gam2_ind+nNp1FCIDet:gam2_ind+nNp1FCIDet+nNp1bFCIDet-1),Np1FCIHam_beta(:,:),nNp1bFCIDet,nNp1bFCIDet)
-                    !LinearSystem(gam1_ind+nNp1FCIDet:gam1_ind+nNp1FCIDet+nNp1bFCIDet-1,    &
-                    !    gam2_ind+nNp1FCIDet:gam2_ind+nNp1FCIDet+nNp1bFCIDet-1) = Np1FCIHam_beta(:,:)
+                    call R_C_Copy_2D(LinearSystem(gam1_ind+nNp1FCIDet:gam1_ind+nFullNp1-1,    &
+                        gam2_ind+nNp1FCIDet:gam2_ind+nFullNp1-1),Np1FCIHam_beta(:,:),nNp1bFCIDet,nNp1bFCIDet)
                     
                     !Multiply every element by the appropriate weighting factor
                     !This weighting factor is the same for both spin blocks, so no need to do seperately
-                    do i = gam1_ind,gam1_ind+(nNp1FCIDet+nNp1bFCIDet)-1
-                        do j = gam2_ind,gam2_ind+(nNp1FCIDet+nNp1bFCIDet)-1
-                            LinearSystem(i,j) = LinearSystem(i,j)*tempel
-                        enddo
-                    enddo
+                    LinearSystem(gam1_ind:gam1_ind+nFullNp1-1,gam2_ind:gam2_ind+nFullNp1-1) =   &
+                        LinearSystem(gam1_ind:gam1_ind+nFullNp1-1,gam2_ind:gam2_ind+nFullNp1-1) *   &
+                        G_xi_G_yi(gam1_spat,gam2_spat)
+                    !do i = gam1_ind,gam1_ind+nFullNp1-1
+                    !    do j = gam2_ind,gam2_ind+nFullNp1-1
+                    !        LinearSystem(i,j) = LinearSystem(i,j)*tempel
+                    !    enddo
+                    !enddo
 
                     !Now for the occupied excitation term, which is diagonal in each determinant space
-                    tempel = complex(0.0_dp,0.0_dp)
-                    do i = 1,CoreEnd
-                        do j = 1,CoreEnd        
-                            tempel = tempel + FockSchmidt(j,i)*conjg(SchmidtPert(i,gam1_spat))*SchmidtPert(j,gam2_spat)
-                        enddo
-                    enddo
+!                    tempel = complex(0.0_dp,0.0_dp)
+!                    do i = 1,CoreEnd
+!                        do j = 1,CoreEnd        
+!                            tempel = tempel + FockSchmidt(j,i)*conjg(SchmidtPert(i,gam1_spat))*SchmidtPert(j,gam2_spat)
+!                        enddo
+!                    enddo
                     !Add this term in to the diagonals of each block
-                    do i = 0,nNp1FCIDet+nNp1bFCIDet-1
-                        LinearSystem(gam1_ind+i,gam2_ind+i) = LinearSystem(gam1_ind+i,gam2_ind+i) - tempel
+                    do i = 0,nFullNp1-1
+                        LinearSystem(gam1_ind+i,gam2_ind+i) = LinearSystem(gam1_ind+i,gam2_ind+i) - &
+                            G_ix_G_jy_F_ji(gam1_spat,gam2_spat)
                     enddo
 
                     !Finally, all the elements need to be normalized correctly.
                     !Again, the normalization condition is the same for both spins.
-                    do i = 0,nNp1FCIDet+nNp1bFCIDet-1
-                        do j = 0,nNp1FCIDet+nNp1bFCIDet-1
-                            LinearSystem(gam1_ind+j,gam2_ind+i) = LinearSystem(gam1_ind+j,gam2_ind+i) / &
-                                sqrt(CANorm(gam1)*CANorm(gam2))
-                        enddo
-                    enddo
-
+                    tempel = sqrt(CANorm(gam1)*CANorm(gam2))
+                    LinearSystem(gam1_ind:gam1_ind+nFullNp1-1,gam2_ind:gam2_ind+nFullNp1-1) =   &
+                        LinearSystem(gam1_ind:gam1_ind+nFullNp1-1,gam2_ind:gam2_ind+nFullNp1-1) / tempel
+!                    do i = 0,nFullNp1-1
+!                        do j = 0,nFullNp1-1
+!                            LinearSystem(gam1_ind+j,gam2_ind+i) = LinearSystem(gam1_ind+j,gam2_ind+i) / &
+!                                sqrt(CANorm(gam1)*CANorm(gam2))
+!                        enddo
+!                    enddo
                 enddo   !End gam2
             enddo   !End gam1
 
             !*************************   Block 8 is ZERO   ******************************
 
-            !*************************   Block 9   **************************************
-            !CA - CV block: cf. Block 5
-            !TODO: Optimize this. Can be done more cheaply
-            !First, when the CA excitations are both alpha operators
+            !*************************   Block 9 & 10  **************************************
             do J = 1,nFCIDet
                 CVInd_tmp = CVIndex + J - 1 
-                do K = 1,nNp1FCIDet 
-                    !Find the single orbital that they differ by, or cycle if not
-                    DiffOrb = ieor(Np1BitList(K),FCIBitList(J))
-                    nOrbs = CountBits(DiffOrb)
-                    if(mod(nOrbs,2).ne.1) then
-                        !There must be an odd number of orbital differences between the determinants
-                        !since they are of different electron number by one
-                        call stop_all(t_r,'Not odd number of electrons')
-                    endif
-                    if(nOrbs.ne.1) then
-                        !We only want one orbital different
-                        cycle
-                    endif
-                    !Now, find out what SPINorbital this one is from the bit number set
-                    call DecodeBitDet(orbdum,1,DiffOrb)
-                    gam = orbdum(1)
-                    if(mod(gam,2).ne.1) then
-                        call stop_all(t_r,'differing orbital should be an alpha spin orbital')
-                    endif
-                    gam_spat = gtid(gam) + CoreEnd
+                do K = 1,nNp1FCIDet
+                    if(Coup_Ann_alpha(1,J,K).ne.0) then
+                        do beta = 1,EmbSize
+                            CAInd_tmp = CAIndex + (beta-1)*nFullNp1 + K - 1
 
-                    !Now find out the parity change when applying this annihilation operator to the original determinant
-                    tempK = Np1BitList(K)
-                    call SQOperator(tempK,gam,tParity,.true.)
-                    !We now know that between J & K, the gam SPINorbital is annihilated with parity tParity
+                            !Block 9
+                            LinearSystem(CVInd_tmp,CAInd_tmp) = LinearSystem(CVInd_tmp,CAInd_tmp) - &
+                                F_ax_G_ia_G_iy(Coup_Ann_alpha(1,J,K),beta+CoreEnd)*Coup_Ann_alpha(2,J,K) / &
+                                sqrt(CVNorm*CANorm(beta))
 
-                    do beta = 1,2*nImp
-                        !Run over all active space orbitals
-                        CAInd_tmp = CAIndex + (beta-1)*(nNp1FCIDet+nNp1bFCIDet) + K - 1
-                        if((CAInd_tmp.gt.nLinearSystem).or.(CAInd_tmp.lt.CAIndex)) then
-                            call stop_all(t_r,'CAInd_tmp out of bounds')
-                        endif
-                        beta_spat = beta + (nOcc-nImp)
-                        !K is with a created alpha orbital. beta must also correspond to alpha orbitals
-                        do i = 1,CoreEnd
-                            do a = VirtStart,VirtEnd
+                            !Hermiticity
+                            LinearSystem(CAInd_tmp,CVInd_tmp) = conjg(LinearSystem(CVInd_tmp,CAInd_tmp))
 
-                                if(tParity) then
-                                    LinearSystem(CVInd_tmp,CAInd_tmp) = LinearSystem(CVInd_tmp,CAInd_tmp) &
-                                        + conjg(SchmidtPert(a,i))*SchmidtPert(beta_spat,i)*FockSchmidt(gam_spat,a)
-                                else
-                                    LinearSystem(CVInd_tmp,CAInd_tmp) = LinearSystem(CVInd_tmp,CAInd_tmp) &
-                                        - conjg(SchmidtPert(a,i))*SchmidtPert(beta_spat,i)*FockSchmidt(gam_spat,a)
-                                endif
+                            !Block 10
+                            LinearSystem(J,CAInd_tmp) = LinearSystem(J,CAInd_tmp) - &
+                                G_ix_F_iy(beta+CoreEnd,Coup_Ann_alpha(1,J,K))*Coup_Ann_alpha(2,J,K) / &
+                                sqrt(CANorm(beta))
 
-                            enddo
+                            !Hermiticity
+                            LinearSystem(CAInd_tmp,J) = conjg(LinearSystem(J,CAInd_tmp))
                         enddo
-                    enddo
+                    endif
                 enddo
-            enddo
-            !Now go through and normalize all of these matrix elements correctly
-            do J = 1,nFCIDet
-                CVInd_tmp = CVIndex + J - 1 
-                do beta = 1,2*nImp
-                    do K = 1,nNp1FCIDet 
-                        CAInd_tmp = CAIndex + (beta-1)*(nNp1FCIDet+nNp1bFCIDet) + K - 1
+                !Now for beta spin
+                do K = 1,nNp1bFCIDet
+                    if(Coup_Ann_beta(1,J,K).ne.0) then
+                        do beta = 1,EmbSize
+                            CAInd_tmp = CAIndex + (beta-1)*nFullNp1 + nNp1FCIDet + K - 1
 
-                        LinearSystem(CVInd_tmp,CAInd_tmp) = LinearSystem(CVInd_tmp,CAInd_tmp) / &
-                            sqrt(CVNorm*CANorm(beta))
-                        !Copy to other half of matrix
-                        LinearSystem(CAInd_tmp,CVInd_tmp) = conjg(LinearSystem(CVInd_tmp,CAInd_tmp))
-                    enddo
-                enddo
-            enddo
-            !Now for the beta spin excitation operators
-            !TODO: This should be the same as the alpha block - we don't need to completely regenerate it, just copy
-            !TODO: Check that these are the same
-            do J = 1,nFCIDet
-                CVInd_tmp = CVIndex + J - 1 
-                do K = 1,nNp1bFCIDet 
-                    !Find the single orbital that they differ by, or cycle if not
-                    DiffOrb = ieor(Np1bBitList(K),FCIBitList(J))
-                    nOrbs = CountBits(DiffOrb)
-                    if(mod(nOrbs,2).ne.1) then
-                        !There must be an odd number of orbital differences between the determinants
-                        !since they are of different electron number by one
-                        call stop_all(t_r,'Not odd number of electrons 2')
-                    endif
-                    if(nOrbs.ne.1) then
-                        !We only want one orbital different
-                        cycle
-                    endif
-                    !Now, find out what SPINorbital this one is from the bit number set
-                    call DecodeBitDet(orbdum,1,DiffOrb)
-                    gam = orbdum(1)
-                    if(mod(gam,2).ne.0) then
-                        call stop_all(t_r,'differing orbital should be a beta spin orbital')
-                    endif
-                    gam_spat = gtid(gam) + CoreEnd
+                            !Block 9
+                            LinearSystem(CVInd_tmp,CAInd_tmp) = LinearSystem(CVInd_tmp,CAInd_tmp) - &
+                                F_ax_G_ia_G_iy(Coup_Ann_beta(1,J,K),beta+CoreEnd)*Coup_Ann_beta(2,J,K) / &
+                                sqrt(CVNorm*CANorm(beta))
 
-                    !Now find out the parity change when applying this annihilation operator to the original determinant
-                    tempK = Np1bBitList(K)
-                    call SQOperator(tempK,gam,tParity,.true.)
-                    !We now know that between J & K, the gam SPINorbital is created with parity tParity
+                            !Hermiticity
+                            LinearSystem(CAInd_tmp,CVInd_tmp) = conjg(LinearSystem(CVInd_tmp,CAInd_tmp))
 
-                    do beta = 1,2*nImp
-                        !Run over all active space orbitals
-                        CAInd_tmp = CAIndex + (beta-1)*(nNp1FCIDet+nNp1bFCIDet) + nNp1FCIDet + K - 1
-                        if((CAInd_tmp.gt.nLinearSystem).or.(CAInd_tmp.lt.CAIndex)) then
-                            call stop_all(t_r,'CAInd_tmp out of bounds 2')
-                        endif
-                        beta_spat = beta + (nOcc-nImp)
-                        !K is with a destroyed beta orbital. beta must also correspond to beta orbitals
-                        do i = 1,CoreEnd
-                            do a = VirtStart,VirtEnd
-                                if(tParity) then
-                                    LinearSystem(CVInd_tmp,CAInd_tmp) = LinearSystem(CVInd_tmp,CAInd_tmp) &
-                                        + conjg(SchmidtPert(a,i))*SchmidtPert(beta_spat,i)*FockSchmidt(gam_spat,a)
-                                else
-                                    LinearSystem(CVInd_tmp,CAInd_tmp) = LinearSystem(CVInd_tmp,CAInd_tmp) &
-                                        - conjg(SchmidtPert(a,i))*SchmidtPert(beta_spat,i)*FockSchmidt(gam_spat,a)
-                                endif
+                            !Block 10
+                            LinearSystem(J,CAInd_tmp) = LinearSystem(J,CAInd_tmp) - &
+                                G_ix_F_iy(beta+CoreEnd,Coup_Ann_beta(1,J,K))*Coup_Ann_beta(2,J,K) / &
+                                sqrt(CANorm(beta))
 
-                            enddo
+                            !Hermiticity
+                            LinearSystem(CAInd_tmp,J) = conjg(LinearSystem(J,CAInd_tmp))
                         enddo
-                    enddo
-
+                    endif
                 enddo
             enddo
-            !Now go through and normalize all of these matrix elements correctly
-            do J = 1,nFCIDet
-                CVInd_tmp = CVIndex + J - 1 
-                do beta = 1,2*nImp
-                    do K = 1,nNp1bFCIDet 
-                        CAInd_tmp = CAIndex + (beta-1)*(nNp1FCIDet+nNp1bFCIDet) + nNp1FCIDet + K - 1
 
-                        LinearSystem(CVInd_tmp,CAInd_tmp) = LinearSystem(CVInd_tmp,CAInd_tmp) / &
-                            sqrt(CVNorm*CANorm(beta))
-                        !Copy to other half of matrix
-                        LinearSystem(CAInd_tmp,CVInd_tmp) = conjg(LinearSystem(CVInd_tmp,CAInd_tmp))
-                    enddo
-                enddo
-            enddo
-            
-            !**************************   Block 10 *********************
-            !Coupling between the CA excitations and the uncontracted N-electron space
-            !cf. Block 6
-            !TODO: These loops can be largely combined with the previous loops for efficiency
-            do J = 1,nFCIDet
-                do K = 1,nNp1FCIDet 
-                    !Find the single orbital that they differ by, or cycle if not
-                    DiffOrb = ieor(Np1BitList(K),FCIBitList(J))
-                    nOrbs = CountBits(DiffOrb)
-                    if(mod(nOrbs,2).ne.1) then
-                        !There must be an odd number of orbital differences between the determinants
-                        !since they are of different electron number by one
-                        call stop_all(t_r,'Not odd number of electrons')
-                    endif
-                    if(nOrbs.ne.1) then
-                        !We only want one orbital different
-                        cycle
-                    endif
-                    !Now, find out what SPINorbital this one is from the bit number set
-                    call DecodeBitDet(orbdum,1,DiffOrb)
-                    gam = orbdum(1)
-                    if(mod(gam,2).ne.1) then
-                        call stop_all(t_r,'differing orbital should be an alpha spin orbital')
-                    endif
-                    gam_spat = gtid(gam) + CoreEnd
-
-                    !Now find out the parity change when applying this creation operator to the original determinant
-                    tempK = Np1BitList(K)
-                    call SQOperator(tempK,gam,tParity,.true.)
-                    !We now know that between J & K, the gam SPINorbital is created with parity tParity
-
-                    do beta = 1,2*nImp
-                        !Run over all active space orbitals
-                        CAInd_tmp = CAIndex + (beta-1)*(nNp1FCIDet+nNp1bFCIDet) + K - 1
-                        if((CAInd_tmp.gt.nLinearSystem).or.(CAInd_tmp.lt.CAIndex)) then
-                            call stop_all(t_r,'CAInd_tmp out of bounds')
-                        endif
-                        beta_spat = beta + (nOcc-nImp)
-                        do i = 1,CoreEnd        
-                            if(tParity) then
-                                LinearSystem(J,CAind_tmp) = LinearSystem(J,CAInd_tmp) &
-                                    + SchmidtPert(beta_spat,i)*FockSchmidt(gam_spat,i)
-                            else
-                                LinearSystem(J,CAInd_tmp) = LinearSystem(J,CAInd_tmp) &
-                                    - SchmidtPert(beta_spat,i)*FockSchmidt(gam_spat,i)
-                            endif
-                        enddo
-                    enddo
-                enddo
-            enddo
-            !Normalize
-            do J = 1,nFCIDet
-                do beta = 1,2*nImp
-                    do K = 1,nNp1FCIDet 
-                        CAInd_tmp = CAIndex + (beta-1)*(nNp1FCIDet+nNp1bFCIDet) + K - 1
-
-                        LinearSystem(J,CAInd_tmp) = LinearSystem(J,CAInd_tmp) / &
-                            sqrt(CANorm(beta))
-                        !Copy to other half of matrix
-                        LinearSystem(CAInd_tmp,J) = conjg(LinearSystem(J,CAInd_tmp))
-                    enddo
-                enddo
-            enddo
-            !Now for other spin type
-            do J = 1,nFCIDet
-                do K = 1,nNp1bFCIDet 
-                    !Find the single orbital that they differ by, or cycle if not
-                    DiffOrb = ieor(Np1bBitList(K),FCIBitList(J))
-                    nOrbs = CountBits(DiffOrb)
-                    if(mod(nOrbs,2).ne.1) then
-                        !There must be an odd number of orbital differences between the determinants
-                        !since they are of different electron number by one
-                        call stop_all(t_r,'Not odd number of electrons')
-                    endif
-                    if(nOrbs.ne.1) then
-                        !We only want one orbital different
-                        cycle
-                    endif
-                    !Now, find out what SPINorbital this one is from the bit number set
-                    call DecodeBitDet(orbdum,1,DiffOrb)
-                    gam = orbdum(1)
-                    if(mod(gam,2).ne.0) then
-                        call stop_all(t_r,'differing orbital should be a beta spin orbital')
-                    endif
-                    gam_spat = gtid(gam) + CoreEnd
-
-                    !Now find out the parity change when applying this creation operator to the original determinant
-                    tempK = Np1bBitList(K)
-                    call SQOperator(tempK,gam,tParity,.true.)
-                    !We now know that between J & K, the gam SPINorbital is created with parity tParity
-
-                    do beta = 1,2*nImp
-                        !Run over all active space orbitals
-                        CAInd_tmp = CAIndex + (beta-1)*(nNp1FCIDet+nNp1bFCIDet) + nNp1FCIDet + K - 1
-                        if((CAInd_tmp.gt.nLinearSystem).or.(CAInd_tmp.lt.CAIndex)) then
-                            call stop_all(t_r,'CAInd_tmp out of bounds')
-                        endif
-                        beta_spat = beta + (nOcc-nImp)
-                        do i = 1,CoreEnd         
-                            if(tParity) then
-                                LinearSystem(J,CAInd_tmp) = LinearSystem(J,CAInd_tmp) &
-                                    + SchmidtPert(beta_spat,i)*FockSchmidt(gam_spat,i)
-                            else
-                                LinearSystem(J,CAInd_tmp) = LinearSystem(J,CAInd_tmp) &
-                                    - SchmidtPert(beta_spat,i)*FockSchmidt(gam_spat,i)
-                            endif
-                        enddo
-                    enddo
-                enddo
-            enddo
-            !Normalize
-            do J = 1,nFCIDet
-                do beta = 1,2*nImp
-                    do K = 1,nNp1bFCIDet 
-                        CAInd_tmp = CAIndex + (beta-1)*(nNp1FCIDet+nNp1bFCIDet) + nNp1FCIDet + K - 1
-
-                        LinearSystem(J,CAInd_tmp) = LinearSystem(J,CAInd_tmp) / &
-                            sqrt(CANorm(beta))
-                        !Copy to other half of matrix
-                        LinearSystem(CAInd_tmp,J) = conjg(LinearSystem(J,CAInd_tmp))
-                    enddo
-                enddo
-            enddo
+!            !CA - CV block: cf. Block 5
+!            !TODO: Optimize this. Can be done more cheaply
+!            !First, when the CA excitations are both alpha operators
+!            do J = 1,nFCIDet
+!                CVInd_tmp = CVIndex + J - 1 
+!                do K = 1,nNp1FCIDet 
+!                    !Find the single orbital that they differ by, or cycle if not
+!                    DiffOrb = ieor(Np1BitList(K),FCIBitList(J))
+!                    nOrbs = CountBits(DiffOrb)
+!                    if(mod(nOrbs,2).ne.1) then
+!                        !There must be an odd number of orbital differences between the determinants
+!                        !since they are of different electron number by one
+!                        call stop_all(t_r,'Not odd number of electrons')
+!                    endif
+!                    if(nOrbs.ne.1) then
+!                        !We only want one orbital different
+!                        cycle
+!                    endif
+!                    !Now, find out what SPINorbital this one is from the bit number set
+!                    call DecodeBitDet(orbdum,1,DiffOrb)
+!                    gam = orbdum(1)
+!                    if(mod(gam,2).ne.1) then
+!                        call stop_all(t_r,'differing orbital should be an alpha spin orbital')
+!                    endif
+!                    gam_spat = gtid(gam) + CoreEnd
+!
+!                    !Now find out the parity change when applying this annihilation operator to the original determinant
+!                    tempK = Np1BitList(K)
+!                    call SQOperator(tempK,gam,tParity,.true.)
+!                    !We now know that between J & K, the gam SPINorbital is annihilated with parity tParity
+!
+!                    do beta = 1,2*nImp
+!                        !Run over all active space orbitals
+!                        CAInd_tmp = CAIndex + (beta-1)*nFullNp1 + K - 1
+!                        if((CAInd_tmp.gt.nLinearSystem).or.(CAInd_tmp.lt.CAIndex)) then
+!                            call stop_all(t_r,'CAInd_tmp out of bounds')
+!                        endif
+!                        beta_spat = beta + (nOcc-nImp)
+!                        !K is with a created alpha orbital. beta must also correspond to alpha orbitals
+!                        do i = 1,CoreEnd
+!                            do a = VirtStart,VirtEnd
+!
+!                                if(tParity) then
+!                                    LinearSystem(CVInd_tmp,CAInd_tmp) = LinearSystem(CVInd_tmp,CAInd_tmp) &
+!                                        + conjg(SchmidtPert(a,i))*SchmidtPert(beta_spat,i)*FockSchmidt(gam_spat,a)
+!                                else
+!                                    LinearSystem(CVInd_tmp,CAInd_tmp) = LinearSystem(CVInd_tmp,CAInd_tmp) &
+!                                        - conjg(SchmidtPert(a,i))*SchmidtPert(beta_spat,i)*FockSchmidt(gam_spat,a)
+!                                endif
+!
+!                            enddo
+!                        enddo
+!                    enddo
+!                enddo
+!            enddo
+!            !Now go through and normalize all of these matrix elements correctly
+!            do J = 1,nFCIDet
+!                CVInd_tmp = CVIndex + J - 1 
+!                do beta = 1,2*nImp
+!                    do K = 1,nNp1FCIDet 
+!                        CAInd_tmp = CAIndex + (beta-1)*nFullNp1 + K - 1
+!
+!                        LinearSystem(CVInd_tmp,CAInd_tmp) = LinearSystem(CVInd_tmp,CAInd_tmp) / &
+!                            sqrt(CVNorm*CANorm(beta))
+!                        !Copy to other half of matrix
+!                        LinearSystem(CAInd_tmp,CVInd_tmp) = conjg(LinearSystem(CVInd_tmp,CAInd_tmp))
+!                    enddo
+!                enddo
+!            enddo
+!            !Now for the beta spin excitation operators
+!            !TODO: This should be the same as the alpha block - we don't need to completely regenerate it, just copy
+!            !TODO: Check that these are the same
+!            do J = 1,nFCIDet
+!                CVInd_tmp = CVIndex + J - 1 
+!                do K = 1,nNp1bFCIDet 
+!                    !Find the single orbital that they differ by, or cycle if not
+!                    DiffOrb = ieor(Np1bBitList(K),FCIBitList(J))
+!                    nOrbs = CountBits(DiffOrb)
+!                    if(mod(nOrbs,2).ne.1) then
+!                        !There must be an odd number of orbital differences between the determinants
+!                        !since they are of different electron number by one
+!                        call stop_all(t_r,'Not odd number of electrons 2')
+!                    endif
+!                    if(nOrbs.ne.1) then
+!                        !We only want one orbital different
+!                        cycle
+!                    endif
+!                    !Now, find out what SPINorbital this one is from the bit number set
+!                    call DecodeBitDet(orbdum,1,DiffOrb)
+!                    gam = orbdum(1)
+!                    if(mod(gam,2).ne.0) then
+!                        call stop_all(t_r,'differing orbital should be a beta spin orbital')
+!                    endif
+!                    gam_spat = gtid(gam) + CoreEnd
+!
+!                    !Now find out the parity change when applying this annihilation operator to the original determinant
+!                    tempK = Np1bBitList(K)
+!                    call SQOperator(tempK,gam,tParity,.true.)
+!                    !We now know that between J & K, the gam SPINorbital is created with parity tParity
+!
+!                    do beta = 1,2*nImp
+!                        !Run over all active space orbitals
+!                        CAInd_tmp = CAIndex + (beta-1)*nFullNp1 + nNp1FCIDet + K - 1
+!                        if((CAInd_tmp.gt.nLinearSystem).or.(CAInd_tmp.lt.CAIndex)) then
+!                            call stop_all(t_r,'CAInd_tmp out of bounds 2')
+!                        endif
+!                        beta_spat = beta + (nOcc-nImp)
+!                        !K is with a destroyed beta orbital. beta must also correspond to beta orbitals
+!                        do i = 1,CoreEnd
+!                            do a = VirtStart,VirtEnd
+!                                if(tParity) then
+!                                    LinearSystem(CVInd_tmp,CAInd_tmp) = LinearSystem(CVInd_tmp,CAInd_tmp) &
+!                                        + conjg(SchmidtPert(a,i))*SchmidtPert(beta_spat,i)*FockSchmidt(gam_spat,a)
+!                                else
+!                                    LinearSystem(CVInd_tmp,CAInd_tmp) = LinearSystem(CVInd_tmp,CAInd_tmp) &
+!                                        - conjg(SchmidtPert(a,i))*SchmidtPert(beta_spat,i)*FockSchmidt(gam_spat,a)
+!                                endif
+!
+!                            enddo
+!                        enddo
+!                    enddo
+!
+!                enddo
+!            enddo
+!            !Now go through and normalize all of these matrix elements correctly
+!            do J = 1,nFCIDet
+!                CVInd_tmp = CVIndex + J - 1 
+!                do beta = 1,2*nImp
+!                    do K = 1,nNp1bFCIDet 
+!                        CAInd_tmp = CAIndex + (beta-1)*nFullNp1 + nNp1FCIDet + K - 1
+!
+!                        LinearSystem(CVInd_tmp,CAInd_tmp) = LinearSystem(CVInd_tmp,CAInd_tmp) / &
+!                            sqrt(CVNorm*CANorm(beta))
+!                        !Copy to other half of matrix
+!                        LinearSystem(CAInd_tmp,CVInd_tmp) = conjg(LinearSystem(CVInd_tmp,CAInd_tmp))
+!                    enddo
+!                enddo
+!            enddo
+!            
+!            !**************************   Block 10 *********************
+!            !Coupling between the CA excitations and the uncontracted N-electron space
+!            !cf. Block 6
+!            !TODO: These loops can be largely combined with the previous loops for efficiency
+!            do J = 1,nFCIDet
+!                do K = 1,nNp1FCIDet 
+!                    !Find the single orbital that they differ by, or cycle if not
+!                    DiffOrb = ieor(Np1BitList(K),FCIBitList(J))
+!                    nOrbs = CountBits(DiffOrb)
+!                    if(mod(nOrbs,2).ne.1) then
+!                        !There must be an odd number of orbital differences between the determinants
+!                        !since they are of different electron number by one
+!                        call stop_all(t_r,'Not odd number of electrons')
+!                    endif
+!                    if(nOrbs.ne.1) then
+!                        !We only want one orbital different
+!                        cycle
+!                    endif
+!                    !Now, find out what SPINorbital this one is from the bit number set
+!                    call DecodeBitDet(orbdum,1,DiffOrb)
+!                    gam = orbdum(1)
+!                    if(mod(gam,2).ne.1) then
+!                        call stop_all(t_r,'differing orbital should be an alpha spin orbital')
+!                    endif
+!                    gam_spat = gtid(gam) + CoreEnd
+!
+!                    !Now find out the parity change when applying this creation operator to the original determinant
+!                    tempK = Np1BitList(K)
+!                    call SQOperator(tempK,gam,tParity,.true.)
+!                    !We now know that between J & K, the gam SPINorbital is created with parity tParity
+!
+!                    do beta = 1,2*nImp
+!                        !Run over all active space orbitals
+!                        CAInd_tmp = CAIndex + (beta-1)*nFullNp1 + K - 1
+!                        if((CAInd_tmp.gt.nLinearSystem).or.(CAInd_tmp.lt.CAIndex)) then
+!                            call stop_all(t_r,'CAInd_tmp out of bounds')
+!                        endif
+!                        beta_spat = beta + (nOcc-nImp)
+!                        do i = 1,CoreEnd        
+!                            if(tParity) then
+!                                LinearSystem(J,CAind_tmp) = LinearSystem(J,CAInd_tmp) &
+!                                    + SchmidtPert(beta_spat,i)*FockSchmidt(gam_spat,i)
+!                            else
+!                                LinearSystem(J,CAInd_tmp) = LinearSystem(J,CAInd_tmp) &
+!                                    - SchmidtPert(beta_spat,i)*FockSchmidt(gam_spat,i)
+!                            endif
+!                        enddo
+!                    enddo
+!                enddo
+!            enddo
+!            !Normalize
+!            do J = 1,nFCIDet
+!                do beta = 1,2*nImp
+!                    do K = 1,nNp1FCIDet 
+!                        CAInd_tmp = CAIndex + (beta-1)*nFullNp1 + K - 1
+!
+!                        LinearSystem(J,CAInd_tmp) = LinearSystem(J,CAInd_tmp) / &
+!                            sqrt(CANorm(beta))
+!                        !Copy to other half of matrix
+!                        LinearSystem(CAInd_tmp,J) = conjg(LinearSystem(J,CAInd_tmp))
+!                    enddo
+!                enddo
+!            enddo
+!            !Now for other spin type
+!            do J = 1,nFCIDet
+!                do K = 1,nNp1bFCIDet 
+!                    !Find the single orbital that they differ by, or cycle if not
+!                    DiffOrb = ieor(Np1bBitList(K),FCIBitList(J))
+!                    nOrbs = CountBits(DiffOrb)
+!                    if(mod(nOrbs,2).ne.1) then
+!                        !There must be an odd number of orbital differences between the determinants
+!                        !since they are of different electron number by one
+!                        call stop_all(t_r,'Not odd number of electrons')
+!                    endif
+!                    if(nOrbs.ne.1) then
+!                        !We only want one orbital different
+!                        cycle
+!                    endif
+!                    !Now, find out what SPINorbital this one is from the bit number set
+!                    call DecodeBitDet(orbdum,1,DiffOrb)
+!                    gam = orbdum(1)
+!                    if(mod(gam,2).ne.0) then
+!                        call stop_all(t_r,'differing orbital should be a beta spin orbital')
+!                    endif
+!                    gam_spat = gtid(gam) + CoreEnd
+!
+!                    !Now find out the parity change when applying this creation operator to the original determinant
+!                    tempK = Np1bBitList(K)
+!                    call SQOperator(tempK,gam,tParity,.true.)
+!                    !We now know that between J & K, the gam SPINorbital is created with parity tParity
+!
+!                    do beta = 1,2*nImp
+!                        !Run over all active space orbitals
+!                        CAInd_tmp = CAIndex + (beta-1)*nFullNp1 + nNp1FCIDet + K - 1
+!                        if((CAInd_tmp.gt.nLinearSystem).or.(CAInd_tmp.lt.CAIndex)) then
+!                            call stop_all(t_r,'CAInd_tmp out of bounds')
+!                        endif
+!                        beta_spat = beta + (nOcc-nImp)
+!                        do i = 1,CoreEnd         
+!                            if(tParity) then
+!                                LinearSystem(J,CAInd_tmp) = LinearSystem(J,CAInd_tmp) &
+!                                    + SchmidtPert(beta_spat,i)*FockSchmidt(gam_spat,i)
+!                            else
+!                                LinearSystem(J,CAInd_tmp) = LinearSystem(J,CAInd_tmp) &
+!                                    - SchmidtPert(beta_spat,i)*FockSchmidt(gam_spat,i)
+!                            endif
+!                        enddo
+!                    enddo
+!                enddo
+!            enddo
+!            !Normalize
+!            do J = 1,nFCIDet
+!                do beta = 1,2*nImp
+!                    do K = 1,nNp1bFCIDet 
+!                        CAInd_tmp = CAIndex + (beta-1)*nFullNp1 + nNp1FCIDet + K - 1
+!
+!                        LinearSystem(J,CAInd_tmp) = LinearSystem(J,CAInd_tmp) / &
+!                            sqrt(CANorm(beta))
+!                        !Copy to other half of matrix
+!                        LinearSystem(CAInd_tmp,J) = conjg(LinearSystem(J,CAInd_tmp))
+!                    enddo
+!                enddo
+!            enddo
 
             !Now check that Hessian is hermitian
             do i=1,nLinearSystem
-                do j=1,nLinearSystem
-                    if(abs(LinearSystem(i,j)-conjg(LinearSystem(j,i))).gt.1.0e-7_dp) then
+                do j=i,nLinearSystem
+                    if(abs(LinearSystem(i,j)-conjg(LinearSystem(j,i))).gt.1.0e-8_dp) then
                         write(6,*) "i, j: ",i,j
                         write(6,*) "LinearSystem(i,j): ",LinearSystem(i,j)
                         write(6,*) "LinearSystem(j,i): ",LinearSystem(j,i)
@@ -1096,12 +1376,12 @@ module LinearResponse
 
                 !gam1_ind now gives the starting index of the AV diagonal block
                 !for orbital gam1
-                gam1_ind = AVIndex + (gam1-1)*(nNm1FCIDet+nNm1bFCIDet)
+                gam1_ind = AVIndex + (gam1-1)*nFullNm1
 
                 do gam2 = 1,nImp*2
                     gam2_spat = gam2+(nOcc-nImp)
 
-                    gam2_ind = AVIndex + (gam2-1)*(nNm1FCIDet+nNm1bFCIDet)
+                    gam2_ind = AVIndex + (gam2-1)*nFullNm1
 
                     !Now for the overlap, which is diagonal in each determinant space
                     tempel = complex(0.0_dp,0.0_dp)
@@ -1115,7 +1395,7 @@ module LinearResponse
                         call stop_all(t_r,'Error calculating overlap 1')
                     endif
                     !Add this term in to the diagonals of each block
-                    do i = 0,nNm1bFCIDet+nNm1FCIDet-1
+                    do i = 0,nFullNm1-1
                         Overlap(gam1_ind+i,gam2_ind+i) = tempel
                     enddo
                 enddo   !End gam2
@@ -1129,12 +1409,12 @@ module LinearResponse
 
                 !gam1_ind now gives the starting index of the AV diagonal block
                 !for orbital gam1
-                gam1_ind = CAIndex + (gam1-1)*(nNp1FCIDet+nNp1bFCIDet)
+                gam1_ind = CAIndex + (gam1-1)*nFullNp1
 
                 do gam2 = 1,nImp*2
                     gam2_spat = gam2+(nOcc-nImp)
 
-                    gam2_ind = CAIndex + (gam2-1)*(nNp1FCIDet+nNp1bFCIDet)
+                    gam2_ind = CAIndex + (gam2-1)*nFullNp1
 
                     !Now for the occupied excitation term, which is diagonal in each determinant space
                     tempel = complex(0.0_dp,0.0_dp)
@@ -1146,7 +1426,7 @@ module LinearResponse
                         call stop_all(t_r,'Error calculating overlap 2')
                     endif
                     !Add this term in to the diagonals of each block
-                    do i = 0,nNp1FCIDet+nNp1bFCIDet-1
+                    do i = 0,nFullNp1-1
                         Overlap(gam1_ind+i,gam2_ind+i) = tempel
                     enddo
 
@@ -5174,7 +5454,7 @@ module LinearResponse
 
         !Now rotate the original determinant
 
-
+        
     end subroutine test
 
 end module LinearResponse
