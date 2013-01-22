@@ -479,7 +479,7 @@ module LinearResponse
             !Calc normalization for the CV block
             CVNorm = 0.0_dp
             do i=1,CoreEnd
-                CVNorm = CVNorm + real(abs(G_ai_G_aj(i,i)))
+                CVNorm = CVNorm + real(G_ai_G_aj(i,i))
             enddo
             !do a=VirtStart,VirtEnd
             !    do i=1,CoreEnd
@@ -1384,11 +1384,11 @@ module LinearResponse
                     gam2_ind = AVIndex + (gam2-1)*nFullNm1
 
                     !Now for the overlap, which is diagonal in each determinant space
-                    tempel = complex(0.0_dp,0.0_dp)
-                    do a = VirtStart,VirtEnd
-                        tempel = tempel + conjg(SchmidtPert(gam1_spat,a))*SchmidtPert(gam2_spat,a)
-                    enddo
-                    tempel = tempel / sqrt(AVNorm(gam1)*AVNorm(gam2))
+!                    tempel = complex(0.0_dp,0.0_dp)
+!                    do a = VirtStart,VirtEnd
+!                        tempel = tempel + conjg(SchmidtPert(gam1_spat,a))*SchmidtPert(gam2_spat,a)
+!                    enddo
+                    tempel = G_xa_G_ya(gam1_spat,gam2_spat) / sqrt(AVNorm(gam1)*AVNorm(gam2))
                     if((gam1.eq.gam2).and.(abs(tempel-1.0_dp).gt.1.0e-7_dp)) then
                         write(6,*) "gam1,gam2: ",gam1,gam2
                         write(6,*) "tempel: ",tempel
@@ -1417,11 +1417,11 @@ module LinearResponse
                     gam2_ind = CAIndex + (gam2-1)*nFullNp1
 
                     !Now for the occupied excitation term, which is diagonal in each determinant space
-                    tempel = complex(0.0_dp,0.0_dp)
-                    do i = 1,CoreEnd
-                        tempel = tempel + conjg(SchmidtPert(i,gam1_spat))*SchmidtPert(i,gam2_spat)
-                    enddo
-                    tempel = tempel / sqrt(CANorm(gam1)*CANorm(gam2))
+!                    tempel = complex(0.0_dp,0.0_dp)
+!                    do i = 1,CoreEnd
+!                        tempel = tempel + conjg(SchmidtPert(i,gam1_spat))*SchmidtPert(i,gam2_spat)
+!                    enddo
+                    tempel = G_xi_G_yi(gam1_spat,gam2_spat) / sqrt(CANorm(gam1)*CANorm(gam2))
                     if((gam1.eq.gam2).and.(abs(tempel-1.0_dp).gt.1.0e-7_dp)) then
                         call stop_all(t_r,'Error calculating overlap 2')
                     endif
@@ -1435,7 +1435,7 @@ module LinearResponse
 
             !Check hermiticity and normalization of overlap matrix
             do i=1,nLinearSystem
-                do j=1,nLinearSystem
+                do j=i,nLinearSystem
                     if(abs(Overlap(i,j)-conjg(Overlap(j,i))).gt.1.0e-7_dp) then
                         call stop_all(t_r,'Overlap matrix not hermitian')
                     endif
@@ -1447,14 +1447,16 @@ module LinearResponse
                 endif
             enddo
 
-            write(6,*) "Overlap matrix constructed successfully..."
-
+!            write(6,*) "Overlap matrix constructed successfully..."
             call halt_timer(LR_EC_TDA_SBuild)
             call set_timer(LR_EC_TDA_Project)
 
             if(tProjectOutNull.or.tLR_ReoptGS) then
                 !We need eigenvalues and vectors of S
-                !TODO: Optimize this - we can block diagonalize the overlap, which will be much cheaper
+
+                !Diagonalize block 4
+
+
                 nSize = nLinearSystem
                 allocate(S_EigVec(nSize,nSize))
                 S_EigVec(:,:) = Overlap(1:nSize,1:nSize)
