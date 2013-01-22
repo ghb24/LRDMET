@@ -51,8 +51,8 @@ def ph_greens():
     nimp=1
 
     nimp_sp=2*nimp
-    nocc=4  #12
-    nsites=8  #24
+    nocc=8  #12
+    nsites=24 #24
     nsites_sp=nsites*2
     ndim=2
     sz=0
@@ -69,7 +69,7 @@ def ph_greens():
     delta=0.01 # broadening
 
 #    for u in [0.0,4.0,10.0]:
-    for u in [0.0,2.0,4.0]:
+    for u in [4.0]:
 
         # Single impurity Anderson model
         mu=0.
@@ -101,7 +101,7 @@ def ph_greens():
 #        print 'mu: ',mu
 
         fd=file("ph_siam.out."+str(u),"w")
-        for omega in N.arange(0.0,4.001,0.01):
+        for omega in N.arange(0.0,4.001,0.02):
     
             ops_dict=response_embed.mb_ph_ops(hlat,perturb,omega+1j*delta,nimp,nocc,pemb,pcore,pvirt)
             configs_dict=response_embed.mb_configs(nsites,nimp,nimp_sp,2*nocc-nimp_sp,0)

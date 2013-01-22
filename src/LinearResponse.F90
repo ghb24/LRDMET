@@ -79,14 +79,15 @@ module LinearResponse
         integer :: a,i,j,k,OrbPairs,UMatSize,UMatInd,AVInd_tmp,b,beta,beta_spat
         integer :: CoreEnd,VirtStart,VirtEnd,CVInd_tmp,iunit,iunit2
         integer :: DiffOrb,nOrbs,gam,gam1,gam1_ind,gam1_spat,gam2,gam2_ind,gam2_spat,ierr
-        integer :: gam_spat,nLinearSystem,tempK,gtid,nSpan
+        integer :: gam_spat,nLinearSystem,tempK,gtid,nSpan,ActiveEnd,ActiveStart
         integer :: orbdum(1),CAInd_tmp,lwork,info,nSize,nCore,nVirt
         logical :: tParity,tCalcResponse,tTransformSpace
         real(dp) :: Omega,CVNorm,GSEnergy
         complex(dp) :: tempel,ResponseFn,dOrthog,dNorm,testc,ni_lr
         complex(dp) , allocatable :: LinearSystem(:,:),Overlap(:,:),Projector(:,:),VGS(:),CanTrans(:,:)
         complex(dp) , allocatable :: temp_vecc(:),tempc(:,:),LHS(:,:),RHS(:),Transform(:,:),OrthogHam(:,:)
-        complex(dp) , allocatable :: Psi_0(:),S_EigVec(:,:),cWork(:)
+        complex(dp) , allocatable :: Psi_0(:),S_EigVec(:,:),cWork(:),G_ai_G_aj(:,:),G_ai_G_bi(:,:),G_xa_G_ya(:,:)
+        complex(dp) , allocatable :: G_xa_F_ab(:,:),G_xa_G_yb_F_ab(:,:),FockSchmidtComp(:,:)
         real(dp), allocatable :: NFCIHam(:,:),temp(:,:),Nm1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
         real(dp), allocatable :: Np1FCIHam_alpha(:,:),Np1FCIHam_beta(:,:)
         real(dp), allocatable :: AVNorm(:),CANorm(:),Work(:),H_Vals(:),S_EigVal(:)
@@ -212,6 +213,8 @@ module LinearResponse
         CoreEnd = nOcc-nImp
         VirtStart = nOcc+nImp+1
         VirtEnd = nSites
+        ActiveStart = nOcc-nImp+1
+        ActiveEnd = nOcc+nImp
         nCore = nOcc-nImp
         nVirt = nSites-nOcc-nImp   
         if(tHalfFill.and.(nCore.ne.nVirt)) then
@@ -231,6 +234,14 @@ module LinearResponse
         !Allocate memory for normalization constants
         allocate(AVNorm(1:nImp*2))
         allocate(CANorm(1:nImp*2))
+            
+        !Space for useful intermediates
+        allocate(FockSchmidtComp(nSites,nSites))
+        allocate(G_ai_G_aj(nCore,nCore))    !Core,Core, contracted over virtual space
+        allocate(G_ai_G_bi(VirtStart:VirtEnd,VirtStart:VirtEnd))    !Virt,Virt, contracted over core space
+        allocate(G_xa_G_ya(ActiveStart:ActiveEnd,ActiveStart:ActiveEnd))    !Active,Active, contracted over virtuals
+        allocate(G_xa_F_ab(ActiveStart:ActiveEnd,VirtStart:VirtEnd))
+        allocate(G_xa_G_yb_F_ab(ActiveStart:ActiveEnd,ActiveStart:ActiveEnd))
 
         call halt_timer(LR_EC_TDA_Precom)
 
@@ -251,6 +262,33 @@ module LinearResponse
 !            call writematrix(FockSchmidt,'FockSchmidt',.true.)
 
             !write(6,"(A)",advance='no') "Constructing hessian matrix..."
+
+            !First, construct useful intermediates
+            do i=1,nSites
+                do j=1,nSites
+                    if(abs(SchmidtPert(i,j)-SchmidtPert(j,i)).gt.1.0e-9) then
+                        call stop_all(t_r,'Perturbation not symmetric')
+                    endif
+                enddo
+            enddo
+            call R_C_Copy_2D(FockSchmidtComp(:,:),FockSchmidt(:,:),nSites,nSites)
+            !sum_a G_ai^* G_aj
+            call ZGEMM('C','N',nCore,nCore,nVirt,complex(1.0_dp,0.0_dp),SchmidtPert(VirtStart:VirtEnd,1:CoreEnd),nVirt, &
+                SchmidtPert(VirtStart:VirtEnd,1:CoreEnd),nVirt,complex(0.0_dp,0.0_dp),G_ai_G_aj,nCore)
+            !sum_i G_ai^* G_bi = sum_i G_ia^* G_bi
+            call ZGEMM('C','N',nVirt,nVirt,nCore,complex(1.0_dp,0.0_dp),SchmidtPert(1:CoreEnd,VirtStart:VirtEnd),nCore, &
+                SchmidtPert(1:CoreEnd,VirtStart:VirtEnd),nCore,complex(0.0_dp,0.0_dp),G_ai_G_bi,nVirt)
+            !sum_a G_xa^* G_ya  (where (x,y) in active space)
+            call ZGEMM('C','N',EmbSize,EmbSize,nVirt,complex(1.0_dp,0.0_dp),    &
+                SchmidtPert(VirtStart:VirtEnd,ActiveStart:ActiveEnd),nVirt, &
+                SchmidtPert(VirtStart:VirtEnd,ActiveStart:ActiveEnd),nVirt,complex(0.0_dp,0.0_dp),G_xa_G_ya,EmbSize)
+            !sum_a G_xa F_ab
+            call ZGEMM('N','N',EmbSize,nVirt,nVirt,complex(1.0_dp,0.0_dp),SchmidtPert(ActiveStart:ActiveEnd,VirtStart:VirtEnd), &
+                EmbSize,FockSchmidtComp(VirtStart:VirtEnd,VirtStart:VirtEnd),nVirt,complex(0.0_dp,0.0_dp),G_xa_F_ab,EmbSize)
+            !sum_ab G_xa^* G_yb F_ab
+            call ZGEMM('C','T',EmbSize,EmbSize,nVirt,complex(1.0_dp,0.0_dp),SchmidtPert(VirtStart:VirtEnd,ActiveStart:ActiveEnd), &
+                nVirt,G_xa_F_ab(ActiveStart:ActiveEnd,VirtStart:VirtEnd),EmbSize,complex(0.0_dp,0.0_dp),G_xa_G_yb_F_ab,EmbSize)
+
             
             !First, construct FCI space, in determinant basis
             !****************************   Block 1   **************************
@@ -265,11 +303,14 @@ module LinearResponse
             !Calc normalization for the CV block
             CVNorm = 0.0_dp
             do i=1,CoreEnd
-                do a=VirtStart,VirtEnd
-!                    CVNorm = CVNorm + real(SchmidtPert(i,a))**2 + aimag(SchmidtPert(i,a))**2
-                    CVNorm = CVNorm + conjg(SchmidtPert(i,a))*SchmidtPert(i,a)
-                enddo
+                CVNorm = CVNorm + G_ai_G_aj(i,i)
             enddo
+            !do a=VirtStart,VirtEnd
+            !    do i=1,CoreEnd
+!                    CVNorm = CVNorm + real(SchmidtPert(i,a))**2 + aimag(SchmidtPert(i,a))**2
+            !        CVNorm = CVNorm + conjg(SchmidtPert(i,a))*SchmidtPert(i,a)
+            !    enddo
+            !enddo
             CVNorm = CVNorm * 2.0_dp
 
             !*****************************   Block 2   *****************************
@@ -280,19 +321,25 @@ module LinearResponse
             tempel = complex(0.0_dp,0.0_dp)
             do i=1,CoreEnd
                 do j=1,CoreEnd
-                    do a=VirtStart,VirtEnd
-                        tempel = tempel - FockSchmidt(j,i)*conjg(SchmidtPert(a,i))*SchmidtPert(a,j)
-                    enddo
+                    tempel = tempel - FockSchmidt(j,i)*G_ai_G_aj(j,i)
+!                    do a=VirtStart,VirtEnd
+!                        tempel = tempel - FockSchmidt(j,i)*conjg(SchmidtPert(a,i))*SchmidtPert(a,j)
+!                    enddo
                 enddo
             enddo
 
-            do i = 1,CoreEnd
+            do b = VirtStart,VirtEnd
                 do a = VirtStart,VirtEnd
-                    do b = VirtStart,VirtEnd
-                        tempel = tempel + FockSchmidt(b,a)*conjg(SchmidtPert(a,i))*SchmidtPert(b,i)
-                    enddo
+                    tempel = tempel + FockSchmidt(a,b)*G_ai_G_bi(a,b)
                 enddo
             enddo
+!            do i = 1,CoreEnd
+!                do a = VirtStart,VirtEnd
+!                    do b = VirtStart,VirtEnd
+!                        tempel = tempel + FockSchmidt(b,a)*conjg(SchmidtPert(a,i))*SchmidtPert(b,i)
+!                    enddo
+!                enddo
+!            enddo
             tempel = tempel * (2.0_dp/CVNorm)
 
             !write(6,*) "In the CV diagonal space, the diagonals are offset by (should be +ve): ",tempel
@@ -323,10 +370,11 @@ module LinearResponse
 
             !First, get normalization constants
             AVNorm(:) = 0.0_dp
-            do gam = 1,nImp*2
-                gam_spat = gam+(nOcc-nImp)
-                do a = VirtStart,VirtEnd
-                    AVNorm(gam) = AVNorm(gam) + real(SchmidtPert(gam_spat,a))**2 + aimag(SchmidtPert(gam_spat,a))**2
+            do a = VirtStart,VirtEnd
+                do gam = 1,nImp*2
+                    gam_spat = gam+(nOcc-nImp)
+                    !AVNorm(gam) = AVNorm(gam) + real(SchmidtPert(gam_spat,a))**2 + aimag(SchmidtPert(gam_spat,a))**2
+                    AVNorm(gam) = AVNorm(gam) + conjg(SchmidtPert(gam_spat,a))*SchmidtPert(gam_spat,a)
                 enddo
             enddo
             !call writevector(AVNorm,'AV Norm')
@@ -348,50 +396,55 @@ module LinearResponse
                     gam2_ind = AVIndex + (gam2-1)*(nNm1FCIDet+nNm1bFCIDet)
 
                     !Construct appropriate weighting factor for the hamiltonian matrix element contribution
-                    tempel = complex(0.0_dp,0.0_dp)
-                    do a = VirtStart,VirtEnd
-                        tempel = tempel + conjg(SchmidtPert(gam1_spat,a))*SchmidtPert(gam2_spat,a)
-                    enddo
+                    !tempel = complex(0.0_dp,0.0_dp)
+                    !do a = VirtStart,VirtEnd
+                    !    tempel = tempel + conjg(SchmidtPert(gam1_spat,a))*SchmidtPert(gam2_spat,a)
+                    !enddo
 
                     !Fill with appropriate FCI hamiltonian block
                     call R_C_Copy_2D(LinearSystem(gam1_ind:gam1_ind+nNm1bFCIDet-1,gam2_ind:gam2_ind+nNm1bFCIDet-1), &
                         Nm1FCIHam_beta(:,:),nNm1bFCIDet,nNm1bFCIDet)
-                    !LinearSystem(gam1_ind:gam1_ind+nNm1bFCIDet-1,gam2_ind:gam2_ind+nNm1bFCIDet-1) = Nm1FCIHam_beta(:,:)
 
                     !Now construct for the gam1_beta : gam2_beta block
                     call R_C_Copy_2D(LinearSystem(gam1_ind+nNm1bFCIDet:gam1_ind+nNm1bFCIDet+nNm1FCIDet-1,   &
                         gam2_ind+nNm1bFCIDet:gam2_ind+nNm1bFCIDet+nNm1FCIDet-1),Nm1FCIHam_alpha(:,:),nNm1FCIDet,nNm1FCIDet)
-                    !LinearSystem(gam1_ind+nNm1bFCIDet:gam1_ind+nNm1bFCIDet+nNm1FCIDet-1,    &
-                    !    gam2_ind+nNm1bFCIDet:gam2_ind+nNm1bFCIDet+nNm1FCIDet-1) = Nm1FCIHam_alpha(:,:)
                     
                     !Multiply every element by the appropriate weighting factor
                     !This weighting factor is the same for both spin blocks, so no need to do seperately
-                    do i = gam1_ind,gam1_ind+(nNm1bFCIDet+nNm1FCIDet)-1
-                        do j = gam2_ind,gam2_ind+(nNm1bFCIDet+nNm1FCIDet)-1
-                            LinearSystem(i,j) = LinearSystem(i,j)*tempel
-                        enddo
-                    enddo
+                    LinearSystem(gam1_ind:gam1_ind+(nNm1bFCIDet+nNm1FCIDet)-1,gam2_ind:gam2_ind+(nNm1bFCIDet+nNm1FCIDet)-1) =   & 
+                        LinearSystem(gam1_ind:gam1_ind+(nNm1bFCIDet+nNm1FCIDet)-1,gam2_ind:gam2_ind+(nNm1bFCIDet+nNm1FCIDet)-1) &
+                        *G_xa_G_ya(gam1_spat,gam2_spat)
+                    !do i = gam1_ind,gam1_ind+(nNm1bFCIDet+nNm1FCIDet)-1
+                    !    do j = gam2_ind,gam2_ind+(nNm1bFCIDet+nNm1FCIDet)-1
+                    !        LinearSystem(i,j) = LinearSystem(i,j)*G_xa_G_ya(gam1_spat,gam2_spat)       !*tempel
+                    !    enddo
+                    !enddo
 
                     !Now for the virtual excitation term, which is diagonal in each determinant space
-                    tempel = complex(0.0_dp,0.0_dp)
-                    do a = VirtStart,VirtEnd
-                        do b = VirtStart,VirtEnd
-                            tempel = tempel + FockSchmidt(a,b)*conjg(SchmidtPert(gam1_spat,a))*SchmidtPert(gam2_spat,b)
-                        enddo
-                    enddo
+                    !tempel = complex(0.0_dp,0.0_dp)
+                    !do a = VirtStart,VirtEnd
+                    !    do b = VirtStart,VirtEnd
+                    !        tempel = tempel + FockSchmidt(a,b)*conjg(SchmidtPert(gam1_spat,a))*SchmidtPert(gam2_spat,b)
+                    !    enddo
+                    !enddo
                     !Add this term in to the diagonals of each block
                     do i = 0,nNm1bFCIDet+nNm1FCIDet-1
-                        LinearSystem(gam1_ind+i,gam2_ind+i) = LinearSystem(gam1_ind+i,gam2_ind+i) + tempel
+                        LinearSystem(gam1_ind+i,gam2_ind+i) = LinearSystem(gam1_ind+i,gam2_ind+i) +     &
+                            G_xa_G_yb_F_ab(gam1_spat,gam2_spat) 
                     enddo
 
                     !Finally, all the elements need to be normalized correctly.
                     !Again, the normalization condition is the same for both spins.
-                    do i = 0,nNm1bFCIDet+nNm1FCIDet-1
-                        do j = 0,nNm1bFCIDet+nNm1FCIDet-1
-                            LinearSystem(gam1_ind+j,gam2_ind+i) = LinearSystem(gam1_ind+j,gam2_ind+i) / &
-                                sqrt(AVNorm(gam1)*AVNorm(gam2))
-                        enddo
-                    enddo
+                    tempel = sqrt(AVNorm(gam1)*AVNorm(gam2))
+                    LinearSystem(gam1_ind:gam1_ind+nNm1bFCIDet+nNm1FCIDet-1,gam2_ind:gam2_ind+nNm1bFCIDet+nNm1FCIDet-1) =   &
+                        LinearSystem(gam1_ind:gam1_ind+nNm1bFCIDet+nNm1FCIDet-1,gam2_ind:gam2_ind+nNm1bFCIDet+nNm1FCIDet-1) /   &
+                        tempel
+                    !do i = 0,nNm1bFCIDet+nNm1FCIDet-1
+                    !    do j = 0,nNm1bFCIDet+nNm1FCIDet-1
+                    !        LinearSystem(gam1_ind+j,gam2_ind+i) = LinearSystem(gam1_ind+j,gam2_ind+i) / &
+                    !            sqrt(AVNorm(gam1)*AVNorm(gam2))
+                    !    enddo
+                    !enddo
 
                 enddo   !End gam2
             enddo   !End gam1
