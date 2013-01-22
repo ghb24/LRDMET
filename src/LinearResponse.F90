@@ -90,8 +90,9 @@ module LinearResponse
         complex(dp) , allocatable :: G_xa_F_ab(:,:),G_xa_G_yb_F_ab(:,:),FockSchmidtComp(:,:),G_ia_G_xa(:,:)
         complex(dp) , allocatable :: F_xi_G_ia_G_ya(:,:),G_xa_F_ya(:,:),G_xi_G_yi(:,:),G_ix_F_ij(:,:)
         complex(dp) , allocatable :: G_ix_G_jy_F_ji(:,:),G_ia_G_ix(:,:),F_ax_G_ia_G_iy(:,:),G_ix_F_iy(:,:)
+        complex(dp) , allocatable :: SBlock(:,:),temp_vecc_2(:)
         real(dp), allocatable :: NFCIHam(:,:),temp(:,:),Nm1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
-        real(dp), allocatable :: Np1FCIHam_alpha(:,:),Np1FCIHam_beta(:,:)
+        real(dp), allocatable :: Np1FCIHam_alpha(:,:),Np1FCIHam_beta(:,:),SBlock_val(:)
         real(dp), allocatable :: AVNorm(:),CANorm(:),Work(:),H_Vals(:),S_EigVal(:)
         integer, allocatable :: Pivots(:),Coup_Ann_alpha(:,:,:),Coup_Ann_beta(:,:,:)
         integer, allocatable :: Coup_Create_alpha(:,:,:),Coup_Create_beta(:,:,:)
@@ -1453,27 +1454,87 @@ module LinearResponse
 
             if(tProjectOutNull.or.tLR_ReoptGS) then
                 !We need eigenvalues and vectors of S
+                !Beware, that by block diagonalizing, the eigenvalues are no longer in increasing order
+
+                !Fill in orthogonal blocks (no need to diagonalize)
+                allocate(S_EigVec(nLinearSystem,nLinearSystem))
+                allocate(S_Eigval(nLinearSystem))
+                S_EigVec(:,:) = complex(0.0_dp,0.0_dp)
+                do i=1,AVIndex-1
+                    S_EigVec(i,i) = complex(1.0_dp,0.0_dp)
+                    S_Eigval(i) = 1.0_dp
+                enddo
 
                 !Diagonalize block 4
-
-
-                nSize = nLinearSystem
-                allocate(S_EigVec(nSize,nSize))
-                S_EigVec(:,:) = Overlap(1:nSize,1:nSize)
+                nSize = nFullNm1 * EmbSize
+                if(nSize.ne.(CAIndex-AVIndex)) then
+                    write(6,*) "nSize: ",nSize
+                    write(6,*) "CVIndex-AVIndex: ",CAIndex-AVIndex
+                    call stop_all(t_r,'Block sizes wrong')
+                endif
+                allocate(SBlock(nSize,nSize))
+                SBlock(:,:) = Overlap(AVIndex:CAIndex-1,AVIndex:CAIndex-1)
                 allocate(Work(max(1,3*nSize-2)))
                 allocate(temp_vecc(1))
-                allocate(S_EigVal(nSize))
-                S_EigVal(:)=0.0_dp
-                lWork=-1
-                info=0
-                call zheev('V','U',nSize,S_EigVec,nSize,S_Eigval,temp_vecc,lWork,Work,info)
+                allocate(SBlock_val(nSize))
+                SBlock_val(:) = 0.0_dp
+                lWork = -1
+                info = 0
+                call zheev('V','U',nSize,SBlock,nSize,SBlock_val,temp_vecc,lWork,Work,info)
                 if(info.ne.0) call stop_all(t_r,'workspace query failed')
-                lwork=int(temp_vecc(1))+1
+                lwork = int(temp_vecc(1))+1
                 deallocate(temp_vecc)
                 allocate(temp_vecc(lwork))
-                call zheev('V','U',nSize,S_EigVec,nSize,S_Eigval,temp_vecc,lWork,Work,info)
-                if (info.ne.0) call stop_all(t_r,"Diag failed 1")
+                call zheev('V','U',nSize,SBlock,nSize,SBlock_val,temp_vecc,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'S Diag failed 1')
                 deallocate(work,temp_vecc)
+                !Fill into main arrays
+                S_Eigval(AVIndex:CAIndex-1) = SBlock_val(:)
+                S_EigVec(AVIndex:CAIndex-1,AVIndex:CAIndex-1) = SBlock(:,:)
+                deallocate(SBlock,SBlock_val)
+
+                !Block 7
+                nSize = nFullNp1 * EmbSize
+                if(nSize.ne.(nLinearSystem-CAIndex+1)) call stop_all(t_r,'Block sizes wrong')
+                allocate(SBlock(nSize,nSize))
+                SBlock(:,:) = Overlap(CAIndex:nLinearSystem,CAIndex:nLinearSystem)
+                allocate(Work(max(1,3*nSize-2)))
+                allocate(temp_vecc(1))
+                allocate(SBlock_val(nSize))
+                SBlock_val(:) = 0.0_dp
+                lWork = -1
+                info = 0
+                call zheev('V','U',nSize,SBlock,nSize,SBlock_val,temp_vecc,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'workspace query failed')
+                lwork = int(temp_vecc(1))+1
+                deallocate(temp_vecc)
+                allocate(temp_vecc(lwork))
+                call zheev('V','U',nSize,SBlock,nSize,SBlock_val,temp_vecc,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'S Diag failed 2')
+                deallocate(work,temp_vecc)
+                !Fill into main arrays
+                S_Eigval(CAIndex:nLinearSystem) = SBlock_val(:)
+                S_EigVec(CAIndex:nLinearSystem,CAIndex:nLinearSystem) = SBlock(:,:)
+                deallocate(SBlock,SBlock_val)
+
+                nSize = nLinearSystem
+!                nSize = nLinearSystem
+!                allocate(S_EigVec(nSize,nSize))
+!                S_EigVec(:,:) = Overlap(1:nSize,1:nSize)
+!                allocate(Work(max(1,3*nSize-2)))
+!                allocate(temp_vecc(1))
+!                allocate(S_EigVal(nSize))
+!                S_EigVal(:)=0.0_dp
+!                lWork=-1
+!                info=0
+!                call zheev('V','U',nSize,S_EigVec,nSize,S_Eigval,temp_vecc,lWork,Work,info)
+!                if(info.ne.0) call stop_all(t_r,'workspace query failed')
+!                lwork=int(temp_vecc(1))+1
+!                deallocate(temp_vecc)
+!                allocate(temp_vecc(lwork))
+!                call zheev('V','U',nSize,S_EigVec,nSize,S_Eigval,temp_vecc,lWork,Work,info)
+!                if (info.ne.0) call stop_all(t_r,"Diag failed 1")
+!                deallocate(work,temp_vecc)
 
                 !call writevector(S_Eigval,'Overlap EVals')
             endif
@@ -1606,17 +1667,25 @@ module LinearResponse
 
             call set_timer(LR_EC_TDA_BuildLR)
             !Remove the ground state from the hamiltonian
-            !TODO This should be zgemmed and combined with the previous calculation of the projector
             allocate(Projector(nLinearSystem,nLinearSystem))
+            allocate(temp_vecc_2(nLinearSystem))
+            call ZGEMM('C','N',1,nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),Psi_0,nLinearSystem,    &
+                Overlap,nLinearSystem,complex(0.0_dp,0.0_dp),temp_vecc_2,1)
             Projector(:,:) = complex(0.0_dp,0.0_dp)
             do i = 1,nLinearSystem
                 do j = 1,nLinearSystem
-                    do k = 1,nLinearSystem
-                        Projector(i,j) = Projector(i,j) + conjg(Psi_0(k))*Psi_0(i)*Overlap(k,j)
-                    enddo
+                    Projector(i,j) = temp_vecc_2(j)*Psi_0(i)
                 enddo
             enddo
-            LinearSystem(:,:) = LinearSystem(:,:) - Projector(:,:)*GSEnergy
+!            do i = 1,nLinearSystem
+!                do j = 1,nLinearSystem
+!                    do k = 1,nLinearSystem
+!                        Projector(i,j) = Projector(i,j) + conjg(Psi_0(k))*Psi_0(i)*Overlap(k,j)
+!                    enddo
+!                enddo
+!            enddo
+            !Remove ground state from linear system
+            LinearSystem(:,:) = LinearSystem(:,:) - (Projector(:,:)*GSEnergy)
 
             !Now construct the lhs of the equations
             !Now, we want to calculate H - (E_0 + Omega)S
@@ -1640,24 +1709,29 @@ module LinearResponse
             endif
 
             !Set up RHS of linear system: -Q V |0>
-            !First, find V |0> and store it in temp_vecc
+
+            !Change projector so that it now projects *out* the ground state
+            Projector(:,:) = Projector(:,:)*complex(-1.0_dp,0.0_dp)
+            do i = 1,nLinearSystem
+                Projector(i,i) = complex(1.0_dp,0.0_dp) + Projector(i,i)
+            enddo
+!            Projector(:,:) = complex(0.0_dp,0.0_dp)
+!            do i = 1,nLinearSystem
+!                Projector(i,i) = complex(1.0_dp,0.0_dp)
+!            enddo
+!            do i = 1,nLinearSystem
+!                do j = 1,nLinearSystem
+!                    do k = 1,nLinearSystem
+!                        Projector(i,j) = Projector(i,j) - conjg(Psi_0(k))*Psi_0(i)*Overlap(k,j)
+!                    enddo
+!                enddo
+!            enddo
+            
+            !find V |0> and store it in temp_vecc
             allocate(temp_vecc(nLinearSystem))
             call ApplyDensityPert_EC(Psi_0,temp_vecc,nLinearSystem)
             !call writevectorcomp(Psi_0,'Psi_0')
             !call writevectorcomp(temp_vecc,'V|0>')
-
-            !Project out the ground state by performing the outer product: 
-            Projector(:,:) = complex(0.0_dp,0.0_dp)
-            do i = 1,nLinearSystem
-                Projector(i,i) = complex(1.0_dp,0.0_dp)
-            enddo
-            do i = 1,nLinearSystem
-                do j = 1,nLinearSystem
-                    do k = 1,nLinearSystem
-                        Projector(i,j) = Projector(i,j) - conjg(Psi_0(k))*Psi_0(i)*Overlap(k,j)
-                    enddo
-                enddo
-            enddo
 
             !Now, calculate -QV|0> and put into VGS
             call ZGEMM('N','N',nLinearSystem,1,nLinearSystem,complex(-1.0_dp,0.0_dp),Projector,nLinearSystem,   &
@@ -1666,9 +1740,7 @@ module LinearResponse
             !Check that RHS is orthogonal to the ground state
             testc = complex(0.0_dp,0.0_dp)
             do j = 1,nLinearSystem
-                do i = 1,nLinearSystem
-                    testc = testc + Overlap(i,j)*conjg(Psi_0(i))*VGS(j)
-                enddo
+                testc = testc + temp_vecc_2(j)*VGS(j) !Overlap(i,j)*conjg(Psi_0(i))*VGS(j)
             enddo
 
             !We now have the RHS in 'VGS'. Project this into the linear span of S if needed
@@ -1727,8 +1799,9 @@ module LinearResponse
                 do j = 1,nLinearSystem
                     do i = 1,nLinearSystem
                         dNorm = dNorm + Overlap(i,j)*conjg(VGS(i))*VGS(j)
-                        dOrthog = dOrthog + Overlap(i,j)*conjg(Psi_0(i))*VGS(j)
+!                        dOrthog = dOrthog + Overlap(i,j)*conjg(Psi_0(i))*VGS(j)
                     enddo
+                    dOrthog = dOrthog + temp_vecc_2(j)*VGS(j)
                 enddo
                 write(6,*) "Normalization of first-order wavefunction: ",dNorm
                 write(6,*) "Orthogonality of first-order wavefunction: ",dOrthog
@@ -1748,9 +1821,10 @@ module LinearResponse
                     call ApplyDensityPert_EC(VGS,temp_vecc,nLinearSystem)
                     ResponseFn = complex(0.0_dp,0.0_dp)
                     do j = 1,nLinearSystem
-                        do i = 1,nLinearSystem
-                            ResponseFn = ResponseFn + Overlap(i,j)*conjg(Psi_0(i))*temp_vecc(j)
-                        enddo
+!                        do i = 1,nLinearSystem
+!                            ResponseFn = ResponseFn + Overlap(i,j)*conjg(Psi_0(i))*temp_vecc(j)
+!                        enddo
+                        ResponseFn = ResponseFn + temp_vecc(j)*temp_vecc_2(j)
                     enddo
                     write(iunit,"(10G22.10)") Omega,real(ResponseFn),-aimag(ResponseFn), &
                         abs(dOrthog),abs(dNorm),GSEnergy,Spectrum(1),abs(testc),real(ni_lr),-aimag(ni_lr)
@@ -1764,7 +1838,7 @@ module LinearResponse
                 deallocate(S_EigVec)
                 deallocate(S_EigVal)
             endif
-            deallocate(LHS,RHS,Psi_0,Projector)
+            deallocate(LHS,RHS,Psi_0,Projector,temp_vecc_2)
 
             Omega = Omega + Omega_Step
 
@@ -1789,6 +1863,15 @@ module LinearResponse
         if(allocated(Nm1bBitList)) deallocate(Nm1bBitList)
         if(allocated(Np1bFCIDetList)) deallocate(Np1bFCIDetList)
         if(allocated(Np1bBitList)) deallocate(Np1bBitList)
+
+        !Stored intermediates
+        deallocate(NFCIHam,Nm1FCIHam_alpha,Nm1FCIHam_beta,Np1FCIHam_alpha,Np1FCIHam_beta)
+        deallocate(AVNorm,CANorm)
+        deallocate(Coup_Create_alpha,Coup_Create_beta,Coup_Ann_alpha,Coup_Ann_beta)
+        deallocate(FockSchmidtComp,G_ai_G_aj,G_ai_G_bi,G_xa_G_ya,G_xa_F_ab,G_xa_G_yb_F_ab)
+        deallocate(G_ia_G_xa,F_xi_G_ia_G_ya,G_xa_F_ya,G_xi_G_yi,G_ix_F_ij,G_ix_G_jy_F_ji)
+        deallocate(G_ia_G_ix,F_ax_G_ia_G_iy,G_ix_F_iy)
+
 
     end subroutine NonIntExContracted_TDA_MCLR
 
