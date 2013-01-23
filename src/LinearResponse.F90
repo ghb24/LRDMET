@@ -4727,7 +4727,7 @@ module LinearResponse
 
         !Calculate here via direct diagonalization of the stability matrix
         write(6,*) "Calculating RPA from stability matrix"
-        call flush(6)
+        !call flush(6)
 
         !Stability = ( A  B  )
         !            ( B* A* )
@@ -4762,7 +4762,9 @@ module LinearResponse
         do i=1,StabilitySize
             if(W(i).lt.0.0_dp) then
                 write(6,*) i,W(i)
-                call stop_all(t_r,"HF solution not stable. Not local minimum. Recompute HF.")
+                call warning(t_r,"HF solution not stable. RPA failed. Recompute HF.")
+                deallocate(Stability,W,StabilityCopy,A_mat,B_mat)
+                return
             endif
         enddo
         write(6,"(A)") "Stability matrix positive definite. HF solution is minimum. RPA stable"
