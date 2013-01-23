@@ -4215,7 +4215,7 @@ module LinearResponse
         use utils, only: get_free_unit,append_ext_real,append_ext
         implicit none
         integer :: ov_space,virt_start,i,a,a_spat,i_spat,ai_ind,gtid,iunit
-        integer :: highbound,iunit2
+        integer :: highbound        !,iunit2
         real(dp) :: Omega,EDiff
         complex(dp) :: ResponseFn,ResponseFnPosW
         real(dp), allocatable :: transitions(:,:)   !(ov_space,2)   !1 = transition frequencies, 2 = moments
@@ -4278,17 +4278,17 @@ module LinearResponse
             filename2 = filename
         endif
         open(unit=iunit,file=filename2,status='unknown')
-        write(iunit,"(A)") "# Frequency     DD_LinearResponse"
-        iunit2 = get_free_unit()
-        call append_ext_real('NonInt_DDResponse_posW',U,filename2)
-        if(.not.tHalfFill) then
-            !Also append occupation of lattice to the filename
-            call append_ext(filename2,nOcc,filename3)
-        else
-            filename3 = filename2
-        endif
-        open(unit=iunit2,file=filename3,status='unknown')
-        write(iunit2,"(A)") "# Frequency     DD_LinearResponse"
+        write(iunit,"(A)") "# Frequency     DD_LinearResponse    DD_LinearResponse_PosW"
+!        iunit2 = get_free_unit()
+!        call append_ext_real('NonInt_DDResponse_posW',U,filename2)
+!        if(.not.tHalfFill) then
+!            !Also append occupation of lattice to the filename
+!            call append_ext(filename2,nOcc,filename3)
+!        else
+!            filename3 = filename2
+!        endif
+!        open(unit=iunit2,file=filename3,status='unknown')
+!        write(iunit2,"(A)") "# Frequency     DD_LinearResponse"
 
         Omega = Start_Omega
         do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
@@ -4314,14 +4314,14 @@ module LinearResponse
                 enddo
             enddo
             ResponseFn = ResponseFn*Lambda
-            write(iunit,*) Omega,real(ResponseFn),-aimag(ResponseFn)
-            write(iunit2,*) Omega,real(ResponseFnPosW),-aimag(ResponseFnPosW)
+            write(iunit,"(5G25.10)") Omega,real(ResponseFn),-aimag(ResponseFn),real(ResponseFnPosW),-aimag(ResponseFnPosW)
+!            write(iunit2,*) Omega,real(ResponseFnPosW),-aimag(ResponseFnPosW)
 
             Omega = Omega + Omega_Step
 
         enddo
         close(iunit)
-        close(iunit2)
+!        close(iunit2)
 
     end subroutine NonInteractingLR
 
