@@ -3,6 +3,7 @@ module LinearResponse
     use timing
     use errors, only: stop_all,warning
     use mat_tools, only: WriteVector,WriteMatrix,WriteVectorInt,WriteMatrixComp,WriteVectorComp
+    use matrixops, only: z_inv
     use globals
     implicit none
     integer :: CVIndex,AVIndex,CAIndex
@@ -105,15 +106,30 @@ module LinearResponse
         write(6,*) "Calculating non-interacting EC MR-TDA LR system..."
         if(.not.tConstructFullSchmidtBasis) call stop_all(t_r,'To solve LR, must construct full schmidt basis')
         if(.not.tCompleteDiag) call stop_all(t_r,'To solve LR, must perform complete diag')
+        if(iSolveLR.eq.1) then
+            write(6,"(A)") "Solving linear system with standard ZGESV linear solver"
+        elseif(iSolveLR.eq.2) then
+            write(6,"(A)") "Solving linear system with advanced ZGELS linear solver"
+        elseif(iSolveLR.eq.3) then
+            write(6,"(A)") "Solving linear system with direct inversion of hamiltonian"
+        elseif(iSolveLR.eq.4) then
+            write(6,"(A)") "Solving linear system via complete diagonalization of hamiltonian"
+        else
+            call stop_all(t_r,"Linear equation solver unknown")
+        endif
         !umat and tmat for the active space
         OrbPairs = (EmbSize*(EmbSize+1))/2
         UMatSize = (OrbPairs*(OrbPairs+1))/2
         if(allocated(UMat)) deallocate(UMat)
         allocate(UMat(UMatSize))
         UMat(:) = 0.0_dp
-        do i=1,nImp
-            umat(umatind(i,i,i,i)) = U
-        enddo
+        if(tAnderson) then
+            umat(umatind(1,1,1,1)) = U
+        else
+            do i=1,nImp
+                umat(umatind(i,i,i,i)) = U
+            enddo
+        endif
         if(allocated(tmat)) deallocate(tmat)
         allocate(tmat(EmbSize,EmbSize))
         tmat(:,:) = 0.0_dp
@@ -210,7 +226,6 @@ module LinearResponse
         !Allocate memory for hmailtonian in this system:
         allocate(LinearSystem(nLinearSystem,nLinearSystem),stat=ierr)
         allocate(Overlap(nLinearSystem,nLinearSystem),stat=ierr)
-        allocate(VGS(nLinearSystem),stat=ierr)
         if(ierr.ne.0) call stop_all(t_r,'Error allocating')
         
         !Set up orbital indices
@@ -1433,8 +1448,7 @@ module LinearResponse
 
                 enddo   !End gam2
             enddo   !End gam1
-
-            !Check hermiticity and normalization of overlap matrix
+!            !Check hermiticity and normalization of overlap matrix
             do i=1,nLinearSystem
                 do j=i,nLinearSystem
                     if(abs(Overlap(i,j)-conjg(Overlap(j,i))).gt.1.0e-7_dp) then
@@ -1452,7 +1466,7 @@ module LinearResponse
             call halt_timer(LR_EC_TDA_SBuild)
             call set_timer(LR_EC_TDA_Project)
 
-            if(tProjectOutNull.or.tLR_ReoptGS) then
+            if(tProjectOutNull.or.tLR_ReoptGS.or.tOrthogBasis) then
                 !We need eigenvalues and vectors of S
                 !Beware, that by block diagonalizing, the eigenvalues are no longer in increasing order
 
@@ -1517,7 +1531,6 @@ module LinearResponse
                 S_EigVec(CAIndex:nLinearSystem,CAIndex:nLinearSystem) = SBlock(:,:)
                 deallocate(SBlock,SBlock_val)
 
-                nSize = nLinearSystem
 !                nSize = nLinearSystem
 !                allocate(S_EigVec(nSize,nSize))
 !                S_EigVec(:,:) = Overlap(1:nSize,1:nSize)
@@ -1586,8 +1599,13 @@ module LinearResponse
             call halt_timer(LR_EC_TDA_Project)
 
             call set_timer(LR_EC_TDA_OptGS)
-            allocate(Psi_0(nLinearSystem))  !To store the ground state in the full basis
-            Psi_0(:) = complex(0.0_dp,0.0_dp)
+            if(tOrthogBasis) then
+                allocate(Psi_0(nSpan))  !To store the ground state in the full basis
+                Psi_0(:) = complex(0.0_dp,0.0_dp)
+            else
+                allocate(Psi_0(nLinearSystem))  !To store the ground state in the full basis
+                Psi_0(:) = complex(0.0_dp,0.0_dp)
+            endif
 
             if(tLR_ReoptGS) then
                 !Reoptimize the GS in this new space
@@ -1650,10 +1668,15 @@ module LinearResponse
                     call stop_all(t_r,'Reoptimized GS energy lower than original GS energy - this should not be possible')
                 endif
 
-                !Store the eigenvector in the original basis
-                !However, just rotate the ground state, not all the eigenvectors
-                call ZGEMM('N','N',nLinearSystem,1,nSpan,complex(1.0_dp,0.0_dp),CanTrans,nLinearSystem, &
-                    OrthogHam(:,1),nSpan,complex(0.0_dp,0.0_dp),Psi_0,nLinearSystem)
+                if(.not.tOrthogBasis) then
+                    !Store the eigenvector in the original basis
+                    !However, just rotate the ground state, not all the eigenvectors
+                    call ZGEMM('N','N',nLinearSystem,1,nSpan,complex(1.0_dp,0.0_dp),CanTrans,nLinearSystem, &
+                        OrthogHam(:,1),nSpan,complex(0.0_dp,0.0_dp),Psi_0,nLinearSystem)
+                else
+                    !Do not rotate - keep in the orthogonal basis
+                    Psi_0(:) = OrthogHam(:,1)
+                endif
 
                 deallocate(OrthogHam,H_Vals,tempc,CanTrans)
             else
@@ -1667,45 +1690,85 @@ module LinearResponse
 
             call set_timer(LR_EC_TDA_BuildLR)
             !Remove the ground state from the hamiltonian
-            allocate(Projector(nLinearSystem,nLinearSystem))
-            allocate(temp_vecc_2(nLinearSystem))
-            call ZGEMM('C','N',1,nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),Psi_0,nLinearSystem,    &
-                Overlap,nLinearSystem,complex(0.0_dp,0.0_dp),temp_vecc_2,1)
-            Projector(:,:) = complex(0.0_dp,0.0_dp)
-            do i = 1,nLinearSystem
-                do j = 1,nLinearSystem
-                    Projector(i,j) = temp_vecc_2(j)*Psi_0(i)
+            if(tOrthogBasis) then
+                allocate(Projector(nSpan,nSpan))
+                allocate(temp_vecc_2(nSpan))
+                do j = 1,nSpan
+                    do i = 1,nSpan
+                        Projector(i,j) = Psi_0(i)*conjg(Psi_0(j))
+                    enddo
+                    temp_vecc_2(j) = conjg(Psi_0(j))
                 enddo
-            enddo
-!            do i = 1,nLinearSystem
-!                do j = 1,nLinearSystem
-!                    do k = 1,nLinearSystem
-!                        Projector(i,j) = Projector(i,j) + conjg(Psi_0(k))*Psi_0(i)*Overlap(k,j)
-!                    enddo
-!                enddo
-!            enddo
-            !Remove ground state from linear system
-            LinearSystem(:,:) = LinearSystem(:,:) - (Projector(:,:)*GSEnergy)
 
-            !Now construct the lhs of the equations
-            !Now, we want to calculate H - (E_0 + Omega)S
-            do i=1,nLinearSystem
-                do j=1,nLinearSystem
-                    LinearSystem(j,i) = LinearSystem(j,i) - (Overlap(j,i)*(GSEnergy + complex(Omega,dDelta)))
-                enddo
-            enddo
-
-            allocate(LHS(nSpan,nSpan))
-            if(tTransformSpace) then
-                !Transform the LHS to the linear span of S
-                allocate(tempc(nLinearSystem,nSpan))
-                call ZGEMM('N','N',nLinearSystem,nSpan,nLinearSystem,complex(1.0_dp,0.0_dp),LinearSystem,nLinearSystem, &
-                    Transform,nLinearSystem,complex(0.0_dp,0.0_dp),tempc,nLinearSystem)
-                call ZGEMM('C','N',nSpan,nSpan,nLinearSystem,complex(1.0_dp,0.0_dp),Transform,nLinearSystem,    &
-                    tempc,nLinearSystem,complex(0.0_dp,0.0_dp),LHS,nSpan)
-                deallocate(tempc)
             else
-                LHS(:,:) = LinearSystem(:,:)
+                allocate(Projector(nLinearSystem,nLinearSystem))
+                allocate(temp_vecc_2(nLinearSystem))
+                call ZGEMM('C','N',1,nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),Psi_0,nLinearSystem,    &
+                    Overlap,nLinearSystem,complex(0.0_dp,0.0_dp),temp_vecc_2,1)
+                Projector(:,:) = complex(0.0_dp,0.0_dp)
+                do i = 1,nLinearSystem
+                    do j = 1,nLinearSystem
+                        Projector(i,j) = temp_vecc_2(j)*Psi_0(i)
+                    enddo
+                enddo
+            endif
+
+            !Construct LHS
+            allocate(LHS(nSpan,nSpan))
+            if(tOrthogBasis) then
+                !Rotate linear system into the orthogonal basis.
+                allocate(tempc(nSpan,nLinearSystem))
+                call ZGEMM('C','N',nSpan,nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),Transform,nLinearSystem,    &
+                    LinearSystem,nLinearSystem,complex(0.0_dp,0.0_dp),tempc,nSpan)
+                call ZGEMM('N','N',nSpan,nSpan,nLinearSystem,complex(1.0_dp,0.0_dp),tempc,nSpan,Transform,nLinearSystem,    &
+                    complex(0.0_dp,0.0_dp),LHS,nSpan)
+
+                !Rotated overlap should be unit matrix
+                !Check this
+                allocate(CanTrans(nSpan,nSpan))
+                call ZGEMM('C','N',nSpan,nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),Transform,nLinearSystem,    &
+                    Overlap,nLinearSystem,complex(0.0_dp,0.0_dp),tempc,nSpan)
+                call ZGEMM('N','N',nSpan,nSpan,nLinearSystem,complex(1.0_dp,0.0_dp),tempc,nSpan,Transform,nLinearSystem,    &
+                    complex(0.0_dp,0.0_dp),CanTrans,nSpan)
+                do i=1,nSpan
+                    do j=1,nSpan
+                        if((i.eq.j).and.(abs(CanTrans(i,i)-complex(1.0_dp,0.0_dp)).gt.1.0e-8_dp)) then
+                            write(6,*) "S: ",i,j,CanTrans(i,j)
+                            call stop_all(t_r,'Projected overlap matrix does not have unit diagonal')
+                        elseif((i.ne.j).and.(abs(CanTrans(j,i)).gt.1.0e-8_dp)) then
+                            write(6,*) "S: ",i,j,CanTrans(j,i)
+                            call stop_all(t_r,'Projected overlap matrix has non-zero off-diagonals')
+                        endif
+                    enddo
+                enddo
+
+                !Form LHS - easier as S is unit matrix
+                do i = 1,nSpan
+                    LHS(i,i) = LHS(i,i) - (GSEnergy + complex(Omega,dDelta))
+                enddo
+            else
+                !Remove ground state from linear system
+    !            LinearSystem(:,:) = LinearSystem(:,:) - (Projector(:,:)*GSEnergy)
+
+                !Now construct the lhs of the equations
+                !Now, we want to calculate H - (E_0 + Omega)S
+                do i=1,nLinearSystem
+                    do j=1,nLinearSystem
+                        LinearSystem(j,i) = LinearSystem(j,i) - (Overlap(j,i)*(GSEnergy + complex(Omega,dDelta)))
+                    enddo
+                enddo
+
+                if(tTransformSpace) then
+                    !Transform the LHS to the linear span of S
+                    allocate(tempc(nLinearSystem,nSpan))
+                    call ZGEMM('N','N',nLinearSystem,nSpan,nLinearSystem,complex(1.0_dp,0.0_dp),LinearSystem,nLinearSystem, &
+                        Transform,nLinearSystem,complex(0.0_dp,0.0_dp),tempc,nLinearSystem)
+                    call ZGEMM('C','N',nSpan,nSpan,nLinearSystem,complex(1.0_dp,0.0_dp),Transform,nLinearSystem,    &
+                        tempc,nLinearSystem,complex(0.0_dp,0.0_dp),LHS,nSpan)
+                    deallocate(tempc)
+                else
+                    LHS(:,:) = LinearSystem(:,:)
+                endif
             endif
 
             !Set up RHS of linear system: -Q V |0>
@@ -1728,24 +1791,42 @@ module LinearResponse
 !            enddo
             
             !find V |0> and store it in temp_vecc
-            allocate(temp_vecc(nLinearSystem))
-            call ApplyDensityPert_EC(Psi_0,temp_vecc,nLinearSystem)
+            if(tOrthogBasis) then
+                allocate(temp_vecc(nSpan))
+                call ApplyDensityPert_EC_Orthog(Psi_0,temp_vecc,nSpan,nLinearSystem,Transform)
+            else
+                allocate(temp_vecc(nLinearSystem))
+                call ApplyDensityPert_EC(Psi_0,temp_vecc,nLinearSystem)
+            endif
             !call writevectorcomp(Psi_0,'Psi_0')
             !call writevectorcomp(temp_vecc,'V|0>')
 
             !Now, calculate -QV|0> and put into VGS
-            call ZGEMM('N','N',nLinearSystem,1,nLinearSystem,complex(-1.0_dp,0.0_dp),Projector,nLinearSystem,   &
-                temp_vecc,nLinearSystem,complex(0.0_dp,0.0_dp),VGS,nLinearSystem)
+            if(tOrthogBasis) then
+                allocate(VGS(nSpan))
+                call ZGEMM('N','N',nSpan,1,nSpan,complex(-1.0_dp,0.0_dp),Projector,nSpan,   &
+                    temp_vecc,nSpan,complex(0.0_dp,0.0_dp),VGS,nSpan)
 
-            !Check that RHS is orthogonal to the ground state
-            testc = complex(0.0_dp,0.0_dp)
-            do j = 1,nLinearSystem
-                testc = testc + temp_vecc_2(j)*VGS(j) !Overlap(i,j)*conjg(Psi_0(i))*VGS(j)
-            enddo
+                !Check that RHS is orthogonal to the ground state
+                testc = complex(0.0_dp,0.0_dp)
+                do j = 1,nSpan
+                    testc = testc + temp_vecc_2(j)*VGS(j) !Overlap(i,j)*conjg(Psi_0(i))*VGS(j)
+                enddo
+            else
+                allocate(VGS(nLinearSystem))
+                call ZGEMM('N','N',nLinearSystem,1,nLinearSystem,complex(-1.0_dp,0.0_dp),Projector,nLinearSystem,   &
+                    temp_vecc,nLinearSystem,complex(0.0_dp,0.0_dp),VGS,nLinearSystem)
+
+                !Check that RHS is orthogonal to the ground state
+                testc = complex(0.0_dp,0.0_dp)
+                do j = 1,nLinearSystem
+                    testc = testc + temp_vecc_2(j)*VGS(j) !Overlap(i,j)*conjg(Psi_0(i))*VGS(j)
+                enddo
+            endif
 
             !We now have the RHS in 'VGS'. Project this into the linear span of S if needed
             allocate(RHS(nSpan))
-            if(tTransformSpace) then
+            if(tTransformSpace.and.(.not.tOrthogBasis)) then
                 call ZGEMM('C','N',nSpan,1,nLinearSystem,complex(1.0_dp,0.0_dp),Transform,nLinearSystem,    &
                     VGS,nLinearSystem,complex(0.0_dp,0.0_dp),RHS,nSpan)
             else
@@ -1754,8 +1835,15 @@ module LinearResponse
             call halt_timer(LR_EC_TDA_BuildLR)
 
             call set_timer(LR_EC_TDA_SolveLR)
+
             !Now solve these linear equations
-            if(tZGELS) then
+            if(iSolveLR.eq.1) then
+                !Use standard linear equation solver. Solution returned in RHS
+                allocate(Pivots(nSpan))
+                call ZGESV(nSpan,1,LHS,nSpan,Pivots,RHS,nSpan,info)
+                deallocate(Pivots)
+            elseif(iSolveLR.eq.2) then
+                !Use advanced linear equation solver. Solution returned in RHS
                 info = 0
                 lWork = -1
                 allocate(cWork(1))
@@ -1766,10 +1854,83 @@ module LinearResponse
                 allocate(cWork(lWork))
                 call ZGELS('N',nSpan,nSpan,1,LHS,nSpan,RHS,nSpan,cWork,lWork,info)
                 deallocate(cWork)
-            else
-                allocate(Pivots(nSpan))
-                call ZGESV(nSpan,1,LHS,nSpan,Pivots,RHS,nSpan,info)
-                deallocate(Pivots)
+            elseif(iSolveLR.eq.3) then
+                !Solve linear equations via direct inversion
+
+                allocate(tempc(nSpan,nSpan))    !The inverse of the hamiltonian system. May fail to invert at/close to poles where eigenvalues -> 0
+                tempc(:,:) = complex(0.0_dp,0.0_dp)
+                !Directly invert the LHS
+                call z_inv(LHS,tempc)
+
+                !Multiply the inverse by the RHS of equations
+                allocate(cWork(nSpan))
+                call ZGEMM('N','N',nSpan,1,nSpan,complex(1.0_dp,0.0_dp),tempc,nSpan,RHS,nSpan,complex(0.0_dp,0.0_dp),   &
+                    cWork,nSpan)
+                !Copy final solution to RHS
+                RHS(:) = cWork(:)
+                deallocate(cWork,tempc)
+            elseif(iSolveLR.eq.4) then
+                !Solve linear equations via complete diagonalization of hamiltonian
+
+                allocate(OrthogHam(nSpan,nSpan))
+                OrthogHam(:,:) = LHS(:,:)
+                allocate(Work(max(1,3*nSpan-2)))
+                allocate(cWork(1))
+                allocate(H_Vals(nSpan))
+                H_Vals(:) = 0.0_dp
+                lWork = -1
+                info = 0
+                call zheev('V','U',nSpan,OrthogHam,nSpan,H_Vals,cWork,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'Workspace query failed')
+                lwork = int(cWork(1))+1
+                deallocate(cWork)
+                allocate(cWork(lwork))
+                call zheev('V','U',nSpan,OrthogHam,nSpan,H_Vals,cWork,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'Diag of LHS failed')
+                write(6,*) "Smallest eigenvalue of LHS: ",H_Vals(1)
+                write(6,*) "Largest eigenvalue of LHS: ",H_Vals(nSpan)
+                deallocate(work,cWork)
+
+                !Now, find inverse
+                allocate(tempc(nSpan,nSpan)) !Temp array to build inverse in
+                tempc(:,:) = complex(0.0_dp,0.0_dp)
+                do i=1,nSpan
+                    if(abs(H_Vals(i)).lt.1.0e-12_dp) then
+                        write(6,*) "Eigenvalue: ",i,H_Vals(i)
+                        call warning(t_r,'VERY small/negative eigenvalue of LHS.')
+                    endif
+                    tempc(i,i) = complex(1.0_dp/H_Vals(i),0.0_dp)
+                enddo
+                !Rotate back into original basis
+                allocate(CanTrans(nSpan,nSpan))
+                call ZGEMM('N','N',nSpan,nSpan,nSpan,complex(1.0_dp,0.0_dp),OrthogHam,nSpan,tempc,nSpan, &
+                    complex(0.0_dp,0.0_dp),CanTrans,nSpan)
+                call ZGEMM('N','C',nSpan,nSpan,nSpan,complex(1.0_dp,0.0_dp),CanTrans,nSpan,OrthogHam,nSpan,  &
+                    complex(0.0_dp,0.0_dp),tempc,nSpan)
+!                CanTrans(:,:) = complex(0.0_dp,0.0_dp)
+!                call z_inv(LHS,CanTrans)
+!                do i = 1,nSpan
+!                    do j = 1,nSpan
+!                        write(6,*) j,i,CanTrans(j,i),tempc(j,i)
+!                    enddo
+!                enddo
+!                call ZGEMM('N','N',nSpan,nSpan,nSpan,complex(1.0_dp,0.0_dp),tempc,nSpan,LHS,nSpan,complex(0.0_dp,0.0_dp),   &
+!                    CanTrans,nSpan)
+!                do i = 1,nSpan
+!                    do j=1,nSpan
+!                        write(6,*) j,i,CanTrans(j,i)
+!                    enddo
+!                enddo
+                deallocate(CanTrans)
+                !tempc should now be the inverse
+                !Multiply by RHS
+                allocate(cWork(nSpan))
+                call ZGEMM('N','N',nSpan,1,nSpan,complex(1.0_dp,0.0_dp),tempc,nSpan,RHS,nSpan,complex(0.0_dp,0.0_dp),   &
+                    cWork,nSpan)
+                !Copy final solution to RHS
+                RHS(:) = cWork(:)
+                deallocate(cWork,tempc,OrthogHam,H_Vals)
+
             endif
             if(info.ne.0) then 
                 write(6,*) "INFO: ",info
@@ -1777,7 +1938,7 @@ module LinearResponse
                 call warning(t_r,'Solving linear system failed - skipping this frequency')
             else
 
-                if(tTransformSpace) then
+                if(tTransformSpace.and.(.not.tOrthogBasis)) then
                     !Expand back out the perturbed wavefunction into the original basis
                     call ZGEMM('N','N',nLinearSystem,1,nSpan,complex(1.0_dp,0.0_dp),Transform,nLinearSystem,    &
                         RHS,nSpan,complex(0.0_dp,0.0_dp),VGS,nLinearSystem)
@@ -1786,23 +1947,39 @@ module LinearResponse
                 endif
 
                 if(tExplicitlyOrthog) then
-                    !Explicitly project out any component on psi_0
-                    call ZGEMM('N','N',nLinearSystem,1,nLinearSystem,complex(1.0_dp,0.0_dp),Projector,nLinearSystem,   &
-                        VGS,nLinearSystem,complex(0.0_dp,0.0_dp),temp_vecc,nLinearSystem)
-                    VGS(:) = temp_vecc(:)
+                    if(tOrthogBasis) then
+                        !Explicitly project out any component on psi_0
+                        call ZGEMM('N','N',nSpan,1,nSpan,complex(1.0_dp,0.0_dp),Projector,nSpan,   &
+                            VGS,nSpan,complex(0.0_dp,0.0_dp),temp_vecc,nSpan)
+                        VGS(:) = temp_vecc(:)
+                    else
+                        !Explicitly project out any component on psi_0
+                        call ZGEMM('N','N',nLinearSystem,1,nLinearSystem,complex(1.0_dp,0.0_dp),Projector,nLinearSystem,   &
+                            VGS,nLinearSystem,complex(0.0_dp,0.0_dp),temp_vecc,nLinearSystem)
+                        VGS(:) = temp_vecc(:)
+                    endif
                 endif
 
                 !Find normalization of first-order wavefunction
                 !Test whether the perturbed wavefunction is orthogonal to the ground state wavefunction
                 dNorm = complex(0.0_dp,0.0_dp)
                 dOrthog = complex(0.0_dp,0.0_dp)
-                do j = 1,nLinearSystem
-                    do i = 1,nLinearSystem
-                        dNorm = dNorm + Overlap(i,j)*conjg(VGS(i))*VGS(j)
-!                        dOrthog = dOrthog + Overlap(i,j)*conjg(Psi_0(i))*VGS(j)
+                if(tOrthogBasis) then
+                    do j = 1,nSpan
+                        do i = 1,nSpan
+                            dNorm = dNorm + Overlap(i,j)*conjg(VGS(i))*VGS(j)
+                        enddo
+                        dOrthog = dOrthog + temp_vecc_2(j)*VGS(j)
                     enddo
-                    dOrthog = dOrthog + temp_vecc_2(j)*VGS(j)
-                enddo
+                else
+                    do j = 1,nLinearSystem
+                        do i = 1,nLinearSystem
+                            dNorm = dNorm + Overlap(i,j)*conjg(VGS(i))*VGS(j)
+    !                        dOrthog = dOrthog + Overlap(i,j)*conjg(Psi_0(i))*VGS(j)
+                        enddo
+                        dOrthog = dOrthog + temp_vecc_2(j)*VGS(j)
+                    enddo
+                endif
                 write(6,*) "Normalization of first-order wavefunction: ",dNorm
                 write(6,*) "Orthogonality of first-order wavefunction: ",dOrthog
 
@@ -1818,14 +1995,21 @@ module LinearResponse
 
                 if(tCalcResponse) then
                     !Now, use temp_vecc to hold V|1>
-                    call ApplyDensityPert_EC(VGS,temp_vecc,nLinearSystem)
                     ResponseFn = complex(0.0_dp,0.0_dp)
-                    do j = 1,nLinearSystem
-!                        do i = 1,nLinearSystem
-!                            ResponseFn = ResponseFn + Overlap(i,j)*conjg(Psi_0(i))*temp_vecc(j)
-!                        enddo
-                        ResponseFn = ResponseFn + temp_vecc(j)*temp_vecc_2(j)
-                    enddo
+                    if(tOrthogBasis) then
+                        call ApplyDensityPert_EC_Orthog(VGS,temp_vecc,nSpan,nLinearSystem,Transform)
+                        do j = 1,nSpan
+                            ResponseFn = ResponseFn + temp_vecc(j)*temp_vecc_2(j)
+                        enddo
+                    else
+                        call ApplyDensityPert_EC(VGS,temp_vecc,nLinearSystem)
+                        do j = 1,nLinearSystem
+    !                        do i = 1,nLinearSystem
+    !                            ResponseFn = ResponseFn + Overlap(i,j)*conjg(Psi_0(i))*temp_vecc(j)
+    !                        enddo
+                            ResponseFn = ResponseFn + temp_vecc(j)*temp_vecc_2(j)
+                        enddo
+                    endif
                     write(iunit,"(10G22.10)") Omega,real(ResponseFn),-aimag(ResponseFn), &
                         abs(dOrthog),abs(dNorm),GSEnergy,Spectrum(1),abs(testc),real(ni_lr),-aimag(ni_lr)
                     deallocate(temp_vecc)
@@ -1838,7 +2022,7 @@ module LinearResponse
                 deallocate(S_EigVec)
                 deallocate(S_EigVal)
             endif
-            deallocate(LHS,RHS,Psi_0,Projector,temp_vecc_2)
+            deallocate(LHS,RHS,Psi_0,Projector,temp_vecc_2,VGS)
 
             Omega = Omega + Omega_Step
 
@@ -1846,7 +2030,6 @@ module LinearResponse
         enddo   !End loop over omega
 
         deallocate(LinearSystem,Overlap)
-        deallocate(VGS)
         close(iunit)
         if(tDiagHam) close(iunit2)
 
@@ -1874,6 +2057,49 @@ module LinearResponse
 
 
     end subroutine NonIntExContracted_TDA_MCLR
+
+    !Apply the density perturbation in the externally contracted space which is a rotation
+    !into the non-null and orthogonal basis of the overlap matrix
+    subroutine ApplyDensityPert_EC_Orthog(GS,V0,nSpan,nFull,Transform)
+        use DetToolsData
+        implicit none
+        integer , intent(in) :: nSpan,nFull
+        complex(dp), intent(in) :: GS(nSpan),Transform(nFull,nSpan)
+        complex(dp), intent(out) :: V0(nSpan)
+        complex(dp), allocatable :: V_Full(:,:),temppsi(:),DiagV(:),tempc(:,:)
+        complex(dp), allocatable :: V_Span(:,:)
+        integer :: i
+        character(len=*), parameter :: t_r='ApplyDensityPert_EC_Orthog'
+
+        allocate(V_Full(nFull,nFull))
+        V_Full(:,:) = complex(0.0_dp,0.0_dp)
+
+        !V in the full basis is diagonal.
+        allocate(temppsi(nFull))
+        temppsi(:) = complex(1.0_dp,0.0_dp)
+        allocate(DiagV(nFull))
+
+        call ApplyDensityPert_EC(temppsi,DiagV,nFull) 
+        do i = 1,nFull
+            V_Full(i,i) = DiagV(i)
+        enddo
+        deallocate(DiagV,temppsi)
+
+        !Now, rotate into new basis
+        allocate(tempc(nSpan,nFull))
+        allocate(V_Span(nSpan,nSpan))
+        call ZGEMM('C','N',nSpan,nFull,nFull,complex(1.0_dp,0.0_dp),Transform,nFull,    &
+            V_Full,nFull,complex(0.0_dp,0.0_dp),tempc,nSpan)
+        call ZGEMM('N','N',nSpan,nSpan,nFull,complex(1.0_dp,0.0_dp),tempc,nSpan,Transform,nFull,    &
+            complex(0.0_dp,0.0_dp),V_Span,nSpan)
+
+        !Now apply V in the smaller orthogonal space
+        call ZGEMM('N','N',nSpan,1,nSpan,complex(1.0_dp,0.0_dp),V_Span,nSpan,GS,nSpan,  &
+            complex(0.0_dp,0.0_dp),V0,nSpan)
+
+        deallocate(V_Span,tempc,V_Full)
+
+    end subroutine ApplyDensityPert_EC_Orthog
 
     !Apply the density perturbation in the Externally contracted space
     subroutine ApplyDensityPert_EC(GS,V0,nSize)

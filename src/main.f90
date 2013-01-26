@@ -62,7 +62,8 @@ Program RealHub
         tLR_ReoptGS = .false. 
         MinS_Eigval = 1.0e-9_dp
         tExplicitlyOrthog = .false.
-        tZGELS = .true. 
+        iSolveLR = 1
+        tOrthogBasis = .false.
 
     end subroutine set_defaults
 
@@ -321,12 +322,7 @@ Program RealHub
             case("EC_TDA")
                 tEC_TDA_Response = .true.
                 if(item.le.nitems) then
-                    call readi(itemp)
-                    if(itemp.eq.2) then
-                        tZGELS = .true.
-                    else
-                        tZGELS = .false.
-                    endif
+                    call readi(iSolveLR)
                 endif
             case("IC_TDA")
                 tIC_TDA_Response = .true.
@@ -345,6 +341,8 @@ Program RealHub
                 tLR_ReoptGS = .true.
             case("EXPLICIT_ORTHOG")
                 tExplicitlyOrthog = .true.
+            case("WORKLINEARSPAN")
+                tOrthogBasis = .true.
             case("END")
                 exit
             case default
@@ -358,6 +356,7 @@ Program RealHub
                 write(6,"(A)") "BROADENING"
                 write(6,"(A)") "NON_NULL"
                 write(6,"(A)") "REOPT_GS"
+                write(6,"(A)") "WORKLINEARSPAN"
                 write(6,"(A)") "EXPLICIT_ORTHOG"
                 call stop_all(t_r,'Keyword '//trim(w)//' not recognized')
             end select
@@ -369,6 +368,9 @@ Program RealHub
         implicit none
         character(len=*), parameter :: t_r='check_input'
 
+        if(tOrthogBasis.and.(.not.tProjectOutNull)) then
+            call stop_all(t_r,'Need to project out null space of S in order to work in the resulting basis')
+        endif
         if(tChemPot.and.tTDAResponse) then
             call stop_all(t_r,'Chemical potential not coded up yet for SR-TDA calculations')
         endif
@@ -390,9 +392,9 @@ Program RealHub
         if(tPeriodic.and.tAntiPeriodic) then
             call stop_all(t_r,'Both PBCs and APBCs specified in input')
         endif
-        if(tAnderson.and.(nImp.gt.1)) then
-            call stop_all(t_r,'Anderson model only coded up for a single impurity site')
-        endif
+!        if(tAnderson.and.(nImp.gt.1)) then
+!            call stop_all(t_r,'Anderson model only coded up for a single impurity site')
+!        endif
         if(tChemPot.and.(.not.tAnderson)) then
             call stop_all(t_r,'A chemical potential can only be applied to the 1-site Anderson model')
         endif
@@ -909,6 +911,9 @@ Program RealHub
         if(allocated(Emb_MF_DM)) deallocate(Emb_MF_DM)        !Mean field RDM
         if(allocated(Emb_FockPot)) deallocate(Emb_FockPot)      !The fock potential transforms h0v into the fock matrix in the AO basis
         if(allocated(Emb_CorrPot)) deallocate(Emb_CorrPot)      !The correlation potential is the block diagonal v_pot in the AO basis
+        !Emb_h0v is the core hamiltonian in the embedded basis, with correlation potential (not over the impurity sites)
+        if(allocated(Emb_h0v)) deallocate(Emb_h0v)
+
 
         !Transform all of these quantities into the embedded basis
         allocate(Emb_h0(EmbSize,EmbSize))
@@ -916,6 +921,7 @@ Program RealHub
         allocate(Emb_FockPot(EmbSize,EmbSize))
         allocate(Emb_CorrPot(EmbSize,EmbSize))
         allocate(Emb_Fock(EmbSize,EmbSize))     !For hub, this is just the core + corrPot
+        allocate(Emb_h0v(EmbSize,EmbSize))
 
         !Rotate them
         allocate(temp(EmbSize,nSites))
@@ -966,6 +972,12 @@ Program RealHub
 
         !The 2e terms left out of fock matrix everywhere, although included basically in CorrPot
         Emb_Fock(:,:) = Emb_h0(:,:) + Emb_CorrPot(:,:) ! + Emb_FockPot  
+        
+        !Set the correlation potential to zero over the impurity, since we do not need to include the fitted potential over the 
+        !orbitals that we are going to do the high-level calculation on.
+        Emb_h0v(:,:) = Emb_CorrPot(:,:)
+        Emb_h0v(1:nImp,1:nImp) = 0.0_dp     !Set correlation potential over the impurity sites to zero
+        Emb_h0v(:,:) = Emb_h0v(:,:) + Emb_h0(:,:)    !Add the embedded core hamiltonian over all sites
         
     end subroutine Transform1e
 
@@ -1075,7 +1087,7 @@ Program RealHub
         EmbCombs = (EmbSize*(EmbSize+1))/2
 
         deallocate(temp,SminHalf)
-
+        
     end subroutine CalcEmbedding
 
     subroutine DumpFCIDUMP()

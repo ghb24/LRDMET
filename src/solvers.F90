@@ -27,15 +27,6 @@ module solvers
         real(dp), allocatable :: HL_2RDM_temp(:,:)
         character(len=*), parameter :: t_r="SolveSystem"
 
-        !Set the correlation potential to zero over the impurity, since we do not need to include the fitted potential over the 
-        !orbitals that we are going to do the high-level calculation on.
-        !Emb_h0v is the core hamiltonian in the embedded basis, with correlation potential (not over the impurity sites)
-        if(allocated(Emb_h0v)) deallocate(Emb_h0v)
-        allocate(Emb_h0v(EmbSize,EmbSize))
-        Emb_h0v(:,:) = Emb_CorrPot(:,:)
-        Emb_h0v(1:nImp,1:nImp) = 0.0_dp     !Set correlation potential over the impurity sites to zero
-        Emb_h0v(:,:) = Emb_h0v(:,:) + Emb_h0(:,:)    !Add the embedded core hamiltonian over all sites
-
         !Calculate the number of electrons in the embedded system 
         Emb_nElec = 0.0_dp
         do i=1,EmbSize
@@ -570,9 +561,13 @@ module solvers
             write(iunit,"(A)") "&END"
 
             !Just define diagonal 2 electron contribution over impurity sites
-            do i=1,nSites
-                write(iunit,"(F16.12,4I8)") U,i,i,i,i
-            enddo
+            if(tAnderson) then
+                write(iunit,"(F16.12,4I8)") U,1,1,1,1
+            else
+                do i=1,nSites
+                    write(iunit,"(F16.12,4I8)") U,i,i,i,i
+                enddo
+            endif
 
             !Now for 1electron contributions
             do i=1,nSites
@@ -650,9 +645,13 @@ module solvers
         if(allocated(UMat)) deallocate(UMat)
         allocate(UMat(UMatSize))
         UMat(:) = 0.0_dp
-        do i=1,nImp
-            umat(umatind(i,i,i,i)) = U
-        enddo
+        if(tAnderson) then
+            umat(umatind(1,1,1,1)) = U
+        else
+            do i=1,nImp
+                umat(umatind(i,i,i,i)) = U
+            enddo
+        endif
         if(allocated(tmat)) deallocate(tmat)
         allocate(tmat(EmbSize,EmbSize))
         tmat(:,:) = 0.0_dp

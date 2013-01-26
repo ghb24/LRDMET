@@ -48,10 +48,10 @@ def _second_order_energy(h0,nocc,perturb,omega):
 def ph_greens():
     # main loop for general density-density (ph) response functions
     utils.dtype=N.complex128
-    nimp=1
+    nimp=2
 
     nimp_sp=2*nimp
-    nocc=8  #12
+    nocc=12 #12
     nsites=24 #24
     nsites_sp=nsites*2
     ndim=2
@@ -101,7 +101,7 @@ def ph_greens():
 #        print 'mu: ',mu
 
         fd=file("ph_siam.out."+str(u),"w")
-        for omega in N.arange(0.0,4.001,0.02):
+        for omega in N.arange(0.0,8.0,0.05):
     
             ops_dict=response_embed.mb_ph_ops(hlat,perturb,omega+1j*delta,nimp,nocc,pemb,pcore,pvirt)
             configs_dict=response_embed.mb_configs(nsites,nimp,nimp_sp,2*nocc-nimp_sp,0)
