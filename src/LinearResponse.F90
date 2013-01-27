@@ -91,7 +91,7 @@ module LinearResponse
         complex(dp) , allocatable :: G_xa_F_ab(:,:),G_xa_G_yb_F_ab(:,:),FockSchmidtComp(:,:),G_ia_G_xa(:,:)
         complex(dp) , allocatable :: F_xi_G_ia_G_ya(:,:),G_xa_F_ya(:,:),G_xi_G_yi(:,:),G_ix_F_ij(:,:)
         complex(dp) , allocatable :: G_ix_G_jy_F_ji(:,:),G_ia_G_ix(:,:),F_ax_G_ia_G_iy(:,:),G_ix_F_iy(:,:)
-        complex(dp) , allocatable :: SBlock(:,:),temp_vecc_2(:)
+        complex(dp) , allocatable :: SBlock(:,:),temp_vecc_2(:),S_Diag(:)
         real(dp), allocatable :: NFCIHam(:,:),temp(:,:),Nm1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
         real(dp), allocatable :: Np1FCIHam_alpha(:,:),Np1FCIHam_beta(:,:),SBlock_val(:)
         real(dp), allocatable :: AVNorm(:),CANorm(:),Work(:),H_Vals(:),S_EigVal(:)
@@ -1570,19 +1570,24 @@ module LinearResponse
                     tTransformSpace = .false.
                     allocate(Transform(nLinearSystem,nLinearSystem))
                     Transform(:,:) = S_EigVec(:,:)
+                    allocate(S_Diag(nSpan))
+                    S_Diag(:) = S_Eigval(:)
                 else
                     tTransformSpace = .true.
                     write(6,*) "Removing linear dependencies in overlap. Vectors removed: ",nLinearSystem-nSpan
 
                     !Find transformation matrix to the new space with linear dependencies removed before solving
                     allocate(Transform(nLinearSystem,nSpan))
+                    allocate(S_Diag(nSpan))
                     Transform(:,:) = complex(0.0_dp,0.0_dp)
+                    S_Diag(:) = complex(0.0_dp,0.0_dp)
                     nSpan = 0
                     do i=1,nLinearSystem
                         if(S_Eigval(i).gt.MinS_Eigval) then
                             nSpan = nSpan + 1
                             !Include vector
                             Transform(:,nSpan) = S_EigVec(:,i)
+                            S_Diag(nSpan) = S_Eigval(i)
                         endif
                     enddo
 
@@ -1695,9 +1700,9 @@ module LinearResponse
                 allocate(temp_vecc_2(nSpan))
                 do j = 1,nSpan
                     do i = 1,nSpan
-                        Projector(i,j) = Psi_0(i)*conjg(Psi_0(j))
+                        Projector(i,j) = Psi_0(i)*conjg(Psi_0(j))*S_Diag(j)
                     enddo
-                    temp_vecc_2(j) = conjg(Psi_0(j))
+                    temp_vecc_2(j) = conjg(Psi_0(j))*S_Diag(j)
                 enddo
 
             else
@@ -1723,7 +1728,7 @@ module LinearResponse
                 call ZGEMM('N','N',nSpan,nSpan,nLinearSystem,complex(1.0_dp,0.0_dp),tempc,nSpan,Transform,nLinearSystem,    &
                     complex(0.0_dp,0.0_dp),LHS,nSpan)
 
-                !Rotated overlap should be unit matrix
+                !Rotated overlap should be diagonal matrix
                 !Check this
                 allocate(CanTrans(nSpan,nSpan))
                 call ZGEMM('C','N',nSpan,nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),Transform,nLinearSystem,    &
@@ -1732,7 +1737,7 @@ module LinearResponse
                     complex(0.0_dp,0.0_dp),CanTrans,nSpan)
                 do i=1,nSpan
                     do j=1,nSpan
-                        if((i.eq.j).and.(abs(CanTrans(i,i)-complex(1.0_dp,0.0_dp)).gt.1.0e-8_dp)) then
+                        if((i.eq.j).and.(abs(CanTrans(i,i)-S_Diag(i)).gt.1.0e-8_dp)) then
                             write(6,*) "S: ",i,j,CanTrans(i,j)
                             call stop_all(t_r,'Projected overlap matrix does not have unit diagonal')
                         elseif((i.ne.j).and.(abs(CanTrans(j,i)).gt.1.0e-8_dp)) then
@@ -1741,10 +1746,11 @@ module LinearResponse
                         endif
                     enddo
                 enddo
+                deallocate(CanTrans,tempc)
 
-                !Form LHS - easier as S is unit matrix
+                !Form LHS - easier as S is diagonal   
                 do i = 1,nSpan
-                    LHS(i,i) = LHS(i,i) - (GSEnergy + complex(Omega,dDelta))
+                    LHS(i,i) = LHS(i,i) - S_Diag(i)*(GSEnergy + complex(Omega,dDelta))
                 enddo
             else
                 !Remove ground state from linear system
@@ -1775,9 +1781,15 @@ module LinearResponse
 
             !Change projector so that it now projects *out* the ground state
             Projector(:,:) = Projector(:,:)*complex(-1.0_dp,0.0_dp)
-            do i = 1,nLinearSystem
-                Projector(i,i) = complex(1.0_dp,0.0_dp) + Projector(i,i)
-            enddo
+            if(tOrthogBasis) then
+                do i = 1,nSpan
+                    Projector(i,i) = complex(1.0_dp,0.0_dp) + Projector(i,i)
+                enddo
+            else
+                do i = 1,nLinearSystem
+                    Projector(i,i) = complex(1.0_dp,0.0_dp) + Projector(i,i)
+                enddo
+            endif
 !            Projector(:,:) = complex(0.0_dp,0.0_dp)
 !            do i = 1,nLinearSystem
 !                Projector(i,i) = complex(1.0_dp,0.0_dp)
@@ -1966,9 +1978,7 @@ module LinearResponse
                 dOrthog = complex(0.0_dp,0.0_dp)
                 if(tOrthogBasis) then
                     do j = 1,nSpan
-                        do i = 1,nSpan
-                            dNorm = dNorm + Overlap(i,j)*conjg(VGS(i))*VGS(j)
-                        enddo
+                        dNorm = dNorm + S_Diag(j)*conjg(VGS(j))*VGS(j)
                         dOrthog = dOrthog + temp_vecc_2(j)*VGS(j)
                     enddo
                 else
@@ -2018,6 +2028,7 @@ module LinearResponse
             endif
 
             if(allocated(Transform)) deallocate(Transform)
+            if(allocated(S_Diag)) deallocate(S_Diag)
             if(allocated(S_EigVec)) then
                 deallocate(S_EigVec)
                 deallocate(S_EigVal)
