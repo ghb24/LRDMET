@@ -91,7 +91,7 @@ module LinearResponse
         complex(dp) , allocatable :: G_xa_F_ab(:,:),G_xa_G_yb_F_ab(:,:),FockSchmidtComp(:,:),G_ia_G_xa(:,:)
         complex(dp) , allocatable :: F_xi_G_ia_G_ya(:,:),G_xa_F_ya(:,:),G_xi_G_yi(:,:),G_ix_F_ij(:,:)
         complex(dp) , allocatable :: G_ix_G_jy_F_ji(:,:),G_ia_G_ix(:,:),F_ax_G_ia_G_iy(:,:),G_ix_F_iy(:,:)
-        complex(dp) , allocatable :: SBlock(:,:),temp_vecc_2(:),S_Diag(:)
+        complex(dp) , allocatable :: SBlock(:,:),temp_vecc_2(:),S_Diag(:),H_Valsc(:),RVec(:,:),LVec(:,:)
         real(dp), allocatable :: NFCIHam(:,:),temp(:,:),Nm1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
         real(dp), allocatable :: Np1FCIHam_alpha(:,:),Np1FCIHam_beta(:,:),SBlock_val(:)
         real(dp), allocatable :: AVNorm(:),CANorm(:),Work(:),H_Vals(:),S_EigVal(:)
@@ -116,6 +116,11 @@ module LinearResponse
             write(6,"(A)") "Solving linear system via complete diagonalization of hamiltonian"
         else
             call stop_all(t_r,"Linear equation solver unknown")
+        endif
+        if(tRemoveGSFromH) then
+            write(6,"(A)") "Explicitly removing the ground state from the hamiltonian. Hamiltonian will now lose hermiticity"
+        else
+            write(6,"(A)") "Hamiltonian will not have ground state explicitly removed. Should remain hermitian"
         endif
         !umat and tmat for the active space
         OrbPairs = (EmbSize*(EmbSize+1))/2
@@ -1747,14 +1752,21 @@ module LinearResponse
                     enddo
                 enddo
                 deallocate(CanTrans,tempc)
+                
+                if(tRemoveGSFromH) then
+                    !Remove ground state from linear system
+                    LHS(:,:) = LHS(:,:) - (Projector(:,:)*GSEnergy)
+                endif
 
                 !Form LHS - easier as S is diagonal   
                 do i = 1,nSpan
                     LHS(i,i) = LHS(i,i) - S_Diag(i)*(GSEnergy + complex(Omega,dDelta))
                 enddo
             else
-                !Remove ground state from linear system
-    !            LinearSystem(:,:) = LinearSystem(:,:) - (Projector(:,:)*GSEnergy)
+                if(tRemoveGSFromH) then
+                    !Remove ground state from linear system
+                    LinearSystem(:,:) = LinearSystem(:,:) - (Projector(:,:)*GSEnergy)
+                endif
 
                 !Now construct the lhs of the equations
                 !Now, we want to calculate H - (E_0 + Omega)S
@@ -1790,17 +1802,6 @@ module LinearResponse
                     Projector(i,i) = complex(1.0_dp,0.0_dp) + Projector(i,i)
                 enddo
             endif
-!            Projector(:,:) = complex(0.0_dp,0.0_dp)
-!            do i = 1,nLinearSystem
-!                Projector(i,i) = complex(1.0_dp,0.0_dp)
-!            enddo
-!            do i = 1,nLinearSystem
-!                do j = 1,nLinearSystem
-!                    do k = 1,nLinearSystem
-!                        Projector(i,j) = Projector(i,j) - conjg(Psi_0(k))*Psi_0(i)*Overlap(k,j)
-!                    enddo
-!                enddo
-!            enddo
             
             !find V |0> and store it in temp_vecc
             if(tOrthogBasis) then
@@ -1848,6 +1849,18 @@ module LinearResponse
 
             call set_timer(LR_EC_TDA_SolveLR)
 
+            !Check hamiltonian is hermitian (on non-diagonals)
+            if(.not.tRemoveGSFromH) then
+                do i=1,nSpan
+                    do j=i+1,nSpan
+                        if(abs(LHS(i,j)-conjg(LHS(j,i))).gt.1.0e-7_dp) then
+                            write(6,*) i,j,LHS(i,j),LHS(j,i),abs(LHS(i,j)-conjg(LHS(j,i)))
+                            call warning(t_r,'Linear system off-diagonal hermiticity lost')
+                        endif
+                    enddo
+                enddo
+            endif
+
             !Now solve these linear equations
             if(iSolveLR.eq.1) then
                 !Use standard linear equation solver. Solution returned in RHS
@@ -1883,47 +1896,52 @@ module LinearResponse
                 deallocate(cWork,tempc)
             elseif(iSolveLR.eq.4) then
                 !Solve linear equations via complete diagonalization of hamiltonian
+                !Beware, this matrix is not hermitian! At least the diagonals of the matrix are complex
 
                 allocate(OrthogHam(nSpan,nSpan))
                 OrthogHam(:,:) = LHS(:,:)
-                allocate(Work(max(1,3*nSpan-2)))
+                allocate(H_Valsc(nSpan))
+                allocate(RVec(nSpan,nSpan))
+                allocate(LVec(nSpan,nSpan))
+                RVec(:,:) = complex(0.0_dp,0.0_dp)
+                LVec(:,:) = complex(0.0_dp,0.0_dp)
+                H_Valsc(:) = complex(0.0_dp,0.0_dp)
+                allocate(Work(max(1,2*nSpan)))
                 allocate(cWork(1))
-                allocate(H_Vals(nSpan))
-                H_Vals(:) = 0.0_dp
                 lWork = -1
                 info = 0
-                call zheev('V','U',nSpan,OrthogHam,nSpan,H_Vals,cWork,lWork,Work,info)
+                call ZGEEV('V','V',nSpan,OrthogHam,nSpan,H_Valsc,LVec,nSpan,RVec,nSpan,cWork,lWork,Work,info)
                 if(info.ne.0) call stop_all(t_r,'Workspace query failed')
                 lwork = int(cWork(1))+1
                 deallocate(cWork)
                 allocate(cWork(lwork))
-                call zheev('V','U',nSpan,OrthogHam,nSpan,H_Vals,cWork,lWork,Work,info)
+                call ZGEEV('V','V',nSpan,OrthogHam,nSpan,H_Valsc,LVec,nSpan,RVec,nSpan,cWork,lWork,Work,info)
                 if(info.ne.0) call stop_all(t_r,'Diag of LHS failed')
-                write(6,*) "Smallest eigenvalue of LHS: ",H_Vals(1)
-                write(6,*) "Largest eigenvalue of LHS: ",H_Vals(nSpan)
                 deallocate(work,cWork)
 
                 !Now, find inverse
                 allocate(tempc(nSpan,nSpan)) !Temp array to build inverse in
                 tempc(:,:) = complex(0.0_dp,0.0_dp)
                 do i=1,nSpan
-                    if(abs(H_Vals(i)).lt.1.0e-12_dp) then
-                        write(6,*) "Eigenvalue: ",i,H_Vals(i)
+                    if(abs(H_Valsc(i)).lt.1.0e-12_dp) then
+                        write(6,*) "Eigenvalue: ",i,H_Valsc(i)
                         call warning(t_r,'VERY small/negative eigenvalue of LHS.')
                     endif
-                    tempc(i,i) = complex(1.0_dp/H_Vals(i),0.0_dp)
+                    tempc(i,i) = 1.0_dp/H_Valsc(i)
                 enddo
                 !Rotate back into original basis
                 allocate(CanTrans(nSpan,nSpan))
-                call ZGEMM('N','N',nSpan,nSpan,nSpan,complex(1.0_dp,0.0_dp),OrthogHam,nSpan,tempc,nSpan, &
+                call ZGEMM('N','N',nSpan,nSpan,nSpan,complex(1.0_dp,0.0_dp),RVec,nSpan,tempc,nSpan, &
                     complex(0.0_dp,0.0_dp),CanTrans,nSpan)
-                call ZGEMM('N','C',nSpan,nSpan,nSpan,complex(1.0_dp,0.0_dp),CanTrans,nSpan,OrthogHam,nSpan,  &
+                call ZGEMM('N','C',nSpan,nSpan,nSpan,complex(1.0_dp,0.0_dp),CanTrans,nSpan,RVec,nSpan,  &
                     complex(0.0_dp,0.0_dp),tempc,nSpan)
 !                CanTrans(:,:) = complex(0.0_dp,0.0_dp)
 !                call z_inv(LHS,CanTrans)
 !                do i = 1,nSpan
 !                    do j = 1,nSpan
-!                        write(6,*) j,i,CanTrans(j,i),tempc(j,i)
+!                        if(abs(LHS(j,i)-tempc(j,i)).gt.1.0e-8_dp) then
+!                            write(6,*) j,i,LHS(j,i),tempc(j,i),abs(LHS(j,i)-tempc(j,i))
+!                        endif
 !                    enddo
 !                enddo
 !                call ZGEMM('N','N',nSpan,nSpan,nSpan,complex(1.0_dp,0.0_dp),tempc,nSpan,LHS,nSpan,complex(0.0_dp,0.0_dp),   &
@@ -1941,7 +1959,7 @@ module LinearResponse
                     cWork,nSpan)
                 !Copy final solution to RHS
                 RHS(:) = cWork(:)
-                deallocate(cWork,tempc,OrthogHam,H_Vals)
+                deallocate(cWork,tempc,OrthogHam,H_Valsc,LVec,RVec)
 
             endif
             if(info.ne.0) then 

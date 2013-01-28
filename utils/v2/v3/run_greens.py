@@ -48,7 +48,7 @@ def _second_order_energy(h0,nocc,perturb,omega):
 def ph_greens():
     # main loop for general density-density (ph) response functions
     utils.dtype=N.complex128
-    nimp=1
+    nimp=2
 
     nimp_sp=2*nimp
     nocc=12
@@ -66,10 +66,10 @@ def ph_greens():
     N.set_printoptions(precision=3)
 
     t=-1. # hopping
-    delta=0.05 # broadening
+    delta=0.01 # broadening
 
 #    for u in [0.0,4.0,10.0]:
-    for u in [4.0]:
+    for u in [0.0,4.0]:
 
         # Single impurity Anderson model
         mu=0.

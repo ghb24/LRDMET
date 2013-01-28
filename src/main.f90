@@ -64,6 +64,7 @@ Program RealHub
         tExplicitlyOrthog = .false.
         iSolveLR = 1
         tOrthogBasis = .false.
+        tRemoveGSFromH = .false.
 
     end subroutine set_defaults
 
@@ -343,6 +344,8 @@ Program RealHub
                 tExplicitlyOrthog = .true.
             case("WORKLINEARSPAN")
                 tOrthogBasis = .true.
+            case("REMOVE_GS_FROM_H")
+                tRemoveGSFromH = .true.
             case("END")
                 exit
             case default
@@ -356,8 +359,9 @@ Program RealHub
                 write(6,"(A)") "BROADENING"
                 write(6,"(A)") "NON_NULL"
                 write(6,"(A)") "REOPT_GS"
-                write(6,"(A)") "WORKLINEARSPAN"
                 write(6,"(A)") "EXPLICIT_ORTHOG"
+                write(6,"(A)") "WORKLINEARSPAN"
+                write(6,"(A)") "REMOVE_GS_FROM_H"
                 call stop_all(t_r,'Keyword '//trim(w)//' not recognized')
             end select
         enddo LR

@@ -54,6 +54,8 @@ module Globals
     real(dp) :: MinS_Eigval     !For the LR - the smallest eigenvalue of S to keep
     logical :: tExplicitlyOrthog    !For the LR - explicitly orthogonalize the first-order solution
     logical :: tOrthogBasis     !For the LR - explicit calculate V and Q matrices, and do all calculations, in the orthogonal linear span of S
+    logical :: tRemoveGSFromH   !For the LR - whether to explicitly remove the GS from the hamiltonian before forming and solving the LR equations.
+                                !Warning - this can remove the hermiticity of the hamiltonian
     integer :: iSolveLR         !For the LR - which routine to use to solve the LR equations.
                                 ! 1   ZGESV   standard linear solver
                                 ! 2   ZGELS   Advanced linear solver - should be better if hamiltonian nearly singular
