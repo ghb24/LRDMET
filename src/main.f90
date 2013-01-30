@@ -54,6 +54,8 @@ Program RealHub
         tRPAResponse = .false.
 
         !MR Response
+        tDDResponse = .false.
+        tChargedResponse = .false.
         tEC_TDA_Response = .false.
         tIC_TDA_Response = .false.
         tLR_DMET = .false. 
@@ -102,7 +104,7 @@ Program RealHub
         if(tPeriodic) then
             write(6,"(A)") "            o PBCs employed"
         elseif(tAntiPeriodic) then
-            write(6,"(A)") "            o PBCs employed"
+            write(6,"(A)") "            o APBCs employed"
         elseif(.not.(tPeriodic.or.tAntiPeriodic)) then
             write(6,"(A)") "            o Open boundary conditions employed"
         endif
@@ -146,6 +148,12 @@ Program RealHub
         endif
         if(tEC_TDA_Response) then
             write(6,"(A)") "            o Calculating externally-contracted MC-TDA DMET linear response function" 
+            if(tDDResponse) then
+                write(6,"(A)") "                o Local density response calculated" 
+            endif
+            if(tChargedResponse) then
+                write(6,"(A)") "                o Local Greens function calculated" 
+            endif
         endif
         if(tIC_TDA_Response) then
             write(6,"(A)") "            o Calculating internally-contracted MC-TDA DMET linear response function" 
@@ -314,6 +322,10 @@ Program RealHub
             if(teof) exit
             call readu(w)
             select case(w)
+            case("DD_RESPONSE")
+                tDDResponse = .true.
+            case("GF_RESPONSE")
+                tChargedResponse = .true.
             case("NONINT")
                 tNIResponse = .true.
             case("TDA")
@@ -350,6 +362,8 @@ Program RealHub
                 exit
             case default
                 write(6,"(A)") "ALLOWED KEYWORDS IN LINEAR_RESPONSE BLOCK: "
+                write(6,"(A)") "DD_RESPONSE"
+                write(6,"(A)") "GF_RESPONSE"
                 write(6,"(A)") "NONINT"
                 write(6,"(A)") "TDA"
                 write(6,"(A)") "RPA"
@@ -371,16 +385,8 @@ Program RealHub
     subroutine check_input()
         implicit none
         character(len=*), parameter :: t_r='check_input'
-
-        if(tOrthogBasis.and.(.not.tProjectOutNull)) then
-            call stop_all(t_r,'Need to project out null space of S in order to work in the resulting basis')
-        endif
-        if(tChemPot.and.tTDAResponse) then
-            call stop_all(t_r,'Chemical potential not coded up yet for SR-TDA calculations')
-        endif
-        if(tChemPot.and.tRPAResponse) then
-            call stop_all(t_r,'Chemical potential not coded up yet for SR-RPA calculations')
-        endif
+        
+        !First specify flags which should be also set by the given input
         if(tIC_TDA_Response.or.tEC_TDA_Response) then
             tLR_DMET = .true.
             tConstructFullSchmidtBasis = .true.
@@ -393,22 +399,37 @@ Program RealHub
         else
             tMFResponse = .false.
         endif
+
+        !Now check for sanity and implementation of specified options
+        if(tOrthogBasis.and.(.not.tProjectOutNull)) then
+            call stop_all(t_r,'Need to project out null space of S in order to work in the resulting basis')
+        endif
+        if(tChemPot.and.tTDAResponse) then
+            call stop_all(t_r,'Chemical potential not coded up yet for SR-TDA calculations')
+        endif
+        if(tChemPot.and.tRPAResponse) then
+            call stop_all(t_r,'Chemical potential not coded up yet for SR-RPA calculations')
+        endif
         if(tPeriodic.and.tAntiPeriodic) then
             call stop_all(t_r,'Both PBCs and APBCs specified in input')
         endif
-!        if(tAnderson.and.(nImp.gt.1)) then
-!            call stop_all(t_r,'Anderson model only coded up for a single impurity site')
-!        endif
         if(tChemPot.and.(.not.tAnderson)) then
             call stop_all(t_r,'A chemical potential can only be applied to the 1-site Anderson model')
         endif
+        if(tLR_DMET.and.(.not.(tDDResponse.or.tChargedResponse))) then
+            call stop_all(t_r,'DMET linear response specified, but type of perturbation not')
+        endif
+        if(tMFResponse.and.(.not.(tDDResponse.or.tChargedResponse))) then
+            call stop_all(t_r,'Single-reference linear response specified, but type of perturbation not')
+        endif
+        if(tIC_TDA_Response.and.tChargedResponse) then
+            call stop_all(t_r,'Linear response greens function not coded up in internally contracted form')
+        endif
+        if(tIC_TDA_Response.and.tDDResponse) then
+            call warning(t_r,'DMET density response broken. Please fix me.')
+        endif
 
     end subroutine check_input
-
-    subroutine checkinput()
-        implicit none
-
-    end subroutine checkinput
 
     subroutine name_timers()
         implicit none
@@ -429,13 +450,18 @@ Program RealHub
         LR_SR_RPA%timer_name='LR_SR_RPA'
 
         !MR_LR_EC
-        LR_EC_TDA_Precom%timer_name='LR_EC_Precom'
-        LR_EC_TDA_HBuild%timer_name='LR_EC_HBuild'
-        LR_EC_TDA_SBuild%timer_name='LR_EC_SBuild'
-        LR_EC_TDA_Project%timer_name='LR_EC_NullProj'
-        LR_EC_TDA_OptGS%timer_name='LR_EC_SolveGS'
-        LR_EC_TDA_BuildLR%timer_name='LR_EC_BuildLR'
-        LR_EC_TDA_SolveLR%timer_name='LR_EC_SolveLR'
+        !Density response
+        LR_EC_TDA_Precom%timer_name='DD_EC_Precom'
+        LR_EC_TDA_HBuild%timer_name='DD_EC_HBuild'
+        LR_EC_TDA_SBuild%timer_name='DD_EC_SBuild'
+        LR_EC_TDA_Project%timer_name='DD_EC_NullProj'
+        LR_EC_TDA_OptGS%timer_name='DD_EC_SolveGS'
+        LR_EC_TDA_BuildLR%timer_name='DD_EC_BuildLR'
+        LR_EC_TDA_SolveLR%timer_name='DD_EC_SolveLR'
+        !GF response
+        LR_EC_GF_Precom%timer_name='GF_EC_Precom'
+        LR_EC_GF_HBuild%timer_name='GF_EC_HBuild'
+        LR_EC_GF_SolveLR%timer_name='GF_EC_SolveLR'
 
     end subroutine name_timers
 
