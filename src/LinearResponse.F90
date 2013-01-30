@@ -32,7 +32,12 @@ module LinearResponse
 
         if(tEC_TDA_Response) then
             !Externally contracted
-            call NonIntExContracted_TDA_MCLR()
+            if(tDDResponse) then
+                call NonIntExContracted_TDA_MCLR()
+            endif
+            if(tChargedResponse) then
+                call NonIntExCont_TDA_MCLR_Charged()
+            endif
         endif
 
         !Create contracted single excitation space using the non-interacting reference for the contractions
@@ -71,6 +76,366 @@ module LinearResponse
         endif
 
     end subroutine SR_LinearResponse
+
+    !Calculate linear response for charged excitations - add the hole creation to particle creation
+    subroutine NonIntExCont_TDA_MCLR_Charged()
+        use utils, only: get_free_unit,append_ext_real,append_ext
+        use DetBitOps, only: DecodeBitDet,SQOperator,CountBits
+        use DetToolsData
+        implicit none
+        character(len=*), parameter :: t_r='NonIntExCont_TDA_MCLR_Charged'
+
+        call set_timer(LR_EC_GF_Precom)
+
+        write(6,*) "Calculating non-interacting EC MR-TDA LR system for *hole* & *particle* alpha spin-orbital perturbations..."
+        if(.not.tConstructFullSchmidtBasis) call stop_all(t_r,'To solve LR, must construct full schmidt basis')
+        if(.not.tCompleteDiag) call stop_all(t_r,'To solve LR, must perform complete diag')
+        if(iSolveLR.eq.1) then
+            write(6,"(A)") "Solving linear system with standard ZGESV linear solver"
+        elseif(iSolveLR.eq.2) then
+            write(6,"(A)") "Solving linear system with advanced ZGELS linear solver"
+        elseif(iSolveLR.eq.3) then
+            write(6,"(A)") "Solving linear system with direct inversion of hamiltonian"
+        elseif(iSolveLR.eq.4) then
+            write(6,"(A)") "Solving linear system via complete diagonalization of hamiltonian"
+        else
+            call stop_all(t_r,"Linear equation solver unknown")
+        endif
+        if(tRemoveGSFromH) then
+            write(6,"(A)") "Explicitly removing the ground state from the hamiltonian. Hamiltonian will now lose hermiticity"
+        else
+            write(6,"(A)") "Hamiltonian will not have ground state explicitly removed. Should remain hermitian"
+        endif
+        !umat and tmat for the active space
+        OrbPairs = (EmbSize*(EmbSize+1))/2
+        UMatSize = (OrbPairs*(OrbPairs+1))/2
+        if(allocated(UMat)) deallocate(UMat)
+        allocate(UMat(UMatSize))
+        UMat(:) = 0.0_dp
+        if(tAnderson) then
+            umat(umatind(1,1,1,1)) = U
+        else
+            do i=1,nImp
+                umat(umatind(i,i,i,i)) = U
+            enddo
+        endif
+        if(allocated(tmat)) deallocate(tmat)
+        allocate(tmat(EmbSize,EmbSize))
+        tmat(:,:) = 0.0_dp
+        do i=1,EmbSize
+            do j=1,EmbSize
+                if(abs(Emb_h0v(i,j)).gt.1.0e-10_dp) then
+                    tmat(i,j) = Emb_h0v(i,j)
+                endif
+            enddo
+        enddo
+        if(tChemPot) then
+            tmat(1,1) = tmat(1,1) - U/2.0_dp
+        endif
+        
+        !Enumerate excitations for fully coupled space
+        !Seperate the lists into different Ms sectors in the N+- lists
+        call GenDets(Elec,EmbSize,.true.,.true.,.true.) 
+        write(6,*) "Number of determinants in {N,N+1,N-1} FCI space: ",ECoupledSpace
+
+        !We are going to choose the uncontracted space to have an Ms of 1 (i.e. alpha spin)
+
+        !Construct FCI hamiltonians for the N and N+1_alpha spaces
+        !N electron
+        allocate(NFCIHam(nFCIDet,nFCIDet))
+        NFCIHam(:,:) = 0.0_dp
+        do i=1,nFCIDet
+            NFCIHam(i,i) = Spectrum(i) 
+        enddo
+        !Now transform this block back into the determinant basis
+        allocate(temp(nFCIDet,nFCIDet))
+        call DGEMM('N','N',nFCIDet,nFCIDet,nFCIDet,1.0_dp,FullHamil,nFCIDet,NFCIHam(1:nFCIDet,1:nFCIDet),  &
+            nFCIDet,0.0_dp,temp,nFCIDet)
+        call DGEMM('N','T',nFCIDet,nFCIDet,nFCIDet,1.0_dp,temp,nFCIDet,FullHamil,nFCIDet,0.0_dp,    &
+            NFCIHam(1:nFCIDet,1:nFCIDet),nFCIDet)
+        deallocate(temp)
+
+        !N+1 hamiltonian
+        if(nNp1FCIDet.ne.nNp1bFCIDet) call stop_all(t_r,'Cannot deal with open shell systems')
+        allocate(Np1FCIHam_alpha(nNp1FCIDet,nNp1FCIDet))
+        Np1FCIHam_alpha(:,:) = 0.0_dp
+        do i=1,nNp1FCIDet
+            do j=1,nNp1FCIDet
+                call GetHElement(Np1FCIDetList(:,i),Np1FCIDetList(:,j),Elec+1,Np1FCIHam_alpha(i,j))
+            enddo
+        enddo
+
+        if(nNp1FCIDet.ne.nNm1FCIDet) call stop_all(t_r,'Active space not half-filled')
+
+        nLinearSystem = nNp1FCIDet + nFCIDet
+        
+        write(6,"(A,F14.6,A)") "Memory required for the LR system: ",real(2*(nLinearSystem**2)*16,dp)/1048576.0_dp," Mb"
+        
+        iunit = get_free_unit()
+        call append_ext_real('EC-TDA_GFResponse',U,filename)
+        if(.not.tHalfFill) then
+            !Also append occupation of lattice to the filename
+            call append_ext(filename,nOcc,filename2)
+        else
+            filename2 = filename
+        endif
+        open(unit=iunit,file=filename2,status='unknown')
+        write(iunit,"(A)") "# Frequency     GF_LinearResponse(Re)    GF_LinearResponse(Im)    " &
+            & //"Orthog    Norm   OrthogRHS    NI_LR"
+        
+        !Allocate memory for hmailtonian in this system:
+        allocate(LinearSystem_p(nLinearSystem,nLinearSystem),stat=ierr)
+        allocate(LinearSystem_h(nLinearSystem,nLinearSystem),stat=ierr)
+        if(ierr.ne.0) call stop_all(t_r,'Error allocating')
+        
+        !Set up orbital indices
+        CoreEnd = nOcc-nImp
+        VirtStart = nOcc+nImp+1
+        VirtEnd = nSites
+        ActiveStart = nOcc-nImp+1
+        ActiveEnd = nOcc+nImp
+        nCore = nOcc-nImp
+        nVirt = nSites-nOcc-nImp   
+        if(tHalfFill.and.(nCore.ne.nVirt)) then
+            call stop_all(t_r,'Error in setting up half filled lattice')
+        endif
+
+        !Set up indices for the block of the linear system
+        VIndex = nNp1FCIDet + 1   !Beginning of EC virtual excitations
+        if(VIndex+nFCIDet-1.ne.nLinearSystem) call stop_all(t_r,'Indexing error')
+
+        write(6,*) "V indices start from: ",VIndex
+        write(6,*) "Total size of linear sys: ",nLinearSystem
+            
+        !Since this does not depend at all on the new basis, since the ground state has a completely
+        !disjoint basis to |1>, the RHS of the equations can be precomputed
+        allocate(Cre_0(nLinearSystem))
+        allocate(Ann_0(nLinearSystem))
+        call ApplySP_PertGS_EC(FullHamil(:,1),nFCIDet,Cre_0,Ann_0,nLinearSystem)
+        
+        !Allocate and precompute 1-operator coupling coefficients between the different sized spaces.
+        !First number is the index of operator, and the second is the parity change when applying the operator
+        allocate(Coup_Create_alpha(2,nFCIDet,nNm1bFCIDet))
+        allocate(Coup_Ann_alpha(2,nFCIDet,nNp1FCIDet))
+        Coup_Create_alpha(:,:,:) = 0
+        Coup_Ann_alpha(:,:,:) = 0
+        !TODO: This can be largly sped up by considering single excitations in isolation, rather than running through all elements
+        !   This will result in an N_FCI * n_imp scaling, rather than N_FCI^2
+        do J = 1,nFCIDet
+            !Start with the creation of an alpha orbital
+            do K = 1,nNm1bFCIDet
+                DiffOrb = ieor(Nm1bBitList(K),FCIBitList(J))
+                nOrbs = CountBits(DiffOrb)
+                if(mod(nOrbs,2).ne.1) then 
+                    !There must be an odd number of orbital differences between the determinants
+                    !since they are of different electron number by one
+                    call stop_all(t_r,'Not odd number of electrons')
+                endif
+                if(nOrbs.ne.1) then
+                    !We only want one orbital different
+                    cycle
+                endif
+                !Now, find out what SPINorbital this one is from the bit number set
+                call DecodeBitDet(orbdum,1,DiffOrb)
+                gam = orbdum(1)
+                if(mod(gam,2).ne.1) then
+                    call stop_all(t_r,'differing orbital should be an alpha spin orbital')
+                endif
+                !Now find out the parity change when applying this creation operator to the original determinant
+                tempK = Nm1bBitList(K)
+                call SQOperator(tempK,gam,tParity,.false.)
+                Coup_Create_alpha(1,J,K) = gtid(gam)+CoreEnd
+                if(tParity) then
+                    Coup_Create_alpha(2,J,K) = -1
+                else
+                    Coup_Create_alpha(2,J,K) = 1
+                endif
+            enddo
+            !Now, annihilation of an alpha orbital
+            do K = 1,nNp1FCIDet
+                DiffOrb = ieor(Np1BitList(K),FCIBitList(J))
+                nOrbs = CountBits(DiffOrb)
+                if(mod(nOrbs,2).ne.1) then 
+                    !There must be an odd number of orbital differences between the determinants
+                    !since they are of different electron number by one
+                    call stop_all(t_r,'Not odd number of electrons 3')
+                endif
+                if(nOrbs.ne.1) then
+                    !We only want one orbital different
+                    cycle
+                endif
+                !Now, find out what SPINorbital this one is from the bit number set
+                call DecodeBitDet(orbdum,1,DiffOrb)
+                gam = orbdum(1)
+                if(mod(gam,2).ne.1) then
+                    call stop_all(t_r,'differing orbital should be an alpha spin orbital')
+                endif
+                !Now find out the parity change when applying this creation operator to the original determinant
+                tempK = Np1BitList(K)
+                call SQOperator(tempK,gam,tParity,.true.)
+                Coup_Ann_alpha(1,J,K) = gtid(gam)+CoreEnd
+                if(tParity) then
+                    Coup_Ann_alpha(2,J,K) = -1
+                else
+                    Coup_Ann_alpha(2,J,K) = 1
+                endif
+            enddo
+        enddo
+            
+        !Store the fock matrix in complex form, so that we can ZGEMM easily
+        allocate(FockSchmidtComp(nSites,nSites))
+        call R_C_Copy_2D(FockSchmidtComp(:,:),FockSchmidt(:,:),nSites,nSites)
+
+        !Space for useful intermediates
+        allocate(Gc_a_F_ax(ActiveStart:ActiveEnd))
+        allocate(Gc_b_F_ab(VirtStart:VirtEnd))
+
+        call halt_timer(LR_EC_GF_Precom)
+
+        Omega = Start_Omega
+        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+
+            call set_timer(LR_EC_GF_HBuild)
+        
+            LinearSystem_p(:,:) = complex(0.0_dp,0.0_dp)
+            LinearSystem_h(:,:) = complex(0.0_dp,0.0_dp)
+            write(6,*) "Calculating linear response for frequency: ",Omega
+
+            !First, find the non-interacting solution expressed in the schmidt basis
+            call FindSchmidtPert_Charged(Omega,ni_lr_Cre,ni_lr_Ann)
+
+            !First, construct useful intermediates
+            !sum_a Gc_a^* F_ax (Creation)
+            call ZGEMM('C','N',1,EmbSize,nVirt,complex(1.0_dp,0.0_dp),SchmidtPert_Cre(VirtStart:VirtEnd),nVirt, &
+                FockSchmidtComp(VirtStart:VirtEnd,ActiveStart:ActiveEnd),nVirt,complex(0.0_dp,0.0_dp),Gc_a_F_ax,EmbSize)
+            !sum_b Gc_b F_ab  (Creation)
+            call ZGEMM('T','T',1,nVirt,nVirt,complex(1.0_dp,0.0_dp),SchmidtPert_Cre(VirtStart:VirtEnd),nVirt,   &
+                FockSchmidtComp(VirtStart:VirtEnd,VirtStart:VirtEnd),nVirt,complex(0.0_dp,0.0_dp),Gc_b_F_ab,nVirt)
+
+            
+            !Block 1 for particle hamiltonian
+            !First, construct n + 1 (alpha) FCI space, in determinant basis
+            call R_C_Copy_2D(LinearSystem_p(1:nNp1FCIDet,1:nNp1FCIDet),Np1FCIHam_alpha(:,:),nNp1FCIDet,nNp1FCIDet)
+
+            !Block 2 for particle hamiltonian
+            !Copy the N electron FCI hamiltonian to this diagonal block
+            call R_C_Copy_2D(LinearSystem_p(VIndex:nLinearSystem,VIndex:nLinearSystem),nFCIHam(:,:),nFCIDet,nFCIDet)
+            
+            VNorm = 0.0_dp
+            tempel = complex(0.0_dp,0.0_dp)
+            do a = VirtStart,VirtEnd
+                !Calc normalization for the CV block
+                VNorm = VNorm + real(SchmidtPert_Cre(a))**2 + aimag(SchmidtPert_Cre(a))**2
+                !Calculate the diagonal correction
+                tempel = tempel + conjg(SchmidtPert_Cre(a))*Gc_b_F_ab(a)
+            enddo
+            tempel = tempel / VNorm
+            !Add diagonal virtual correction
+            do i = VIndex,nLinearSystem
+                LinearSystem_p(i,i) = LinearSystem_p(i,i) + tempel
+            enddo
+                
+            !Block 3
+            do J = 1,nNp1FCIDet
+                do K = 1,nFCIDet    !VIndex,nLinearSystem
+                    if(Coup_Ann_alpha(1,K,J).ne.0) then
+                        !Determinants are connected via a single SQ operator
+                        !First index is the spatial index, second is parity 
+                        LinearSystem_p(K+VIndex-1,J) = Gc_a_F_ax(Coup_Ann_alpha(1,K,J))*Coup_Ann_alpha(2,K,J)/sqrt(VNorm)
+                    endif
+                enddo
+            enddo
+
+            !Now, check hessian is hermitian
+            do i = 1,nLinearSystem
+                do j=i,nLinearSystem
+                    if(abs(LinearSystem_p(i,j)-conjg(LinearSystem_p(j,i))).gt.1.0e-8_dp) then
+                        write(6,*) "i, j: ",i,j
+                        write(6,*) "LinearSystem(i,j): ",LinearSystem_p(i,j)
+                        write(6,*) "LinearSystem(j,i): ",LinearSystem_p(j,i)
+                        call stop_all(t_r,'Hessian for EC-LR not hermitian')
+                    endif
+                enddo
+            enddo
+
+            write(6,*) "Hessian constructed successfully...",Omega
+            call halt_timer(LR_EC_GF_HBuild)
+
+            call set_timer(LR_EC_GF_SolveLR)
+
+            !Solve particle GF to start
+            allocate(LHS(nLinearSystem,nLinearSystem))
+            LHS(:,:) = complex(0.0_dp,0.0_dp)
+            LHS(:,:) = LinearSystem_p(:,:)
+            do i = 1,nLinearSystem
+                LHS(i,i) = complex(Omega,dDelta) - (LHS(i,i) - Spectrum(1))
+            enddo
+
+            !The V|0> for particle and hole perturbations are held in Cre_0 and Ann_0
+            allocate(RHS(nLinearSystem))
+            RHS(:) = Cre_0(:)
+
+            !Now solve these linear equations
+            !RHS will be overwritten with the solution
+            call SolveLinearSystem(LHS,RHS,nLinearSystem,info)
+            if(info.ne.0) then 
+                write(6,*) "INFO: ",info
+                call warning(t_r,'Solving linear system failed - skipping this frequency')
+            else
+                !Find normalization of first-order wavefunction
+                dNorm = complex(0.0_dp,0.0_dp)
+                do j = 1,nLinearSystem
+                    dNorm = dNorm + conjg(RHS(j))*RHS(j)
+                enddo
+                !write(6,*) "Normalization of first-order wavefunction: ",dNorm
+
+                !Now, want to calculate V^T|1>  
+                !This will apply an alpha annihilation operator at site pertsite to the first order interacting wavefunction
+                call ApplyAnn_FirstOrder_EC(RHS,nLinearSystem,Psi,nFCIDet)
+
+                !Now find the overlap with the original wavefunction
+                ResponseFn = complex(0.0_dp,0.0_dp)
+                do j = 1,nFCIDet
+                    ResponseFn = ResponseFn + Psi(j)*FullHamil(j,1)
+                enddo
+                write(iunit,"(10G22.10)") Omega,real(ResponseFn),-aimag(ResponseFn), &
+                    abs(dNorm),real(ni_lr),-aimag(ni_lr)
+
+            endif
+
+            Omega = Omega + Omega_Step
+
+            call halt_timer(LR_EC_GF_SolveLR)
+        enddo   !End loop over omega
+
+        deallocate(LinearSystem,Overlap)
+        close(iunit)
+        if(tDiagHam) close(iunit2)
+
+        !Deallocate determinant lists
+        if(allocated(FCIDetList)) deallocate(FCIDetList)
+        if(allocated(FCIBitList)) deallocate(FCIBitList)
+        if(allocated(UMat)) deallocate(UMat)
+        if(allocated(TMat)) deallocate(TMat)
+        if(allocated(Nm1FCIDetList)) deallocate(Nm1FCIDetList)
+        if(allocated(Nm1BitList)) deallocate(Nm1BitList)
+        if(allocated(Np1FCIDetList)) deallocate(Np1FCIDetList)
+        if(allocated(Np1BitList)) deallocate(Np1BitList)
+        if(allocated(Nm1bFCIDetList)) deallocate(Nm1bFCIDetList)
+        if(allocated(Nm1bBitList)) deallocate(Nm1bBitList)
+        if(allocated(Np1bFCIDetList)) deallocate(Np1bFCIDetList)
+        if(allocated(Np1bBitList)) deallocate(Np1bBitList)
+
+        !Stored intermediates
+        deallocate(NFCIHam,Nm1FCIHam_alpha,Nm1FCIHam_beta,Np1FCIHam_alpha,Np1FCIHam_beta)
+        deallocate(AVNorm,CANorm)
+        deallocate(Coup_Create_alpha,Coup_Create_beta,Coup_Ann_alpha,Coup_Ann_beta)
+        deallocate(FockSchmidtComp,G_ai_G_aj,G_ai_G_bi,G_xa_G_ya,G_xa_F_ab,G_xa_G_yb_F_ab)
+        deallocate(G_ia_G_xa,F_xi_G_ia_G_ya,G_xa_F_ya,G_xi_G_yi,G_ix_F_ij,G_ix_G_jy_F_ji)
+        deallocate(G_ia_G_ix,F_ax_G_ia_G_iy,G_ix_F_iy)
+
+
+    end subroutine NonIntExCont_TDA_MCLR_Charged
 
     subroutine NonIntExContracted_TDA_MCLR()
         use utils, only: get_free_unit,append_ext_real,append_ext
@@ -1862,106 +2227,7 @@ module LinearResponse
             endif
 
             !Now solve these linear equations
-            if(iSolveLR.eq.1) then
-                !Use standard linear equation solver. Solution returned in RHS
-                allocate(Pivots(nSpan))
-                call ZGESV(nSpan,1,LHS,nSpan,Pivots,RHS,nSpan,info)
-                deallocate(Pivots)
-            elseif(iSolveLR.eq.2) then
-                !Use advanced linear equation solver. Solution returned in RHS
-                info = 0
-                lWork = -1
-                allocate(cWork(1))
-                call ZGELS('N',nSpan,nSpan,1,LHS,nSpan,RHS,nSpan,cWork,lWork,info)
-                if(info.ne.0) call stop_all(t_r,'workspace query for ZGELS failed')
-                lwork = int(abs(cWork(1))) + 1
-                deallocate(cWork)
-                allocate(cWork(lWork))
-                call ZGELS('N',nSpan,nSpan,1,LHS,nSpan,RHS,nSpan,cWork,lWork,info)
-                deallocate(cWork)
-            elseif(iSolveLR.eq.3) then
-                !Solve linear equations via direct inversion
-
-                allocate(tempc(nSpan,nSpan))    !The inverse of the hamiltonian system. May fail to invert at/close to poles where eigenvalues -> 0
-                tempc(:,:) = complex(0.0_dp,0.0_dp)
-                !Directly invert the LHS
-                call z_inv(LHS,tempc)
-
-                !Multiply the inverse by the RHS of equations
-                allocate(cWork(nSpan))
-                call ZGEMM('N','N',nSpan,1,nSpan,complex(1.0_dp,0.0_dp),tempc,nSpan,RHS,nSpan,complex(0.0_dp,0.0_dp),   &
-                    cWork,nSpan)
-                !Copy final solution to RHS
-                RHS(:) = cWork(:)
-                deallocate(cWork,tempc)
-            elseif(iSolveLR.eq.4) then
-                !Solve linear equations via complete diagonalization of hamiltonian
-                !Beware, this matrix is not hermitian! At least the diagonals of the matrix are complex
-
-                allocate(OrthogHam(nSpan,nSpan))
-                OrthogHam(:,:) = LHS(:,:)
-                allocate(H_Valsc(nSpan))
-                allocate(RVec(nSpan,nSpan))
-                allocate(LVec(nSpan,nSpan))
-                RVec(:,:) = complex(0.0_dp,0.0_dp)
-                LVec(:,:) = complex(0.0_dp,0.0_dp)
-                H_Valsc(:) = complex(0.0_dp,0.0_dp)
-                allocate(Work(max(1,2*nSpan)))
-                allocate(cWork(1))
-                lWork = -1
-                info = 0
-                call ZGEEV('V','V',nSpan,OrthogHam,nSpan,H_Valsc,LVec,nSpan,RVec,nSpan,cWork,lWork,Work,info)
-                if(info.ne.0) call stop_all(t_r,'Workspace query failed')
-                lwork = int(cWork(1))+1
-                deallocate(cWork)
-                allocate(cWork(lwork))
-                call ZGEEV('V','V',nSpan,OrthogHam,nSpan,H_Valsc,LVec,nSpan,RVec,nSpan,cWork,lWork,Work,info)
-                if(info.ne.0) call stop_all(t_r,'Diag of LHS failed')
-                deallocate(work,cWork)
-
-                !Now, find inverse
-                allocate(tempc(nSpan,nSpan)) !Temp array to build inverse in
-                tempc(:,:) = complex(0.0_dp,0.0_dp)
-                do i=1,nSpan
-                    if(abs(H_Valsc(i)).lt.1.0e-12_dp) then
-                        write(6,*) "Eigenvalue: ",i,H_Valsc(i)
-                        call warning(t_r,'VERY small/negative eigenvalue of LHS.')
-                    endif
-                    tempc(i,i) = 1.0_dp/H_Valsc(i)
-                enddo
-                !Rotate back into original basis
-                allocate(CanTrans(nSpan,nSpan))
-                call ZGEMM('N','N',nSpan,nSpan,nSpan,complex(1.0_dp,0.0_dp),RVec,nSpan,tempc,nSpan, &
-                    complex(0.0_dp,0.0_dp),CanTrans,nSpan)
-                call ZGEMM('N','C',nSpan,nSpan,nSpan,complex(1.0_dp,0.0_dp),CanTrans,nSpan,RVec,nSpan,  &
-                    complex(0.0_dp,0.0_dp),tempc,nSpan)
-!                CanTrans(:,:) = complex(0.0_dp,0.0_dp)
-!                call z_inv(LHS,CanTrans)
-!                do i = 1,nSpan
-!                    do j = 1,nSpan
-!                        if(abs(LHS(j,i)-tempc(j,i)).gt.1.0e-8_dp) then
-!                            write(6,*) j,i,LHS(j,i),tempc(j,i),abs(LHS(j,i)-tempc(j,i))
-!                        endif
-!                    enddo
-!                enddo
-!                call ZGEMM('N','N',nSpan,nSpan,nSpan,complex(1.0_dp,0.0_dp),tempc,nSpan,LHS,nSpan,complex(0.0_dp,0.0_dp),   &
-!                    CanTrans,nSpan)
-!                do i = 1,nSpan
-!                    do j=1,nSpan
-!                        write(6,*) j,i,CanTrans(j,i)
-!                    enddo
-!                enddo
-                deallocate(CanTrans)
-                !tempc should now be the inverse
-                !Multiply by RHS
-                allocate(cWork(nSpan))
-                call ZGEMM('N','N',nSpan,1,nSpan,complex(1.0_dp,0.0_dp),tempc,nSpan,RHS,nSpan,complex(0.0_dp,0.0_dp),   &
-                    cWork,nSpan)
-                !Copy final solution to RHS
-                RHS(:) = cWork(:)
-                deallocate(cWork,tempc,OrthogHam,H_Valsc,LVec,RVec)
-
-            endif
+            call SolveCompLinearSystem(LHS,RHS,nSpan,info)
             if(info.ne.0) then 
                 write(6,*) "INFO: ",info
                 !call stop_all(t_r,'Solving Linear system failed') 
@@ -2086,6 +2352,221 @@ module LinearResponse
 
 
     end subroutine NonIntExContracted_TDA_MCLR
+
+    !RHS is overwritten with the solution
+    !LHS is destroyed
+    subroutine SolveCompLinearSystem(LHS,RHS,nLinearSystem,info)
+        implicit none
+        integer, intent(in) :: nLinearSystem
+        integer, intent(out) :: info
+        complex(dp), intent(inout) :: LHS(nLinearSystem,nLinearSystem)
+        complex(dp), intent(inout) :: RHS(nLinearSystem)
+        integer, allocatable :: Pivots(:)
+        integer :: lWork
+        real(dp), allocatable :: Work(:)
+        complex(dp), allocatable :: cWork(:),tempc(:,:),RVec(:,:),LVec(:,:),H_Valsc(:)
+        complex(dp), allocatable :: CanTrans(:,:)
+        character(len=*), parameter :: t_r='SolveCompLinearSystem'
+    
+        if(iSolveLR.eq.1) then
+            !Use standard linear equation solver. Solution returned in RHS
+            allocate(Pivots(nLinearSystem))
+            call ZGESV(nLinearSystem,1,LHS,nLinearSystem,Pivots,RHS,nLinearSystem,info)
+            deallocate(Pivots)
+        elseif(iSolveLR.eq.2) then
+            !Use advanced linear equation solver. Solution returned in RHS
+            info = 0
+            lWork = -1
+            allocate(cWork(1))
+            call ZGELS('N',nLinearSystem,nLinearSystem,1,LHS,nLinearSystem,RHS,nLinearSystem,cWork,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'workspace query for ZGELS failed')
+            lwork = int(abs(cWork(1))) + 1
+            deallocate(cWork)
+            allocate(cWork(lWork))
+            call ZGELS('N',nLinearSystem,nLinearSystem,1,LHS,nLinearSystem,RHS,nLinearSystem,cWork,lWork,info)
+            deallocate(cWork)
+        elseif(iSolveLR.eq.3) then
+            !Solve linear equations via direct inversion
+
+            allocate(tempc(nLinearSystem,nLinearSystem))    !The inverse of the hamiltonian system. May fail to invert at/close to poles where eigenvalues -> 0
+            tempc(:,:) = complex(0.0_dp,0.0_dp)
+            !Directly invert the LHS
+            call z_inv(LHS,tempc)
+
+            !Multiply the inverse by the RHS of equations
+            allocate(cWork(nLinearSystem))
+            call ZGEMM('N','N',nLinearSystem,1,nLinearSystem,complex(1.0_dp,0.0_dp),tempc,nLinearSystem,    &
+                RHS,nLinearSystem,complex(0.0_dp,0.0_dp),cWork,nLinearSystem)
+            !Copy final solution to RHS
+            RHS(:) = cWork(:)
+            deallocate(cWork,tempc)
+        elseif(iSolveLR.eq.4) then
+            !Solve linear equations via complete diagonalization of hamiltonian
+            !Beware, this matrix is not hermitian! At least the diagonals of the matrix are complex
+
+            allocate(H_Valsc(nLinearSystem))
+            allocate(RVec(nLinearSystem,nLinearSystem))
+            allocate(LVec(nLinearSystem,nLinearSystem))
+            RVec(:,:) = complex(0.0_dp,0.0_dp)
+            LVec(:,:) = complex(0.0_dp,0.0_dp)
+            H_Valsc(:) = complex(0.0_dp,0.0_dp)
+            allocate(Work(max(1,2*nLinearSystem)))
+            allocate(cWork(1))
+            lWork = -1
+            info = 0
+            call ZGEEV('V','V',nLinearSystem,LHS,nLinearSystem,H_Valsc,LVec,nLinearSystem,RVec,nLinearSystem,cWork,lWork,Work,info)
+            if(info.ne.0) call stop_all(t_r,'Workspace query failed')
+            lwork = int(cWork(1))+1
+            deallocate(cWork)
+            allocate(cWork(lwork))
+            call ZGEEV('V','V',nLinearSystem,LHS,nLinearSystem,H_Valsc,LVec,nLinearSystem,RVec,nLinearSystem,cWork,lWork,Work,info)
+            if(info.ne.0) call stop_all(t_r,'Diag of LHS failed')
+            deallocate(work,cWork)
+
+            !Now, find inverse
+            allocate(tempc(nLinearSystem,nLinearSystem)) !Temp array to build inverse in
+            tempc(:,:) = complex(0.0_dp,0.0_dp)
+            do i=1,nLinearSystem
+                if(abs(H_Valsc(i)).lt.1.0e-12_dp) then
+                    write(6,*) "Eigenvalue: ",i,H_Valsc(i)
+                    call warning(t_r,'VERY small/negative eigenvalue of LHS.')
+                endif
+                tempc(i,i) = 1.0_dp/H_Valsc(i)
+            enddo
+            !Rotate back into original basis
+            allocate(CanTrans(nLinearSystem,nLinearSystem))
+            call ZGEMM('N','N',nLinearSystem,nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),RVec,nLinearSystem,tempc,nLinearSystem, &
+                complex(0.0_dp,0.0_dp),CanTrans,nLinearSystem)
+            call ZGEMM('N','C',nLinearSystem,nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),CanTrans,nLinearSystem,RVec,nLinearSystem,  &
+                complex(0.0_dp,0.0_dp),tempc,nLinearSystem)
+            deallocate(CanTrans)
+            !tempc should now be the inverse
+            !Multiply by RHS
+            allocate(cWork(nLinearSystem))
+            call ZGEMM('N','N',nLinearSystem,1,nLinearSystem,complex(1.0_dp,0.0_dp),tempc,nLinearSystem,RHS,nLinearSystem,complex(0.0_dp,0.0_dp),   &
+                cWork,nLinearSystem)
+            !Copy final solution to RHS
+            RHS(:) = cWork(:)
+            deallocate(cWork,tempc,H_Valsc,LVec,RVec)
+
+        endif
+
+    end subroutine SolveCompLinearSystem
+
+
+    !This will apply an annihilation operator to a wavefunction (Psi_1) in the space of the first-order interacting
+    !N+1 particle space
+    !This space is given by
+    ! nNp1FCIDet space (+) nFCIDet space with contracted creation operator applied to core
+    ! Only the first space will couple to the zeroth order wavefunction
+    subroutine ApplyAnn_FirstOrder_EC(Psi_1,nSize1,Psi,nSize0)
+        implicit none
+        integer, intent(in) :: nSize1,nSize0
+        complex(dp), intent(in) :: Psi_1(nSize1)
+        complex(dp), intent(out) :: Psi(nSize0)
+        integer :: pertsitealpha,ilut,j,i
+        character(len=*), parameter :: t_r='ApplyAnn_FirstOrder_EC'
+
+        Psi(:) = complex(0.0_dp,0.0_dp)
+
+        if(nSize0.ne.nFCIDet) call stop_all(t_r,'Resultant wavefunction not expressed in expected space')
+
+        pertsitealpha = 2*pertsite-1
+
+        do i = 1,nNp1FCIDet
+            if(btest(Np1BitList(i),pertsitealpha-1)) then
+                !pertsitealpha occupied. We can apply an annihilation operator
+                ilut = Np1BitList(i)
+                call SQOperator(ilut,pertsitealpha,tParity,.true.)
+
+                !Now need to find which det in FCIBitList this corresponds to
+                do j = 1,nFCIDet
+                    if(FCIBitList(j).eq.ilut) then
+                        !Found corresponding determinant
+                        if(tParity) then
+                            Psi(j) = -Psi_1(i)
+                        else
+                            Psi(j) = Psi_1(i)
+                        endif
+                        exit
+                    endif
+                enddo
+                if(j.gt.nFCIDet) call stop_all(t_r,'Error in finding corresponding determinant')
+            endif
+
+        enddo
+
+    end subroutine ApplyAnn_FirstOrder_EC
+            
+    !It is only trying to create/distroy the alpha orbital applied to the ground state wavefunction
+    !Will return the ground state, with a particle created or distroyed in pertsite
+    subroutine ApplySP_PertGS_EC(Psi_0,SizeFCI,V0_Cre,V0_Ann,nSizeLR)
+        implicit none
+        integer, intent(in) :: SizeFCI,nSizeLR
+        real(dp), intent(in) :: Psi_0(SizeFCI)
+        complex(dp), intent(out) :: V0_Cre(nSizeLR),V0_Ann(nSizeLR)
+        integer :: ilut,pertsitealpha,i,j
+        logical :: tParity
+        character(len=*), parameter :: t_r='ApplySP_PertGS_EC'
+
+
+        V0_Ann(:) = complex(0.0_dp,0.0_dp)
+        V0_Cre(:) = complex(0.0_dp,0.0_dp)
+
+        if(SizeFCI.ne.nFCIDet) call stop_all(t_r,'Zeroth order wavefunction not expected size')
+        if(nSizeLR.ne.(nFCIDet+nNp1FCIDet)) call stop_all(t_r,'Size of linear system not expected')
+        if(nNp1FCIDet.ne.nNm1bFCIDet) call stop_all(t_r,"V0's are different sizes for particle/hole creation - not half filled active space")
+
+        pertsitealpha = 2*pertsite-1
+
+        !This is going to be done in a very slow N^2 loop, rather than 
+        do i=1,nFCIDet
+            !We want to create a particle
+            if(.not.btest(FCIBitList(i),pertsitealpha-1)) then
+                !spin-orbital is not occupied, we can create in it
+
+                ilut = FCIBitList(i)
+                !Create it, and check parity
+                call SQOperator(ilut,pertsitealpha,tParity,.false.)
+
+                !This should really be binary searched here for efficiency
+                do j = 1,nNp1FCIDet
+                    if(Np1BitList(j).eq.ilut) then
+                        !Found corresponding determinant
+                        if(tParity) then
+                            V0_Cre(j) = -Psi_0(i)
+                        else
+                            V0_Cre(j) = Psi_0(i)
+                        endif
+                        exit
+                    endif
+                enddo
+                if(j.eq.(nNp1FCIDet+1)) call stop_all(t_r,'Could not find corresponding determinant')
+            else
+                !Spin-orbital not occupied, we can distroy it
+                ilut = FCIBitList(i)
+                !Annihilate it, and check parity
+                call SQOperator(ilut,pertsitealpha,tParity,.true.)
+
+                !This should really be binary searched here for efficiency
+                do j = 1,nNm1bFCIDet
+                    if(Nm1bBitList(j).eq.ilut) then
+                        !Found corresponding determinant
+                        if(tParity) then
+                            V0_Ann(j) = -Psi_0(i)
+                        else
+                            V0_Ann(j) = Psi_0(i)
+                        endif
+                        exit
+                    endif
+                enddo
+                if(j.eq.(nNm1bFCIDet+1)) call stop_all(t_r,'Could not find corresponding determinant')
+            endif
+        enddo
+
+
+    end subroutine ApplySP_PertGS_EC
+
 
     !Apply the density perturbation in the externally contracted space which is a rotation
     !into the non-null and orthogonal basis of the overlap matrix
@@ -4390,6 +4871,61 @@ module LinearResponse
 
 
     end subroutine TDA_MCLR
+
+    !Find the non-interacting solution for alpha single-particle addition and removal, and project this operator into the schmidt basis
+    !This is done seperately for electron addition and removal (SchmidtPertGF_Cre and SchmidtPertGF_Add)
+    subroutine FindSchmidtPert_Charged(Omega,ni_lr_Cre,ni_lr_Ann)
+        implicit none
+        real(dp), intent(in) :: Omega
+        complex(dp), intent(out) :: ni_lr_Cre,ni_lr_Ann
+        complex(dp), allocatable :: HFPertBasis_Cre(:),HFPertBasis_Ann(:)
+        integer :: i,j,a,b
+        character(len=*), parameter :: t_r='FindSchmidtPert_Charged'
+
+        allocate(HFPertBasis_Cre(nOcc+1:nSites))
+        HFPertBasis_Cre(:) = complex(0.0_dp,0.0_dp)
+        allocate(HFPertBasis_Ann(1:nOcc))
+        HFPertBasis_Ann(:) = complex(0.0_dp,0.0_dp)
+        ni_lr_Cre = complex(0.0_dp,0.0_dp)
+        ni_lr_Ann = complex(0.0_dp,0.0_dp)
+
+        !Assume perturbation is local to the first impurity site (pertsite = 1).
+        if(pertsite.ne.1) call stop_all(t_r,'Perturbation is not local to the impurity site')
+        !Assuming that MF GF operator is V_ia/w-e_a, V_ia/w-e_i+w
+        do i = 1,nOcc
+            HFPertBasis_Ann(i) = complex(HFOrbs(pertsite,i),0.0_dp)/(complex(Omega,dDelta)-HFEnergies(i))
+            ni_lr_Ann = ni_lr_Ann + complex(HFOrbs(pertsite,i)**2,0.0_dp)/(complex(Omega,dDelta)-HFEnergies(i))
+        enddo
+        do a = nOcc+1,nSites
+            HFPertBasis_Cre(a) = complex(HFOrbs(pertsite,a),0.0_dp)/(complex(Omega,dDelta)-HFEnergies(a))
+            ni_lr_Cre = ni_lr_Cre + complex(HFOrbs(pertsite,a)**2,0.0_dp)/(complex(Omega,dDelta)-HFEnergies(a))
+        enddo
+
+        if(allocated(SchmidtPertGF_Cre)) deallocate(SchmidtPertGF_Cre)
+        allocate(SchmidtPertGF_Cre(nOcc+1:nSites))
+        SchmidtPertGF_Cre(:) = complex(0.0_dp,0.0_dp)
+        
+        if(allocated(SchmidtPertGF_Ann)) deallocate(SchmidtPertGF_Ann)
+        allocate(SchmidtPertGF_Ann(1:nOcc))
+        SchmidtPertGF_Ann(:) = complex(0.0_dp,0.0_dp)
+
+        !Transform into schmidt basis
+        do a = nOcc+1,nSites
+            do b = nOcc+1,nSites
+                SchmidtPertGF_Cre(a) = SchmidtPertHF_Cre(a) + HFtoSchmidtTransform(b,a)*HFPertBasis_Cre(b)
+            enddo
+        enddo
+        do i = 1,nOcc
+            do j = 1,nOcc
+                SchmidtPertGF_Ann(i) = SchmidtPertHF_Ann(i) + HFtoSchmidtTransform(j,i)*HFPertBasis_Ann(j)
+            enddo
+        enddo
+
+        deallocate(HFPertBasis_Ann,HFPertBasis_Cre)
+
+    end subroutine FindSchmidtPert_Charged
+
+
 
     !Find the non-interacting perturbation, and project this operator into the schmidt basis of phi^0 + its virtual space
     subroutine FindSchmidtPert(tNonIntTest,Omega,ni_lr)

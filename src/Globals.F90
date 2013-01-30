@@ -64,6 +64,8 @@ module Globals
 
     real(dp) :: HFEnergy    !Calculated HF energy
     real(dp) :: dDelta      !Broadening for spectral functions
+    logical :: tDDResponse          !Calculate neutral DD response
+    logical :: tChargedResponse     !The different perturbations to calculate the response for
 
     integer , allocatable :: allowed_occs(:)   !The list of CS occupations for the mean-field solution
     real(dp) , allocatable :: v_loc(:,:)    !The local correlation potential over the impurity sites
@@ -97,6 +99,8 @@ module Globals
     complex(dp) , allocatable :: SchmidtPert(:,:)
     real(dp) , allocatable :: FullHamil(:,:)    !In case we do a complete diagonalization
     real(dp) , allocatable :: Spectrum(:)       !Eigenvalues in case of a complete diagonalization
+    complex(dp) , allocatable :: SchmidtPertGF_Ann(:)
+    complex(dp) , allocatable :: SchmidtPertHF_Cre(:) !For LR: the single particle perturbations in the schmidt basis
 
     !timers
     type(timer) :: Full_timer   !All routines 
@@ -111,7 +115,7 @@ module Globals
     type(timer) :: LR_SR_NonInt
     type(timer) :: LR_SR_TDA
     type(timer) :: LR_SR_RPA
-    !LR_SR_EC
+    !LR_MR_EC
     type(timer) :: LR_EC_TDA_Precom !Precomputing (outside omega loop) various hamiltonians & generating det lists 
     type(timer) :: LR_EC_TDA_HBuild     !Building the hamiltonian at each omega 
     type(timer) :: LR_EC_TDA_SBuild     !Building the overlap at each omega
@@ -119,6 +123,10 @@ module Globals
     type(timer) :: LR_EC_TDA_OptGS      !Diag H and 
     type(timer) :: LR_EC_TDA_BuildLR    !Construct LR equations
     type(timer) :: LR_EC_TDA_SolveLR    !Solve LR equations
+    !LR_MR_EC_GF analogues
+    type(timer) :: LR_EC_GF_Precom
+    type(timer) :: LR_EC_GF_HBuild
+    type(timer) :: LR_EC_GF_SolveLR
 
 
 

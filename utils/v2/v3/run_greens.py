@@ -69,7 +69,7 @@ def ph_greens():
     delta=0.01 # broadening
 
 #    for u in [0.0,4.0,10.0]:
-    for u in [0.0,4.0]:
+    for u in [4.0]:
 
         # Single impurity Anderson model
         mu=0.
@@ -94,7 +94,7 @@ def ph_greens():
         perturbop=models.ContractedCD(p_coeffs)
 
         fd=file("ph_siam.out."+str(u),"w")
-        for omega in N.arange(2,8,0.1):
+        for omega in N.arange(2.0,8.0,0.1):
     
             ops_dict=response_embed.mb_ph_ops(hlat,perturb,omega+1j*delta,nimp,nocc,pemb,pcore,pvirt)
             configs_dict=response_embed.mb_configs(nsites,nimp,nimp_sp,2*nocc-nimp_sp,0)
