@@ -83,6 +83,18 @@ module LinearResponse
         use DetBitOps, only: DecodeBitDet,SQOperator,CountBits
         use DetToolsData
         implicit none
+        real(dp), allocatable :: NFCIHam(:,:),temp(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
+        complex(dp), allocatable :: LinearSystem_p(:,:),LinearSystem_h(:,:),Cre_0(:),Ann_0(:)
+        complex(dp), allocatable :: FockSchmidtComp(:,:),Gc_a_F_ax(:),Gc_b_F_ab(:),LHS(:,:),RHS(:)
+        complex(dp), allocatable :: Psi(:)
+        integer, allocatable :: Coup_Ann_alpha(:,:,:),Coup_Create_alpha(:,:,:)
+        integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,umatind,ierr,info,iunit,nCore
+        integer :: nLinearSystem,nOrbs,nVirt,OrbPairs,tempK,UMatSize,VIndex,VirtStart,VirtEnd
+        integer :: orbdum(1),gtid
+        real(dp) :: VNorm,Omega
+        complex(dp) :: dNorm,ni_lr_Cre,ni_lr_Ann,ResponseFn,tempel
+        logical :: tParity
+        character(64) :: filename,filename2
         character(len=*), parameter :: t_r='NonIntExCont_TDA_MCLR_Charged'
 
         call set_timer(LR_EC_GF_Precom)
@@ -286,6 +298,8 @@ module LinearResponse
         allocate(FockSchmidtComp(nSites,nSites))
         call R_C_Copy_2D(FockSchmidtComp(:,:),FockSchmidt(:,:),nSites,nSites)
 
+        allocate(Psi(nFCIDet))  !To store the V^T 1/H V |0> wavefunctions in the GS space
+
         !Space for useful intermediates
         allocate(Gc_a_F_ax(ActiveStart:ActiveEnd))
         allocate(Gc_b_F_ab(VirtStart:VirtEnd))
@@ -306,10 +320,10 @@ module LinearResponse
 
             !First, construct useful intermediates
             !sum_a Gc_a^* F_ax (Creation)
-            call ZGEMM('C','N',1,EmbSize,nVirt,complex(1.0_dp,0.0_dp),SchmidtPert_Cre(VirtStart:VirtEnd),nVirt, &
+            call ZGEMM('C','N',1,EmbSize,nVirt,complex(1.0_dp,0.0_dp),SchmidtPertGF_Cre(VirtStart:VirtEnd),nVirt, &
                 FockSchmidtComp(VirtStart:VirtEnd,ActiveStart:ActiveEnd),nVirt,complex(0.0_dp,0.0_dp),Gc_a_F_ax,EmbSize)
             !sum_b Gc_b F_ab  (Creation)
-            call ZGEMM('T','T',1,nVirt,nVirt,complex(1.0_dp,0.0_dp),SchmidtPert_Cre(VirtStart:VirtEnd),nVirt,   &
+            call ZGEMM('T','T',1,nVirt,nVirt,complex(1.0_dp,0.0_dp),SchmidtPertGF_Cre(VirtStart:VirtEnd),nVirt,   &
                 FockSchmidtComp(VirtStart:VirtEnd,VirtStart:VirtEnd),nVirt,complex(0.0_dp,0.0_dp),Gc_b_F_ab,nVirt)
 
             
@@ -325,9 +339,9 @@ module LinearResponse
             tempel = complex(0.0_dp,0.0_dp)
             do a = VirtStart,VirtEnd
                 !Calc normalization for the CV block
-                VNorm = VNorm + real(SchmidtPert_Cre(a))**2 + aimag(SchmidtPert_Cre(a))**2
+                VNorm = VNorm + real(SchmidtPertGF_Cre(a))**2 + aimag(SchmidtPertGF_Cre(a))**2
                 !Calculate the diagonal correction
-                tempel = tempel + conjg(SchmidtPert_Cre(a))*Gc_b_F_ab(a)
+                tempel = tempel + conjg(SchmidtPertGF_Cre(a))*Gc_b_F_ab(a)
             enddo
             tempel = tempel / VNorm
             !Add diagonal virtual correction
@@ -377,7 +391,7 @@ module LinearResponse
 
             !Now solve these linear equations
             !RHS will be overwritten with the solution
-            call SolveLinearSystem(LHS,RHS,nLinearSystem,info)
+            call SolveCompLinearSystem(LHS,RHS,nLinearSystem,info)
             if(info.ne.0) then 
                 write(6,*) "INFO: ",info
                 call warning(t_r,'Solving linear system failed - skipping this frequency')
@@ -399,7 +413,7 @@ module LinearResponse
                     ResponseFn = ResponseFn + Psi(j)*FullHamil(j,1)
                 enddo
                 write(iunit,"(10G22.10)") Omega,real(ResponseFn),-aimag(ResponseFn), &
-                    abs(dNorm),real(ni_lr),-aimag(ni_lr)
+                    abs(dNorm),real(ni_lr_Cre),-aimag(ni_lr_Cre)
 
             endif
 
@@ -408,9 +422,8 @@ module LinearResponse
             call halt_timer(LR_EC_GF_SolveLR)
         enddo   !End loop over omega
 
-        deallocate(LinearSystem,Overlap)
+        deallocate(LinearSystem_p,LinearSystem_h,Psi)
         close(iunit)
-        if(tDiagHam) close(iunit2)
 
         !Deallocate determinant lists
         if(allocated(FCIDetList)) deallocate(FCIDetList)
@@ -427,13 +440,9 @@ module LinearResponse
         if(allocated(Np1bBitList)) deallocate(Np1bBitList)
 
         !Stored intermediates
-        deallocate(NFCIHam,Nm1FCIHam_alpha,Nm1FCIHam_beta,Np1FCIHam_alpha,Np1FCIHam_beta)
-        deallocate(AVNorm,CANorm)
-        deallocate(Coup_Create_alpha,Coup_Create_beta,Coup_Ann_alpha,Coup_Ann_beta)
-        deallocate(FockSchmidtComp,G_ai_G_aj,G_ai_G_bi,G_xa_G_ya,G_xa_F_ab,G_xa_G_yb_F_ab)
-        deallocate(G_ia_G_xa,F_xi_G_ia_G_ya,G_xa_F_ya,G_xi_G_yi,G_ix_F_ij,G_ix_G_jy_F_ji)
-        deallocate(G_ia_G_ix,F_ax_G_ia_G_iy,G_ix_F_iy)
-
+        deallocate(NFCIHam,Nm1FCIHam_beta,Np1FCIHam_alpha)
+        deallocate(Coup_Create_alpha,Coup_Ann_alpha)
+        deallocate(FockSchmidtComp,Gc_a_F_ax,Gc_b_F_ab)
 
     end subroutine NonIntExCont_TDA_MCLR_Charged
 
@@ -2362,7 +2371,7 @@ module LinearResponse
         complex(dp), intent(inout) :: LHS(nLinearSystem,nLinearSystem)
         complex(dp), intent(inout) :: RHS(nLinearSystem)
         integer, allocatable :: Pivots(:)
-        integer :: lWork
+        integer :: i,lWork
         real(dp), allocatable :: Work(:)
         complex(dp), allocatable :: cWork(:),tempc(:,:),RVec(:,:),LVec(:,:),H_Valsc(:)
         complex(dp), allocatable :: CanTrans(:,:)
@@ -2435,16 +2444,16 @@ module LinearResponse
             enddo
             !Rotate back into original basis
             allocate(CanTrans(nLinearSystem,nLinearSystem))
-            call ZGEMM('N','N',nLinearSystem,nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),RVec,nLinearSystem,tempc,nLinearSystem, &
-                complex(0.0_dp,0.0_dp),CanTrans,nLinearSystem)
-            call ZGEMM('N','C',nLinearSystem,nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),CanTrans,nLinearSystem,RVec,nLinearSystem,  &
-                complex(0.0_dp,0.0_dp),tempc,nLinearSystem)
+            call ZGEMM('N','N',nLinearSystem,nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),    &
+                RVec,nLinearSystem,tempc,nLinearSystem,complex(0.0_dp,0.0_dp),CanTrans,nLinearSystem)
+            call ZGEMM('N','C',nLinearSystem,nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),    &
+                CanTrans,nLinearSystem,RVec,nLinearSystem,complex(0.0_dp,0.0_dp),tempc,nLinearSystem)
             deallocate(CanTrans)
             !tempc should now be the inverse
             !Multiply by RHS
             allocate(cWork(nLinearSystem))
-            call ZGEMM('N','N',nLinearSystem,1,nLinearSystem,complex(1.0_dp,0.0_dp),tempc,nLinearSystem,RHS,nLinearSystem,complex(0.0_dp,0.0_dp),   &
-                cWork,nLinearSystem)
+            call ZGEMM('N','N',nLinearSystem,1,nLinearSystem,complex(1.0_dp,0.0_dp),    &
+                tempc,nLinearSystem,RHS,nLinearSystem,complex(0.0_dp,0.0_dp),cWork,nLinearSystem)
             !Copy final solution to RHS
             RHS(:) = cWork(:)
             deallocate(cWork,tempc,H_Valsc,LVec,RVec)
@@ -2460,11 +2469,14 @@ module LinearResponse
     ! nNp1FCIDet space (+) nFCIDet space with contracted creation operator applied to core
     ! Only the first space will couple to the zeroth order wavefunction
     subroutine ApplyAnn_FirstOrder_EC(Psi_1,nSize1,Psi,nSize0)
+        use DetToolsData
+        use DetBitOps, only: SQOperator 
         implicit none
         integer, intent(in) :: nSize1,nSize0
         complex(dp), intent(in) :: Psi_1(nSize1)
         complex(dp), intent(out) :: Psi(nSize0)
         integer :: pertsitealpha,ilut,j,i
+        logical :: tParity
         character(len=*), parameter :: t_r='ApplyAnn_FirstOrder_EC'
 
         Psi(:) = complex(0.0_dp,0.0_dp)
@@ -2501,6 +2513,8 @@ module LinearResponse
     !It is only trying to create/distroy the alpha orbital applied to the ground state wavefunction
     !Will return the ground state, with a particle created or distroyed in pertsite
     subroutine ApplySP_PertGS_EC(Psi_0,SizeFCI,V0_Cre,V0_Ann,nSizeLR)
+        use DetToolsData
+        use DetBitOps, only: SQOperator 
         implicit none
         integer, intent(in) :: SizeFCI,nSizeLR
         real(dp), intent(in) :: Psi_0(SizeFCI)
@@ -2515,7 +2529,9 @@ module LinearResponse
 
         if(SizeFCI.ne.nFCIDet) call stop_all(t_r,'Zeroth order wavefunction not expected size')
         if(nSizeLR.ne.(nFCIDet+nNp1FCIDet)) call stop_all(t_r,'Size of linear system not expected')
-        if(nNp1FCIDet.ne.nNm1bFCIDet) call stop_all(t_r,"V0's are different sizes for particle/hole creation - not half filled active space")
+        if(nNp1FCIDet.ne.nNm1bFCIDet) then
+            call stop_all(t_r,"V0's are different sizes for particle/hole creation - not half filled active space")
+        endif
 
         pertsitealpha = 2*pertsite-1
 
@@ -4912,12 +4928,12 @@ module LinearResponse
         !Transform into schmidt basis
         do a = nOcc+1,nSites
             do b = nOcc+1,nSites
-                SchmidtPertGF_Cre(a) = SchmidtPertHF_Cre(a) + HFtoSchmidtTransform(b,a)*HFPertBasis_Cre(b)
+                SchmidtPertGF_Cre(a) = SchmidtPertGF_Cre(a) + HFtoSchmidtTransform(b,a)*HFPertBasis_Cre(b)
             enddo
         enddo
         do i = 1,nOcc
             do j = 1,nOcc
-                SchmidtPertGF_Ann(i) = SchmidtPertHF_Ann(i) + HFtoSchmidtTransform(j,i)*HFPertBasis_Ann(j)
+                SchmidtPertGF_Ann(i) = SchmidtPertGF_Ann(i) + HFtoSchmidtTransform(j,i)*HFPertBasis_Ann(j)
             enddo
         enddo
 

@@ -100,7 +100,7 @@ module Globals
     real(dp) , allocatable :: FullHamil(:,:)    !In case we do a complete diagonalization
     real(dp) , allocatable :: Spectrum(:)       !Eigenvalues in case of a complete diagonalization
     complex(dp) , allocatable :: SchmidtPertGF_Ann(:)
-    complex(dp) , allocatable :: SchmidtPertHF_Cre(:) !For LR: the single particle perturbations in the schmidt basis
+    complex(dp) , allocatable :: SchmidtPertGF_Cre(:) !For LR: the single particle perturbations in the schmidt basis
 
     !timers
     type(timer) :: Full_timer   !All routines 
