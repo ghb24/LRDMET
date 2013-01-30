@@ -18,7 +18,7 @@ module LinearResponse
     !   Work out self-consistency condition to optimise both the full MCLR and the fully contracted type - response of correlation potential?
     !   Consider using different methods to obtain contraction coefficients in the fully contracted methods - TDA/RPA. Does this improve things?
     !   In the fully contracted case, should we split between impurity and environment, rather than embedded system and core? More semi-internal yuckiness...
-    !   Perhaps look at CC2 to get a deeper understanding
+    !   Perhaps look at CC2 
     subroutine MR_LinearResponse()
         implicit none
         
@@ -85,14 +85,15 @@ module LinearResponse
         implicit none
         real(dp), allocatable :: NFCIHam(:,:),temp(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
         complex(dp), allocatable :: LinearSystem_p(:,:),LinearSystem_h(:,:),Cre_0(:),Ann_0(:)
-        complex(dp), allocatable :: FockSchmidtComp(:,:),Gc_a_F_ax(:),Gc_b_F_ab(:),LHS(:,:),RHS(:)
-        complex(dp), allocatable :: Psi(:)
+        complex(dp), allocatable :: FockSchmidtComp(:,:),Gc_a_F_ax(:),Gc_b_F_ab(:)
+        complex(dp), allocatable :: Psi_h(:),Psi_p(:),Psi1_p(:),Psi1_h(:),Ga_i_F_xi(:),Ga_i_F_ij(:)
         integer, allocatable :: Coup_Ann_alpha(:,:,:),Coup_Create_alpha(:,:,:)
         integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,umatind,ierr,info,iunit,nCore
         integer :: nLinearSystem,nOrbs,nVirt,OrbPairs,tempK,UMatSize,VIndex,VirtStart,VirtEnd
-        integer :: orbdum(1),gtid
-        real(dp) :: VNorm,Omega
-        complex(dp) :: dNorm,ni_lr_Cre,ni_lr_Ann,ResponseFn,tempel
+        integer :: orbdum(1),gtid,nLinearSystem_h
+        real(dp) :: VNorm,CNorm,Omega,GFChemPot
+        complex(dp) :: dNorm_p,dNorm_h,ni_lr,ni_lr_Cre,ni_lr_Ann
+        complex(dp) :: ResponseFn,ResponseFn_h,ResponseFn_p,tempel
         logical :: tParity
         character(64) :: filename,filename2
         character(len=*), parameter :: t_r='NonIntExCont_TDA_MCLR_Charged'
@@ -168,6 +169,7 @@ module LinearResponse
         deallocate(temp)
 
         !N+1 hamiltonian
+        if(nNp1FCIDet.ne.nNm1FCIDet) call stop_all(t_r,'Active space not half-filled')
         if(nNp1FCIDet.ne.nNp1bFCIDet) call stop_all(t_r,'Cannot deal with open shell systems')
         allocate(Np1FCIHam_alpha(nNp1FCIDet,nNp1FCIDet))
         Np1FCIHam_alpha(:,:) = 0.0_dp
@@ -176,29 +178,23 @@ module LinearResponse
                 call GetHElement(Np1FCIDetList(:,i),Np1FCIDetList(:,j),Elec+1,Np1FCIHam_alpha(i,j))
             enddo
         enddo
-
-        if(nNp1FCIDet.ne.nNm1FCIDet) call stop_all(t_r,'Active space not half-filled')
+        !N-1 hamiltonian for particle removal
+        allocate(Nm1FCIHam_beta(nNm1bFCIDet,nNm1bFCIDet))
+        Nm1FCIHam_beta(:,:) = 0.0_dp
+        do i=1,nNm1bFCIDet
+            do j=1,nNm1bFCIDet
+                call GetHElement(Nm1bFCIDetList(:,i),Nm1bFCIDetList(:,j),Elec-1,Nm1FCIHam_beta(i,j))
+            enddo
+        enddo
 
         nLinearSystem = nNp1FCIDet + nFCIDet
+        nLinearSystem_h = nNm1bFCIDet + nFCIDet
+
+        if(nLinearSystem.ne.nLinearSystem_h) then
+            call stop_all(t_r,'Should change restriction on the Linear system size being the same for particle/hole addition')
+        endif
         
         write(6,"(A,F14.6,A)") "Memory required for the LR system: ",real(2*(nLinearSystem**2)*16,dp)/1048576.0_dp," Mb"
-        
-        iunit = get_free_unit()
-        call append_ext_real('EC-TDA_GFResponse',U,filename)
-        if(.not.tHalfFill) then
-            !Also append occupation of lattice to the filename
-            call append_ext(filename,nOcc,filename2)
-        else
-            filename2 = filename
-        endif
-        open(unit=iunit,file=filename2,status='unknown')
-        write(iunit,"(A)") "# Frequency     GF_LinearResponse(Re)    GF_LinearResponse(Im)    " &
-            & //"Orthog    Norm   OrthogRHS    NI_LR"
-        
-        !Allocate memory for hmailtonian in this system:
-        allocate(LinearSystem_p(nLinearSystem,nLinearSystem),stat=ierr)
-        allocate(LinearSystem_h(nLinearSystem,nLinearSystem),stat=ierr)
-        if(ierr.ne.0) call stop_all(t_r,'Error allocating')
         
         !Set up orbital indices
         CoreEnd = nOcc-nImp
@@ -216,9 +212,35 @@ module LinearResponse
         VIndex = nNp1FCIDet + 1   !Beginning of EC virtual excitations
         if(VIndex+nFCIDet-1.ne.nLinearSystem) call stop_all(t_r,'Indexing error')
 
-        write(6,*) "V indices start from: ",VIndex
+        write(6,*) "External indices start from: ",VIndex
         write(6,*) "Total size of linear sys: ",nLinearSystem
+        
+        iunit = get_free_unit()
+        call append_ext_real('EC-TDA_GFResponse',U,filename)
+        if(.not.tHalfFill) then
+            !Also append occupation of lattice to the filename
+            call append_ext(filename,nOcc,filename2)
+        else
+            filename2 = filename
+        endif
+        open(unit=iunit,file=filename2,status='unknown')
+        write(iunit,"(A)") "# Frequency     GF_LinearResponse(Re)    GF_LinearResponse(Im)    " &
+            & //"ParticleGF(Re)   ParticleGF(Im)   HoleGF(Re)   HoleGF(Im)    Particle_Norm  Hole_Norm   " &
+            & //"NI_GF(Re)   NI_GF(Im)  NI_GF_Part(Re)   NI_GF_Part(Im)   NI_GF_Hole(Re)   NI_GF_Hole(Im)  "
             
+        !Allocate memory for hamiltonian in this system:
+        allocate(LinearSystem_p(nLinearSystem,nLinearSystem),stat=ierr)
+        allocate(LinearSystem_h(nLinearSystem,nLinearSystem),stat=ierr)
+        allocate(Psi1_p(nLinearSystem))
+        allocate(Psi1_h(nLinearSystem))
+        allocate(Psi_p(nFCIDet))  !To store the V^T 1/H V |0> wavefunctions in the GS space
+        allocate(Psi_h(nFCIDet))  !To store the V^T 1/H V |0> wavefunctions in the GS space
+        !Store the fock matrix in complex form, so that we can ZGEMM easily
+        allocate(FockSchmidtComp(nSites,nSites))
+        if(ierr.ne.0) call stop_all(t_r,'Error allocating')
+        
+        call R_C_Copy_2D(FockSchmidtComp(:,:),FockSchmidt(:,:),nSites,nSites)
+        
         !Since this does not depend at all on the new basis, since the ground state has a completely
         !disjoint basis to |1>, the RHS of the equations can be precomputed
         allocate(Cre_0(nLinearSystem))
@@ -293,16 +315,14 @@ module LinearResponse
                 endif
             enddo
         enddo
-            
-        !Store the fock matrix in complex form, so that we can ZGEMM easily
-        allocate(FockSchmidtComp(nSites,nSites))
-        call R_C_Copy_2D(FockSchmidtComp(:,:),FockSchmidt(:,:),nSites,nSites)
-
-        allocate(Psi(nFCIDet))  !To store the V^T 1/H V |0> wavefunctions in the GS space
 
         !Space for useful intermediates
+        !For particle addition
         allocate(Gc_a_F_ax(ActiveStart:ActiveEnd))
         allocate(Gc_b_F_ab(VirtStart:VirtEnd))
+        !For hole addition
+        allocate(Ga_i_F_xi(ActiveStart:ActiveEnd))
+        allocate(Ga_i_F_ij(1:nCore))
 
         call halt_timer(LR_EC_GF_Precom)
 
@@ -326,10 +346,18 @@ module LinearResponse
             call ZGEMM('T','T',1,nVirt,nVirt,complex(1.0_dp,0.0_dp),SchmidtPertGF_Cre(VirtStart:VirtEnd),nVirt,   &
                 FockSchmidtComp(VirtStart:VirtEnd,VirtStart:VirtEnd),nVirt,complex(0.0_dp,0.0_dp),Gc_b_F_ab,nVirt)
 
-            
+            !sum_i Ga_i^* F_xi (Annihilation)
+            call ZGEMM('C','T',1,EmbSize,nCore,complex(1.0_dp,0.0_dp),SchmidtPertGF_Ann(1:CoreEnd),nCore,   &
+                FockSchmidtComp(ActiveStart:ActiveEnd,1:CoreEnd),EmbSize,complex(0.0_dp,0.0_dp),Ga_i_F_xi,EmbSize)
+            !sum_i Ga_i F_ij (Annihilation)
+            call ZGEMM('T','N',1,nCore,nCore,complex(1.0_dp,0.0_dp),SchmidtPertGF_Ann(1:CoreEnd),nCore, &
+                FockSchmidtComp(1:nCore,1:nCore),nCore,complex(0.0_dp,0.0_dp),Ga_i_F_ij,nCore)
+
             !Block 1 for particle hamiltonian
             !First, construct n + 1 (alpha) FCI space, in determinant basis
             call R_C_Copy_2D(LinearSystem_p(1:nNp1FCIDet,1:nNp1FCIDet),Np1FCIHam_alpha(:,:),nNp1FCIDet,nNp1FCIDet)
+            !Block 1 for hole hamiltonian
+            call R_C_Copy_2D(LinearSystem_h(1:nNm1bFCIDet,1:nNm1bFCIDet),Nm1FCIHam_beta(:,:),nNm1bFCIDet,nNm1bFCIDet)
 
             !Block 2 for particle hamiltonian
             !Copy the N electron FCI hamiltonian to this diagonal block
@@ -348,14 +376,44 @@ module LinearResponse
             do i = VIndex,nLinearSystem
                 LinearSystem_p(i,i) = LinearSystem_p(i,i) + tempel
             enddo
+
+            !Block 2 for the hole hamiltonian
+            !Copy the N electron FCI hamiltonian to this diagonal blockk
+            call R_C_Copy_2D(LinearSystem_h(VIndex:nLinearSystem,VIndex:nLinearSystem),nFCIHam(:,:),nFCIDet,nFCIDet)
+
+            CNorm = 0.0_dp
+            tempel = complex(0.0_dp,0.0_dp)
+            do i = 1,CoreEnd
+                !Calc normalization
+                CNorm = CNorm + real(SchmidtPertGF_Ann(i))**2 + aimag(SchmidtPertGF_Ann(i))**2
+                !Calc diagonal correction
+                tempel = tempel + conjg(SchmidtPertGF_Ann(i))*Ga_i_F_ij(i)
+            enddo
+            tempel = -tempel / CNorm
+            !Add diagonal correction
+            do i = VIndex,nLinearSystem
+                LinearSystem_h(i,i) = LinearSystem_h(i,i) + tempel
+            enddo
                 
-            !Block 3
+            !Block 3 for particle hamiltonian
             do J = 1,nNp1FCIDet
                 do K = 1,nFCIDet    !VIndex,nLinearSystem
                     if(Coup_Ann_alpha(1,K,J).ne.0) then
                         !Determinants are connected via a single SQ operator
                         !First index is the spatial index, second is parity 
                         LinearSystem_p(K+VIndex-1,J) = Gc_a_F_ax(Coup_Ann_alpha(1,K,J))*Coup_Ann_alpha(2,K,J)/sqrt(VNorm)
+                        LinearSystem_p(J,K+VIndex-1) = conjg(LinearSystem_p(K+VIndex-1,J))
+                    endif
+                enddo
+            enddo
+
+            !Block 3 for hole hamiltonian
+            do J = 1,nNm1bFCIDet
+                do K = 1,nFCIDet
+                    if(Coup_Create_alpha(1,K,J).ne.0) then
+                        !Determinants are connected via a single SQ operator
+                        LinearSystem_h(K+VIndex-1,J) = - Ga_i_F_xi(Coup_Create_alpha(1,K,J))*Coup_Create_alpha(2,K,J)/sqrt(CNorm)
+                        LinearSystem_h(J,K+VIndex-1) = conjg(LinearSystem_h(K+VIndex-1,J))
                     endif
                 enddo
             enddo
@@ -365,9 +423,15 @@ module LinearResponse
                 do j=i,nLinearSystem
                     if(abs(LinearSystem_p(i,j)-conjg(LinearSystem_p(j,i))).gt.1.0e-8_dp) then
                         write(6,*) "i, j: ",i,j
-                        write(6,*) "LinearSystem(i,j): ",LinearSystem_p(i,j)
-                        write(6,*) "LinearSystem(j,i): ",LinearSystem_p(j,i)
-                        call stop_all(t_r,'Hessian for EC-LR not hermitian')
+                        write(6,*) "LinearSystem_p(i,j): ",LinearSystem_p(i,j)
+                        write(6,*) "LinearSystem_p(j,i): ",LinearSystem_p(j,i)
+                        call stop_all(t_r,'Paritcle hessian for EC-LR not hermitian')
+                    endif
+                    if(abs(LinearSystem_h(i,j)-conjg(LinearSystem_h(j,i))).gt.1.0e-8_dp) then
+                        write(6,*) "i, j: ",i,j
+                        write(6,*) "LinearSystem_h(i,j): ",LinearSystem_h(i,j)
+                        write(6,*) "LinearSystem_h(j,i): ",LinearSystem_h(j,i)
+                        call stop_all(t_r,'Hole hessian for EC-LR not hermitian')
                     endif
                 enddo
             enddo
@@ -377,52 +441,75 @@ module LinearResponse
 
             call set_timer(LR_EC_GF_SolveLR)
 
+            GFChemPot = Spectrum(1)
+
             !Solve particle GF to start
-            allocate(LHS(nLinearSystem,nLinearSystem))
-            LHS(:,:) = complex(0.0_dp,0.0_dp)
-            LHS(:,:) = LinearSystem_p(:,:)
             do i = 1,nLinearSystem
-                LHS(i,i) = complex(Omega,dDelta) - (LHS(i,i) - Spectrum(1))
+                LinearSystem_p(i,i) = complex(Omega,dDelta) + (LinearSystem_p(i,i) - GFChemPot)
             enddo
-
             !The V|0> for particle and hole perturbations are held in Cre_0 and Ann_0
-            allocate(RHS(nLinearSystem))
-            RHS(:) = Cre_0(:)
-
+            Psi1_p(:) = Cre_0(:)
             !Now solve these linear equations
-            !RHS will be overwritten with the solution
-            call SolveCompLinearSystem(LHS,RHS,nLinearSystem,info)
+            !Psi1_p will be overwritten with the solution
+            call SolveCompLinearSystem(LinearSystem_p,Psi1_p,nLinearSystem,info)
             if(info.ne.0) then 
                 write(6,*) "INFO: ",info
-                call warning(t_r,'Solving linear system failed - skipping this frequency')
-            else
-                !Find normalization of first-order wavefunction
-                dNorm = complex(0.0_dp,0.0_dp)
-                do j = 1,nLinearSystem
-                    dNorm = dNorm + conjg(RHS(j))*RHS(j)
-                enddo
-                !write(6,*) "Normalization of first-order wavefunction: ",dNorm
-
-                !Now, want to calculate V^T|1>  
-                !This will apply an alpha annihilation operator at site pertsite to the first order interacting wavefunction
-                call ApplyAnn_FirstOrder_EC(RHS,nLinearSystem,Psi,nFCIDet)
-
-                !Now find the overlap with the original wavefunction
-                ResponseFn = complex(0.0_dp,0.0_dp)
-                do j = 1,nFCIDet
-                    ResponseFn = ResponseFn + Psi(j)*FullHamil(j,1)
-                enddo
-                write(iunit,"(10G22.10)") Omega,real(ResponseFn),-aimag(ResponseFn), &
-                    abs(dNorm),real(ni_lr_Cre),-aimag(ni_lr_Cre)
-
+                call warning(t_r,'Solving linear system failed for particle hamiltonian - skipping this frequency')
+                Omega = Omega + Omega_Step
+                call halt_timer(LR_EC_GF_SolveLR)
+                cycle
             endif
+
+            !Now solve the LR for the hole addition
+            do i = 1,nLinearSystem
+                LinearSystem_h(i,i) = complex(Omega,-dDelta) - (LinearSystem_h(i,i) - GFChemPot)
+            enddo
+            Psi1_h(:) = Ann_0(:)
+            call SolveCompLinearSystem(LinearSystem_h,Psi1_h,nLinearSystem,info)
+            if(info.ne.0) then 
+                write(6,*) "INFO: ",info
+                call warning(t_r,'Solving linear system failed for hole hamiltonian - skipping this frequency')
+                Omega = Omega + Omega_Step
+                call halt_timer(LR_EC_GF_SolveLR)
+                cycle
+            endif
+
+            !Find normalization of first-order wavefunctions
+            dNorm_p = complex(0.0_dp,0.0_dp)
+            dNorm_h = complex(0.0_dp,0.0_dp)
+            do j = 1,nLinearSystem
+                dNorm_p = dNorm_p + conjg(Psi1_p(j))*Psi1_p(j)
+                dNorm_h = dNorm_h + conjg(Psi1_h(j))*Psi1_h(j)
+            enddo
+            !write(6,*) "Normalization of first-order wavefunction: ",dNorm_p,dNorm_h
+
+            !Now, want to calculate V^T|1>  
+            !This will apply an alpha annihilation operator at site pertsite to the first order interacting wavefunction
+            call ApplyAnn_FirstOrder_EC(Psi1_p,nLinearSystem,Psi_p,nFCIDet)
+            !This will apply an alpha creation operator at site pertsite to the first order interacting wavefunction
+            call ApplyCre_FirstOrder_EC(Psi1_h,nLinearSystem,Psi_h,nFCIDet)
+
+            !Now find the overlap with the original wavefunction
+            ResponseFn_p = complex(0.0_dp,0.0_dp)
+            do j = 1,nFCIDet
+                ResponseFn_p = ResponseFn_p + Psi_p(j)*FullHamil(j,1)
+                ResponseFn_h = ResponseFn_h + Psi_h(j)*FullHamil(j,1)
+            enddo
+            ResponseFn = ResponseFn_p + ResponseFn_h    !Full response is sum of particle and hole response
+            ni_lr = ni_lr_Cre + ni_lr_Ann
+
+            write(iunit,"(15G22.10)") Omega,real(ResponseFn),-aimag(ResponseFn), &
+                real(ResponseFn_p),-aimag(ResponseFn_p),real(ResponseFn_h),-aimag(ResponseFn_h),    &
+                abs(dNorm_p),abs(dNorm_h),real(ni_lr),-aimag(ni_lr),real(ni_lr_Cre),    &
+                -aimag(ni_lr_Cre),real(ni_lr_Ann),-aimag(ni_lr_Ann)
 
             Omega = Omega + Omega_Step
 
             call halt_timer(LR_EC_GF_SolveLR)
         enddo   !End loop over omega
 
-        deallocate(LinearSystem_p,LinearSystem_h,Psi)
+        deallocate(LinearSystem_p,LinearSystem_h,Psi_p,Psi_h,Psi1_p,Psi1_h)
+        deallocate(Cre_0,Ann_0)
         close(iunit)
 
         !Deallocate determinant lists
@@ -442,7 +529,7 @@ module LinearResponse
         !Stored intermediates
         deallocate(NFCIHam,Nm1FCIHam_beta,Np1FCIHam_alpha)
         deallocate(Coup_Create_alpha,Coup_Ann_alpha)
-        deallocate(FockSchmidtComp,Gc_a_F_ax,Gc_b_F_ab)
+        deallocate(FockSchmidtComp,Gc_a_F_ax,Gc_b_F_ab,Ga_i_F_xi,Ga_i_F_ij)
 
     end subroutine NonIntExCont_TDA_MCLR_Charged
 
@@ -2462,6 +2549,47 @@ module LinearResponse
 
     end subroutine SolveCompLinearSystem
 
+    !This will apply an alpha creation operator at site pertsite to the first order interacting wavefunction
+    !Returns the wavefunction Psi in the standard N-electron determinant space
+    subroutine ApplyCre_FirstOrder_EC(Psi_1,nSize1,Psi,nSize0)
+        use DetToolsData
+        use DetBitOps, only: SQOperator 
+        implicit none
+        integer, intent(in) :: nSize1,nSize0
+        complex(dp), intent(in) :: Psi_1(nSize1)
+        complex(dp), intent(out) :: Psi(nSize0)
+        integer :: pertsitealpha,ilut,j,i
+        logical :: tParity
+        character(len=*), parameter :: t_r='ApplyCre_FirstOrder_EC'
+
+        Psi(:) = complex(0.0_dp,0.0_dp)
+        if(nSize0.ne.nFCIDet) call stop_all(t_r,'Resultant wavefunction not expressed in expected space')
+
+        pertsitealpha = 2*pertsite-1
+
+        !Assume that the first nNm1bFCIDet entries of Psi_1 correspond to that space
+        do i = 1,nNm1bFCIDet
+            if(.not.btest(Nm1bBitList(i),pertsitealpha-1)) then
+                !pertsitealpha empty. We can apply a creation operator
+                ilut = Nm1bBitList(i)
+                call SQOperator(ilut,pertsitealpha,tParity,.false.)
+
+                !Now we need to find which det in FCIBitList this corresponds to
+                do j = 1,nFCIDet
+                    if(FCIBitList(j).eq.ilut) then
+                        if(tParity) then
+                            Psi(j) = -Psi_1(i)
+                        else
+                            Psi(j) = Psi_1(i)
+                        endif
+                        exit
+                    endif
+                enddo
+                if(j.gt.nFCIDet) call stop_all(t_r,'Error in finding corresponding determinant')
+            endif
+        enddo
+    end subroutine ApplyCre_FirstOrder_EC
+
 
     !This will apply an annihilation operator to a wavefunction (Psi_1) in the space of the first-order interacting
     !N+1 particle space
@@ -2559,7 +2687,7 @@ module LinearResponse
                 enddo
                 if(j.eq.(nNp1FCIDet+1)) call stop_all(t_r,'Could not find corresponding determinant')
             else
-                !Spin-orbital not occupied, we can distroy it
+                !Spin-orbital occupied, we can destroy it
                 ilut = FCIBitList(i)
                 !Annihilate it, and check parity
                 call SQOperator(ilut,pertsitealpha,tParity,.true.)
