@@ -49,7 +49,7 @@ CONTAINS
     msize=SIZE(mat,1)
     nsize=SIZE(mat,2)
     matdum=mat
-    matinv=complex(0.0d0,0.0d0)
+    matinv=dcmplx(0.0d0,0.0d0)
     DO i=1,msize
        matinv(i,i)=1.0d0
     END DO

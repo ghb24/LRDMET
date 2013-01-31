@@ -914,6 +914,7 @@ Program RealHub
             CoreEnergy = CoreEnergy + FockSchmidt(i,i) 
         enddo
         CoreEnergy = CoreEnergy * 2.0_dp
+        write(6,*) "Non-interacting core energy for DMET wavefunction is: ",CoreEnergy
 
         nSys = nImp !Fix this here
         

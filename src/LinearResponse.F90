@@ -258,7 +258,7 @@ module LinearResponse
         allocate(Cre_0(nLinearSystem))
         allocate(Ann_0(nLinearSystem))
         if(.not.tLR_ReoptGS) then
-            Psi_0(:) = complex(0.0_dp,0.0_dp)
+            Psi_0(:) = dcmplx(0.0_dp,0.0_dp)
             Psi_0(1:nFCIDet) = FullHamil(1:nFCIDet,1)
             GFChemPot = Spectrum(1)
             call ApplySP_PertGS_EC(Psi_0,nGSSpace,Cre_0,Ann_0,nLinearSystem)
@@ -349,43 +349,43 @@ module LinearResponse
             call set_timer(LR_EC_GF_HBuild)
         
             write(6,*) "Calculating linear response for frequency: ",Omega
-            if(tLR_ReoptGS) GSHam(:,:) = complex(0.0_dp,0.0_dp)
-            LinearSystem_p(:,:) = complex(0.0_dp,0.0_dp)
-            LinearSystem_h(:,:) = complex(0.0_dp,0.0_dp)
+            if(tLR_ReoptGS) GSHam(:,:) = dcmplx(0.0_dp,0.0_dp)
+            LinearSystem_p(:,:) = dcmplx(0.0_dp,0.0_dp)
+            LinearSystem_h(:,:) = dcmplx(0.0_dp,0.0_dp)
 
             !First, find the non-interacting solution expressed in the schmidt basis
             call FindSchmidtPert_Charged(Omega,ni_lr_Cre,ni_lr_Ann)
 
             !First, construct useful intermediates
             !sum_a Gc_a^* F_ax (Creation)
-!            call ZGEMM('C','N',1,EmbSize,nVirt,complex(1.0_dp,0.0_dp),SchmidtPertGF_Cre(VirtStart:VirtEnd),nVirt, &
-!                FockSchmidtComp(VirtStart:VirtEnd,ActiveStart:ActiveEnd),nVirt,complex(0.0_dp,0.0_dp),Gc_a_F_ax,1)
-            Gc_a_F_ax(:) = complex(0.0_dp,0.0_dp)
+!            call ZGEMM('C','N',1,EmbSize,nVirt,dcmplx(1.0_dp,0.0_dp),SchmidtPertGF_Cre(VirtStart:VirtEnd),nVirt, &
+!                FockSchmidtComp(VirtStart:VirtEnd,ActiveStart:ActiveEnd),nVirt,dcmplx(0.0_dp,0.0_dp),Gc_a_F_ax,1)
+            Gc_a_F_ax(:) = dcmplx(0.0_dp,0.0_dp)
             do x = ActiveStart,ActiveEnd
                 do a = VirtStart,VirtEnd
                     Gc_a_F_ax(x) = Gc_a_F_ax(x) + conjg(SchmidtPertGF_Cre(a))*FockSchmidt(a,x)
                 enddo
             enddo
             !sum_b Gc_b F_ab  (Creation)
-            call ZGEMV('N',nVirt,nVirt,complex(1.0_dp,0.0_dp),FockSchmidtComp(VirtStart:VirtEnd,VirtStart:VirtEnd), &
-                nVirt,SchmidtPertGF_Cre(VirtStart:VirtEnd),1,complex(0.0_dp,0.0_dp),Gc_b_F_ab,1)
-!            call ZGEMM('T','T',1,nVirt,nVirt,complex(1.0_dp,0.0_dp),SchmidtPertGF_Cre(VirtStart:VirtEnd),nVirt,   &
-!                FockSchmidtComp(VirtStart:VirtEnd,VirtStart:VirtEnd),nVirt,complex(0.0_dp,0.0_dp),Gc_b_F_ab,1)
+            call ZGEMV('N',nVirt,nVirt,dcmplx(1.0_dp,0.0_dp),FockSchmidtComp(VirtStart:VirtEnd,VirtStart:VirtEnd), &
+                nVirt,SchmidtPertGF_Cre(VirtStart:VirtEnd),1,dcmplx(0.0_dp,0.0_dp),Gc_b_F_ab,1)
+!            call ZGEMM('T','T',1,nVirt,nVirt,dcmplx(1.0_dp,0.0_dp),SchmidtPertGF_Cre(VirtStart:VirtEnd),nVirt,   &
+!                FockSchmidtComp(VirtStart:VirtEnd,VirtStart:VirtEnd),nVirt,dcmplx(0.0_dp,0.0_dp),Gc_b_F_ab,1)
 
             !sum_i Ga_i^* F_xi (Annihilation)
-!            call ZGEMM('C','T',1,EmbSize,nCore,complex(1.0_dp,0.0_dp),SchmidtPertGF_Ann(1:CoreEnd),nCore,   &
-!                FockSchmidtComp(ActiveStart:ActiveEnd,1:CoreEnd),EmbSize,complex(0.0_dp,0.0_dp),Ga_i_F_xi,EmbSize)
-            Ga_i_F_xi(:) = complex(0.0_dp,0.0_dp)
+!            call ZGEMM('C','T',1,EmbSize,nCore,dcmplx(1.0_dp,0.0_dp),SchmidtPertGF_Ann(1:CoreEnd),nCore,   &
+!                FockSchmidtComp(ActiveStart:ActiveEnd,1:CoreEnd),EmbSize,dcmplx(0.0_dp,0.0_dp),Ga_i_F_xi,EmbSize)
+            Ga_i_F_xi(:) = dcmplx(0.0_dp,0.0_dp)
             do x = ActiveStart,ActiveEnd
                 do i = 1,CoreEnd
                     Ga_i_F_xi(x) = Ga_i_F_xi(x) + conjg(SchmidtPertGF_Ann(i))*FockSchmidt(i,x)
                 enddo
             enddo
             !sum_i Ga_i F_ij (Annihilation)
-            call ZGEMV('T',nCore,nCore,complex(1.0_dp,0.0_dp),FockSchmidtComp(1:CoreEnd,1:CoreEnd),nCore,   &
-                SchmidtPertGF_Ann(1:CoreEnd),1,complex(0.0_dp,0.0_dp),Ga_i_F_ij,1)
-!            call ZGEMM('T','N',1,nCore,nCore,complex(1.0_dp,0.0_dp),SchmidtPertGF_Ann(1:CoreEnd),nCore, &
-!                FockSchmidtComp(1:nCore,1:nCore),nCore,complex(0.0_dp,0.0_dp),Ga_i_F_ij,1)
+            call ZGEMV('T',nCore,nCore,dcmplx(1.0_dp,0.0_dp),FockSchmidtComp(1:CoreEnd,1:CoreEnd),nCore,   &
+                SchmidtPertGF_Ann(1:CoreEnd),1,dcmplx(0.0_dp,0.0_dp),Ga_i_F_ij,1)
+!            call ZGEMM('T','N',1,nCore,nCore,dcmplx(1.0_dp,0.0_dp),SchmidtPertGF_Ann(1:CoreEnd),nCore, &
+!                FockSchmidtComp(1:nCore,1:nCore),nCore,dcmplx(0.0_dp,0.0_dp),Ga_i_F_ij,1)
 
             !Block 1 for particle hamiltonian
             !First, construct n + 1 (alpha) FCI space, in determinant basis
@@ -406,7 +406,7 @@ module LinearResponse
             call R_C_Copy_2D(LinearSystem_p(VIndex:nLinearSystem,VIndex:nLinearSystem),nFCIHam(:,:),nFCIDet,nFCIDet)
         
             VNorm = 0.0_dp
-            tempel = complex(0.0_dp,0.0_dp)
+            tempel = dcmplx(0.0_dp,0.0_dp)
             do a = VirtStart,VirtEnd
                 !Calc normalization for the CV block
                 VNorm = VNorm + real(SchmidtPertGF_Cre(a))**2 + aimag(SchmidtPertGF_Cre(a))**2
@@ -430,7 +430,7 @@ module LinearResponse
             call R_C_Copy_2D(LinearSystem_h(VIndex:nLinearSystem,VIndex:nLinearSystem),nFCIHam(:,:),nFCIDet,nFCIDet)
 
             CNorm = 0.0_dp
-            tempel = complex(0.0_dp,0.0_dp)
+            tempel = dcmplx(0.0_dp,0.0_dp)
             do i = 1,CoreEnd
                 !Calc normalization
                 CNorm = CNorm + real(SchmidtPertGF_Ann(i))**2 + aimag(SchmidtPertGF_Ann(i))**2
@@ -540,7 +540,7 @@ module LinearResponse
 
             !Solve particle GF to start
             do i = 1,nLinearSystem
-                LinearSystem_p(i,i) = complex(Omega,dDelta) - (LinearSystem_p(i,i) - GFChemPot)
+                LinearSystem_p(i,i) = dcmplx(Omega,dDelta) - (LinearSystem_p(i,i) - GFChemPot)
             enddo
             !The V|0> for particle and hole perturbations are held in Cre_0 and Ann_0
             !If we have reoptimized the ground state, we will need to recompute these
@@ -563,7 +563,7 @@ module LinearResponse
 
             !Now solve the LR for the hole addition
             do i = 1,nLinearSystem
-                LinearSystem_h(i,i) = complex(Omega,dDelta) + (LinearSystem_h(i,i) - GFChemPot)
+                LinearSystem_h(i,i) = dcmplx(Omega,dDelta) + (LinearSystem_h(i,i) - GFChemPot)
             enddo
             Psi1_h(:) = Ann_0(:)
             call SolveCompLinearSystem(LinearSystem_h,Psi1_h,nLinearSystem,info)
@@ -576,8 +576,8 @@ module LinearResponse
             endif
 
             !Find normalization of first-order wavefunctions
-            dNorm_p = complex(0.0_dp,0.0_dp)
-            dNorm_h = complex(0.0_dp,0.0_dp)
+            dNorm_p = dcmplx(0.0_dp,0.0_dp)
+            dNorm_h = dcmplx(0.0_dp,0.0_dp)
             do j = 1,nLinearSystem
                 dNorm_p = dNorm_p + conjg(Psi1_p(j))*Psi1_p(j)
                 dNorm_h = dNorm_h + conjg(Psi1_h(j))*Psi1_h(j)
@@ -591,7 +591,7 @@ module LinearResponse
             call ApplyCre_FirstOrder_EC(Psi1_h,nLinearSystem,Psi_h,nGSSpace)
 
             !Now find the overlap with the original wavefunction
-            ResponseFn_p = complex(0.0_dp,0.0_dp)
+            ResponseFn_p = dcmplx(0.0_dp,0.0_dp)
             do j = 1,nGSSpace
                 ResponseFn_p = ResponseFn_p + Psi_p(j)*Psi_0(j)
                 ResponseFn_h = ResponseFn_h + Psi_h(j)*Psi_0(j)
@@ -985,8 +985,8 @@ module LinearResponse
 
             call set_timer(LR_EC_TDA_HBuild)
         
-            LinearSystem(:,:) = complex(0.0_dp,0.0_dp)
-            Overlap(:,:) = complex(0.0_dp,0.0_dp)
+            LinearSystem(:,:) = dcmplx(0.0_dp,0.0_dp)
+            Overlap(:,:) = dcmplx(0.0_dp,0.0_dp)
             write(6,*) "Calculating linear response for frequency: ",Omega
 
             !First, find the non-interacting solution expressed in the schmidt basis
@@ -1007,49 +1007,49 @@ module LinearResponse
                 enddo
             enddo
             !sum_a G_ai^* G_aj
-            call ZGEMM('C','N',nCore,nCore,nVirt,complex(1.0_dp,0.0_dp),SchmidtPert(VirtStart:VirtEnd,1:CoreEnd),nVirt, &
-                SchmidtPert(VirtStart:VirtEnd,1:CoreEnd),nVirt,complex(0.0_dp,0.0_dp),G_ai_G_aj,nCore)
+            call ZGEMM('C','N',nCore,nCore,nVirt,dcmplx(1.0_dp,0.0_dp),SchmidtPert(VirtStart:VirtEnd,1:CoreEnd),nVirt, &
+                SchmidtPert(VirtStart:VirtEnd,1:CoreEnd),nVirt,dcmplx(0.0_dp,0.0_dp),G_ai_G_aj,nCore)
             !sum_i G_ai^* G_bi = sum_i G_ia^* G_bi
-            call ZGEMM('C','N',nVirt,nVirt,nCore,complex(1.0_dp,0.0_dp),SchmidtPert(1:CoreEnd,VirtStart:VirtEnd),nCore, &
-                SchmidtPert(1:CoreEnd,VirtStart:VirtEnd),nCore,complex(0.0_dp,0.0_dp),G_ai_G_bi,nVirt)
+            call ZGEMM('C','N',nVirt,nVirt,nCore,dcmplx(1.0_dp,0.0_dp),SchmidtPert(1:CoreEnd,VirtStart:VirtEnd),nCore, &
+                SchmidtPert(1:CoreEnd,VirtStart:VirtEnd),nCore,dcmplx(0.0_dp,0.0_dp),G_ai_G_bi,nVirt)
             !sum_a G_xa^* G_ya  (where (x,y) in active space)
-            call ZGEMM('C','N',EmbSize,EmbSize,nVirt,complex(1.0_dp,0.0_dp),    &
+            call ZGEMM('C','N',EmbSize,EmbSize,nVirt,dcmplx(1.0_dp,0.0_dp),    &
                 SchmidtPert(VirtStart:VirtEnd,ActiveStart:ActiveEnd),nVirt, &
-                SchmidtPert(VirtStart:VirtEnd,ActiveStart:ActiveEnd),nVirt,complex(0.0_dp,0.0_dp),G_xa_G_ya,EmbSize)
+                SchmidtPert(VirtStart:VirtEnd,ActiveStart:ActiveEnd),nVirt,dcmplx(0.0_dp,0.0_dp),G_xa_G_ya,EmbSize)
             !sum_a G_xa F_ab
-            call ZGEMM('N','N',EmbSize,nVirt,nVirt,complex(1.0_dp,0.0_dp),SchmidtPert(ActiveStart:ActiveEnd,VirtStart:VirtEnd), &
-                EmbSize,FockSchmidtComp(VirtStart:VirtEnd,VirtStart:VirtEnd),nVirt,complex(0.0_dp,0.0_dp),G_xa_F_ab,EmbSize)
+            call ZGEMM('N','N',EmbSize,nVirt,nVirt,dcmplx(1.0_dp,0.0_dp),SchmidtPert(ActiveStart:ActiveEnd,VirtStart:VirtEnd), &
+                EmbSize,FockSchmidtComp(VirtStart:VirtEnd,VirtStart:VirtEnd),nVirt,dcmplx(0.0_dp,0.0_dp),G_xa_F_ab,EmbSize)
             !sum_ab G_xa^* G_yb F_ab
-            call ZGEMM('C','T',EmbSize,EmbSize,nVirt,complex(1.0_dp,0.0_dp),SchmidtPert(VirtStart:VirtEnd,ActiveStart:ActiveEnd), &
-                nVirt,G_xa_F_ab(ActiveStart:ActiveEnd,VirtStart:VirtEnd),EmbSize,complex(0.0_dp,0.0_dp),G_xa_G_yb_F_ab,EmbSize)
+            call ZGEMM('C','T',EmbSize,EmbSize,nVirt,dcmplx(1.0_dp,0.0_dp),SchmidtPert(VirtStart:VirtEnd,ActiveStart:ActiveEnd), &
+                nVirt,G_xa_F_ab(ActiveStart:ActiveEnd,VirtStart:VirtEnd),EmbSize,dcmplx(0.0_dp,0.0_dp),G_xa_G_yb_F_ab,EmbSize)
             !sum_a G_ia^* G_xa
-            call ZGEMM('C','T',nCore,EmbSize,nVirt,complex(1.0_dp,0.0_dp),SchmidtPert(VirtStart:VirtEnd,1:CoreEnd),nVirt,   &
-                SchmidtPert(ActiveStart:ActiveEnd,VirtStart:VirtEnd),EmbSize,complex(0.0_dp,0.0_dp),G_ia_G_xa,nCore)
+            call ZGEMM('C','T',nCore,EmbSize,nVirt,dcmplx(1.0_dp,0.0_dp),SchmidtPert(VirtStart:VirtEnd,1:CoreEnd),nVirt,   &
+                SchmidtPert(ActiveStart:ActiveEnd,VirtStart:VirtEnd),EmbSize,dcmplx(0.0_dp,0.0_dp),G_ia_G_xa,nCore)
             !sum_ia F_xi G_ia^* G_ya
-            call ZGEMM('N','N',EmbSize,EmbSize,nCore,complex(1.0_dp,0.0_dp),FockSchmidtComp(ActiveStart:ActiveEnd,1:CoreEnd),   &
-                EmbSize,G_ia_G_xa,nCore,complex(0.0_dp,0.0_dp),F_xi_G_ia_G_ya,EmbSize)
+            call ZGEMM('N','N',EmbSize,EmbSize,nCore,dcmplx(1.0_dp,0.0_dp),FockSchmidtComp(ActiveStart:ActiveEnd,1:CoreEnd),   &
+                EmbSize,G_ia_G_xa,nCore,dcmplx(0.0_dp,0.0_dp),F_xi_G_ia_G_ya,EmbSize)
             !sum_a G_xa F_ya
-            call ZGEMM('N','T',EmbSize,EmbSize,nVirt,complex(1.0_dp,0.0_dp),SchmidtPert(ActiveStart:ActiveEnd,VirtStart:VirtEnd), &
-                EmbSize,FockSchmidtComp(ActiveStart:ActiveEnd,VirtStart:VirtEnd),EmbSize,complex(0.0_dp,0.0_dp),G_xa_F_ya,EmbSize)
+            call ZGEMM('N','T',EmbSize,EmbSize,nVirt,dcmplx(1.0_dp,0.0_dp),SchmidtPert(ActiveStart:ActiveEnd,VirtStart:VirtEnd), &
+                EmbSize,FockSchmidtComp(ActiveStart:ActiveEnd,VirtStart:VirtEnd),EmbSize,dcmplx(0.0_dp,0.0_dp),G_xa_F_ya,EmbSize)
             !sum_i G_ix^* G_iy
-            call ZGEMM('C','N',EmbSize,EmbSize,nCore,complex(1.0_dp,0.0_dp),SchmidtPert(1:CoreEnd,ActiveStart:ActiveEnd),nCore, &
-                SchmidtPert(1:CoreEnd,ActiveStart:ActiveEnd),nCore,complex(0.0_dp,0.0_dp),G_xi_G_yi,EmbSize)
+            call ZGEMM('C','N',EmbSize,EmbSize,nCore,dcmplx(1.0_dp,0.0_dp),SchmidtPert(1:CoreEnd,ActiveStart:ActiveEnd),nCore, &
+                SchmidtPert(1:CoreEnd,ActiveStart:ActiveEnd),nCore,dcmplx(0.0_dp,0.0_dp),G_xi_G_yi,EmbSize)
             !sum_i G_ix F_ij
-            call ZGEMM('T','N',EmbSize,nCore,nCore,complex(1.0_dp,0.0_dp),SchmidtPert(1:CoreEnd,ActiveStart:ActiveEnd),nCore,   &
-                FockSchmidtComp(1:CoreEnd,1:CoreEnd),nCore,complex(0.0_dp,0.0_dp),G_ix_F_ij,EmbSize)
+            call ZGEMM('T','N',EmbSize,nCore,nCore,dcmplx(1.0_dp,0.0_dp),SchmidtPert(1:CoreEnd,ActiveStart:ActiveEnd),nCore,   &
+                FockSchmidtComp(1:CoreEnd,1:CoreEnd),nCore,dcmplx(0.0_dp,0.0_dp),G_ix_F_ij,EmbSize)
             !sum_ij G_ix^* G_jy F_ji
-            call ZGEMM('C','T',EmbSize,EmbSize,nCore,complex(1.0_dp,0.0_dp),SchmidtPert(1:CoreEnd,ActiveStart:ActiveEnd),nCore, &
-                G_ix_F_ij,EmbSize,complex(0.0_dp,0.0_dp),G_ix_G_jy_F_ji,EmbSize)
+            call ZGEMM('C','T',EmbSize,EmbSize,nCore,dcmplx(1.0_dp,0.0_dp),SchmidtPert(1:CoreEnd,ActiveStart:ActiveEnd),nCore, &
+                G_ix_F_ij,EmbSize,dcmplx(0.0_dp,0.0_dp),G_ix_G_jy_F_ji,EmbSize)
             !sum_i G_ia^* G_ix
-            call ZGEMM('C','N',nVirt,EmbSize,nCore,complex(1.0_dp,0.0_dp),SchmidtPert(1:CoreEnd,VirtStart:VirtEnd),nCore,   &
-                SchmidtPert(1:CoreEnd,ActiveStart:ActiveEnd),nCore,complex(0.0_dp,0.0_dp),G_ia_G_ix,nVirt)
+            call ZGEMM('C','N',nVirt,EmbSize,nCore,dcmplx(1.0_dp,0.0_dp),SchmidtPert(1:CoreEnd,VirtStart:VirtEnd),nCore,   &
+                SchmidtPert(1:CoreEnd,ActiveStart:ActiveEnd),nCore,dcmplx(0.0_dp,0.0_dp),G_ia_G_ix,nVirt)
             !sum_ia F_ax G_ia^* G_iy
-            call ZGEMM('T','N',EmbSize,EmbSize,nVirt,complex(1.0_dp,0.0_dp),    &
+            call ZGEMM('T','N',EmbSize,EmbSize,nVirt,dcmplx(1.0_dp,0.0_dp),    &
                 FockSchmidtComp(VirtStart:VirtEnd,ActiveStart:ActiveEnd),nVirt,G_ia_G_ix,nVirt, &
-                complex(0.0_dp,0.0_dp),F_ax_G_ia_G_iy,EmbSize)
+                dcmplx(0.0_dp,0.0_dp),F_ax_G_ia_G_iy,EmbSize)
             !sum_i G^ix F_iy
-            call ZGEMM('T','N',EmbSize,EmbSize,nCore,complex(1.0_dp,0.0_dp),SchmidtPert(1:CoreEnd,ActiveStart:ActiveEnd),nCore, &
-                FockSchmidtComp(1:CoreEnd,ActiveStart:ActiveEnd),nCore,complex(0.0_dp,0.0_dp),G_ix_F_iy,EmbSize)
+            call ZGEMM('T','N',EmbSize,EmbSize,nCore,dcmplx(1.0_dp,0.0_dp),SchmidtPert(1:CoreEnd,ActiveStart:ActiveEnd),nCore, &
+                FockSchmidtComp(1:CoreEnd,ActiveStart:ActiveEnd),nCore,dcmplx(0.0_dp,0.0_dp),G_ix_F_iy,EmbSize)
 
             
             !First, construct FCI space, in determinant basis
@@ -1080,7 +1080,7 @@ module LinearResponse
             LinearSystem(CVIndex:AVIndex-1,CVIndex:AVIndex-1) = LinearSystem(1:nFCIDet,1:nFCIDet)
 
             !Now alter the diagonals of this block
-            tempel = complex(0.0_dp,0.0_dp)
+            tempel = dcmplx(0.0_dp,0.0_dp)
             do i=1,CoreEnd
                 do j=1,CoreEnd
                     tempel = tempel - FockSchmidt(j,i)*G_ai_G_aj(j,i)
@@ -1112,7 +1112,7 @@ module LinearResponse
 
             !Now for the coupling of the CV excitations to the uncontracted space
             !***********************   Block 3   ***************************
-            tempel = complex(0.0_dp,0.0_dp)
+            tempel = dcmplx(0.0_dp,0.0_dp)
             do i = 1,CoreEnd
                 do a = VirtStart,VirtEnd
                     tempel = tempel + SchmidtPert(a,i)*FockSchmidt(a,i)
@@ -1158,7 +1158,7 @@ module LinearResponse
                     gam2_ind = AVIndex + (gam2-1)*nFullNm1
 
                     !Construct appropriate weighting factor for the hamiltonian matrix element contribution
-                    !tempel = complex(0.0_dp,0.0_dp)
+                    !tempel = dcmplx(0.0_dp,0.0_dp)
                     !do a = VirtStart,VirtEnd
                     !    tempel = tempel + conjg(SchmidtPert(gam1_spat,a))*SchmidtPert(gam2_spat,a)
                     !enddo
@@ -1183,7 +1183,7 @@ module LinearResponse
                     !enddo
 
                     !Now for the virtual excitation term, which is diagonal in each determinant space
-                    !tempel = complex(0.0_dp,0.0_dp)
+                    !tempel = dcmplx(0.0_dp,0.0_dp)
                     !do a = VirtStart,VirtEnd
                     !    do b = VirtStart,VirtEnd
                     !        tempel = tempel + FockSchmidt(a,b)*conjg(SchmidtPert(gam1_spat,a))*SchmidtPert(gam2_spat,b)
@@ -1558,7 +1558,7 @@ module LinearResponse
                     gam2_ind = CAIndex + (gam2-1)*nFullNp1
 
                     !Construct appropriate weighting factor for the hamiltonian matrix element contribution
-!                    tempel = complex(0.0_dp,0.0_dp)
+!                    tempel = dcmplx(0.0_dp,0.0_dp)
 !                    do i = 1,CoreEnd
 !                        tempel = tempel + conjg(SchmidtPert(gam1_spat,i))*SchmidtPert(gam2_spat,i)
 !                    enddo
@@ -1583,7 +1583,7 @@ module LinearResponse
                     !enddo
 
                     !Now for the occupied excitation term, which is diagonal in each determinant space
-!                    tempel = complex(0.0_dp,0.0_dp)
+!                    tempel = dcmplx(0.0_dp,0.0_dp)
 !                    do i = 1,CoreEnd
 !                        do j = 1,CoreEnd        
 !                            tempel = tempel + FockSchmidt(j,i)*conjg(SchmidtPert(i,gam1_spat))*SchmidtPert(j,gam2_spat)
@@ -1951,7 +1951,7 @@ module LinearResponse
 
             ! Block 1 and 2 are equal to the identity
             do i = 1,AVIndex-1
-                Overlap(i,i) = complex(1.0_dp,0.0_dp)
+                Overlap(i,i) = dcmplx(1.0_dp,0.0_dp)
             enddo
 
             !Now deal with block 4
@@ -1970,7 +1970,7 @@ module LinearResponse
                     gam2_ind = AVIndex + (gam2-1)*nFullNm1
 
                     !Now for the overlap, which is diagonal in each determinant space
-!                    tempel = complex(0.0_dp,0.0_dp)
+!                    tempel = dcmplx(0.0_dp,0.0_dp)
 !                    do a = VirtStart,VirtEnd
 !                        tempel = tempel + conjg(SchmidtPert(gam1_spat,a))*SchmidtPert(gam2_spat,a)
 !                    enddo
@@ -2003,7 +2003,7 @@ module LinearResponse
                     gam2_ind = CAIndex + (gam2-1)*nFullNp1
 
                     !Now for the occupied excitation term, which is diagonal in each determinant space
-!                    tempel = complex(0.0_dp,0.0_dp)
+!                    tempel = dcmplx(0.0_dp,0.0_dp)
 !                    do i = 1,CoreEnd
 !                        tempel = tempel + conjg(SchmidtPert(i,gam1_spat))*SchmidtPert(i,gam2_spat)
 !                    enddo
@@ -2043,9 +2043,9 @@ module LinearResponse
                 !Fill in orthogonal blocks (no need to diagonalize)
                 allocate(S_EigVec(nLinearSystem,nLinearSystem))
                 allocate(S_Eigval(nLinearSystem))
-                S_EigVec(:,:) = complex(0.0_dp,0.0_dp)
+                S_EigVec(:,:) = dcmplx(0.0_dp,0.0_dp)
                 do i=1,AVIndex-1
-                    S_EigVec(i,i) = complex(1.0_dp,0.0_dp)
+                    S_EigVec(i,i) = dcmplx(1.0_dp,0.0_dp)
                     S_Eigval(i) = 1.0_dp
                 enddo
 
@@ -2149,8 +2149,8 @@ module LinearResponse
                     !Find transformation matrix to the new space with linear dependencies removed before solving
                     allocate(Transform(nLinearSystem,nSpan))
                     allocate(S_Diag(nSpan))
-                    Transform(:,:) = complex(0.0_dp,0.0_dp)
-                    S_Diag(:) = complex(0.0_dp,0.0_dp)
+                    Transform(:,:) = dcmplx(0.0_dp,0.0_dp)
+                    S_Diag(:) = dcmplx(0.0_dp,0.0_dp)
                     nSpan = 0
                     do i=1,nLinearSystem
                         if(S_Eigval(i).gt.MinS_Eigval) then
@@ -2176,10 +2176,10 @@ module LinearResponse
             call set_timer(LR_EC_TDA_OptGS)
             if(tOrthogBasis) then
                 allocate(Psi_0(nSpan))  !To store the ground state in the full basis
-                Psi_0(:) = complex(0.0_dp,0.0_dp)
+                Psi_0(:) = dcmplx(0.0_dp,0.0_dp)
             else
                 allocate(Psi_0(nLinearSystem))  !To store the ground state in the full basis
-                Psi_0(:) = complex(0.0_dp,0.0_dp)
+                Psi_0(:) = dcmplx(0.0_dp,0.0_dp)
             endif
 
             if(tLR_ReoptGS) then
@@ -2188,11 +2188,11 @@ module LinearResponse
                 !Transform to the canonically orthogonalized representation in the non-null space of S
                 allocate(CanTrans(nLinearSystem,nSpan))
                 allocate(tempc(nSpan,nSpan))
-                tempc(:,:) = complex(0.0_dp,0.0_dp)
+                tempc(:,:) = dcmplx(0.0_dp,0.0_dp)
                 j = 1
                 do i=1,nLinearSystem
                     if(S_EigVal(i).gt.MinS_Eigval) then
-                        tempc(j,j) = complex(1.0_dp/sqrt(S_Eigval(i)),0.0_dp)
+                        tempc(j,j) = dcmplx(1.0_dp/sqrt(S_Eigval(i)),0.0_dp)
                         j=j+1
                     elseif(.not.tProjectOutNull) then
                         write(6,*) "Small overlap eigenvalue: ",S_EigVal(i)
@@ -2202,18 +2202,18 @@ module LinearResponse
                 enddo
                 if(j.ne.(nSpan+1)) call stop_all(t_r,'Error in indexing when reoptimizing ground state')
 
-                call ZGEMM('N','N',nLinearSystem,nSpan,nSpan,complex(1.0_dp,0.0_dp),    &
-                    Transform,nLinearSystem,tempc,nSpan,complex(0.0_dp,0.0_dp),CanTrans,nLinearSystem)
+                call ZGEMM('N','N',nLinearSystem,nSpan,nSpan,dcmplx(1.0_dp,0.0_dp),    &
+                    Transform,nLinearSystem,tempc,nSpan,dcmplx(0.0_dp,0.0_dp),CanTrans,nLinearSystem)
 
                 !Now, transform that hamiltonian into this new basis
                 allocate(OrthogHam(nSpan,nSpan))
                 deallocate(tempc)
                 allocate(tempc(nLinearSystem,nSpan))
                 !call writematrixcomp(CanTrans,'CanTrans',.true.)
-                call ZGEMM('N','N',nLinearSystem,nSpan,nLinearSystem,complex(1.0_dp,0.0_dp),    &
-                    LinearSystem,nLinearSystem,CanTrans,nLinearSystem,complex(0.0_dp,0.0_dp),tempc,nLinearSystem)
-                call ZGEMM('C','N',nSpan,nSpan,nLinearSystem,complex(1.0_dp,0.0_dp),    &
-                    CanTrans,nLinearSystem,tempc,nLinearSystem,complex(0.0_dp,0.0_dp),OrthogHam,nSpan)
+                call ZGEMM('N','N',nLinearSystem,nSpan,nLinearSystem,dcmplx(1.0_dp,0.0_dp),    &
+                    LinearSystem,nLinearSystem,CanTrans,nLinearSystem,dcmplx(0.0_dp,0.0_dp),tempc,nLinearSystem)
+                call ZGEMM('C','N',nSpan,nSpan,nLinearSystem,dcmplx(1.0_dp,0.0_dp),    &
+                    CanTrans,nLinearSystem,tempc,nLinearSystem,dcmplx(0.0_dp,0.0_dp),OrthogHam,nSpan)
                 !call writematrixcomp(OrthogHam,'OrthogHam',.true.)
 
                 !Rediagonalize this new hamiltonian
@@ -2246,10 +2246,10 @@ module LinearResponse
                 if(.not.tOrthogBasis) then
                     !Store the eigenvector in the original basis
                     !However, just rotate the ground state, not all the eigenvectors
-                    call ZGEMV('N',nLinearSystem,nSpan,complex(1.0_dp,0.0_dp),CanTrans,nLinearSystem,   &
-                        OrthogHam(:,1),1,complex(0.0_dp,0.0_dp),Psi_0,1)
-!                    call ZGEMM('N','N',nLinearSystem,1,nSpan,complex(1.0_dp,0.0_dp),CanTrans,nLinearSystem, &
-!                        OrthogHam(:,1),nSpan,complex(0.0_dp,0.0_dp),Psi_0,nLinearSystem)
+                    call ZGEMV('N',nLinearSystem,nSpan,dcmplx(1.0_dp,0.0_dp),CanTrans,nLinearSystem,   &
+                        OrthogHam(:,1),1,dcmplx(0.0_dp,0.0_dp),Psi_0,1)
+!                    call ZGEMM('N','N',nLinearSystem,1,nSpan,dcmplx(1.0_dp,0.0_dp),CanTrans,nLinearSystem, &
+!                        OrthogHam(:,1),nSpan,dcmplx(0.0_dp,0.0_dp),Psi_0,nLinearSystem)
                 else
                     !Do not rotate - keep in the orthogonal basis
                     Psi_0(:) = OrthogHam(:,1)
@@ -2260,7 +2260,7 @@ module LinearResponse
                 !We are not reoptimizing the GS
                 GSEnergy = Spectrum(1)
                 do i = 1,nFCIDet
-                    Psi_0(i) = complex(FullHamil(i,1),0.0_dp)
+                    Psi_0(i) = dcmplx(FullHamil(i,1),0.0_dp)
                 enddo
             endif
             call halt_timer(LR_EC_TDA_OptGS)
@@ -2282,12 +2282,12 @@ module LinearResponse
                 allocate(temp_vecc_2(nLinearSystem))
                 allocate(temp_vecc_3(nLinearSystem))
                 temp_vecc_3(:) = conjg(Psi_0(:))
-                call ZGEMV('T',nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),Overlap,nLinearSystem,    &
-                    temp_vecc_3,1,complex(0.0_dp,0.0_dp),temp_vecc_2,1)
-!                call ZGEMM('C','N',1,nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),Psi_0,nLinearSystem,    &
-!                    Overlap,nLinearSystem,complex(0.0_dp,0.0_dp),temp_vecc_2,1)
+                call ZGEMV('T',nLinearSystem,nLinearSystem,dcmplx(1.0_dp,0.0_dp),Overlap,nLinearSystem,    &
+                    temp_vecc_3,1,dcmplx(0.0_dp,0.0_dp),temp_vecc_2,1)
+!                call ZGEMM('C','N',1,nLinearSystem,nLinearSystem,dcmplx(1.0_dp,0.0_dp),Psi_0,nLinearSystem,    &
+!                    Overlap,nLinearSystem,dcmplx(0.0_dp,0.0_dp),temp_vecc_2,1)
                 deallocate(temp_vecc_3)
-                Projector(:,:) = complex(0.0_dp,0.0_dp)
+                Projector(:,:) = dcmplx(0.0_dp,0.0_dp)
                 do i = 1,nLinearSystem
                     do j = 1,nLinearSystem
                         Projector(i,j) = temp_vecc_2(j)*Psi_0(i)
@@ -2300,18 +2300,18 @@ module LinearResponse
             if(tOrthogBasis) then
                 !Rotate linear system into the orthogonal basis.
                 allocate(tempc(nSpan,nLinearSystem))
-                call ZGEMM('C','N',nSpan,nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),Transform,nLinearSystem,    &
-                    LinearSystem,nLinearSystem,complex(0.0_dp,0.0_dp),tempc,nSpan)
-                call ZGEMM('N','N',nSpan,nSpan,nLinearSystem,complex(1.0_dp,0.0_dp),tempc,nSpan,Transform,nLinearSystem,    &
-                    complex(0.0_dp,0.0_dp),LHS,nSpan)
+                call ZGEMM('C','N',nSpan,nLinearSystem,nLinearSystem,dcmplx(1.0_dp,0.0_dp),Transform,nLinearSystem,    &
+                    LinearSystem,nLinearSystem,dcmplx(0.0_dp,0.0_dp),tempc,nSpan)
+                call ZGEMM('N','N',nSpan,nSpan,nLinearSystem,dcmplx(1.0_dp,0.0_dp),tempc,nSpan,Transform,nLinearSystem,    &
+                    dcmplx(0.0_dp,0.0_dp),LHS,nSpan)
 
                 !Rotated overlap should be diagonal matrix
                 !Check this
                 allocate(CanTrans(nSpan,nSpan))
-                call ZGEMM('C','N',nSpan,nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),Transform,nLinearSystem,    &
-                    Overlap,nLinearSystem,complex(0.0_dp,0.0_dp),tempc,nSpan)
-                call ZGEMM('N','N',nSpan,nSpan,nLinearSystem,complex(1.0_dp,0.0_dp),tempc,nSpan,Transform,nLinearSystem,    &
-                    complex(0.0_dp,0.0_dp),CanTrans,nSpan)
+                call ZGEMM('C','N',nSpan,nLinearSystem,nLinearSystem,dcmplx(1.0_dp,0.0_dp),Transform,nLinearSystem,    &
+                    Overlap,nLinearSystem,dcmplx(0.0_dp,0.0_dp),tempc,nSpan)
+                call ZGEMM('N','N',nSpan,nSpan,nLinearSystem,dcmplx(1.0_dp,0.0_dp),tempc,nSpan,Transform,nLinearSystem,    &
+                    dcmplx(0.0_dp,0.0_dp),CanTrans,nSpan)
                 do i=1,nSpan
                     do j=1,nSpan
                         if((i.eq.j).and.(abs(CanTrans(i,i)-S_Diag(i)).gt.1.0e-8_dp)) then
@@ -2332,7 +2332,7 @@ module LinearResponse
 
                 !Form LHS - easier as S is diagonal   
                 do i = 1,nSpan
-                    LHS(i,i) = LHS(i,i) - S_Diag(i)*(GSEnergy + complex(Omega,dDelta))
+                    LHS(i,i) = LHS(i,i) - S_Diag(i)*(GSEnergy + dcmplx(Omega,dDelta))
                 enddo
             else
                 if(tRemoveGSFromH) then
@@ -2344,17 +2344,17 @@ module LinearResponse
                 !Now, we want to calculate H - (E_0 + Omega)S
                 do i=1,nLinearSystem
                     do j=1,nLinearSystem
-                        LinearSystem(j,i) = LinearSystem(j,i) - (Overlap(j,i)*(GSEnergy + complex(Omega,dDelta)))
+                        LinearSystem(j,i) = LinearSystem(j,i) - (Overlap(j,i)*(GSEnergy + dcmplx(Omega,dDelta)))
                     enddo
                 enddo
 
                 if(tTransformSpace) then
                     !Transform the LHS to the linear span of S
                     allocate(tempc(nLinearSystem,nSpan))
-                    call ZGEMM('N','N',nLinearSystem,nSpan,nLinearSystem,complex(1.0_dp,0.0_dp),LinearSystem,nLinearSystem, &
-                        Transform,nLinearSystem,complex(0.0_dp,0.0_dp),tempc,nLinearSystem)
-                    call ZGEMM('C','N',nSpan,nSpan,nLinearSystem,complex(1.0_dp,0.0_dp),Transform,nLinearSystem,    &
-                        tempc,nLinearSystem,complex(0.0_dp,0.0_dp),LHS,nSpan)
+                    call ZGEMM('N','N',nLinearSystem,nSpan,nLinearSystem,dcmplx(1.0_dp,0.0_dp),LinearSystem,nLinearSystem, &
+                        Transform,nLinearSystem,dcmplx(0.0_dp,0.0_dp),tempc,nLinearSystem)
+                    call ZGEMM('C','N',nSpan,nSpan,nLinearSystem,dcmplx(1.0_dp,0.0_dp),Transform,nLinearSystem,    &
+                        tempc,nLinearSystem,dcmplx(0.0_dp,0.0_dp),LHS,nSpan)
                     deallocate(tempc)
                 else
                     LHS(:,:) = LinearSystem(:,:)
@@ -2364,14 +2364,14 @@ module LinearResponse
             !Set up RHS of linear system: -Q V |0>
 
             !Change projector so that it now projects *out* the ground state
-            Projector(:,:) = Projector(:,:)*complex(-1.0_dp,0.0_dp)
+            Projector(:,:) = Projector(:,:)*dcmplx(-1.0_dp,0.0_dp)
             if(tOrthogBasis) then
                 do i = 1,nSpan
-                    Projector(i,i) = complex(1.0_dp,0.0_dp) + Projector(i,i)
+                    Projector(i,i) = dcmplx(1.0_dp,0.0_dp) + Projector(i,i)
                 enddo
             else
                 do i = 1,nLinearSystem
-                    Projector(i,i) = complex(1.0_dp,0.0_dp) + Projector(i,i)
+                    Projector(i,i) = dcmplx(1.0_dp,0.0_dp) + Projector(i,i)
                 enddo
             endif
             
@@ -2389,25 +2389,25 @@ module LinearResponse
             !Now, calculate -QV|0> and put into VGS
             if(tOrthogBasis) then
                 allocate(VGS(nSpan))
-                call ZGEMV('N',nSpan,nSpan,complex(-1.0_dp,0.0_dp),Projector,nSpan, &
-                    temp_vecc,1,complex(0.0_dp,0.0_dp),VGS,1)
-!                call ZGEMM('N','N',nSpan,1,nSpan,complex(-1.0_dp,0.0_dp),Projector,nSpan,   &
-!                    temp_vecc,nSpan,complex(0.0_dp,0.0_dp),VGS,nSpan)
+                call ZGEMV('N',nSpan,nSpan,dcmplx(-1.0_dp,0.0_dp),Projector,nSpan, &
+                    temp_vecc,1,dcmplx(0.0_dp,0.0_dp),VGS,1)
+!                call ZGEMM('N','N',nSpan,1,nSpan,dcmplx(-1.0_dp,0.0_dp),Projector,nSpan,   &
+!                    temp_vecc,nSpan,dcmplx(0.0_dp,0.0_dp),VGS,nSpan)
 
                 !Check that RHS is orthogonal to the ground state
-                testc = complex(0.0_dp,0.0_dp)
+                testc = dcmplx(0.0_dp,0.0_dp)
                 do j = 1,nSpan
                     testc = testc + temp_vecc_2(j)*VGS(j) !Overlap(i,j)*conjg(Psi_0(i))*VGS(j)
                 enddo
             else
                 allocate(VGS(nLinearSystem))
-                call ZGEMV('N',nLinearSystem,nLinearSystem,complex(-1.0_dp,0.0_dp),Projector,nLinearSystem, &
-                    temp_vecc,1,complex(0.0_dp,0.0_dp),VGS,1)
-!                call ZGEMM('N','N',nLinearSystem,1,nLinearSystem,complex(-1.0_dp,0.0_dp),Projector,nLinearSystem,   &
-!                    temp_vecc,nLinearSystem,complex(0.0_dp,0.0_dp),VGS,nLinearSystem)
+                call ZGEMV('N',nLinearSystem,nLinearSystem,dcmplx(-1.0_dp,0.0_dp),Projector,nLinearSystem, &
+                    temp_vecc,1,dcmplx(0.0_dp,0.0_dp),VGS,1)
+!                call ZGEMM('N','N',nLinearSystem,1,nLinearSystem,dcmplx(-1.0_dp,0.0_dp),Projector,nLinearSystem,   &
+!                    temp_vecc,nLinearSystem,dcmplx(0.0_dp,0.0_dp),VGS,nLinearSystem)
 
                 !Check that RHS is orthogonal to the ground state
-                testc = complex(0.0_dp,0.0_dp)
+                testc = dcmplx(0.0_dp,0.0_dp)
                 do j = 1,nLinearSystem
                     testc = testc + temp_vecc_2(j)*VGS(j) !Overlap(i,j)*conjg(Psi_0(i))*VGS(j)
                 enddo
@@ -2416,10 +2416,10 @@ module LinearResponse
             !We now have the RHS in 'VGS'. Project this into the linear span of S if needed
             allocate(RHS(nSpan))
             if(tTransformSpace.and.(.not.tOrthogBasis)) then
-                call ZGEMV('C',nLinearSystem,nSpan,complex(1.0_dp,0.0_dp),Transform,nLinearSystem,  &
-                    VGS,1,complex(0.0_dp,0.0_dp),RHS,1)
-!                call ZGEMM('C','N',nSpan,1,nLinearSystem,complex(1.0_dp,0.0_dp),Transform,nLinearSystem,    &
-!                    VGS,nLinearSystem,complex(0.0_dp,0.0_dp),RHS,nSpan)
+                call ZGEMV('C',nLinearSystem,nSpan,dcmplx(1.0_dp,0.0_dp),Transform,nLinearSystem,  &
+                    VGS,1,dcmplx(0.0_dp,0.0_dp),RHS,1)
+!                call ZGEMM('C','N',nSpan,1,nLinearSystem,dcmplx(1.0_dp,0.0_dp),Transform,nLinearSystem,    &
+!                    VGS,nLinearSystem,dcmplx(0.0_dp,0.0_dp),RHS,nSpan)
             else
                 RHS(:) = VGS(:)
             endif
@@ -2449,10 +2449,10 @@ module LinearResponse
 
                 if(tTransformSpace.and.(.not.tOrthogBasis)) then
                     !Expand back out the perturbed wavefunction into the original basis
-                    call ZGEMV('N',nLinearSystem,nSpan,complex(1.0_dp,0.0_dp),Transform,nLinearSystem,  &
-                        RHS,1,complex(0.0_dp,0.0_dp),VGS,1)
-!                    call ZGEMM('N','N',nLinearSystem,1,nSpan,complex(1.0_dp,0.0_dp),Transform,nLinearSystem,    &
-!                        RHS,nSpan,complex(0.0_dp,0.0_dp),VGS,nLinearSystem)
+                    call ZGEMV('N',nLinearSystem,nSpan,dcmplx(1.0_dp,0.0_dp),Transform,nLinearSystem,  &
+                        RHS,1,dcmplx(0.0_dp,0.0_dp),VGS,1)
+!                    call ZGEMM('N','N',nLinearSystem,1,nSpan,dcmplx(1.0_dp,0.0_dp),Transform,nLinearSystem,    &
+!                        RHS,nSpan,dcmplx(0.0_dp,0.0_dp),VGS,nLinearSystem)
                 else
                     VGS(:) = RHS(:)
                 endif
@@ -2460,25 +2460,25 @@ module LinearResponse
                 if(tExplicitlyOrthog) then
                     if(tOrthogBasis) then
                         !Explicitly project out any component on psi_0
-                        call ZGEMV('N',nSpan,nSpan,complex(1.0_dp,0.0_dp),Projector,nSpan,VGS,1,    &
-                            complex(0.0_dp,0.0_dp),temp_vecc,1)
-!                        call ZGEMM('N','N',nSpan,1,nSpan,complex(1.0_dp,0.0_dp),Projector,nSpan,   &
-!                            VGS,nSpan,complex(0.0_dp,0.0_dp),temp_vecc,nSpan)
+                        call ZGEMV('N',nSpan,nSpan,dcmplx(1.0_dp,0.0_dp),Projector,nSpan,VGS,1,    &
+                            dcmplx(0.0_dp,0.0_dp),temp_vecc,1)
+!                        call ZGEMM('N','N',nSpan,1,nSpan,dcmplx(1.0_dp,0.0_dp),Projector,nSpan,   &
+!                            VGS,nSpan,dcmplx(0.0_dp,0.0_dp),temp_vecc,nSpan)
                         VGS(:) = temp_vecc(:)
                     else
                         !Explicitly project out any component on psi_0
-                        call ZGEMV('N',nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),Projector,nLinearSystem,VGS,1,    &
-                            complex(0.0_dp,0.0_dp),temp_vecc,1)
-!                        call ZGEMM('N','N',nLinearSystem,1,nLinearSystem,complex(1.0_dp,0.0_dp),Projector,nLinearSystem,   &
-!                            VGS,nLinearSystem,complex(0.0_dp,0.0_dp),temp_vecc,nLinearSystem)
+                        call ZGEMV('N',nLinearSystem,nLinearSystem,dcmplx(1.0_dp,0.0_dp),Projector,nLinearSystem,VGS,1,    &
+                            dcmplx(0.0_dp,0.0_dp),temp_vecc,1)
+!                        call ZGEMM('N','N',nLinearSystem,1,nLinearSystem,dcmplx(1.0_dp,0.0_dp),Projector,nLinearSystem,   &
+!                            VGS,nLinearSystem,dcmplx(0.0_dp,0.0_dp),temp_vecc,nLinearSystem)
                         VGS(:) = temp_vecc(:)
                     endif
                 endif
 
                 !Find normalization of first-order wavefunction
                 !Test whether the perturbed wavefunction is orthogonal to the ground state wavefunction
-                dNorm = complex(0.0_dp,0.0_dp)
-                dOrthog = complex(0.0_dp,0.0_dp)
+                dNorm = dcmplx(0.0_dp,0.0_dp)
+                dOrthog = dcmplx(0.0_dp,0.0_dp)
                 if(tOrthogBasis) then
                     do j = 1,nSpan
                         dNorm = dNorm + S_Diag(j)*conjg(VGS(j))*VGS(j)
@@ -2508,7 +2508,7 @@ module LinearResponse
 
                 if(tCalcResponse) then
                     !Now, use temp_vecc to hold V|1>
-                    ResponseFn = complex(0.0_dp,0.0_dp)
+                    ResponseFn = dcmplx(0.0_dp,0.0_dp)
                     if(tOrthogBasis) then
                         call ApplyDensityPert_EC_Orthog(VGS,temp_vecc,nSpan,nLinearSystem,Transform)
                         do j = 1,nSpan
@@ -2608,14 +2608,14 @@ module LinearResponse
             !Solve linear equations via direct inversion
 
             allocate(tempc(nLinearSystem,nLinearSystem))    !The inverse of the hamiltonian system. May fail to invert at/close to poles where eigenvalues -> 0
-            tempc(:,:) = complex(0.0_dp,0.0_dp)
+            tempc(:,:) = dcmplx(0.0_dp,0.0_dp)
             !Directly invert the LHS
             call z_inv(LHS,tempc)
 
             !Multiply the inverse by the RHS of equations
             allocate(cWork(nLinearSystem))
-            call ZGEMM('N','N',nLinearSystem,1,nLinearSystem,complex(1.0_dp,0.0_dp),tempc,nLinearSystem,    &
-                RHS,nLinearSystem,complex(0.0_dp,0.0_dp),cWork,nLinearSystem)
+            call ZGEMM('N','N',nLinearSystem,1,nLinearSystem,dcmplx(1.0_dp,0.0_dp),tempc,nLinearSystem,    &
+                RHS,nLinearSystem,dcmplx(0.0_dp,0.0_dp),cWork,nLinearSystem)
             !Copy final solution to RHS
             RHS(:) = cWork(:)
             deallocate(cWork,tempc)
@@ -2626,9 +2626,9 @@ module LinearResponse
             allocate(H_Valsc(nLinearSystem))
             allocate(RVec(nLinearSystem,nLinearSystem))
             allocate(LVec(nLinearSystem,nLinearSystem))
-            RVec(:,:) = complex(0.0_dp,0.0_dp)
-            LVec(:,:) = complex(0.0_dp,0.0_dp)
-            H_Valsc(:) = complex(0.0_dp,0.0_dp)
+            RVec(:,:) = dcmplx(0.0_dp,0.0_dp)
+            LVec(:,:) = dcmplx(0.0_dp,0.0_dp)
+            H_Valsc(:) = dcmplx(0.0_dp,0.0_dp)
             allocate(Work(max(1,2*nLinearSystem)))
             allocate(cWork(1))
             lWork = -1
@@ -2644,7 +2644,7 @@ module LinearResponse
 
             !Now, find inverse
             allocate(tempc(nLinearSystem,nLinearSystem)) !Temp array to build inverse in
-            tempc(:,:) = complex(0.0_dp,0.0_dp)
+            tempc(:,:) = dcmplx(0.0_dp,0.0_dp)
             do i=1,nLinearSystem
                 if(abs(H_Valsc(i)).lt.1.0e-12_dp) then
                     write(6,*) "Eigenvalue: ",i,H_Valsc(i)
@@ -2654,18 +2654,18 @@ module LinearResponse
             enddo
             !Rotate back into original basis
             allocate(CanTrans(nLinearSystem,nLinearSystem))
-            call ZGEMM('N','N',nLinearSystem,nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),    &
-                RVec,nLinearSystem,tempc,nLinearSystem,complex(0.0_dp,0.0_dp),CanTrans,nLinearSystem)
-            call ZGEMM('N','C',nLinearSystem,nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),    &
-                CanTrans,nLinearSystem,RVec,nLinearSystem,complex(0.0_dp,0.0_dp),tempc,nLinearSystem)
+            call ZGEMM('N','N',nLinearSystem,nLinearSystem,nLinearSystem,dcmplx(1.0_dp,0.0_dp),    &
+                RVec,nLinearSystem,tempc,nLinearSystem,dcmplx(0.0_dp,0.0_dp),CanTrans,nLinearSystem)
+            call ZGEMM('N','C',nLinearSystem,nLinearSystem,nLinearSystem,dcmplx(1.0_dp,0.0_dp),    &
+                CanTrans,nLinearSystem,RVec,nLinearSystem,dcmplx(0.0_dp,0.0_dp),tempc,nLinearSystem)
             deallocate(CanTrans)
             !tempc should now be the inverse
             !Multiply by RHS
             allocate(cWork(nLinearSystem))
-            call ZGEMV('N',nLinearSystem,nLinearSystem,complex(1.0_dp,0.0_dp),tempc,nLinearSystem,  &
-                RHS,1,complex(0.0_dp,0.0_dp),cWork,1)
-!            call ZGEMM('N','N',nLinearSystem,1,nLinearSystem,complex(1.0_dp,0.0_dp),    &
-!                tempc,nLinearSystem,RHS,nLinearSystem,complex(0.0_dp,0.0_dp),cWork,nLinearSystem)
+            call ZGEMV('N',nLinearSystem,nLinearSystem,dcmplx(1.0_dp,0.0_dp),tempc,nLinearSystem,  &
+                RHS,1,dcmplx(0.0_dp,0.0_dp),cWork,1)
+!            call ZGEMM('N','N',nLinearSystem,1,nLinearSystem,dcmplx(1.0_dp,0.0_dp),    &
+!                tempc,nLinearSystem,RHS,nLinearSystem,dcmplx(0.0_dp,0.0_dp),cWork,nLinearSystem)
             !Copy final solution to RHS
             RHS(:) = cWork(:)
             deallocate(cWork,tempc,H_Valsc,LVec,RVec)
@@ -2687,7 +2687,7 @@ module LinearResponse
         logical :: tParity
         character(len=*), parameter :: t_r='ApplyCre_FirstOrder_EC'
 
-        Psi(:) = complex(0.0_dp,0.0_dp)
+        Psi(:) = dcmplx(0.0_dp,0.0_dp)
         if(nSize0.ne.(nFCIDet+nNp1FCIDet+nNm1bFCIDet)) then
             call stop_all(t_r,'Resultant wavefunction not expressed in expected space')
         endif
@@ -2760,7 +2760,7 @@ module LinearResponse
         logical :: tParity
         character(len=*), parameter :: t_r='ApplyAnn_FirstOrder_EC'
 
-        Psi(:) = complex(0.0_dp,0.0_dp)
+        Psi(:) = dcmplx(0.0_dp,0.0_dp)
 
         if(nSize0.ne.(nFCIDet+nNp1FCIDet+nNm1bFCIDet)) then
             call stop_all(t_r,'Resultant wavefunction not expressed in expected space')
@@ -2831,8 +2831,8 @@ module LinearResponse
         character(len=*), parameter :: t_r='ApplySP_PertGS_EC'
 
 
-        V0_Ann(:) = complex(0.0_dp,0.0_dp)
-        V0_Cre(:) = complex(0.0_dp,0.0_dp)
+        V0_Ann(:) = dcmplx(0.0_dp,0.0_dp)
+        V0_Cre(:) = dcmplx(0.0_dp,0.0_dp)
 
         if(SizeGS.ne.(nFCIDet+nNp1FCIDet+nNm1bFCIDet)) then
             call stop_all(t_r,'Zeroth order wavefunction not expected size')
@@ -2953,11 +2953,11 @@ module LinearResponse
         !character(len=*), parameter :: t_r='ApplyDensityPert_EC_Orthog'
 
         allocate(V_Full(nFull,nFull))
-        V_Full(:,:) = complex(0.0_dp,0.0_dp)
+        V_Full(:,:) = dcmplx(0.0_dp,0.0_dp)
 
         !V in the full basis is diagonal.
         allocate(temppsi(nFull))
-        temppsi(:) = complex(1.0_dp,0.0_dp)
+        temppsi(:) = dcmplx(1.0_dp,0.0_dp)
         allocate(DiagV(nFull))
 
         call ApplyDensityPert_EC(temppsi,DiagV,nFull) 
@@ -2969,15 +2969,15 @@ module LinearResponse
         !Now, rotate into new basis
         allocate(tempc(nSpan,nFull))
         allocate(V_Span(nSpan,nSpan))
-        call ZGEMM('C','N',nSpan,nFull,nFull,complex(1.0_dp,0.0_dp),Transform,nFull,    &
-            V_Full,nFull,complex(0.0_dp,0.0_dp),tempc,nSpan)
-        call ZGEMM('N','N',nSpan,nSpan,nFull,complex(1.0_dp,0.0_dp),tempc,nSpan,Transform,nFull,    &
-            complex(0.0_dp,0.0_dp),V_Span,nSpan)
+        call ZGEMM('C','N',nSpan,nFull,nFull,dcmplx(1.0_dp,0.0_dp),Transform,nFull,    &
+            V_Full,nFull,dcmplx(0.0_dp,0.0_dp),tempc,nSpan)
+        call ZGEMM('N','N',nSpan,nSpan,nFull,dcmplx(1.0_dp,0.0_dp),tempc,nSpan,Transform,nFull,    &
+            dcmplx(0.0_dp,0.0_dp),V_Span,nSpan)
 
         !Now apply V in the smaller orthogonal space
-        call ZGEMV('N',nSpan,nSpan,complex(1.0_dp,0.0_dp),V_Span,nSpan,GS,1,complex(0.0_dp,0.0_dp),V0,1)
-!        call ZGEMM('N','N',nSpan,1,nSpan,complex(1.0_dp,0.0_dp),V_Span,nSpan,GS,nSpan,  &
-!            complex(0.0_dp,0.0_dp),V0,nSpan)
+        call ZGEMV('N',nSpan,nSpan,dcmplx(1.0_dp,0.0_dp),V_Span,nSpan,GS,1,dcmplx(0.0_dp,0.0_dp),V0,1)
+!        call ZGEMM('N','N',nSpan,1,nSpan,dcmplx(1.0_dp,0.0_dp),V_Span,nSpan,GS,nSpan,  &
+!            dcmplx(0.0_dp,0.0_dp),V0,nSpan)
 
         deallocate(V_Span,tempc,V_Full)
 
@@ -2993,7 +2993,7 @@ module LinearResponse
         integer :: pertsitealpha,pertsitebeta,i,j,ind
         character(len=*), parameter :: t_r='ApplyDensityPert_EC'
 
-        V0(:) = complex(0.0_dp,0.0_dp)
+        V0(:) = dcmplx(0.0_dp,0.0_dp)
         pertsitealpha = 2*pertsite-1
         pertsitebeta = 2*pertsite
 
@@ -5258,31 +5258,31 @@ module LinearResponse
         character(len=*), parameter :: t_r='FindSchmidtPert_Charged'
 
         allocate(HFPertBasis_Cre(nOcc+1:nSites))
-        HFPertBasis_Cre(:) = complex(0.0_dp,0.0_dp)
+        HFPertBasis_Cre(:) = dcmplx(0.0_dp,0.0_dp)
         allocate(HFPertBasis_Ann(1:nOcc))
-        HFPertBasis_Ann(:) = complex(0.0_dp,0.0_dp)
-        ni_lr_Cre = complex(0.0_dp,0.0_dp)
-        ni_lr_Ann = complex(0.0_dp,0.0_dp)
+        HFPertBasis_Ann(:) = dcmplx(0.0_dp,0.0_dp)
+        ni_lr_Cre = dcmplx(0.0_dp,0.0_dp)
+        ni_lr_Ann = dcmplx(0.0_dp,0.0_dp)
 
         !Assume perturbation is local to the first impurity site (pertsite = 1).
         if(pertsite.ne.1) call stop_all(t_r,'Perturbation is not local to the impurity site')
         !Assuming that MF GF operator is V_ia/w-e_a, V_ia/w-e_i+w
         do i = 1,nOcc
-            HFPertBasis_Ann(i) = complex(HFOrbs(pertsite,i),0.0_dp)/(complex(Omega,dDelta)-HFEnergies(i))
-            ni_lr_Ann = ni_lr_Ann + complex(HFOrbs(pertsite,i)**2,0.0_dp)/(complex(Omega,dDelta)-HFEnergies(i))
+            HFPertBasis_Ann(i) = dcmplx(HFOrbs(pertsite,i),0.0_dp)/(dcmplx(Omega,dDelta)-HFEnergies(i))
+            ni_lr_Ann = ni_lr_Ann + dcmplx(HFOrbs(pertsite,i)**2,0.0_dp)/(dcmplx(Omega,dDelta)-HFEnergies(i))
         enddo
         do a = nOcc+1,nSites
-            HFPertBasis_Cre(a) = complex(HFOrbs(pertsite,a),0.0_dp)/(complex(Omega,dDelta)-HFEnergies(a))
-            ni_lr_Cre = ni_lr_Cre + complex(HFOrbs(pertsite,a)**2,0.0_dp)/(complex(Omega,dDelta)-HFEnergies(a))
+            HFPertBasis_Cre(a) = dcmplx(HFOrbs(pertsite,a),0.0_dp)/(dcmplx(Omega,dDelta)-HFEnergies(a))
+            ni_lr_Cre = ni_lr_Cre + dcmplx(HFOrbs(pertsite,a)**2,0.0_dp)/(dcmplx(Omega,dDelta)-HFEnergies(a))
         enddo
 
         if(allocated(SchmidtPertGF_Cre)) deallocate(SchmidtPertGF_Cre)
         allocate(SchmidtPertGF_Cre(nOcc+1:nSites))
-        SchmidtPertGF_Cre(:) = complex(0.0_dp,0.0_dp)
+        SchmidtPertGF_Cre(:) = dcmplx(0.0_dp,0.0_dp)
         
         if(allocated(SchmidtPertGF_Ann)) deallocate(SchmidtPertGF_Ann)
         allocate(SchmidtPertGF_Ann(1:nOcc))
-        SchmidtPertGF_Ann(:) = complex(0.0_dp,0.0_dp)
+        SchmidtPertGF_Ann(:) = dcmplx(0.0_dp,0.0_dp)
 
         !Transform into schmidt basis
         do a = nOcc+1,nSites
@@ -5322,9 +5322,9 @@ module LinearResponse
         endif
 
         allocate(HFPertBasis(nSites,nSites))
-        HFPertBasis(:,:) = complex(0.0_dp,0.0_dp)
+        HFPertBasis(:,:) = dcmplx(0.0_dp,0.0_dp)
 
-        ni_lr = complex(0.0_dp,0.0_dp)
+        ni_lr = dcmplx(0.0_dp,0.0_dp)
 
         !Assume perturbation is local to the first impurity site (pertsite = 1).
         if(pertsite.ne.1) call stop_all(t_r,'Perturbation is not local to the impurity site')
@@ -5332,12 +5332,12 @@ module LinearResponse
         do i=1,nOcc
             do a=nOcc+1,nSites
                 EDiff = HFEnergies(a)-HFEnergies(i)
-                HFPertBasis(i,a) = complex(HFOrbs(pertsite,i),0.0_dp)*complex(HFOrbs(pertsite,a),0.0_dp)*   &
-                    complex(Lambda,0.0_dp)*(complex(1.0_dp,0.0_dp) / &
-                    (complex(Omega,dDelta)-complex(EDiff,0.0_dp)))
+                HFPertBasis(i,a) = dcmplx(HFOrbs(pertsite,i),0.0_dp)*dcmplx(HFOrbs(pertsite,a),0.0_dp)*   &
+                    dcmplx(Lambda,0.0_dp)*(dcmplx(1.0_dp,0.0_dp) / &
+                    (dcmplx(Omega,dDelta)-dcmplx(EDiff,0.0_dp)))
                 HFPertBasis(a,i) = HFPertBasis(i,a)
-                ni_lr = ni_lr + complex((HFOrbs(pertsite,i)*HFOrbs(pertsite,a))**2,0.0_dp) / &
-                    (complex(Omega,dDelta)-complex(EDiff,0.0_dp))
+                ni_lr = ni_lr + dcmplx((HFOrbs(pertsite,i)*HFOrbs(pertsite,a))**2,0.0_dp) / &
+                    (dcmplx(Omega,dDelta)-dcmplx(EDiff,0.0_dp))
             enddo
         enddo
         ni_lr = ni_lr * 2.0_dp
@@ -5364,11 +5364,11 @@ module LinearResponse
 
         if(allocated(SchmidtPert)) deallocate(SchmidtPert)
         allocate(SchmidtPert(nSites,nSites))
-        !call DGEMM('T','N',nSites,nSites,nSites,complex(1.0_dp,0.0_dp),HFtoSchmidtTransform,nSites,HFPertBasis,nSites,0.0_dp,temp,nSites)
-        call ZGEMM('T','N',nSites,nSites,nSites,complex(1.0_dp,0.0_dp),C_HFtoSTrans,nSites, &
-            HFPertBasis,nSites,complex(0.0_dp,0.0_dp),temp,nSites)
-        call ZGEMM('N','N',nSites,nSites,nSites,complex(1.0_dp,0.0_dp),temp,nSites, &
-            C_HFtoSTrans,nSites,complex(0.0_dp,0.0_dp),SchmidtPert,nSites)
+        !call DGEMM('T','N',nSites,nSites,nSites,dcmplx(1.0_dp,0.0_dp),HFtoSchmidtTransform,nSites,HFPertBasis,nSites,0.0_dp,temp,nSites)
+        call ZGEMM('T','N',nSites,nSites,nSites,dcmplx(1.0_dp,0.0_dp),C_HFtoSTrans,nSites, &
+            HFPertBasis,nSites,dcmplx(0.0_dp,0.0_dp),temp,nSites)
+        call ZGEMM('N','N',nSites,nSites,nSites,dcmplx(1.0_dp,0.0_dp),temp,nSites, &
+            C_HFtoSTrans,nSites,dcmplx(0.0_dp,0.0_dp),SchmidtPert,nSites)
         deallocate(temp,HFPertBasis,C_HFtoSTrans)
 
         !SchmidtPert is now the perturbation in the schmidt basis
@@ -5460,8 +5460,8 @@ module LinearResponse
         Omega = Start_Omega
         do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
 
-            ResponseFn = complex(0.0_dp,0.0_dp)
-            ResponseFnPosW = complex(0.0_dp,0.0_dp) !Only positive frequency
+            ResponseFn = dcmplx(0.0_dp,0.0_dp)
+            ResponseFnPosW = dcmplx(0.0_dp,0.0_dp) !Only positive frequency
             do i=1,nel
                 do a=virt_start,2*nSites
                     if(mod(i,2).ne.mod(a,2)) cycle      !Only want same spin excitations 
@@ -5469,15 +5469,15 @@ module LinearResponse
                     a_spat = gtid(a)
 
                     EDiff = FullHFEnergies(a_spat)-FullHFEnergies(i_spat)
-                    ResponseFn = ResponseFn + complex((FullHFOrbs(pertsite,a_spat)* &
+                    ResponseFn = ResponseFn + dcmplx((FullHFOrbs(pertsite,a_spat)* &
                         FullHFOrbs(pertsite,i_spat))**2,0.0_dp) /    &
-                        (complex(Omega,dDelta)-complex(EDiff,0.0_dp))
-                    ResponseFnPosW = ResponseFnPosW + complex((FullHFOrbs(pertsite,a_spat)* &
+                        (dcmplx(Omega,dDelta)-dcmplx(EDiff,0.0_dp))
+                    ResponseFnPosW = ResponseFnPosW + dcmplx((FullHFOrbs(pertsite,a_spat)* &
                         FullHFOrbs(pertsite,i_spat))**2,0.0_dp) / &
-                        (complex(Omega,dDelta)-complex(EDiff,0.0_dp))
-                    ResponseFn = ResponseFn - complex((FullHFOrbs(pertsite,a_spat)* &
+                        (dcmplx(Omega,dDelta)-dcmplx(EDiff,0.0_dp))
+                    ResponseFn = ResponseFn - dcmplx((FullHFOrbs(pertsite,a_spat)* &
                         FullHFOrbs(pertsite,i_spat))**2,0.0_dp) /    &
-                        (complex(Omega,dDelta)+complex(EDiff,0.0_dp))
+                        (dcmplx(Omega,dDelta)+dcmplx(EDiff,0.0_dp))
                 enddo
             enddo
             ResponseFn = ResponseFn*Lambda
@@ -5795,10 +5795,10 @@ module LinearResponse
         Omega = Start_Omega
         do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
 
-            ResponseFn = complex(0.0_dp,0.0_dp)
+            ResponseFn = dcmplx(0.0_dp,0.0_dp)
             do i=1,ov_space
-                ResponseFn = ResponseFn + ((complex(Residues(i),0.0_dp)/(complex(Omega,dDelta)-complex(W(i),0.0_dp))) - &
-                    (complex(Residues(i),0.0_dp)/(complex(Omega,dDelta)+complex(W(i),0.0_dp))))
+                ResponseFn = ResponseFn + ((dcmplx(Residues(i),0.0_dp)/(dcmplx(Omega,dDelta)-dcmplx(W(i),0.0_dp))) - &
+                    (dcmplx(Residues(i),0.0_dp)/(dcmplx(Omega,dDelta)+dcmplx(W(i),0.0_dp))))
             enddo
             write(iunit,*) Omega,real(ResponseFn),-aimag(ResponseFn)
 
@@ -6299,11 +6299,11 @@ module LinearResponse
         Omega = Start_Omega
         do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
 
-            ResponseFn = complex(0.0_dp,0.0_dp)
+            ResponseFn = dcmplx(0.0_dp,0.0_dp)
             do i=1,ov_space
-                ResponseFn = ResponseFn + ((complex(trans_moment(i),0.0_dp)/    &
-                    (complex(Omega,dDelta)-complex(W2(ov_space+i),0.0_dp))) &
-                    - (complex(trans_moment(i),0.0_dp)/(complex(Omega,dDelta)+complex(W2(ov_space+i),0.0_dp))))
+                ResponseFn = ResponseFn + ((dcmplx(trans_moment(i),0.0_dp)/    &
+                    (dcmplx(Omega,dDelta)-dcmplx(W2(ov_space+i),0.0_dp))) &
+                    - (dcmplx(trans_moment(i),0.0_dp)/(dcmplx(Omega,dDelta)+dcmplx(W2(ov_space+i),0.0_dp))))
             enddo
             write(iunit,*) Omega,real(ResponseFn),-aimag(ResponseFn)
 
@@ -6483,7 +6483,7 @@ module LinearResponse
 
         do i=1,dim2
             do j=1,dim1
-                Arr_To(j,i) = complex(Arr_From(j,i),0.0_dp)
+                Arr_To(j,i) = dcmplx(Arr_From(j,i),0.0_dp)
             enddo
         enddo
 
