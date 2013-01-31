@@ -91,7 +91,7 @@ module LinearResponse
         integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,umatind,ierr,info,iunit,nCore
         integer :: nLinearSystem,nOrbs,nVirt,OrbPairs,tempK,UMatSize,VIndex,VirtStart,VirtEnd
         integer :: orbdum(1),gtid,nLinearSystem_h,x
-        real(dp) :: VNorm,CNorm,Omega,GFChemPot
+        real(dp) :: VNorm,CNorm,Omega,GFChemPot,CoreEnergy
         complex(dp) :: dNorm_p,dNorm_h,ni_lr,ni_lr_Cre,ni_lr_Ann
         complex(dp) :: ResponseFn,ResponseFn_h,ResponseFn_p,tempel
         logical :: tParity
@@ -224,9 +224,9 @@ module LinearResponse
             filename2 = filename
         endif
         open(unit=iunit,file=filename2,status='unknown')
-        write(iunit,"(A)") "# Frequency     GF_LinearResponse(Re)    GF_LinearResponse(Im)    " &
-            & //"ParticleGF(Re)   ParticleGF(Im)   HoleGF(Re)   HoleGF(Im)    Particle_Norm  Hole_Norm   " &
-            & //"NI_GF(Re)   NI_GF(Im)  NI_GF_Part(Re)   NI_GF_Part(Im)   NI_GF_Hole(Re)   NI_GF_Hole(Im)  "
+        write(iunit,"(A)") "# 1.Frequency     2.GF_LinearResponse(Re)    3.GF_LinearResponse(Im)    " &
+            & //"4.ParticleGF(Re)   5.ParticleGF(Im)   6.HoleGF(Re)   7.HoleGF(Im)    8.Particle_Norm  9.Hole_Norm   " &
+            & //"10.NI_GF(Re)   11.NI_GF(Im)  12.NI_GF_Part(Re)   13.NI_GF_Part(Im)   14.NI_GF_Hole(Re)   15.NI_GF_Hole(Im)  "
             
         !Allocate memory for hamiltonian in this system:
         allocate(LinearSystem_p(nLinearSystem,nLinearSystem),stat=ierr)
@@ -459,6 +459,11 @@ module LinearResponse
             call set_timer(LR_EC_GF_SolveLR)
 
             GFChemPot = Spectrum(1)
+!            CoreEnergy = 0.0_dp
+!            do i = 1,CoreEnd
+!                CoreEnergy = CoreEnergy + FockSchmidt(i,i)
+!            enddo
+!            write(6,*) "E0: ",GFChemPot+CoreEnergy
 
             !Solve particle GF to start
             do i = 1,nLinearSystem
