@@ -908,6 +908,13 @@ Program RealHub
         !FockSchmidt has been overwritten with the fock matrix in the schmidt basis
 !        call writematrix(FockSchmidt,'Fock in schmidt basis',.true.)
 
+!       Calculate the non-interacting core energy of the DMET wavefunction
+        CoreEnergy = 0.0_dp
+        do i = 1,nOcc-nImp
+            CoreEnergy = CoreEnergy + FockSchmidt(i,i) 
+        enddo
+        CoreEnergy = CoreEnergy * 2.0_dp
+
         nSys = nImp !Fix this here
         
         if(allocated(EmbeddedBasis)) deallocate(EmbeddedBasis)

@@ -84,14 +84,16 @@ module LinearResponse
         use DetToolsData
         implicit none
         real(dp), allocatable :: NFCIHam(:,:),temp(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
+        real(dp), allocatable :: W(:)
         complex(dp), allocatable :: LinearSystem_p(:,:),LinearSystem_h(:,:),Cre_0(:),Ann_0(:)
-        complex(dp), allocatable :: FockSchmidtComp(:,:),Gc_a_F_ax(:),Gc_b_F_ab(:)
+        complex(dp), allocatable :: FockSchmidtComp(:,:),Gc_a_F_ax(:),Gc_b_F_ab(:),GSHam(:,:)
         complex(dp), allocatable :: Psi_h(:),Psi_p(:),Psi1_p(:),Psi1_h(:),Ga_i_F_xi(:),Ga_i_F_ij(:)
+        complex(dp), allocatable :: temp_vecc(:),Work(:),Psi_0(:)
         integer, allocatable :: Coup_Ann_alpha(:,:,:),Coup_Create_alpha(:,:,:)
         integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,umatind,ierr,info,iunit,nCore
         integer :: nLinearSystem,nOrbs,nVirt,OrbPairs,tempK,UMatSize,VIndex,VirtStart,VirtEnd
-        integer :: orbdum(1),gtid,nLinearSystem_h,x
-        real(dp) :: VNorm,CNorm,Omega,GFChemPot,CoreEnergy
+        integer :: orbdum(1),gtid,nLinearSystem_h,x,nGSSpace,Np1GSInd,Nm1GSInd,lWork
+        real(dp) :: VNorm,CNorm,Omega,GFChemPot
         complex(dp) :: dNorm_p,dNorm_h,ni_lr,ni_lr_Cre,ni_lr_Ann
         complex(dp) :: ResponseFn,ResponseFn_h,ResponseFn_p,tempel
         logical :: tParity
@@ -113,11 +115,6 @@ module LinearResponse
             write(6,"(A)") "Solving linear system via complete diagonalization of hamiltonian"
         else
             call stop_all(t_r,"Linear equation solver unknown")
-        endif
-        if(tRemoveGSFromH) then
-            write(6,"(A)") "Explicitly removing the ground state from the hamiltonian. Hamiltonian will now lose hermiticity"
-        else
-            write(6,"(A)") "Hamiltonian will not have ground state explicitly removed. Should remain hermitian"
         endif
         !umat and tmat for the active space
         OrbPairs = (EmbSize*(EmbSize+1))/2
@@ -234,17 +231,22 @@ module LinearResponse
         endif
         open(unit=iunit,file=filename2,status='unknown')
         write(iunit,"(A)") "# 1.Frequency     2.GF_LinearResponse(Re)    3.GF_LinearResponse(Im)    " &
-            & //"4.ParticleGF(Re)   5.ParticleGF(Im)   6.HoleGF(Re)   7.HoleGF(Im)    8.Particle_Norm  9.Hole_Norm   " &
-            & //"10.NI_GF(Re)   11.NI_GF(Im)  12.NI_GF_Part(Re)   13.NI_GF_Part(Im)   14.NI_GF_Hole(Re)   15.NI_GF_Hole(Im)  "
+            & //"4.ParticleGF(Re)   5.ParticleGF(Im)   6.HoleGF(Re)   7.HoleGF(Im)    8.Old_GS    9.New_GS   " &
+            & //"10.Particle_Norm  11.Hole_Norm   12.NI_GF(Re)   13.NI_GF(Im)  14.NI_GF_Part(Re)   15.NI_GF_Part(Im)   " &
+            & //"16.NI_GF_Hole(Re)   17.NI_GF_Hole(Im)  "
             
         !Allocate memory for hamiltonian in this system:
         allocate(LinearSystem_p(nLinearSystem,nLinearSystem),stat=ierr)
         allocate(LinearSystem_h(nLinearSystem,nLinearSystem),stat=ierr)
-        if(tLR_ReoptGS) allocate(GSHam(nGSSpace,nGSSpace),stat=ierr)
+        if(tLR_ReoptGS) then
+            allocate(GSHam(nGSSpace,nGSSpace),stat=ierr)
+            allocate(W(nGSSpace))
+        endif
+        allocate(Psi_0(nGSSpace))   !If tLR_ReoptGS = .F. , then only the first nFCIDet elements will be used
         allocate(Psi1_p(nLinearSystem))
         allocate(Psi1_h(nLinearSystem))
-        allocate(Psi_p(nFCIDet))  !To store the V^T 1/H V |0> wavefunctions in the GS space
-        allocate(Psi_h(nFCIDet))  !To store the V^T 1/H V |0> wavefunctions in the GS space
+        allocate(Psi_p(nGSSpace))  !To store the V^T 1/H V |0> wavefunctions in the GS space
+        allocate(Psi_h(nGSSpace))  !To store the V^T 1/H V |0> wavefunctions in the GS space
         !Store the fock matrix in complex form, so that we can ZGEMM easily
         allocate(FockSchmidtComp(nSites,nSites))
         if(ierr.ne.0) call stop_all(t_r,'Error allocating')
@@ -255,7 +257,12 @@ module LinearResponse
         !disjoint basis to |1>, the RHS of the equations can be precomputed
         allocate(Cre_0(nLinearSystem))
         allocate(Ann_0(nLinearSystem))
-        call ApplySP_PertGS_EC(FullHamil(:,1),nFCIDet,Cre_0,Ann_0,nLinearSystem)
+        if(.not.tLR_ReoptGS) then
+            Psi_0(:) = complex(0.0_dp,0.0_dp)
+            Psi_0(1:nFCIDet) = FullHamil(1:nFCIDet,1)
+            GFChemPot = Spectrum(1)
+            call ApplySP_PertGS_EC(Psi_0,nGSSpace,Cre_0,Ann_0,nLinearSystem)
+        endif
         
         !Allocate and precompute 1-operator coupling coefficients between the different sized spaces.
         !First number is the index of operator, and the second is the parity change when applying the operator
@@ -511,7 +518,6 @@ module LinearResponse
             if(tLR_ReoptGS) then
                 allocate(Work(max(1,3*nGSSpace-2)))
                 allocate(temp_vecc(1))
-                allocate(W(nGSSpace))
                 W(:) = 0.0_dp
                 lWork = -1
                 info = 0
@@ -526,25 +532,23 @@ module LinearResponse
 
                 Psi_0(:) = GSHam(:,1)
                 GFChemPot = W(1)
-            else
-                !Set only the first nFCIDet elements of psi_0
-                Psi_0(1:nFCIDet) = FullHamil(:,1)
-                GFChemPot = Spectrum(1)
             endif
-!            CoreEnergy = 0.0_dp
-!            do i = 1,CoreEnd
-!                CoreEnergy = CoreEnergy + FockSchmidt(i,i)
-!            enddo
-!            write(6,*) "E0: ",GFChemPot+CoreEnergy
+            !write(6,*) "E0: ",GFChemPot+CoreEnergy
 
             call halt_timer(LR_EC_GF_OptGS)
             call set_timer(LR_EC_GF_SolveLR)
 
             !Solve particle GF to start
             do i = 1,nLinearSystem
-                LinearSystem_p(i,i) = complex(Omega,dDelta) + (LinearSystem_p(i,i) - GFChemPot)
+                LinearSystem_p(i,i) = complex(Omega,dDelta) - (LinearSystem_p(i,i) - GFChemPot)
             enddo
             !The V|0> for particle and hole perturbations are held in Cre_0 and Ann_0
+            !If we have reoptimized the ground state, we will need to recompute these
+            if(tLR_ReoptGS) then
+                call ApplySP_PertGS_EC(Psi_0,nGSSpace,Cre_0,Ann_0,nLinearSystem)
+            endif
+
+            !Copy V|0> to another array, since if we are not reoptimizing the GS, we want to keep them.
             Psi1_p(:) = Cre_0(:)
             !Now solve these linear equations
             !Psi1_p will be overwritten with the solution
@@ -559,7 +563,7 @@ module LinearResponse
 
             !Now solve the LR for the hole addition
             do i = 1,nLinearSystem
-                LinearSystem_h(i,i) = complex(Omega,-dDelta) - (LinearSystem_h(i,i) - GFChemPot)
+                LinearSystem_h(i,i) = complex(Omega,dDelta) + (LinearSystem_h(i,i) - GFChemPot)
             enddo
             Psi1_h(:) = Ann_0(:)
             call SolveCompLinearSystem(LinearSystem_h,Psi1_h,nLinearSystem,info)
@@ -582,22 +586,22 @@ module LinearResponse
 
             !Now, want to calculate V^T|1>  
             !This will apply an alpha annihilation operator at site pertsite to the first order interacting wavefunction
-            call ApplyAnn_FirstOrder_EC(Psi1_p,nLinearSystem,Psi_p,nFCIDet)
+            call ApplyAnn_FirstOrder_EC(Psi1_p,nLinearSystem,Psi_p,nGSSpace)
             !This will apply an alpha creation operator at site pertsite to the first order interacting wavefunction
-            call ApplyCre_FirstOrder_EC(Psi1_h,nLinearSystem,Psi_h,nFCIDet)
+            call ApplyCre_FirstOrder_EC(Psi1_h,nLinearSystem,Psi_h,nGSSpace)
 
             !Now find the overlap with the original wavefunction
             ResponseFn_p = complex(0.0_dp,0.0_dp)
-            do j = 1,nFCIDet
-                ResponseFn_p = ResponseFn_p + Psi_p(j)*FullHamil(j,1)
-                ResponseFn_h = ResponseFn_h + Psi_h(j)*FullHamil(j,1)
+            do j = 1,nGSSpace
+                ResponseFn_p = ResponseFn_p + Psi_p(j)*Psi_0(j)
+                ResponseFn_h = ResponseFn_h + Psi_h(j)*Psi_0(j)
             enddo
             ResponseFn = ResponseFn_p + ResponseFn_h    !Full response is sum of particle and hole response
             ni_lr = ni_lr_Cre + ni_lr_Ann
 
-            write(iunit,"(15G22.10)") Omega,real(ResponseFn),-aimag(ResponseFn), &
+            write(iunit,"(17G22.10)") Omega,real(ResponseFn),-aimag(ResponseFn), &
                 real(ResponseFn_p),-aimag(ResponseFn_p),real(ResponseFn_h),-aimag(ResponseFn_h),    &
-                abs(dNorm_p),abs(dNorm_h),real(ni_lr),-aimag(ni_lr),real(ni_lr_Cre),    &
+                Spectrum(1),GFChemPot,abs(dNorm_p),abs(dNorm_h),real(ni_lr),-aimag(ni_lr),real(ni_lr_Cre),    &
                 -aimag(ni_lr_Cre),real(ni_lr_Ann),-aimag(ni_lr_Ann)
 
             Omega = Omega + Omega_Step
@@ -605,8 +609,11 @@ module LinearResponse
             call halt_timer(LR_EC_GF_SolveLR)
         enddo   !End loop over omega
 
+        if(tLR_ReoptGS) then
+            deallocate(W,GSHam)
+        endif
         deallocate(LinearSystem_p,LinearSystem_h,Psi_p,Psi_h,Psi1_p,Psi1_h)
-        deallocate(Cre_0,Ann_0)
+        deallocate(Cre_0,Ann_0,Psi_0)
         close(iunit)
 
         !Deallocate determinant lists
@@ -2681,7 +2688,9 @@ module LinearResponse
         character(len=*), parameter :: t_r='ApplyCre_FirstOrder_EC'
 
         Psi(:) = complex(0.0_dp,0.0_dp)
-        if(nSize0.ne.nFCIDet) call stop_all(t_r,'Resultant wavefunction not expressed in expected space')
+        if(nSize0.ne.(nFCIDet+nNp1FCIDet+nNm1bFCIDet)) then
+            call stop_all(t_r,'Resultant wavefunction not expressed in expected space')
+        endif
 
         pertsitealpha = 2*pertsite-1
 
@@ -2706,6 +2715,31 @@ module LinearResponse
                 if(j.gt.nFCIDet) call stop_all(t_r,'Error in finding corresponding determinant')
             endif
         enddo
+        
+        if(.not.tLR_ReOptGS) then
+            !There is no weight on the rest of the space in the GS, so we don't need to worry about projecting onto it.
+            return
+        endif
+
+        do i = 1,nFCIDet
+            if(.not.btest(FCIBitList(i),pertsitealpha-1)) then
+                ilut = FCIBitList(i)
+                call SQOperator(ilut,pertsitealpha,tParity,.false.)
+
+                do j = 1,nNp1FCIDet
+                    if(Np1BitList(j).eq.ilut) then
+                        if(tParity) then
+                            Psi(nFCIDet+j) = -Psi_1(nNm1bFCIDet+i)
+                        else
+                            Psi(nFCIDet+j) = Psi_1(nNm1bFCIDet+i)
+                        endif
+                        exit
+                    endif
+                enddo
+                if(j.gt.nNp1FCIDet) call stop_all(t_r,'Error in finding corresponding determinant 2')
+            endif
+        enddo
+
     end subroutine ApplyCre_FirstOrder_EC
 
 
@@ -2713,7 +2747,8 @@ module LinearResponse
     !N+1 particle space
     !This space is given by
     ! nNp1FCIDet space (+) nFCIDet space with contracted creation operator applied to core
-    ! Only the first space will couple to the zeroth order wavefunction
+    ! The first space couples to the uncontracted N electron space of the GS, while if the GS has been reoptimized, then
+    ! we also have coupling between the second space with the N-1 (third) space of the GS wavefunction
     subroutine ApplyAnn_FirstOrder_EC(Psi_1,nSize1,Psi,nSize0)
         use DetToolsData
         use DetBitOps, only: SQOperator 
@@ -2727,7 +2762,9 @@ module LinearResponse
 
         Psi(:) = complex(0.0_dp,0.0_dp)
 
-        if(nSize0.ne.nFCIDet) call stop_all(t_r,'Resultant wavefunction not expressed in expected space')
+        if(nSize0.ne.(nFCIDet+nNp1FCIDet+nNm1bFCIDet)) then
+            call stop_all(t_r,'Resultant wavefunction not expressed in expected space')
+        endif
 
         pertsitealpha = 2*pertsite-1
 
@@ -2754,18 +2791,42 @@ module LinearResponse
 
         enddo
 
+        if(.not.tLR_ReOptGS) then
+            !There is no weight on the rest of the space in the GS, so we don't need to worry about projecting onto it.
+            return
+        endif
+
+        !Now apply the annihilation operator to the contracted part of the wavefunction
+        do i = 1,nFCIDet
+            if(btest(FCIBitList(i),pertsitealpha-1)) then
+                ilut = FCIBitList(i)
+                call SQOperator(ilut,pertsitealpha,tParity,.true.)
+                do j = 1,nNm1bFCIDet
+                    if(Nm1bBitList(j).eq.ilut) then
+                        if(tParity) then
+                            Psi(nFCIDet+nNp1FCIDet+j) = -Psi_1(nNp1FCIDet+i)
+                        else
+                            Psi(nFCIDet+nNp1FCIDet+j) = Psi_1(nNp1FCIDet+i)
+                        endif
+                        exit
+                    endif
+                enddo
+                if(j.gt.nNm1bFCIDet) call stop_all(t_r,'Error in finding corresponding determinant 2')
+            endif
+        enddo
+
     end subroutine ApplyAnn_FirstOrder_EC
             
     !It is only trying to create/distroy the alpha orbital applied to the ground state wavefunction
     !Will return the ground state, with a particle created or distroyed in pertsite
-    subroutine ApplySP_PertGS_EC(Psi_0,SizeFCI,V0_Cre,V0_Ann,nSizeLR)
+    subroutine ApplySP_PertGS_EC(Psi_0,SizeGS,V0_Cre,V0_Ann,nSizeLR)
         use DetToolsData
         use DetBitOps, only: SQOperator 
         implicit none
-        integer, intent(in) :: SizeFCI,nSizeLR
-        real(dp), intent(in) :: Psi_0(SizeFCI)
+        integer, intent(in) :: SizeGS,nSizeLR
+        complex(dp), intent(in) :: Psi_0(SizeGS)
         complex(dp), intent(out) :: V0_Cre(nSizeLR),V0_Ann(nSizeLR)
-        integer :: ilut,pertsitealpha,i,j
+        integer :: ilut,pertsitealpha,i,j,GSInd
         logical :: tParity
         character(len=*), parameter :: t_r='ApplySP_PertGS_EC'
 
@@ -2773,8 +2834,12 @@ module LinearResponse
         V0_Ann(:) = complex(0.0_dp,0.0_dp)
         V0_Cre(:) = complex(0.0_dp,0.0_dp)
 
-        if(SizeFCI.ne.nFCIDet) call stop_all(t_r,'Zeroth order wavefunction not expected size')
-        if(nSizeLR.ne.(nFCIDet+nNp1FCIDet)) call stop_all(t_r,'Size of linear system not expected')
+        if(SizeGS.ne.(nFCIDet+nNp1FCIDet+nNm1bFCIDet)) then
+            call stop_all(t_r,'Zeroth order wavefunction not expected size')
+        endif
+        if(nSizeLR.ne.(nFCIDet+nNp1FCIDet)) then
+            call stop_all(t_r,'Size of linear system not expected')
+        endif
         if(nNp1FCIDet.ne.nNm1bFCIDet) then
             call stop_all(t_r,"V0's are different sizes for particle/hole creation - not half filled active space")
         endif
@@ -2826,6 +2891,50 @@ module LinearResponse
             endif
         enddo
 
+        if(.not.tLR_ReoptGS) then
+            !We do not have GS in other parts of the space
+            return
+        endif
+
+        !This is part of the GS which will contribute to the particle removal (V0_Ann) wavefunction
+        do i = 1,nNp1FCIDet
+            if(btest(Np1BitList(i),pertsitealpha-1)) then
+                ilut = Np1BitList(i)
+                call SQOperator(ilut,pertsitealpha,tParity,.true.)
+                GSInd = nFCIDet + i
+                do j = 1,nFCIDet
+                    if(FCIBitList(j).eq.ilut) then
+                        if(tParity) then
+                            V0_Ann(nNm1bFCIDet+j) = -Psi_0(GSInd)
+                        else
+                            V0_Ann(nNm1bFCIDet+j) = Psi_0(GSInd)
+                        endif
+                        exit
+                    endif
+                enddo
+                if(j.gt.nFCIDet) call stop_all(t_r,'Could not find corresponding determinant 3')
+            endif
+        enddo
+
+        !This is the n-1 active space which will be operated on my the particle creation operator
+        do i = 1,nNm1bFCIDet
+            if(.not.btest(Nm1bBitList(i),pertsitealpha-1)) then
+                ilut = Nm1bBitList(i)
+                call SQOperator(ilut,pertsitealpha,tParity,.false.)
+                GSInd = nFCIDet + nNp1FCIDet + i 
+                do j = 1,nFCIDet
+                    if(FCIBitList(j).eq.ilut) then
+                        if(tParity) then
+                            V0_Cre(nNp1FCIDet+j) = -Psi_0(GSInd)
+                        else
+                            V0_Cre(nNp1FCIDet+j) = Psi_0(GSInd)
+                        endif
+                        exit
+                    endif
+                enddo
+                if(j.gt.nFCIDet) call stop_all(t_r,'Could not find corresponding determinant 2')
+            endif
+        enddo
 
     end subroutine ApplySP_PertGS_EC
 
@@ -5139,6 +5248,7 @@ module LinearResponse
 
     !Find the non-interacting solution for alpha single-particle addition and removal, and project this operator into the schmidt basis
     !This is done seperately for electron addition and removal (SchmidtPertGF_Cre and SchmidtPertGF_Add)
+    ! G_0^+
     subroutine FindSchmidtPert_Charged(Omega,ni_lr_Cre,ni_lr_Ann)
         implicit none
         real(dp), intent(in) :: Omega
@@ -5185,6 +5295,8 @@ module LinearResponse
                 SchmidtPertGF_Ann(i) = SchmidtPertGF_Ann(i) + HFtoSchmidtTransform(j,i)*HFPertBasis_Ann(j)
             enddo
         enddo
+
+        call writevectorcomp(SchmidtPertGF_Cre,'SchmidtPertGF_Cre')
 
         deallocate(HFPertBasis_Ann,HFPertBasis_Cre)
 

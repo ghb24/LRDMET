@@ -27,6 +27,7 @@ module Globals
     real(dp) :: One_ElecE,Two_ElecE !The one and two-body contributions to the embedded system total energy from contractions with the HL 1RDM
     real(dp) :: TotalE_Imp,One_ElecE_Imp,Two_ElecE_Imp,CoupE_Imp !Energy contributions per impurity site for 1,2 electron and coupling to bath
     real(dp) :: Fillingerror,Actualfilling_Imp,Targetfilling_Imp    !We know what the filling should be, and this is what it actually is from the HL calc.
+    real(dp) :: CoreEnergy      !The non-interacting core energy of the DMET wavefunction
     integer :: nImpCombs,EmbCombs   !The size of triangular packed arrays (over impurity sites and embedding sites respectively)
     logical :: tHalfFill        !Half filling only
     logical :: tDiagFullSystem  !Diagonalize full system before DMET
