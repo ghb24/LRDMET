@@ -312,7 +312,6 @@ Program RealHub
     subroutine LRReadInput()
         implicit none
         logical :: teof
-        integer :: itemp
         character(len=100) :: w
         character(len=*), parameter :: t_r='LRReadInput'
 
