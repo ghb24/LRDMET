@@ -460,6 +460,7 @@ Program RealHub
         !GF response
         LR_EC_GF_Precom%timer_name='GF_EC_Precom'
         LR_EC_GF_HBuild%timer_name='GF_EC_HBuild'
+        LR_EC_GF_OptGS%timer_name='GF_EC_OptGS'
         LR_EC_GF_SolveLR%timer_name='GF_EC_SolveLR'
 
     end subroutine name_timers

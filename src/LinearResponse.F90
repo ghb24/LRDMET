@@ -195,6 +195,15 @@ module LinearResponse
         endif
         
         write(6,"(A,F14.6,A)") "Memory required for the LR system: ",real(2*(nLinearSystem**2)*16,dp)/1048576.0_dp," Mb"
+
+        !If doing full optimization of the GS problem
+        nGSSpace = nFCIDet + nNp1FCIDet + nNm1bFCIDet
+        Np1GSInd = nFCIDet + 1
+        Nm1GSInd = np1GSInd + nNp1FCIDet
+        if(tLR_ReoptGS) then
+            write(6,"(A,I9)") "Size of reoptimized ground state basis: ",nGSSpace
+            write(6,"(A,F14.6,A)") "Memory required for reoptimization of GS: ",real((nGSSpace**2)*16,dp)/1048576.0_dp," Mb"
+        endif
         
         !Set up orbital indices
         CoreEnd = nOcc-nImp
@@ -231,6 +240,7 @@ module LinearResponse
         !Allocate memory for hamiltonian in this system:
         allocate(LinearSystem_p(nLinearSystem,nLinearSystem),stat=ierr)
         allocate(LinearSystem_h(nLinearSystem,nLinearSystem),stat=ierr)
+        if(tLR_ReoptGS) allocate(GSHam(nGSSpace,nGSSpace),stat=ierr)
         allocate(Psi1_p(nLinearSystem))
         allocate(Psi1_h(nLinearSystem))
         allocate(Psi_p(nFCIDet))  !To store the V^T 1/H V |0> wavefunctions in the GS space
@@ -331,9 +341,10 @@ module LinearResponse
 
             call set_timer(LR_EC_GF_HBuild)
         
+            write(6,*) "Calculating linear response for frequency: ",Omega
+            if(tLR_ReoptGS) GSHam(:,:) = complex(0.0_dp,0.0_dp)
             LinearSystem_p(:,:) = complex(0.0_dp,0.0_dp)
             LinearSystem_h(:,:) = complex(0.0_dp,0.0_dp)
-            write(6,*) "Calculating linear response for frequency: ",Omega
 
             !First, find the non-interacting solution expressed in the schmidt basis
             call FindSchmidtPert_Charged(Omega,ni_lr_Cre,ni_lr_Ann)
@@ -374,11 +385,19 @@ module LinearResponse
             call R_C_Copy_2D(LinearSystem_p(1:nNp1FCIDet,1:nNp1FCIDet),Np1FCIHam_alpha(:,:),nNp1FCIDet,nNp1FCIDet)
             !Block 1 for hole hamiltonian
             call R_C_Copy_2D(LinearSystem_h(1:nNm1bFCIDet,1:nNm1bFCIDet),Nm1FCIHam_beta(:,:),nNm1bFCIDet,nNm1bFCIDet)
+            if(tLR_ReoptGS) then
+                !Block 1 for GS
+                call R_C_Copy_2D(GSHam(1:nFCIDet,1:nFCIDet),nFCIHam(:,:),nFCIDet,nFCIDet)
+                !Block 2 (diagonal part to come)
+                call R_C_Copy_2D(GSHam(Np1GSInd:Nm1GSInd-1,Np1GSInd:Nm1GSInd-1),Np1FCIHam_alpha(:,:),nNp1FCIDet,nNp1FCIDet)
+                !Block 4 (diagonal part to come)
+                call R_C_Copy_2D(GSHam(Nm1GSInd:nGSSpace,Nm1GSInd:nGSSpace),Nm1FCIHam_beta(:,:),nNm1bFCIDet,nNm1bFCIDet)
+            endif
 
             !Block 2 for particle hamiltonian
             !Copy the N electron FCI hamiltonian to this diagonal block
             call R_C_Copy_2D(LinearSystem_p(VIndex:nLinearSystem,VIndex:nLinearSystem),nFCIHam(:,:),nFCIDet,nFCIDet)
-            
+        
             VNorm = 0.0_dp
             tempel = complex(0.0_dp,0.0_dp)
             do a = VirtStart,VirtEnd
@@ -392,7 +411,12 @@ module LinearResponse
             do i = VIndex,nLinearSystem
                 LinearSystem_p(i,i) = LinearSystem_p(i,i) + tempel
             enddo
-
+            if(tLR_ReoptGS) then
+                !Diagonal part of block 4
+                do i = Nm1GSInd,nGSSpace
+                    GSHam(i,i) = GSHam(i,i) + tempel
+                enddo
+            endif
 
             !Block 2 for the hole hamiltonian
             !Copy the N electron FCI hamiltonian to this diagonal blockk
@@ -411,6 +435,12 @@ module LinearResponse
             do i = VIndex,nLinearSystem
                 LinearSystem_h(i,i) = LinearSystem_h(i,i) + tempel
             enddo
+            if(tLR_ReoptGS) then
+                !Diagonal part of block 2
+                do i = Np1GSInd,Nm1GSInd-1
+                    GSHam(i,i) = GSHam(i,i) + tempel
+                enddo
+            endif
                 
             !Block 3 for particle hamiltonian
             do J = 1,nNp1FCIDet
@@ -420,6 +450,11 @@ module LinearResponse
                         !First index is the spatial index, second is parity 
                         LinearSystem_p(K+VIndex-1,J) = Gc_a_F_ax(Coup_Ann_alpha(1,K,J))*Coup_Ann_alpha(2,K,J)/sqrt(VNorm)
                         LinearSystem_p(J,K+VIndex-1) = conjg(LinearSystem_p(K+VIndex-1,J))
+                        if(tLR_ReoptGS) then
+                            !Block 3 contribution
+                            GSHam(K,Np1GSInd+J-1) = - conjg(Ga_i_F_xi(Coup_Ann_alpha(1,K,J)))*Coup_Ann_alpha(2,K,J)/sqrt(CNorm)
+                            GSHam(Np1GSInd+J-1,K) = conjg(GSHam(K,Np1GSInd+J-1))
+                        endif
                     endif
                 enddo
             enddo
@@ -431,6 +466,11 @@ module LinearResponse
                         !Determinants are connected via a single SQ operator
                         LinearSystem_h(K+VIndex-1,J) = - Ga_i_F_xi(Coup_Create_alpha(1,K,J))*Coup_Create_alpha(2,K,J)/sqrt(CNorm)
                         LinearSystem_h(J,K+VIndex-1) = conjg(LinearSystem_h(K+VIndex-1,J))
+                        if(tLR_ReoptGS) then
+                            !Block 6 contribution
+                            GSHam(K,Nm1GSInd+J-1) = conjg(Gc_a_F_ax(Coup_Create_alpha(1,K,J)))*Coup_Create_alpha(2,K,J)/sqrt(VNorm)
+                            GSHam(Nm1GSInd+J-1,K) = conjg(GSHam(K,Nm1GSInd+J-1))
+                        endif
                     endif
                 enddo
             enddo
@@ -453,17 +493,52 @@ module LinearResponse
                 enddo
             enddo
 
+            if(tLR_ReoptGS) then
+                !Check GS hamiltonian is hermitian
+                do i = 1,nGSSpace
+                    do j = i,nGSSpace
+                        if(abs(GSHam(j,i)-conjg(GSHam(i,j))).gt.1.0e-8_dp) then
+                            call stop_all(t_r,'Reoptimized ground state hamiltonian is not hermitian')
+                        endif
+                    enddo
+                enddo
+            endif
+
             !write(6,*) "Hessian constructed successfully...",Omega
             call halt_timer(LR_EC_GF_HBuild)
+            call set_timer(LR_EC_GF_OptGS)
 
-            call set_timer(LR_EC_GF_SolveLR)
+            if(tLR_ReoptGS) then
+                allocate(Work(max(1,3*nGSSpace-2)))
+                allocate(temp_vecc(1))
+                allocate(W(nGSSpace))
+                W(:) = 0.0_dp
+                lWork = -1
+                info = 0
+                call zheev('V','U',nGSSpace,GSHam,nGSSpace,W,temp_vecc,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'workspace query failed')
+                lwork = int(temp_vecc(1))+1
+                deallocate(temp_vecc)
+                allocate(temp_vecc(lwork))
+                call zheev('V','U',nGSSpace,GSHam,nGSSpace,W,temp_vecc,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'GS H Diag failed 1')
+                deallocate(work,temp_vecc)
 
-            GFChemPot = Spectrum(1)
+                Psi_0(:) = GSHam(:,1)
+                GFChemPot = W(1)
+            else
+                !Set only the first nFCIDet elements of psi_0
+                Psi_0(1:nFCIDet) = FullHamil(:,1)
+                GFChemPot = Spectrum(1)
+            endif
 !            CoreEnergy = 0.0_dp
 !            do i = 1,CoreEnd
 !                CoreEnergy = CoreEnergy + FockSchmidt(i,i)
 !            enddo
 !            write(6,*) "E0: ",GFChemPot+CoreEnergy
+
+            call halt_timer(LR_EC_GF_OptGS)
+            call set_timer(LR_EC_GF_SolveLR)
 
             !Solve particle GF to start
             do i = 1,nLinearSystem

@@ -126,6 +126,7 @@ module Globals
     !LR_MR_EC_GF analogues
     type(timer) :: LR_EC_GF_Precom
     type(timer) :: LR_EC_GF_HBuild
+    type(timer) :: LR_EC_GF_OptGS
     type(timer) :: LR_EC_GF_SolveLR
 
 
