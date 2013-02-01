@@ -147,7 +147,6 @@ module LinearResponse
         !Seperate the lists into different Ms sectors in the N+- lists
         call GenDets(Elec,EmbSize,.true.,.true.,.true.) 
         write(6,*) "Number of determinants in {N,N+1,N-1} FCI space: ",ECoupledSpace
-
 !        write(6,*) "N+1 alpha determinants"
 !        do i=1,nNp1FCIDet
 !            write(6,*) Np1FCIDetList(:,i),Np1BitList(i)
@@ -158,7 +157,6 @@ module LinearResponse
 !        enddo
 
         !We are going to choose the uncontracted space to have an Ms of 1 (i.e. alpha spin)
-
         !Construct FCI hamiltonians for the N and N+1_alpha spaces
         !N electron
         allocate(NFCIHam(nFCIDet,nFCIDet))
@@ -555,19 +553,30 @@ module LinearResponse
 
             !Solve particle GF to start
             do i = 1,nLinearSystem
-                LinearSystem_p(i,i) = dcmplx(Omega,dDelta) - (LinearSystem_p(i,i) - GFChemPot)
+                do j = 1,nLinearSystem
+                    if(i.eq.j) then
+                        LinearSystem_p(i,i) = dcmplx(Omega,dDelta) - (LinearSystem_p(i,i) - dcmplx(GFChemPot,0.0_dp))
+                    else
+                        LinearSystem_p(j,i) = -LinearSystem_p(j,i) 
+                    endif
+                enddo
             enddo
             !The V|0> for particle and hole perturbations are held in Cre_0 and Ann_0
             !If we have reoptimized the ground state, we will need to recompute these
+            !call writevectorcomp(Psi_0,'Psi_0')
             if(tLR_ReoptGS) then
                 call ApplySP_PertGS_EC(Psi_0,nGSSpace,Cre_0,Ann_0,nLinearSystem)
             endif
+            !call writevectorcomp(Cre_0,'Ann_0')
+            !call writevectorcomp(Ann_0,'Ann_0')
 
             !Copy V|0> to another array, since if we are not reoptimizing the GS, we want to keep them.
             Psi1_p(:) = Cre_0(:)
             !Now solve these linear equations
             !Psi1_p will be overwritten with the solution
+            !call writevectorcomp(Psi1_p,'Cre_0')
             call SolveCompLinearSystem(LinearSystem_p,Psi1_p,nLinearSystem,info)
+            !call writevectorcomp(Psi1_p,'Psi1_p')
             if(info.ne.0) then 
                 write(6,*) "INFO: ",info
                 call warning(t_r,'Solving linear system failed for particle hamiltonian - skipping this frequency')
@@ -578,7 +587,7 @@ module LinearResponse
 
             !Now solve the LR for the hole addition
             do i = 1,nLinearSystem
-                LinearSystem_h(i,i) = dcmplx(Omega,dDelta) + (LinearSystem_h(i,i) - GFChemPot)
+                LinearSystem_h(i,i) = dcmplx(Omega,dDelta) + (LinearSystem_h(i,i) - dcmplx(GFChemPot,0.0_dp))
             enddo
             Psi1_h(:) = Ann_0(:)
             call SolveCompLinearSystem(LinearSystem_h,Psi1_h,nLinearSystem,info)
@@ -604,9 +613,11 @@ module LinearResponse
             call ApplyAnn_FirstOrder_EC(Psi1_p,nLinearSystem,Psi_p,nGSSpace)
             !This will apply an alpha creation operator at site pertsite to the first order interacting wavefunction
             call ApplyCre_FirstOrder_EC(Psi1_h,nLinearSystem,Psi_h,nGSSpace)
+            !call writevectorcomp(Psi_h,'Psi_h')
 
             !Now find the overlap with the original wavefunction
             ResponseFn_p = dcmplx(0.0_dp,0.0_dp)
+            ResponseFn_h = dcmplx(0.0_dp,0.0_dp)
             do j = 1,nGSSpace
                 ResponseFn_p = ResponseFn_p + Psi_p(j)*Psi_0(j)
                 ResponseFn_h = ResponseFn_h + Psi_h(j)*Psi_0(j)
