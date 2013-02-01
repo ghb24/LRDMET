@@ -148,6 +148,15 @@ module LinearResponse
         call GenDets(Elec,EmbSize,.true.,.true.,.true.) 
         write(6,*) "Number of determinants in {N,N+1,N-1} FCI space: ",ECoupledSpace
 
+!        write(6,*) "N+1 alpha determinants"
+!        do i=1,nNp1FCIDet
+!            write(6,*) Np1FCIDetList(:,i),Np1BitList(i)
+!        enddo
+!        write(6,*) "Neutral excitations: "
+!        do i=1,nFCIDet
+!            write(6,*) FCIDetList(:,i),FCIBitList(i)
+!        enddo
+
         !We are going to choose the uncontracted space to have an Ms of 1 (i.e. alpha spin)
 
         !Construct FCI hamiltonians for the N and N+1_alpha spaces
@@ -404,7 +413,7 @@ module LinearResponse
             !Block 2 for particle hamiltonian
             !Copy the N electron FCI hamiltonian to this diagonal block
             call R_C_Copy_2D(LinearSystem_p(VIndex:nLinearSystem,VIndex:nLinearSystem),nFCIHam(:,:),nFCIDet,nFCIDet)
-        
+            
             VNorm = 0.0_dp
             tempel = dcmplx(0.0_dp,0.0_dp)
             do a = VirtStart,VirtEnd
@@ -482,6 +491,12 @@ module LinearResponse
                 enddo
             enddo
 
+!            do i = 1,nLinearSystem
+!                do j = 1,nLinearSystem
+!                    write(6,*) i,j, LinearSystem_p(i,j)
+!                enddo
+!            enddo
+
             !Now, check hessian is hermitian
             do i = 1,nLinearSystem
                 do j=i,nLinearSystem
@@ -489,7 +504,7 @@ module LinearResponse
                         write(6,*) "i, j: ",i,j
                         write(6,*) "LinearSystem_p(i,j): ",LinearSystem_p(i,j)
                         write(6,*) "LinearSystem_p(j,i): ",LinearSystem_p(j,i)
-                        call stop_all(t_r,'Paritcle hessian for EC-LR not hermitian')
+                        call stop_all(t_r,'Particle hessian for EC-LR not hermitian')
                     endif
                     if(abs(LinearSystem_h(i,j)-conjg(LinearSystem_h(j,i))).gt.1.0e-8_dp) then
                         write(6,*) "i, j: ",i,j
@@ -5276,27 +5291,29 @@ module LinearResponse
             ni_lr_Cre = ni_lr_Cre + dcmplx(HFOrbs(pertsite,a)**2,0.0_dp)/(dcmplx(Omega,dDelta)-HFEnergies(a))
         enddo
 
+!        call writevectorcomp(HFPertBasis_Cre,'HFPertBasis_Cre')
+
         if(allocated(SchmidtPertGF_Cre)) deallocate(SchmidtPertGF_Cre)
-        allocate(SchmidtPertGF_Cre(nOcc+1:nSites))
+        allocate(SchmidtPertGF_Cre(nOcc+nImp+1:nSites))
         SchmidtPertGF_Cre(:) = dcmplx(0.0_dp,0.0_dp)
         
         if(allocated(SchmidtPertGF_Ann)) deallocate(SchmidtPertGF_Ann)
-        allocate(SchmidtPertGF_Ann(1:nOcc))
+        allocate(SchmidtPertGF_Ann(1:nOcc-nImp))
         SchmidtPertGF_Ann(:) = dcmplx(0.0_dp,0.0_dp)
 
         !Transform into schmidt basis
-        do a = nOcc+1,nSites
+        do a = nOcc+nImp+1,nSites
             do b = nOcc+1,nSites
                 SchmidtPertGF_Cre(a) = SchmidtPertGF_Cre(a) + HFtoSchmidtTransform(b,a)*HFPertBasis_Cre(b)
             enddo
         enddo
-        do i = 1,nOcc
+        do i = 1,nOcc-nImp
             do j = 1,nOcc
                 SchmidtPertGF_Ann(i) = SchmidtPertGF_Ann(i) + HFtoSchmidtTransform(j,i)*HFPertBasis_Ann(j)
             enddo
         enddo
 
-        call writevectorcomp(SchmidtPertGF_Cre,'SchmidtPertGF_Cre')
+!        call writevectorcomp(SchmidtPertGF_Cre,'SchmidtPertGF_Cre')
 
         deallocate(HFPertBasis_Ann,HFPertBasis_Cre)
 
