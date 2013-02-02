@@ -463,6 +463,9 @@ Program RealHub
         if(tIC_TDA_Response.and.tDDResponse) then
             call warning(t_r,'DMET density response broken. Please fix me.')
         endif
+        if(tMFResponse.and.(.not.tDDResponse)) then
+            call stop_all(t_r,'Single-reference response function asked for, but only coded up for Density response')
+        endif
 
     end subroutine check_input
 
