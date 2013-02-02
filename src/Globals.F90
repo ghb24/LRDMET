@@ -12,8 +12,10 @@ module Globals
     integer :: nImp     !The number of impurity sites
     integer :: nSys     !The number of bath sites
     real(dp) :: U       !Hubbard U
+    integer :: nU_Vals  !Number of explicitly specified U values to loop over
     logical :: tPeriodic !Use PBEs
     logical :: tAntiPeriodic !Use Anti-PBEs
+    logical :: tSCFHF   !Perform full scf hartree--fock calculation
     real(dp) :: ChemPot !The chemical potential of the system
     real(dp) :: HLGap   !The Homo-lumo gap of the system
     integer :: NEl      !The number of electrons in the entire system
@@ -68,6 +70,7 @@ module Globals
     logical :: tDDResponse          !Calculate neutral DD response
     logical :: tChargedResponse     !The different perturbations to calculate the response for
 
+    real(dp), allocatable :: U_Vals(:)      !The list of U_Values to loop over
     integer , allocatable :: allowed_occs(:)   !The list of CS occupations for the mean-field solution
     real(dp) , allocatable :: v_loc(:,:)    !The local correlation potential over the impurity sites
     real(dp) , allocatable :: h0(:,:)       !The mean-field core hamiltonian

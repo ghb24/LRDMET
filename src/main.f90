@@ -40,6 +40,7 @@ Program RealHub
         tCompleteDiag = .true. 
         tDumpFCIDUMP = .false.
         tDiagFullSystem = .false.
+        tSCFHF = .false.
 
         !General LR options
         Start_Omega = 0.0_dp
@@ -75,6 +76,7 @@ Program RealHub
         use timing, only: init_timing
         implicit none
         real(dp) :: U_tmp
+        integer :: i
         character(len=*), parameter :: t_r='init_calc'
 
         write(6,"(A)") "***  Starting real-space hubbard/anderson calculation  ***"
@@ -119,11 +121,18 @@ Program RealHub
             call stop_all(t_r,"Cannot determine dimensionality of system")
         endif
         write(6,"(A)") "            o Range of U values to consider: " 
-        U_tmp=StartU
-        do while((U_tmp.lt.max(StartU,EndU)+1.0e-5_dp).and.(U_tmp.gt.min(StartU,EndU)-1.0e-5_dp))
-            write(6,"(A,F10.5)") "            o U = ",U_tmp 
-            U_tmp=U_tmp+UStep
-        enddo
+        if(nU_Vals.eq.0) then
+            !Sweeping through
+            U_tmp=StartU
+            do while((U_tmp.lt.max(StartU,EndU)+1.0e-5_dp).and.(U_tmp.gt.min(StartU,EndU)-1.0e-5_dp))
+                write(6,"(A,F10.5)") "            o U = ",U_tmp 
+                U_tmp=U_tmp+UStep
+            enddo
+        else
+            do i = 1,nU_Vals
+                write(6,"(A,F10.5)") "            o U = ",U_Vals(i) 
+            enddo
+        endif
         if(tHalfFill) then
             write(6,"(A)") "            o Only half filling to be considered"
         else
@@ -132,6 +141,9 @@ Program RealHub
             else
                 write(6,"(A)") "            o Ramping up to half filling occupation of lattice"
             endif
+        endif
+        if(tSCFHF) then
+            write(6,"(A)") "            o Full self-consistent Hartree--Fock orbitals will be calculated"
         endif
         write(6,"(A,I7)") "            o Number of impurity sites: ",nImp 
         if(tDumpFCIDump) then
@@ -220,12 +232,17 @@ Program RealHub
         logical :: teof
         character(len=100) :: w
         logical :: tSpecifiedHub,tSpecifiedAnd,tMultipleOccs
+        real(dp) :: UVals(100)
+        integer :: i
         character(len=*), parameter :: t_r='ModelReadInput'
 
         tSpecifiedHub = .false.
         tSpecifiedAnd = .false.
         LatticeDim = 1
         tMultipleOccs = .false.
+
+        i = 0
+        UVals(:) = -1.0_dp
 
         Model: do
             call read_line(teof)
@@ -248,6 +265,11 @@ Program RealHub
                     nSites_x = nSites
                     nSites = nSites_x * nSites_y
                 endif
+            case("U_VALS")
+                do while(item.lt.nitems) 
+                    i = i+1
+                    call readf(UVals(i))
+                enddo
             case("U")
                 call readf(StartU)
                 call readf(EndU)
@@ -256,6 +278,8 @@ Program RealHub
                 tPeriodic = .true.
             case("APBC")
                 tAntiPeriodic = .true.
+            case("SCF_HF")
+                tSCFHF = .true.
             case("IMPSITES")
                 call readi(nImp)
             case("HALF_FILL")
@@ -285,6 +309,8 @@ Program RealHub
                 write(6,"(A)") "CHEMPOT"
                 write(6,"(A)") "SITES"
                 write(6,"(A)") "U"
+                write(6,"(A)") "U_VALS"
+                write(6,"(A)") "SCF_HF"
                 write(6,"(A)") "PBC"
                 write(6,"(A)") "APBC"
                 write(6,"(A)") "IMPSITES"
@@ -305,6 +331,12 @@ Program RealHub
 
         if(tSpecifiedAnd.and.tSpecifiedHub) then
             call stop_all(t_r,'Cannot specify both HUBBARD and ANDERSON in MODEL input block')
+        endif
+
+        nU_Vals = i
+        if(i.ne.0) then
+            allocate(U_Vals(nU_Vals))
+            U_Vals(1:nU_Vals) = UVals(1:nU_Vals)
         endif
 
     end subroutine ModelReadInput
@@ -395,6 +427,10 @@ Program RealHub
         endif
         if(tNIResponse.or.tTDAResponse.or.tRPAResponse) then
             tMFResponse = .true. 
+            if(.not.tSCFHF) then
+                call stop_all(t_r,'To calculate the full single-reference linear response functions, '  &
+                //'it is necessary to calculate full SCF HF solutions')
+            endif
         else
             tMFResponse = .false.
         endif
@@ -468,16 +504,26 @@ Program RealHub
     subroutine end_calc()
         use timing, only: end_timing, print_timing_report
         implicit none
-
+            
+        call deallocate_mem()
         call end_timing()
         call print_timing_report()
 
     end subroutine end_calc
 
+    !Deallocate memory which is still allocated
+    subroutine deallocate_mem()
+        implicit none
+
+        if(allocated(U_Vals)) deallocate(U_Vals)
+
+    end subroutine deallocate_mem
+
     subroutine run_DMETcalc()
         implicit none
         real(dp) :: ElecPerSite,FillingFrac,VarVloc,ErrRDM,mean_vloc
-        integer :: i,it,Occ
+        integer :: i,it,Occ,CurrU
+        logical :: tFinishedU
         character(len=*), parameter :: t_r="run_DMETcalc"
 
         !Set up initial conditions, i.e. starting potential
@@ -491,11 +537,12 @@ Program RealHub
         h0 = 0.0_dp
         h0v = 0.0_dp
 
-        U=StartU
+        CurrU = 0
+        do while(.true.)
 
-        do while((U.lt.max(StartU,EndU)+1.0e-5_dp).and.(U.gt.min(StartU,EndU)-1.0e-5_dp))
-            !We do a mean-field calculation on all U's on this range. (Only some later on will we do additional calculations (param sweeps)
-
+            !Find the next U value
+            call GetNextUVal(CurrU,tFinishedU)
+            if(tFinishedU) exit
             write(6,*) "Running DMET calculation with U = ",U
 
             !Calculate the core hamiltonian based on the hopping matrix of the hubbard model in real space
@@ -536,15 +583,17 @@ Program RealHub
                 endif
 
                 !Calculate full hf, including mean-field on-site repulsion (which is included in correlation potential in DMET
-                call set_timer(FullSCF)
-                call run_true_hf()
-                call halt_timer(FullSCF)
-
-                call set_timer(FCIDUMP)
-                if(tDumpFCIDUMP) then
-                    call DumpFCIDUMP()
+                if(tSCFHF) then
+                    call set_timer(FullSCF)
+                    call run_true_hf()
+                    call halt_timer(FullSCF)
                 endif
-                call halt_timer(FCIDUMP)
+
+                if(tDumpFCIDUMP) then
+                    call set_timer(FCIDUMP)
+                    call DumpFCIDUMP()
+                    call halt_timer(FCIDUMP)
+                endif
 
                 !Calculate single reference linear response - non-interacting, TDA and RPA
                 if(tMFResponse) then
@@ -666,12 +715,50 @@ Program RealHub
                 
             enddo   !Loop over occupations
 
-            U=U+UStep   !Increment U
-
         enddo   !Loop over U values
 
     end subroutine run_DMETcalc
-                
+
+    !CurrU is zero on entry for the first time, and is returned as non-zero
+    !tFinished = true when we have run through all U values.
+    subroutine GetNextUVal(CurrU,tFinished)
+        implicit none
+        logical, intent(out) :: tFinished
+        integer, intent(inout) :: CurrU
+        character(len=*), parameter :: t_r='GetNextUVal'
+
+        tFinished = .false.
+
+        if(nU_Vals.eq.0) then
+            !We are sweeping through U values, rather than specifying them individually
+            if(CurrU.eq.0) then
+                !First value
+                U = StartU
+                CurrU = 1   !So we don't go into this block again
+            else
+                !Carry on sweeping through.
+                !Increment from the last value
+                U = U + UStep
+                !Find out if we are still in range
+                if((U.gt.max(StartU,EndU)+1.0e-5_dp).or.(U.lt.min(StartU,EndU)-1.0e-5_dp)) then
+                    !We have finished
+                    tFinished = .true.
+                endif
+            endif
+        else
+            !We are running through specified U values
+            if(.not.allocated(U_Vals)) call stop_all(t_r,'U_Vals array not allocated')
+            CurrU = CurrU + 1
+            if(CurrU.gt.nU_Vals) then
+                !We have run through all U values we want
+                tFinished = .true.
+            else
+                U = U_Vals(CurrU)
+            endif
+        endif
+
+    end subroutine GetNextUVal
+            
     !Construct full embedding basis, along with orthogonal core and virtual set, and check orthonormality of orbital space
     subroutine ConstructFullSchmidtBasis()
         implicit none
