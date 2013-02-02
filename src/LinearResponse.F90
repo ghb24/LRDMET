@@ -545,6 +545,10 @@ module LinearResponse
 
                 Psi_0(:) = GSHam(:,1)
                 GFChemPot = W(1)
+                write(6,"(A,G20.10,A,G20.10,A)") "Reoptimized ground state energy is: ",GFChemPot, &  
+                    " (old = ",Spectrum(1),")"
+                !call writevector(FullHamil(:,1),'Old Psi_0')
+                !call writevectorcomp(Psi_0,'New Psi_0')
             endif
             !write(6,*) "E0: ",GFChemPot+CoreEnergy
 
@@ -624,6 +628,8 @@ module LinearResponse
             enddo
             ResponseFn = ResponseFn_p + ResponseFn_h    !Full response is sum of particle and hole response
             ni_lr = ni_lr_Cre + ni_lr_Ann
+
+            !write(6,*) Omega,-aimag(ni_lr_Cre),-aimag(ResponseFn_p)
 
             write(iunit,"(17G22.10)") Omega,real(ResponseFn),-aimag(ResponseFn), &
                 real(ResponseFn_p),-aimag(ResponseFn_p),real(ResponseFn_h),-aimag(ResponseFn_h),    &
