@@ -141,15 +141,18 @@ module solvers
             call CompleteDiag(tCreate2RDM)
         endif
 
-        call writematrix(HL_1RDM,'HL_1RDM',.true.)
-
         !Now calculate the seperate 1-body and 2-body contribution to the energy of the embedded system
         !The one-body contribution can be calculated from Tr[h^T x FCI_RDM] = \sum_ij h_ij * FCI_RDM_ij
         !where h^T is the core hamiltonian in the embedded basis with the correlation potential over all but the impurity (the 1e integrals)
         One_ElecE = 0.0_dp
         do j=1,EmbSize
             do i=1,EmbSize
-                One_ElecE = One_ElecE + Emb_h0v(i,j)*HL_1RDM(i,j)
+                if((i.eq.1).and.(j.eq.1).and.(tChemPot)) then
+                    !Include the chemical potential in the one-electron hamiltonian
+                    One_ElecE = One_ElecE + (Emb_h0v(i,j)-(U/2.0_dp))*HL_1RDM(i,j)
+                else
+                    One_ElecE = One_ElecE + Emb_h0v(i,j)*HL_1RDM(i,j)
+                endif
             enddo
         enddo
 
@@ -158,25 +161,6 @@ module solvers
 
         if(tCreate2RDM) then
             !Do some tests to make sure we have the right 2RDM
-
-!            if(tCompleteDiag) then
-!                write(6,*) "FCI determinant GS: "
-!                do i=1,nFCIDet
-!                    write(6,*) i,FCIDetList(:,i),FullHamil(i,1)
-!                enddo
-!            endif
-!
-!            !Write out the 2 electron RDM
-!            do i=1,EmbSize
-!                do j=1,EmbSize
-!                    do k=1,EmbSize
-!                        do l=1,EmbSize
-!                            write(6,*) "RDM: ",i,j,k,l,HL_2RDM(i,j,k,l)
-!                        enddo
-!                    enddo
-!                enddo
-!            enddo
-
             do i=1,EmbSize
                 do j=1,EmbSize
                     do k=1,EmbSize
@@ -211,7 +195,7 @@ module solvers
             if(abs(Check2eEnergy-Two_ElecE).gt.1.0e-7_dp) then
                 write(6,*) "Check2eEnergy: ",Check2eEnergy
                 write(6,*) "Two_ElecE: ",Two_ElecE
-                !call stop_all(t_r,'2RDM calculated incorrectly')
+                call stop_all(t_r,'2RDM calculated incorrectly')
             endif
 
             !Also check that trace condition is satisfied
@@ -272,240 +256,6 @@ module solvers
         write(6,"(A,F10.6)") "One electron energy per impurity:     ",One_ElecE_Imp
         write(6,"(A,F10.6)") "Two electron energy per impurity:     ",Two_ElecE_Imp
         write(6,"(A,F10.6)") "Coupling energy to bath per impurity: ",CoupE_Imp
-
-!        if(tMFResponse) then
-!            !Calculate the perturbed response
-!
-!            !Calculate the vector of length 4, H^(1) Psi^(0)
-!            allocate(FullH1(2,2))
-!            FullH1(:,:) = Emb_h1(:,:) + Emb_Pert(:,:) 
-!            FullH1(:,:) = Lambda * FullH1(:,:)  !Add in the pertubation strength
-!            if(abs(FullH1(1,2)-FullH1(2,1)).gt.1.0e-7) call stop_all(t_r,'Perturbation not hermitian')
-!            allocate(LR_State(4))
-!            LR_State(:) = 0.0_dp    !The FCI linear response to the perturbations
-!
-!            !Need to consider all singles (and diagonals) of all determinants
-!            !Det 1 first
-!            !Diagonals
-!            LR_State(1) = LR_State(1) + 2.0_dp*FullH1(1,1)*FullHamil(1,1)
-!            !1 -> 2
-!            LR_State(2) = LR_State(2) + FullH1(1,2)*FullHamil(1,1)
-!            !1 -> 3
-!            LR_State(3) = LR_State(3) - FullH1(1,2)*FullHamil(1,1)
-!
-!            !Det 2
-!            !Diagonals
-!            LR_State(2) = LR_State(2) + FullH1(1,1)*FullHamil(2,1) + FullH1(2,2)*FullHamil(2,1)
-!            !2 -> 1
-!            LR_State(1) = LR_State(1) + FullH1(2,1)*FullHamil(2,1)
-!            !2 -> 4
-!            LR_State(4) = LR_State(4) + FullH1(1,2)*FullHamil(2,1)
-!
-!            !Det 3
-!            !Diagonals
-!            LR_State(3) = LR_State(3) + FullH1(1,1)*FullHamil(3,1) + FullH1(2,2)*FullHamil(3,1)
-!            !3 -> 1
-!            LR_State(1) = LR_State(1) - FullH1(2,1)*FullHamil(3,1)
-!            !3 -> 4
-!            LR_State(4) = LR_State(4) - FullH1(1,2)*FullHamil(3,1)
-!
-!            !Det 4
-!            !Diagonals
-!            LR_State(4) = LR_State(4) + 2.0_dp*FullH1(2,2)*FullHamil(4,1)
-!            !4 -> 2
-!            LR_State(2) = LR_State(2) + FullH1(2,1)*FullHamil(4,1)
-!            !4 -> 3
-!            LR_State(3) = LR_State(3) - FullH1(2,1)*FullHamil(4,1)
-!
-!            !Now, orthogonalize this state against the original Psi_0
-!            Overlap = DDOT(4,LR_State(1:4),1,FullHamil(1:4,1),1)
-!            LR_State(:) = LR_State(:) - Overlap*FullHamil(:,1)
-!            LR_State(:) = -LR_State(:)
-!
-!            !Construct H^(0) - (E_0 + Omega)
-!            ZerothH(:,:) = 0.0_dp
-!
-!            ZerothH(1,1) = 2.0_dp*Emb_h0v(1,1) + U - (HL_Energy + Omega)
-!            ZerothH(2,2) = Emb_h0v(1,1) + Emb_h0v(2,2) - (HL_Energy + Omega)
-!            ZerothH(3,3) = Emb_h0v(1,1) + Emb_h0v(2,2) - (HL_Energy + Omega)
-!            ZerothH(4,4) = 2.0_dp*Emb_h0v(2,2) - (HL_Energy + Omega)
-!
-!            ZerothH(1,2) = Emb_h0v(1,2)
-!            ZerothH(1,3) = - Emb_h0v(1,2)
-!
-!            ZerothH(2,4) = Emb_h0v(1,2)
-!            ZerothH(3,4) = - Emb_h0v(1,2)
-!            
-!            ZerothH(2,1) = Emb_h0v(1,2)
-!            ZerothH(4,1) = - Emb_h0v(1,2)
-!
-!            ZerothH(4,2) = Emb_h0v(1,2)
-!            ZerothH(4,3) = - Emb_h0v(1,2)
-!
-!            !Now, solve the linear equation Ax = b, where b is LR_State, A is ZerothH and x will be the linear response wavefunction
-!            call DGESV(4,1,ZerothH,4,Pivots,LR_State,4,info)
-!            if(info.ne.0) call stop_all(t_r,'Error with solving linear system')
-!
-!            !LR_State is now the coefficients of Psi^(1)
-!            !Now, apply the perturbation again, and project back onto the zeroth order wavefunction (still in FullHamil)
-!            !Emb_Pert is the one-electron operator (not diagonal)
-!            DD_Response = 0.0_dp
-!            
-!            !Det 1
-!            !Diagonals
-!            DD_Response = DD_Response + FullHamil(1,1)*2.0_dp*Emb_Pert(1,1)*LR_State(1)
-!            !1 -> 2
-!            DD_Response = DD_Response + FullHamil(2,1)*Emb_Pert(1,2)*LR_State(1)
-!            !1 -> 3
-!            DD_Response = DD_Response - FullHamil(3,1)*Emb_Pert(1,2)*LR_State(1)
-!
-!            !Det 2
-!            !Diagonals
-!            DD_Response = DD_Response + FullHamil(2,1)*Emb_Pert(1,1)*LR_State(2) + FullHamil(2,1)*Emb_Pert(2,2)*LR_State(2)
-!            !2 -> 1
-!            DD_Response = DD_Response + FullHamil(1,1)*Emb_Pert(2,1)*LR_State(2)
-!            !2 -> 4
-!            DD_Response = DD_Response + FullHamil(4,1)*Emb_Pert(1,2)*LR_State(2)
-!
-!            !Det 3
-!            !Diagonals
-!            DD_Response = DD_Response + FullHamil(3,1)*Emb_Pert(1,1)*LR_State(3) + FullHamil(3,1)*Emb_Pert(2,2)*FullHamil(3,1)
-!            !3 -> 1
-!            DD_Response = DD_Response - FullHamil(1,1)*Emb_Pert(2,1)*LR_State(3)
-!            !3 -> 4
-!            DD_Response = DD_Response - FullHamil(4,1)*Emb_Pert(1,2)*LR_State(3)
-!
-!            !Det 4
-!            DD_Response = DD_Response + FullHamil(4,1)*2.0_dp*Emb_Pert(2,2)*LR_State(4)
-!            !4 -> 2
-!            DD_Response = DD_Response + FullHamil(2,1)*Emb_Pert(2,1)*LR_State(4)
-!            !4 -> 3
-!            DD_Response = DD_Response - FullHamil(3,1)*Emb_Pert(2,1)*LR_State(4)
-!
-!            write(6,*) "NEW DD_Response: ",DD_Response,Omega
-!            deallocate(LR_State,FullH1)
-!
-!
-!!            allocate(FullH1(2,2))
-!!            FullH1(:,:) = Emb_h1(:,:) + Emb_Pert(:,:) 
-!!            FullH1(:,:) = Lambda * FullH1(:,:)  !Add in the pertubation strength
-!!            allocate(LR_State(4))
-!!            LR_State(:) = 0.0_dp    !The FCI linear response to the perturbations
-!!            allocate(temp(EmbSize,EmbSize))
-!!            do j=2,4
-!!                call FindFull1RDM(j,1,Temp_RDM)
-!!!                call writematrix(Temp_RDM,'Non-hermit RDM',.true.)
-!!                !Now contract this with the perturbations to get the denominator 
-!!                call DGEMM('T','N',EmbSize,EmbSize,EmbSize,1.0_dp,FullH1,EmbSize,Temp_RDM,EmbSize,0.0_dp,temp,EmbSize)
-!!                E1 = 0.0_dp
-!!                do i=1,EmbSize
-!!                    E1 = E1 + temp(i,i)
-!!                enddo
-!!                E1 = E1/(Spectrum(j)-Spectrum(1)-Omega)
-!!
-!!                !Hermitian conjugate
-!!                call FindFull1RDM(1,j,Temp_RDM)
-!!                !Now contract this with the perturbations to get the denominator 
-!!                call DGEMM('T','N',EmbSize,EmbSize,EmbSize,1.0_dp,FullH1,EmbSize,Temp_RDM,EmbSize,0.0_dp,temp,EmbSize)
-!!                E2 = 0.0_dp
-!!                do i=1,EmbSize
-!!                    E2 = E2 + temp(i,i)
-!!                enddo
-!!                E2 = E2/(Spectrum(j)-Spectrum(1)+Omega)
-!!
-!!                LR_State(j) = - E1 - E2
-!!            enddo
-!!
-!!            !LR_State should be normalized - check this
-!!            !Actually, it should be intermediately normalized, therefore will not sum squares to one. SHould be ok...
-!!
-!!            !First order wavefunction is now \sum_i=0,N [ci |Psi_i] where Psi_i are the eigenfunctions of the zeroth order hamiltonian
-!!            !To calculate the density-density response function, we need to go through each component of Psi^(1), expand the eigenstate into determinants,
-!!            DD_Response = 0.0_dp
-!!            do i=2,4    !do H^(0) eigenstate components of Psi^(1)
-!!                do j=1,4    !do determinant coefficient j for eigenstate i
-!!                    do k=1,4    !do determinant coefficient k for eigenstate 1 (i.e. GS)
-!!
-!!                        if(((j.eq.1).and.(k.eq.2)).or.((j.eq.2).and.(k.eq.1))) then
-!!                            !Transistion 1 -> 2
-!!                            DD_Response = DD_Response + LR_State(i)*FullHamil(j,i)*FullHamil(k,1)*Emb_Pert(1,2)
-!!                        elseif(((j.eq.1).and.(k.eq.3)).or.((j.eq.3).and.(k.eq.1))) then
-!!                            !Transition 1 -> 3
-!!                            DD_Response = DD_Response - LR_State(i)*FullHamil(j,i)*FullHamil(k,1)*Emb_Pert(1,2)
-!!                        elseif(((j.eq.2).and.(k.eq.4)).or.((j.eq.4).and.(k.eq.2))) then
-!!                            !Transition 2 -> 4
-!!                            DD_Response = DD_Response + LR_State(i)*FullHamil(j,i)*FullHamil(k,1)*Emb_Pert(1,2)
-!!                        elseif(((j.eq.3).and.(k.eq.4)).or.((k.eq.3).and.(j.eq.4))) then
-!!                            !Transition 3 -> 4
-!!                            DD_Response = DD_Response - LR_State(i)*FullHamil(j,i)*FullHamil(k,1)*Emb_Pert(1,2)
-!!                        elseif((j.eq.k).and.(j.eq.1)) then
-!!                            !Diagonal terms
-!!                            DD_Response = DD_Response + LR_State(i)*FullHamil(j,i)*FullHamil(k,1)*Emb_Pert(1,1)
-!!                        elseif((j.eq.k).and.(j.eq.2)) then
-!!                            DD_Response = DD_Response + LR_State(i)*FullHamil(j,i)*FullHamil(k,1)*Emb_Pert(1,2)
-!!                        elseif((j.eq.k).and.(j.eq.3)) then
-!!                            DD_Response = DD_Response + LR_State(i)*FullHamil(j,i)*FullHamil(k,1)*Emb_Pert(1,2)
-!!                        elseif((j.eq.k).and.(j.eq.4)) then
-!!                            DD_Response = DD_Response + LR_State(i)*FullHamil(j,i)*FullHamil(k,1)*Emb_Pert(2,2)
-!!                        endif
-!!
-!!                    enddo
-!!                enddo
-!!            enddo
-!!
-!!            write(6,"(A,F8.4,A,G20.10)") "Density-Density response for frequency ",Omega, " is ",DD_Response
-!!
-!!            DD_Response = 0.0_dp
-!!            do i=2,4
-!!                call FindFull1RDM(1,i,Temp_RDM)
-!!                Temp_RDM(:,:) = Temp_RDM(:,:)*LR_State(i)
-!!                do j=1,2
-!!                    do k=1,2
-!!                        DD_Response = DD_Response + Temp_RDM(j,k)*Emb_Pert(j,k)
-!!                    enddo
-!!                enddo
-!!            enddo
-!!            write(6,"(A,F8.4,A,G20.10)") "Density-Density RDM response for frequency ",Omega, " is ",DD_Response
-!
-!!            !Now, construct the density matrix from the linear response
-!!            Temp_RDM(:,:) = 0.0_dp
-!!            !First, diagonal contributions
-!!            Temp_RDM(1,1) = Temp_RDM(1,1) + LR_State(1)*LR_State(1)*2.0_dp !alpha alpha and beta beta component of det 1
-!!            Temp_RDM(1,1) = Temp_RDM(1,1) + LR_State(2)*LR_State(2)    
-!!            Temp_RDM(2,2) = Temp_RDM(2,2) + LR_State(2)*LR_State(2)
-!!            Temp_RDM(1,1) = Temp_RDM(1,1) + LR_State(3)*LR_State(3)
-!!            Temp_RDM(2,2) = Temp_RDM(2,2) + LR_State(3)*LR_State(3)
-!!            Temp_RDM(2,2) = Temp_RDM(2,2) + LR_State(4)*LR_State(4)*2.0_dp !alpha alpha and beta beta component of det 4
-!!
-!!            !Now the four off diagonal contributions    1 -> 2
-!!            Temp_RDM(2,1) = Temp_RDM(2,1) + LR_State(2)*LR_State(1)
-!!            Temp_RDM(1,2) = Temp_RDM(1,2) + LR_State(1)*LR_State(2)   ! 2 -> 1
-!!
-!!            ! 1 -> 3 (Note minus sign)
-!!            Temp_RDM(2,1) = Temp_RDM(2,1) - LR_State(3)*LR_State(1)   
-!!            Temp_RDM(1,2) = Temp_RDM(1,2) - LR_State(1)*LR_State(3)
-!!
-!!            ! 2 -> 4
-!!            Temp_RDM(2,1) = Temp_RDM(2,1) + LR_State(4)*LR_State(2)
-!!            Temp_RDM(1,2) = Temp_RDM(1,2) + LR_State(2)*LR_State(4)
-!!
-!!            !Finally 3 -> 4 (also minus sign)
-!!            Temp_RDM(2,1) = Temp_RDM(2,1) - LR_State(4)*LR_State(3)
-!!            Temp_RDM(1,2) = Temp_RDM(1,2) - LR_State(3)*LR_State(4)
-!!
-!!            !Finally, contract *this* RDM with the perturbation, to hopefully get the coupling
-!!            call DGEMM('T','N',EmbSize,EmbSize,EmbSize,1.0_dp,FullH1,EmbSize,Temp_RDM,EmbSize,0.0_dp,temp,EmbSize)
-!!            E2 = 0.0_dp
-!!            do i=1,EmbSize
-!!                E2 = E2 + temp(i,i)
-!!            enddo
-!!
-!!            write(6,"(A,F10.6)") "Couping to linear response function: ",E2
-!!            TotalE_Imp = TotalE_Imp + E2
-!!
-!!            deallocate(FullH1,LR_State,temp)
-!
-!        endif
 
         write(6,"(A,2F10.6)") "Total energy per impurity site:       ",TotalE_Imp
 

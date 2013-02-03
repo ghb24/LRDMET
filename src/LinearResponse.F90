@@ -55,24 +55,37 @@ module LinearResponse
     !Run single reference linear response calculations, based on true HF calculation.
     subroutine SR_LinearResponse()
         implicit none
+        character(len=*), parameter :: t_r='SR_LinearResponse'
         
         if(tNIResponse) then
             !Non-interacting linear response
-            call set_timer(LR_SR_NonInt) 
-            call NonInteractingLR()
-            call halt_timer(LR_SR_NonInt)
+            if(tChargedResponse) then
+                call warning(t_r,'NonInteracting LR not yet set up for charged perturbations. Skipping...')
+            else
+                call set_timer(LR_SR_NonInt) 
+                call NonInteractingLR()
+                call halt_timer(LR_SR_NonInt)
+            endif
         endif
         if(tTDAResponse) then
             !Single reference TDA
-            call set_timer(LR_SR_TDA) 
-            call TDA_LR()
-            call halt_timer(LR_SR_TDA)
+            if(tChargedResponse) then
+                call warning(t_r,'TDA LR not yet set up for charged perturbations. Skipping...')
+            else
+                call set_timer(LR_SR_TDA) 
+                call TDA_LR()
+                call halt_timer(LR_SR_TDA)
+            endif
         endif
         if(tRPAResponse) then
             !Single reference RPA
-            call set_timer(LR_SR_RPA) 
-            call RPA_LR()
-            call halt_timer(LR_SR_RPA)
+            if(tChargedResponse) then
+                call warning(t_r,'RPA LR not yet set up for charged perturbations. Skipping...')
+            else
+                call set_timer(LR_SR_RPA) 
+                call RPA_LR()
+                call halt_timer(LR_SR_RPA)
+            endif
         endif
 
     end subroutine SR_LinearResponse
@@ -4924,6 +4937,9 @@ module LinearResponse
             call dgemm('t','n',nSites,nSites,nSites,1.0_dp,FullHFOrbs,nSites,h0,nSites,0.0_dp,temp,nSites)
             call dgemm('n','n',nSites,nSites,nSites,1.0_dp,temp,nSites,FullHFOrbs,nSites,0.0_dp,tmat,nSites)
             deallocate(temp)
+            if(tChemPot) then
+                tmat(1,1) = tmat(1,1) - U/2.0_dp
+            endif
             OrbPairs = (nSites*(nSites+1))/2
             umatsize = (OrbPairs*(OrbPairs+1))/2 
             allocate(umat(umatsize))

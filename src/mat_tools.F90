@@ -195,6 +195,8 @@ module mat_tools
                 !Include the on-site repulsion
                 fock(i,i) = fock(i,i) + U * 0.5_dp * (NEl/real(nSites))
             enddo
+        elseif(tChemPot) then
+            fock(1,1) = fock(1,1) - (U/2.0_dp)
         endif
         
         if(allocated(FullHFOrbs)) then

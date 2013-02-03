@@ -443,12 +443,6 @@ Program RealHub
         if(tOrthogBasis.and.(.not.tProjectOutNull)) then
             call stop_all(t_r,'Need to project out null space of S in order to work in the resulting basis')
         endif
-        if(tChemPot.and.tTDAResponse) then
-            call stop_all(t_r,'Chemical potential not coded up yet for SR-TDA calculations')
-        endif
-        if(tChemPot.and.tRPAResponse) then
-            call stop_all(t_r,'Chemical potential not coded up yet for SR-RPA calculations')
-        endif
         if(tPeriodic.and.tAntiPeriodic) then
             call stop_all(t_r,'Both PBCs and APBCs specified in input')
         endif
