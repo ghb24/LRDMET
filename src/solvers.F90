@@ -232,7 +232,11 @@ module solvers
         One_ElecE_Imp = 0.0_dp
         do j=1,nImp
             do i=1,nImp
-                One_ElecE_Imp = One_ElecE_Imp + Emb_h0v(i,j)*HL_1RDM(i,j)
+                if(tChemPot.and.(i.eq.1).and.(j.eq.1)) then
+                    One_ElecE_Imp = One_ElecE_Imp + (Emb_h0v(i,j)-U/2.0_dp)*HL_1RDM(i,j)
+                else
+                    One_ElecE_Imp = One_ElecE_Imp + Emb_h0v(i,j)*HL_1RDM(i,j)
+                endif
             enddo
         enddo
         One_ElecE_Imp = One_ElecE_Imp/real(nImp)    !For energy per impurity
@@ -280,7 +284,9 @@ module solvers
         write(6,"(A,F15.7)") "Filling error  per site: ",Fillingerror
 
 !        if(tDebug) call writematrix(HL_1RDM,'hl_1rdm',.true.)
-        call writematrix(HL_1RDM,'hl_1rdm',.true.)
+        if(tWriteOut) then
+            call writematrix(HL_1RDM,'hl_1rdm',.true.)
+        endif
 
     end subroutine SolveSystem
 
@@ -415,7 +421,9 @@ module solvers
         if(tChemPot) then
             tmat(1,1) = tmat(1,1) - U/2.0_dp
         endif
-        call writematrix(tmat,'tmat',.true.)
+        if(tWriteOut) then
+            call writematrix(tmat,'tmat',.true.)
+        endif
 
         !Now generate all determinants in the active space
         if(allocated(FCIDetList)) deallocate(FCIDetList)
@@ -459,7 +467,7 @@ module solvers
 
         call FindFull1RDM(1,1,HL_1RDM)
 
-        call writematrix(HL_1RDM,'HL_1RDM',.true.)
+        if(tWriteOut) call writematrix(HL_1RDM,'HL_1RDM',.true.)
 
         if(tCreate2RDM) then
             if(allocated(HL_2RDM)) deallocate(HL_2RDM)
