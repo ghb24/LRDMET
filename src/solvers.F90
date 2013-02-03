@@ -684,7 +684,7 @@ module solvers
                 call GetHElement(FCIDetList(:,i),FCIDetList(:,j),Elec,FullHamil(i,j))
             enddo
         enddo
-        call writematrix(FullHamil(1:nFCIDet,1:nFCIDet),'FCI hamil',.true.)
+!        call writematrix(FullHamil(1:nFCIDet,1:nFCIDet),'FCI hamil',.true.)
 
         !Diagonalize
         allocate(Work(1))
@@ -699,7 +699,7 @@ module solvers
         if(info.ne.0) call stop_all(t_r,'Diag failed')
         deallocate(work)
 
-        call writevector(Spectrum,'FCI Spectrum')
+        call writevector(Spectrum(1:(min(10,nFCIDet))),'FCI Spectrum')
             
         HL_Energy = Spectrum(1) !GS eigenvalue
             

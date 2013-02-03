@@ -16,6 +16,7 @@ module Globals
     logical :: tPeriodic !Use PBEs
     logical :: tAntiPeriodic !Use Anti-PBEs
     logical :: tSCFHF   !Perform full scf hartree--fock calculation
+    logical :: tWriteOut    !Write out additional info
     real(dp) :: ChemPot !The chemical potential of the system
     real(dp) :: HLGap   !The Homo-lumo gap of the system
     integer :: NEl      !The number of electrons in the entire system

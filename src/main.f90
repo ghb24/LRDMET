@@ -41,6 +41,7 @@ Program RealHub
         tDumpFCIDUMP = .false.
         tDiagFullSystem = .false.
         tSCFHF = .false.
+        tWriteout = .false.
 
         !General LR options
         Start_Omega = 0.0_dp
@@ -300,6 +301,8 @@ Program RealHub
                 tHalfFill = .false.
             case("FCIDUMP")
                 tDumpFCIDUMP = .true.
+            case("DEBUGOUTPUT")
+                tWriteOut = .true.
             case("END")
                 exit
             case default
@@ -321,6 +324,7 @@ Program RealHub
                 write(6,"(A)") "REDUCE_OCC"
                 write(6,"(A)") "INCREASE_OCC"
                 write(6,"(A)") "FCIDUMP"
+                write(6,"(A)") "DEBUGOUTPUT"
                 call stop_all(t_r,'Keyword '//trim(w)//' not recognized')
             end select
         enddo Model
@@ -625,7 +629,9 @@ Program RealHub
                     else
                         call CalcEmbedding()
                     endif
-                    call writematrix(EmbeddedBasis,'EmbeddedBasis',.true.)
+                    if(tWriteOut) then
+                        call writematrix(EmbeddedBasis,'EmbeddedBasis',.true.)
+                    endif
                     call halt_timer(ConstEmb)
                     
                     !Now transform the 1 electron quantities into the embedded basis
@@ -796,7 +802,9 @@ Program RealHub
         if(info.ne.0) call stop_all(t_r,'Diag failed')
         deallocate(work)
 
-        call writevector(ProjOverlapEVals,'Projected overlap eigenvalues')
+        if(tWriteOut) then
+            call writevector(ProjOverlapEVals,'Projected overlap eigenvalues')
+        endif
 
         !We should only have nImp non-zero eigenvalues
         nbath = 0
