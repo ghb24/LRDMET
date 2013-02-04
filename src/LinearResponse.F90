@@ -106,7 +106,7 @@ module LinearResponse
         integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,umatind,ierr,info,iunit,nCore
         integer :: nLinearSystem,nOrbs,nVirt,OrbPairs,tempK,UMatSize,VIndex,VirtStart,VirtEnd
         integer :: orbdum(1),gtid,nLinearSystem_h,x,nGSSpace,Np1GSInd,Nm1GSInd,lWork
-        real(dp) :: VNorm,CNorm,Omega,GFChemPot
+        real(dp) :: VNorm,CNorm,Omega,GFChemPot,mu
         complex(dp) :: dNorm_p,dNorm_h,ni_lr,ni_lr_Cre,ni_lr_Ann
         complex(dp) :: ResponseFn,ResponseFn_h,ResponseFn_p,tempel
         logical :: tParity
@@ -373,8 +373,15 @@ module LinearResponse
             LinearSystem_p(:,:) = dcmplx(0.0_dp,0.0_dp)
             LinearSystem_h(:,:) = dcmplx(0.0_dp,0.0_dp)
 
+            if(.not.tAnderson) then
+                !In the hubbard model, apply a chemical potential of U/2
+                mu = U/2.0_dp
+            else
+                mu = 0.0_dp
+            endif
+
             !First, find the non-interacting solution expressed in the schmidt basis
-            call FindSchmidtPert_Charged(Omega,ni_lr_Cre,ni_lr_Ann)
+            call FindSchmidtPert_Charged(Omega-mu,ni_lr_Cre,ni_lr_Ann)
 
             !First, construct useful intermediates
             !sum_a Gc_a^* F_ax (Creation)
@@ -572,7 +579,7 @@ module LinearResponse
             do i = 1,nLinearSystem
                 do j = 1,nLinearSystem
                     if(i.eq.j) then
-                        LinearSystem_p(i,i) = dcmplx(Omega,dDelta) - (LinearSystem_p(i,i) - dcmplx(GFChemPot,0.0_dp))
+                        LinearSystem_p(i,i) = dcmplx(Omega-mu,dDelta) - (LinearSystem_p(i,i) - dcmplx(GFChemPot,0.0_dp))
                     else
                         LinearSystem_p(j,i) = -LinearSystem_p(j,i) 
                     endif
@@ -604,7 +611,7 @@ module LinearResponse
 
             !Now solve the LR for the hole addition
             do i = 1,nLinearSystem
-                LinearSystem_h(i,i) = dcmplx(Omega,dDelta) + (LinearSystem_h(i,i) - dcmplx(GFChemPot,0.0_dp))
+                LinearSystem_h(i,i) = dcmplx(Omega-mu,dDelta) + (LinearSystem_h(i,i) - dcmplx(GFChemPot,0.0_dp))
             enddo
             Psi1_h(:) = Ann_0(:)
             call SolveCompLinearSystem(LinearSystem_h,Psi1_h,nLinearSystem,info)
@@ -644,7 +651,7 @@ module LinearResponse
 
             !write(6,*) Omega,-aimag(ni_lr_Cre),-aimag(ResponseFn_p)
 
-            write(iunit,"(17G22.10)") Omega,real(ResponseFn),-aimag(ResponseFn), &
+            write(iunit,"(17G22.10)") Omega-mu,real(ResponseFn),-aimag(ResponseFn), &
                 real(ResponseFn_p),-aimag(ResponseFn_p),real(ResponseFn_h),-aimag(ResponseFn_h),    &
                 Spectrum(1),GFChemPot,abs(dNorm_p),abs(dNorm_h),real(ni_lr),-aimag(ni_lr),real(ni_lr_Cre),    &
                 -aimag(ni_lr_Cre),real(ni_lr_Ann),-aimag(ni_lr_Ann)
