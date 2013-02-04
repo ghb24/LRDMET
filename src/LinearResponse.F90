@@ -651,7 +651,7 @@ module LinearResponse
 
             !write(6,*) Omega,-aimag(ni_lr_Cre),-aimag(ResponseFn_p)
 
-            write(iunit,"(17G22.10)") Omega-mu,real(ResponseFn),-aimag(ResponseFn), &
+            write(iunit,"(17G22.10)") Omega,real(ResponseFn),-aimag(ResponseFn), &
                 real(ResponseFn_p),-aimag(ResponseFn_p),real(ResponseFn_h),-aimag(ResponseFn_h),    &
                 Spectrum(1),GFChemPot,abs(dNorm_p),abs(dNorm_h),real(ni_lr),-aimag(ni_lr),real(ni_lr_Cre),    &
                 -aimag(ni_lr_Cre),real(ni_lr_Ann),-aimag(ni_lr_Ann)
