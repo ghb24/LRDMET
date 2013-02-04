@@ -84,8 +84,6 @@ module solvers
             close(iunit)
             if(HL_Energy.eq.0.0_dp) call stop_all(t_r,"FCI energy is 0")
 
-            write(6,"(A,F20.10)") "Embedded system energy is: ",HL_Energy
-
             !read in the 1 (and 2) RDMs
             if(allocated(HL_1RDM)) deallocate(HL_1RDM)
             allocate(HL_1RDM(EmbSize,EmbSize))
@@ -140,6 +138,8 @@ module solvers
             !Do not need to write FCIDUMP, since would only read it back in...
             call CompleteDiag(tCreate2RDM)
         endif
+            
+        write(6,"(A,F20.10)") "Embedded system energy is: ",HL_Energy
 
         !Now calculate the seperate 1-body and 2-body contribution to the energy of the embedded system
         !The one-body contribution can be calculated from Tr[h^T x FCI_RDM] = \sum_ij h_ij * FCI_RDM_ij
@@ -188,9 +188,13 @@ module solvers
             !Check that 2RDM is correct by explicitly calculating the two-electron contribution to the FCI energy from the 2RDM
             !We only need to check the iiii components over the impurity sites ONLY
             Check2eEnergy = 0.0_dp
-            do i=1,nImp
-                Check2eEnergy = Check2eEnergy + U*HL_2RDM(i,i,i,i)
-            enddo
+            if(tAnderson) then
+                Check2eEnergy = Check2eEnergy + U*HL_2RDM(1,1,1,1)
+            else
+                do i=1,nImp
+                    Check2eEnergy = Check2eEnergy + U*HL_2RDM(i,i,i,i)
+                enddo
+            endif
             Check2eEnergy = Check2eEnergy / 2.0_dp
             if(abs(Check2eEnergy-Two_ElecE).gt.1.0e-7_dp) then
                 write(6,*) "Check2eEnergy: ",Check2eEnergy
@@ -831,9 +835,13 @@ module solvers
         write(iunit,"(A)") "&END"
 
         !Just define diagonal 2 electron contribution over impurity sites
-        do i=1,nImp
-            write(iunit,"(F16.12,4I8)") U,i,i,i,i
-        enddo
+        if(tAnderson) then
+            write(iunit,"(F16.12,4I8)") U,1,1,1,1
+        else
+            do i=1,nImp
+                write(iunit,"(F16.12,4I8)") U,i,i,i,i
+            enddo
+        endif
 
         !Now for 1electron contributions
         do i=1,EmbSize
