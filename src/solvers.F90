@@ -294,11 +294,17 @@ module solvers
 
     end subroutine SolveSystem
 
-    !Calculate the FCI result for this hubbard model
+    !Calculate the FCI result for this model in the full space
     subroutine DiagFullSystem()
-        use utils, only: get_free_unit
+        use utils, only: get_free_unit,append_ext,append_ext_real
+        use DetToolsData
         implicit none
-        integer :: pSpaceDim,i,j,iunit
+        integer :: pSpaceDim,i,j,iunit,pertsitealpha,pertsitebeta,UMatSize,OrbPairs
+        integer :: umatind,lWork,info
+        complex(dp) :: DDRes
+        real(dp) :: ddot,Overlap,Omega
+        real(dp), allocatable :: V0(:),Work(:)
+        character(len=64) :: filename,filename2
         character(len=256) :: cmd
         character(len=128) :: cmd3
         character(len=73) :: cmd2
@@ -332,7 +338,9 @@ module solvers
             !Now for 1electron contributions
             do i=1,nSites
                 do j=1,i
-                    if(abs(h0(i,j)).gt.1.0e-10_dp) then
+                    if(tChemPot.and.(i.eq.1).and.(j.eq.1)) then
+                        write(iunit,"(F16.12,4I8)") h0(1,1)-(U/2.0_dp),1,1,0,0
+                    elseif(abs(h0(i,j)).gt.1.0e-10_dp) then
                         write(iunit,"(F16.12,4I8)") h0(i,j),i,j,0,0
                     endif
                 enddo
@@ -382,8 +390,124 @@ module solvers
             write(6,"(A,F20.10)") "Complete system energy is: ",HL_Energy
 
         else
-            write(6,*) "Cannot currently diagonalize full system with complete diagonalizer. Use DAVIDSON."
-            write(6,*) "Skipping diagonalization of full system (though won't be difficult to code up)."
+
+            write(6,*) "Performing complete diagonalization of full system...SLOW!"
+            !First, allocate and fill the umat and tmat for the FCI space
+            OrbPairs = (nSites*(nSites+1))/2
+            UMatSize = (OrbPairs*(OrbPairs+1))/2
+            write(6,*) "Allocating memory to store 2 electron integrals: ",UMatSize
+            if(allocated(UMat)) deallocate(UMat)
+            allocate(UMat(UMatSize))
+            UMat(:) = 0.0_dp
+            if(tAnderson) then
+                umat(umatind(1,1,1,1)) = U
+            else
+                do i=1,nSites
+                    umat(umatind(i,i,i,i)) = U
+                enddo
+            endif
+            if(allocated(tmat)) deallocate(tmat)
+            allocate(tmat(nSites,nSites))
+            tmat(:,:) = 0.0_dp
+            do i=1,nSites
+                do j=1,nSites
+                    if(abs(h0(i,j)).gt.1.0e-10_dp) then
+                        tmat(i,j) = h0(i,j)
+                    endif
+                enddo
+            enddo
+            if(tChemPot) then
+                tmat(1,1) = tmat(1,1) - U/2.0_dp
+            endif
+        
+            !Now generate all determinants in the active space
+            if(allocated(FCIDetList)) deallocate(FCIDetList)
+            call GenDets(NEl,nSites,.false.,.true.,.false.)
+            !FCIDetList now stores a list of all the determinants
+            write(6,"(A,I14)") "Number of determinants in FCI space: ",nFCIDet
+            write(6,"(A,F14.6,A)") "Allocating memory for the hamiltonian: ",real((nFCIDet**2)*8,dp)/1048576.0_dp," Mb"
+            if(allocated(FullHamil)) deallocate(FullHamil)
+            if(allocated(Spectrum)) deallocate(Spectrum)
+            allocate(Spectrum(nFCIDet))
+            allocate(FullHamil(nFCIDet,nFCIDet))
+            FullHamil(:,:) = 0.0_dp
+            !Construct the hamiltonian - slow
+            do i=1,nFCIDet
+                do j=1,nFCIDet
+                    call GetHElement(FCIDetList(:,i),FCIDetList(:,j),NEl,FullHamil(i,j))
+                enddo
+            enddo
+
+            write(6,*) "Diagonalizing full system..."
+            call flush(6)
+            !Diagonalize
+            allocate(Work(1))
+            lWork=-1
+            info=0
+            call dsyev('V','U',nFCIDet,FullHamil,nFCIDet,Spectrum,Work,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'Workspace queiry failed')
+            lwork=int(work(1))+1
+            deallocate(work)
+            allocate(work(lwork))
+            call dsyev('V','U',nFCIDet,FullHamil,nFCIDet,Spectrum,Work,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'Diag failed')
+            deallocate(work)
+
+            write(6,*) "Diagonalization complete..."
+            write(6,*) "True ground state energy: ",Spectrum(1)
+            call flush(6)
+
+            if(tDDResponse) then
+                write(6,*) "Calculating the exact density-density response function..."
+
+                iunit = get_free_unit()
+                call append_ext_real('Exact_DDResponse',U,filename)
+                if(.not.tHalfFill) then
+                    call append_ext(filename,nOcc,filename2)
+                else
+                    filename2 = filename
+                endif
+                open(unit=iunit,file=filename2,status='unknown')
+                write(iunit,"(A)") "# Frequency   DD_Response(Re)   DD_Response(Im)   "
+
+                !Find V|0>
+                allocate(V0(nFCIDet))
+                V0(:) = 0.0_dp
+        
+                pertsitealpha = 2*pertsite-1
+                pertsitebeta = 2*pertsite
+
+                do i = 1,nFCIDet
+                    if(btest(FCIBitList(i),pertsitealpha-1)) then
+                        V0(i) = V0(i) + FullHamil(i,1)
+                    endif
+                    if(btest(FCIBitList(i),pertsitebeta-1)) then
+                        V0(i) = V0(i) + FullHamil(i,1)
+                    endif
+                enddo
+
+                Omega = Start_Omega
+                do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+
+                    DDRes = dcmplx(0.0_dp,0.0_dp)
+                    do i = 2,nFCIDet
+
+                        Overlap = ddot(nFCIDet,V0,1,FullHamil(:,i),1)
+                        Overlap = Overlap**2
+                        DDRes = DDRes + dcmplx(-Overlap,0.0_dp)/dcmplx(Spectrum(i)-Spectrum(1)-Omega,-dDelta)
+                    enddo
+
+                    write(iunit,"(3G22.10)") Omega,real(DDRes),-aimag(DDRes)
+
+                    Omega = Omega + Omega_Step
+                enddo
+
+                close(iunit)
+                deallocate(V0)
+
+            endif
+            deallocate(FCIBitList,FullHamil,Spectrum,FCIDetList,umat,tmat)
+
         endif
 
     end subroutine DiagFullSystem
