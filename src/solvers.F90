@@ -297,13 +297,16 @@ module solvers
     !Calculate the FCI result for this model in the full space
     subroutine DiagFullSystem()
         use utils, only: get_free_unit,append_ext,append_ext_real
+        use DetBitOps, only: SQOperator
         use DetToolsData
         implicit none
         integer :: pSpaceDim,i,j,iunit,pertsitealpha,pertsitebeta,UMatSize,OrbPairs
-        integer :: umatind,lWork,info
-        complex(dp) :: DDRes
-        real(dp) :: ddot,Overlap,Omega
-        real(dp), allocatable :: V0(:),Work(:)
+        integer :: umatind,lWork,info,ilut
+        logical :: tParity
+        complex(dp) :: DDRes,GFRes,GFRes_h,GFRes_p
+        real(dp) :: ddot,Overlap,Omega,mu
+        real(dp), allocatable :: V0(:),Work(:),V0_Ann(:),V0_Cre(:),Spectrum_Np1(:)
+        real(dp), allocatable :: Spectrum_Nm1b(:),FullHamil_Np1(:,:),FullHamil_Nm1b(:,:)
         character(len=64) :: filename,filename2
         character(len=256) :: cmd
         character(len=128) :: cmd3
@@ -422,7 +425,7 @@ module solvers
         
             !Now generate all determinants in the active space
             if(allocated(FCIDetList)) deallocate(FCIDetList)
-            call GenDets(NEl,nSites,.false.,.true.,.false.)
+            call GenDets(NEl,nSites,.true.,.true.,.true.)
             !FCIDetList now stores a list of all the determinants
             write(6,"(A,I14)") "Number of determinants in FCI space: ",nFCIDet
             write(6,"(A,F14.6,A)") "Allocating memory for the hamiltonian: ",real((nFCIDet**2)*8,dp)/1048576.0_dp," Mb"
@@ -506,7 +509,153 @@ module solvers
                 deallocate(V0)
 
             endif
-            deallocate(FCIBitList,FullHamil,Spectrum,FCIDetList,umat,tmat)
+            if(tChargedResponse) then
+                write(6,*) "Calculating the exact greens function..."
+                
+                iunit = get_free_unit()
+                call append_ext_real('Exact_GFResponse',U,filename)
+                if(.not.tHalfFill) then
+                    call append_ext(filename,nOcc,filename2)
+                else
+                    filename2 = filename
+                endif
+                open(unit=iunit,file=filename2,status='unknown')
+                write(iunit,"(A)") "# Frequency   GF_Response(Re)   GF_Response(Im)   GF_part(Re)  GF_Part(Im)" &
+                    //" GF_hole(Re)    GF_hole(Im)    "
+
+                !Find V|0>
+                allocate(V0_Cre(nNp1FCIDet))
+                allocate(V0_Ann(nNm1bFCIDet))
+                V0_Cre(:) = 0.0_dp
+                V0_Ann(:) = 0.0_dp
+        
+                pertsitealpha = 2*pertsite-1
+                do i = 1,nFCIDet
+                    if(.not.btest(FCIBitList(i),pertsitealpha-1)) then
+                        ilut = FCIBitList(i)
+                        call SQOperator(ilut,pertsitealpha,tParity,.false.)
+                        do j = 1,nNp1FCIDet
+                            if(Np1BitList(j).eq.ilut) then
+                                if(tParity) then
+                                    V0_Cre(j) = -FullHamil(i,1)
+                                else
+                                    V0_Cre(j) = FullHamil(i,1)
+                                endif
+                                exit
+                            endif
+                        enddo
+                        if(j.ge.(nNp1FCIDet+1)) call stop_all(t_r,'Could not find corresponding determinant')
+                    else
+                        ilut = FCIBitList(i)
+                        call SQOperator(ilut,pertsitealpha,tParity,.true.)
+                        do j = 1,nNm1bFCIDet
+                            if(Nm1bBitList(j).eq.ilut) then
+                                if(tParity) then
+                                    V0_Ann(j) = -FullHamil(i,1)
+                                else
+                                    V0_Ann(j) = FullHamil(i,1)
+                                endif
+                                exit
+                            endif
+                        enddo
+                        if(j.gt.(nNm1bFCIDet+1)) call stop_all(t_r,'Could not find corresponding determinant')
+                    endif
+                enddo
+
+                !Now find full eigenbasis for N+1_alpha and N-1_beta space
+                allocate(Spectrum_Np1(nNp1FCIDet))
+                allocate(FullHamil_Np1(nNp1FCIDet,nNp1FCIDet))
+                FullHamil_Np1(:,:) = 0.0_dp
+                !Construct the hamiltonian - slow
+                do i=1,nNp1FCIDet
+                    do j=1,nNp1FCIDet
+                        call GetHElement(Np1FCIDetList(:,i),Np1FCIDetList(:,j),NEl+1,FullHamil_Np1(i,j))
+                    enddo
+                enddo
+
+                write(6,*) "Diagonalizing N+1 system..."
+                call flush(6)
+                !Diagonalize
+                allocate(Work(1))
+                lWork=-1
+                info=0
+                call dsyev('V','U',nNp1FCIDet,FullHamil_Np1,nNp1FCIDet,Spectrum_Np1,Work,lWork,info)
+                if(info.ne.0) call stop_all(t_r,'Workspace quiery failed')
+                lwork=int(work(1))+1
+                deallocate(work)
+                allocate(work(lwork))
+                call dsyev('V','U',nNp1FCIDet,FullHamil_Np1,nNp1FCIDet,Spectrum_Np1,Work,lWork,info)
+                if(info.ne.0) call stop_all(t_r,'Diag failed')
+                deallocate(work)
+
+                allocate(Spectrum_Nm1b(nNm1bFCIDet))
+                allocate(FullHamil_Nm1b(nNm1bFCIDet,nNm1bFCIDet))
+                FullHamil_Nm1b(:,:) = 0.0_dp
+                !Construct the hamiltonian - slow
+                do i=1,nNm1bFCIDet
+                    do j=1,nNm1bFCIDet
+                        call GetHElement(Nm1bFCIDetList(:,i),Nm1bFCIDetList(:,j),NEl-1,FullHamil_Nm1b(i,j))
+                    enddo
+                enddo
+
+                write(6,*) "Diagonalizing N-1 system..."
+                call flush(6)
+                !Diagonalize
+                allocate(Work(1))
+                lWork=-1
+                info=0
+                call dsyev('V','U',nNm1bFCIDet,FullHamil_Nm1b,nNm1bFCIDet,Spectrum_Nm1b,Work,lWork,info)
+                if(info.ne.0) call stop_all(t_r,'Workspace quiery failed')
+                lwork=int(work(1))+1
+                deallocate(work)
+                allocate(work(lwork))
+                call dsyev('V','U',nNm1bFCIDet,FullHamil_Nm1b,nNm1bFCIDet,Spectrum_Nm1b,Work,lWork,info)
+                if(info.ne.0) call stop_all(t_r,'Diag failed')
+                deallocate(work)
+
+                write(6,*) "Constructing exact greens function..."
+                call flush(6)
+
+                Omega = Start_Omega
+                do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+            
+                    if(.not.tAnderson) then
+                        !In the hubbard model, apply a chemical potential of U/2
+                        mu = U/2.0_dp
+                    else
+                        mu = 0.0_dp
+                    endif
+
+                    GFRes_p = dcmplx(0.0_dp,0.0_dp)
+                    GFRes_h = dcmplx(0.0_dp,0.0_dp)
+                    do i = 1,nNp1FCIDet
+
+                        Overlap = ddot(nNp1FCIDet,V0_Cre,1,FullHamil_Np1(:,i),1)
+                        Overlap = Overlap**2
+                        GFRes_p = GFRes_p + dcmplx(Overlap,0.0_dp)/dcmplx(Omega-mu-Spectrum_Np1(i)+Spectrum(1),dDelta)
+                    enddo
+                    do i = 1,nNm1bFCIDet
+
+                        Overlap = ddot(nNm1bFCIDet,V0_Ann,1,FullHamil_Nm1b(:,i),1)
+                        Overlap = Overlap**2
+                        GFRes_h = GFRes_h + dcmplx(Overlap,0.0_dp)/dcmplx(Omega-mu+Spectrum_Nm1b(i)-Spectrum(1),dDelta)
+                    enddo
+
+                    GFRes = GFRes_p + GFRes_h
+
+                    write(iunit,"(7G22.10)") Omega,real(GFRes),-aimag(GFRes),real(GFRes_p),-aimag(GFRes_p), &
+                        real(GFRes_h),-aimag(GFRes_h)
+
+                    Omega = Omega + Omega_Step
+                enddo
+
+                close(iunit)
+                deallocate(V0_Cre,V0_Ann,FullHamil_Nm1b,FullHamil_Np1,Spectrum_Nm1b,Spectrum_Np1)
+
+            endif
+
+            deallocate(FCIBitList,Nm1FCIDetList,Nm1BitList,FullHamil,Spectrum,FCIDetList,umat,tmat)
+            deallocate(Np1FCIDetList,Np1BitList,Nm1bFCIDetList,Nm1bBitList,Np1bFCIDetList,Np1bBitList)
 
         endif
 
