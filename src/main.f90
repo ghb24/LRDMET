@@ -36,6 +36,7 @@ Program RealHub
         UStep = 1.0_dp
         tPeriodic = .false.
         tAntiPeriodic = .false. 
+        iMaxIterDMET = 150
         tRampDownOcc = .true.
         tCompleteDiag = .true. 
         tDumpFCIDUMP = .false.
@@ -134,6 +135,7 @@ Program RealHub
                 write(6,"(A,F10.5)") "            o U = ",U_Vals(i) 
             enddo
         endif
+        write(6,"(A,I8)") "            o Maximum iterations for DMET self-consistency: ", iMaxIterDMET
         if(tHalfFill) then
             write(6,"(A)") "            o Only half filling to be considered"
         else
@@ -279,6 +281,8 @@ Program RealHub
                 tPeriodic = .true.
             case("APBC")
                 tAntiPeriodic = .true.
+            case("MAXITER_DMET")
+                call readi(iMaxIterDMET)
             case("SCF_HF")
                 tSCFHF = .true.
             case("IMPSITES")
@@ -317,6 +321,7 @@ Program RealHub
                 write(6,"(A)") "PBC"
                 write(6,"(A)") "APBC"
                 write(6,"(A)") "IMPSITES"
+                write(6,"(A)") "MAXITER"
                 write(6,"(A)") "HALF_FILL"
                 write(6,"(A)") "COMPLETE_DIAG"
                 write(6,"(A)") "DAVIDSON"
@@ -602,17 +607,17 @@ Program RealHub
                 endif
 
                 !At this point, we have h0, U and a set of system sites (the first nImp indices), as well as a local potential
-                do it=1,150
+                do it=1,iMaxIterDMET
 
                     !Write out header file for the convergence
                     write(6,*) "Iteration: ",it
 
-                    !Do 150 microiterations to converge the DMET for this occupation number
+                    !Do iMaxIterDMET microiterations to converge the DMET for this occupation number
                     call add_localpot(h0,h0v,v_loc)
 
-                    call set_timer(DiagT)
                     !Now run a HF calculation by constructing and diagonalizing the fock matrix
                     !This will also return the RDM in the AO basis
+                    call set_timer(DiagT)
                     call run_hf(it)
                     call halt_timer(DiagT)
 
@@ -680,7 +685,7 @@ Program RealHub
 
                 enddo
 
-                if(it.eq.151) call stop_all(t_r,'DMET Convergence failed')
+                if(it.gt.iMaxIterDMET) call stop_all(t_r,'DMET Convergence failed - try increasing MAXITER_DMET ?')
                     
                 if(tLR_DMET) then
                     !Perform linear response on the resulting DMET state

@@ -105,13 +105,15 @@ module LinearResponse
         integer, allocatable :: Coup_Ann_alpha(:,:,:),Coup_Create_alpha(:,:,:)
         integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,umatind,ierr,info,iunit,nCore
         integer :: nLinearSystem,nOrbs,nVirt,OrbPairs,tempK,UMatSize,VIndex,VirtStart,VirtEnd
-        integer :: orbdum(1),gtid,nLinearSystem_h,x,nGSSpace,Np1GSInd,Nm1GSInd,lWork
-        real(dp) :: VNorm,CNorm,Omega,GFChemPot,mu
-        complex(dp) :: dNorm_p,dNorm_h,ni_lr,ni_lr_Cre,ni_lr_Ann
-        complex(dp) :: ResponseFn,ResponseFn_h,ResponseFn_p,tempel
+        integer :: orbdum(1),gtid,nLinearSystem_h,x,nGSSpace,Np1GSInd,Nm1GSInd,lWork,iunit2
+        real(dp) :: VNorm,CNorm,Omega,GFChemPot,mu,k_val
+        complex(dp) :: dNorm_p,dNorm_h,ni_lr,ni_lr_Cre,ni_lr_Ann,phase
+        complex(dp) :: ResponseFn,ResponseFn_h,ResponseFn_p,tempel,G_k_p,G_k_h
         logical :: tParity
         character(64) :: filename,filename2
         character(len=*), parameter :: t_r='NonIntExCont_TDA_MCLR_Charged'
+
+        tMomSpaceGF = .true.  !Make this an input parameter
 
         call set_timer(LR_EC_GF_Precom)
 
@@ -254,6 +256,17 @@ module LinearResponse
             & //"4.ParticleGF(Re)   5.ParticleGF(Im)   6.HoleGF(Re)   7.HoleGF(Im)    8.Old_GS    9.New_GS   " &
             & //"10.Particle_Norm  11.Hole_Norm   12.NI_GF(Re)   13.NI_GF(Im)  14.NI_GF_Part(Re)   15.NI_GF_Part(Im)   " &
             & //"16.NI_GF_Hole(Re)   17.NI_GF_Hole(Im)  "
+        
+        iunit2 = get_free_unit()
+        call append_ext_real('EC-TDA_GF_Mom',U,filename)
+        if(.not.tHalfFill) then
+            !Also append occupation of lattice to the filename
+            call append_ext(filename,nOcc,filename2)
+        else
+            filename2 = filename
+        endif
+        open(unit=iunit2,file=filename2,status='unknown')
+        write(iunit2,"(A)") "# 1.Frequency     2.Momentum    3.GF_Particle   4.GF_Holon    " 
             
         !Allocate memory for hamiltonian in this system:
         allocate(LinearSystem_p(nLinearSystem,nLinearSystem),stat=ierr)
@@ -656,6 +669,20 @@ module LinearResponse
                 Spectrum(1),GFChemPot,abs(dNorm_p),abs(dNorm_h),real(ni_lr),-aimag(ni_lr),real(ni_lr_Cre),    &
                 -aimag(ni_lr_Cre),real(ni_lr_Ann),-aimag(ni_lr_Ann)
 
+            if(tMomSpaceGF) then
+                !Convert to k-space
+                do k = 1,nSites
+                    k_val = -pi + (k-1)*(2.0_dp*pi/nSites)
+                    phase = dcmplx(0.0_dp,0.0_dp)
+                    do i = 0,nSites-1
+                        phase = phase + exp(dcmplx(0.0_dp,-k_val*i))
+                    enddo
+                    write(6,*) "phase: ",phase
+                    G_k_p = ResponseFn_p*phase/sqrt(real(nSites,dp))
+                    G_k_h = ResponseFn_h*phase/sqrt(real(nSites,dp))
+                    write(iunit2,"(4G22.10)") Omega,k_val/pi,-aimag(G_k_p)/pi,-aimag(G_k_h)/pi
+                enddo
+            endif
             Omega = Omega + Omega_Step
 
             call halt_timer(LR_EC_GF_SolveLR)
@@ -667,6 +694,7 @@ module LinearResponse
         deallocate(LinearSystem_p,LinearSystem_h,Psi_p,Psi_h,Psi1_p,Psi1_h)
         deallocate(Cre_0,Ann_0,Psi_0)
         close(iunit)
+        if(tMomSpaceGF) close(iunit2)
 
         !Deallocate determinant lists
         if(allocated(FCIDetList)) deallocate(FCIDetList)

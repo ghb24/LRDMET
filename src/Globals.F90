@@ -15,6 +15,7 @@ module Globals
     integer :: nU_Vals  !Number of explicitly specified U values to loop over
     logical :: tPeriodic !Use PBEs
     logical :: tAntiPeriodic !Use Anti-PBEs
+    integer :: iMaxIterDMET !Maximum iterations for DMET self-consistency
     logical :: tSCFHF   !Perform full scf hartree--fock calculation
     logical :: tWriteOut    !Write out additional info
     real(dp) :: ChemPot !The chemical potential of the system
@@ -70,6 +71,7 @@ module Globals
     real(dp) :: dDelta      !Broadening for spectral functions
     logical :: tDDResponse          !Calculate neutral DD response
     logical :: tChargedResponse     !The different perturbations to calculate the response for
+    logical :: tMomSpaceGF        !Transform the spectral functions into momentum space and write out
 
     real(dp), allocatable :: U_Vals(:)      !The list of U_Values to loop over
     integer , allocatable :: allowed_occs(:)   !The list of CS occupations for the mean-field solution

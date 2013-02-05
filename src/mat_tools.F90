@@ -370,13 +370,14 @@ module mat_tools
         logical :: tRotateOrbs
         integer :: lWork,info,iFirst,iLast,i
         real(dp) :: ThrDeg
+        complex(dp), allocatable :: k_ham(:,:)
         character(len=*), parameter :: t_r="run_hf"
 
         !Construct fock matrix
         !The fock matrix is just the core hamiltonian (with the fitted potential) + diag(1/2 U * rdm(i,i)) on the diagonals
         allocate(fock(nSites,nSites))
         fock(:,:) = h0v(:,:)
-
+                    
 !        call writematrix(h0v,'h0v',.true.)
 
         if(allocated(HFOrbs)) then
@@ -417,6 +418,16 @@ module mat_tools
         do i=nOcc+1,min(nSites,nOcc+7)
             write(6,*) HFEnergies(i)
         enddo
+        
+        allocate(k_ham(nSites,nSites))
+        if(it.eq.1) then
+            !No correlation potential applied - periodicity is just 1
+            call Convert1DtoKSpace(fock,nSites,1,k_ham) 
+        else
+            call Convert1DtoKSpace(fock,nSites,nImp,k_ham) 
+        endif
+        deallocate(k_ham)
+
 
         if(tRotateOrbs.and.(it.ge.4)) then
             !Rotate the orbitals so that we can maximise overlap between these orbitals and the orbitals of the previous iteration
@@ -456,6 +467,165 @@ module mat_tools
         deallocate(Fock,OccOrbs)
 
     end subroutine run_hf
+
+    !Convert a real-space symmetric operator into a k-space operator.
+    !In: The operator in real space. Size = nSuperCell x nSupercell
+    !   However, it assumes periodicity, such that only the first unit cell, and its connections to the other unit cells
+    !   is referenced. I.e. R_Ham(1:nUnitCell,:). In the future, this should be changed so that only this is called.
+    !Out: The operator in k-space. In this, the operator is block-diagonal, with each block being of size nUnitCell x nUnitCell.
+    subroutine Convert1DtoKSpace(R_Ham,nSuperCell,nUnitCell,k_Ham)
+        implicit none
+        integer, intent(in) :: nSuperCell,nUnitCell
+        real(dp), intent(in) :: R_Ham(nSuperCell,nSuperCell)
+        complex(dp), intent(out) :: k_Ham(nSuperCell,nSuperCell)
+        complex(dp) :: KPntHam(nUnitCell,nUnitCell)
+        integer :: k,i,j,a,b,nKpnts,cell_start,cell_end,k_start,k_end
+        complex(dp) :: phase
+        real(dp) :: KPnt_val
+        real(dp), allocatable :: K_Vals(:),Orbs(:,:),W(:),Work(:),Vals(:),KPnts(:)
+        complex(dp), allocatable :: cWork(:)
+        integer :: lWork,info
+        logical, parameter :: tCheck = .false.
+        character(len=*), parameter :: t_r='Convert1DtoKSpace'
+
+        if(tWriteOut) then
+            write(6,*) "Converting real space operator to k-space: "
+        endif
+        if(tAntiPeriodic) call stop_all(t_r,'Cannot convert to k-space with anti-periodic boundary conditions')
+        if(.not.tPeriodic) call stop_all(t_r,'Need periodic boundary conditions to convert to k-space')
+
+        k_Ham(:,:) = dcmplx(0.0_dp,0.0_dp)
+
+        !Number of kpoints = nSupercell/nUnitCell
+        if(mod(nSupercell,nUnitCell).ne.0) call stop_all(t_r,'Not integer number of unit cells in supercell')
+        nKpnts = nSupercell / nUnitCell
+        if(mod(nKpnts,2).eq.1) then
+            call stop_all(t_r,'For some reason, I am not getting hermitian operators with odd numbers of kpoints. " &
+                //"Debug this routine.')
+        endif
+
+        allocate(KPnts(nKpnts))
+        !Allocate values for k-vectors -> just 1D to start with here
+!        write(6,*) "Number of k-points: ",nKpnts
+
+!        if(mod(nKpnts,2).eq.0) then
+            !Number of k-points even. Just use equally spaced mesh starting at -pi/a, and working our way across
+            do k = 1,nKPnts
+                KPnts(k) = -pi/real(nUnitCell,dp) + (k-1)*(2.0_dp*pi/nKpnts)/real(nUnitCell,dp)
+            enddo
+!        else
+!            !Ensure that there is a kpoint at the Gamma point, and then equally spaced (don't sample BZ boundary)
+!            do k = 1,nKPnts
+!                KPnts(k) = -pi/real(nUnitCell,dp) + k*(2.0_dp*pi/(nKpnts+1))/real(nUnitCell,dp)
+!            enddo
+!        endif
+!        call writevector(KPnts,'KPoint values')
+
+        do k = 1,nKpnts
+            !Create each block
+            KPntHam(:,:) = R_Ham(1:nUnitCell,1:nUnitCell)   !The operator of the unit cell
+            !write(6,*) "KPnt ",k,0,R_Ham(1:nUnitCell,1:nUnitCell)
+            KPnt_val = KPnts(k)
+            !write(6,*) "KPnt_val: ",KPnt_val
+
+            do i = 1,nKpnts-1   !Real space translation lattice vectors to the (i+1)th cell
+                cell_start = i*nUnitCell + 1
+                cell_end = (i+1)*nUnitCell
+                phase = exp(dcmplx(0.0_dp,KPnt_val*real(nUnitCell*i,dp))) !Phase between cell 1 and cell i+1
+                !Add to the current kpoint, the opertor over the translated sites x by the phase change to them
+                KPntHam(:,:) = KPntHam(:,:) + phase*R_Ham(1:nUnitCell,cell_start:cell_end)
+                !write(6,*) "KPnt ",k,i,phase,phase*R_Ham(1:nUnitCell,cell_start:cell_end)
+            enddo
+                
+            !TEST: Check hermiticity at all points
+            do a = 1,nUnitCell
+                do b = a,nUnitCell
+                    if(abs(KPntHam(b,a)-conjg(KPntHam(a,b))).gt.1.0e-9_dp) then
+                        write(6,*) a,b,KPntHam(a,b),KPntHam(b,a)
+                        call writematrix(R_Ham(1:nUnitCell,:),'Coupling in real space',.true.)
+                        call writematrix(R_Ham(:,:),'R_Ham',.true.)
+                        call writematrixcomp(KPntHam,'Hamiltonian at kpoint',.true.)
+                        call stop_all(t_r,'k-space operator not hermitian. Does input operator have periodicity')
+                    endif
+                enddo
+            enddo
+
+            !Now add this k-point to the full k-space operator
+            k_start = (k-1)*nUnitCell + 1
+            k_end = k*nUnitCell
+
+            k_Ham(k_start:k_end,k_start:k_end) = KPntHam(:,:)
+        enddo
+
+        if(tWriteOut) then
+            write(6,*) "Diagonal part of k-space operator: "
+            do i = 1,nSuperCell
+                write(6,*) i,k_Ham(i,i)
+            enddo
+        endif
+
+        if(tCheck) then
+            !TEST: Diagonalize real-space hamiltonian and check that eigenvalues are the same
+            !We should now have the eigenvalues of the hamiltonian
+            !Diagonalize the real-space hamiltonian and check that we have got this
+            allocate(Orbs(nSuperCell,nSuperCell))
+            Orbs(:,:) = R_Ham(:,:)
+            allocate(W(nSuperCell))
+            W(:) = 0.0_dp
+            allocate(Work(1))
+            lWork=-1
+            info=0
+            call dsyev('V','L',nSuperCell,Orbs,nSuperCell,W,Work,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'Workspace queiry failed')
+            lwork=int(work(1))+1
+            deallocate(work)
+            allocate(work(lwork))
+            call dsyev('V','L',nSuperCell,Orbs,nSuperCell,W,Work,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'Diag failed')
+            deallocate(work)
+
+            allocate(K_Vals(nSuperCell))
+            if(nUnitCell.eq.1) then
+                do i = 1,nSuperCell
+                    K_Vals(i) = k_Ham(i,i)
+                enddo
+            else
+                lWork = max(1,2*nUnitCell-1)
+                allocate(cWork(lWork))
+                allocate(Work(max(1,3*nUnitCell-2)))
+                allocate(Vals(nUnitCell))
+                do k = 1,nKPnts
+                    !Diagonalize block
+                    k_start = (k-1)*nUnitCell + 1
+                    k_end = k*nUnitCell
+                    KPntHam(:,:) = k_Ham(k_start:k_end,k_start:k_end)
+                    !Hermitian matrix diagonalization
+                    call writematrixcomp(KPntHam,'KPntHam',.true.)
+                    call ZHEEV('N','U',nUnitCell,KPntHam,nUnitCell,Vals,cWork,lWork,Work,info)
+                    if(info.ne.0) call stop_all(t_r,'Diag Failed')
+                    do j = 1,nUnitCell
+                        K_Vals(k_start+j-1) = Vals(j)
+                    enddo
+                enddo
+                deallocate(cWork,Work,Vals)
+            endif
+
+            !Sort values
+            call sort_real(K_Vals,nSuperCell)
+
+            do i = 1,nSuperCell
+                !write(6,*) i,K_Vals(i),W(i)
+                if(abs(K_Vals(i)-W(i)).gt.1.0e-9_dp) then
+                    write(6,*) i,K_Vals(i),W(i)
+                    call stop_all(t_r,'Conversion to k-space failed')
+                endif
+            enddo
+            deallocate(K_Vals,W,Orbs)
+        endif
+
+        deallocate(KPnts)
+
+    end subroutine Convert1DtoKSpace
     
     !The error metric used for the fitting of the vloc in order to match the RDMs
     !The error metric is not actually calculated, but can be considered as the squared sum of the elements in the

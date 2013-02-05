@@ -20,7 +20,7 @@ contains
         character(3), parameter :: error_str='999'
 
         write (6,'(/a7)') 'ERROR.'
-        write (6,'(1X,a)') 'MRf12 stops in subroutine: '//adjustl(sub_name)//'.'
+        write (6,'(1X,a)') 'LRDMET stops in subroutine: '//adjustl(sub_name)//'.'
         write (6,'(a9,a)') 'Reason: ',adjustl(error_msg)
         write (6,'(1X,a10)') 'EXITING...'
 

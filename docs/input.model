@@ -7,6 +7,7 @@ MODEL
     U   0.0 1.1 0.5
     PBC
     APBC
+    MAXITER_DMET 150
     SCF_HF
     IMPSITES 1
     HALF_FILL
