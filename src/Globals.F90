@@ -71,7 +71,6 @@ module Globals
     real(dp) :: dDelta      !Broadening for spectral functions
     logical :: tDDResponse          !Calculate neutral DD response
     logical :: tChargedResponse     !The different perturbations to calculate the response for
-    logical :: tMomSpaceGF        !Transform the spectral functions into momentum space and write out
 
     real(dp), allocatable :: U_Vals(:)      !The list of U_Values to loop over
     integer , allocatable :: allowed_occs(:)   !The list of CS occupations for the mean-field solution
