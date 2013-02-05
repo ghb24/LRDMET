@@ -113,7 +113,7 @@ module LinearResponse
         character(64) :: filename,filename2
         character(len=*), parameter :: t_r='NonIntExCont_TDA_MCLR_Charged'
 
-        tMomSpaceGF = .true.  !Make this an input parameter
+        tMomSpaceGF = .false. !Make this an input parameter
 
         call set_timer(LR_EC_GF_Precom)
 
@@ -257,16 +257,18 @@ module LinearResponse
             & //"10.Particle_Norm  11.Hole_Norm   12.NI_GF(Re)   13.NI_GF(Im)  14.NI_GF_Part(Re)   15.NI_GF_Part(Im)   " &
             & //"16.NI_GF_Hole(Re)   17.NI_GF_Hole(Im)  "
         
-        iunit2 = get_free_unit()
-        call append_ext_real('EC-TDA_GF_Mom',U,filename)
-        if(.not.tHalfFill) then
-            !Also append occupation of lattice to the filename
-            call append_ext(filename,nOcc,filename2)
-        else
-            filename2 = filename
+        if(tMomSpaceGF) then
+            iunit2 = get_free_unit()
+            call append_ext_real('EC-TDA_GF_Mom',U,filename)
+            if(.not.tHalfFill) then
+                !Also append occupation of lattice to the filename
+                call append_ext(filename,nOcc,filename2)
+            else
+                filename2 = filename
+            endif
+            open(unit=iunit2,file=filename2,status='unknown')
+            write(iunit2,"(A)") "# 1.Frequency     2.Momentum    3.GF_Particle   4.GF_Holon    " 
         endif
-        open(unit=iunit2,file=filename2,status='unknown')
-        write(iunit2,"(A)") "# 1.Frequency     2.Momentum    3.GF_Particle   4.GF_Holon    " 
             
         !Allocate memory for hamiltonian in this system:
         allocate(LinearSystem_p(nLinearSystem,nLinearSystem),stat=ierr)

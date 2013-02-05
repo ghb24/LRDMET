@@ -419,14 +419,14 @@ module mat_tools
             write(6,*) HFEnergies(i)
         enddo
         
-        allocate(k_ham(nSites,nSites))
-        if(it.eq.1) then
-            !No correlation potential applied - periodicity is just 1
-            call Convert1DtoKSpace(fock,nSites,1,k_ham) 
-        else
-            call Convert1DtoKSpace(fock,nSites,nImp,k_ham) 
-        endif
-        deallocate(k_ham)
+!        allocate(k_ham(nSites,nSites))
+!        if(it.eq.1) then
+!            !No correlation potential applied - periodicity is just 1
+!            call Convert1DtoKSpace(fock,nSites,1,k_ham) 
+!        else
+!            call Convert1DtoKSpace(fock,nSites,nImp,k_ham) 
+!        endif
+!        deallocate(k_ham)
 
 
         if(tRotateOrbs.and.(it.ge.4)) then
