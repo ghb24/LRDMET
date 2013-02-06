@@ -39,6 +39,7 @@ Program RealHub
         iMaxIterDMET = 150
         tRampDownOcc = .true.
         tCompleteDiag = .true. 
+        tSaveCorrPot = .false.
         tDumpFCIDUMP = .false.
         tDiagFullSystem = .false.
         tSCFHF = .false.
@@ -136,6 +137,15 @@ Program RealHub
             enddo
         endif
         write(6,"(A,I8)") "            o Maximum iterations for DMET self-consistency: ", iMaxIterDMET
+        if(tSaveCorrPot) then
+            if(tHalfFill) then
+                write(6,"(A,I8)") "            o The correlation potential from the previous U value will " &
+                    //"be used as a starting point for self-consistency" 
+            else
+                write(6,"(A,I8)") "            o The correlation potential from the previous electron number will " &
+                    //"be used as a starting point for self-consistency"
+            endif
+        endif
         if(tHalfFill) then
             write(6,"(A)") "            o Only half filling to be considered"
         else
@@ -277,6 +287,8 @@ Program RealHub
                 call readf(StartU)
                 call readf(EndU)
                 call readf(UStep)
+            case("REUSE_CORRPOT")
+                tSaveCorrPot = .true.
             case("PBC")
                 tPeriodic = .true.
             case("APBC")
@@ -317,6 +329,7 @@ Program RealHub
                 write(6,"(A)") "SITES"
                 write(6,"(A)") "U"
                 write(6,"(A)") "U_VALS"
+                write(6,"(A)") "START_PREVIOUS_U_CORRPOT"
                 write(6,"(A)") "SCF_HF"
                 write(6,"(A)") "PBC"
                 write(6,"(A)") "APBC"
@@ -683,7 +696,7 @@ Program RealHub
                         exit    !Anderson model, so we do not want to iterate
                     endif
 
-                enddo
+                enddo   !DMET convergence
 
                 if(it.gt.iMaxIterDMET) call stop_all(t_r,'DMET Convergence failed - try increasing MAXITER_DMET ?')
                     
@@ -719,9 +732,17 @@ Program RealHub
                 write(6,"(A,F10.4,A,G20.10)") "FINAL energy per site for U=",U,' is: ',TotalE_Imp
 
                 !Set potential for the next occupation number, or wipe it?
-                v_loc(:,:) = 0.0_dp
+                if(.not.tSaveCorrPot) then
+                    v_loc(:,:) = 0.0_dp
+                endif
                 
             enddo   !Loop over occupations
+
+            if(.not.tHalfFill) then
+                !Wipe correlation potential if we have ramped through occupations
+                !We can potentially keep it though if we are just doing half-filling
+                v_loc(:,:) = 0.0_dp
+            endif
 
         enddo   !Loop over U values
 

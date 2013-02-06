@@ -26,6 +26,7 @@ module Globals
     integer :: EmbSize  !The total size of the embedded system
     real(dp) :: StartU,EndU,UStep   !The range and increment of U
     logical :: tRampDownOcc     !Whether to go up or down in filling fraction
+    logical :: tSaveCorrPot     !Use the previous correlation potential in the initialization of the next GS DMET calculation
     logical :: tConstructFullSchmidtBasis   !Whether to construct the full Schmidt basis or just the embedding basis
     real(dp) :: HL_Energy   !The energy of the embedded system from the solver
     real(dp) :: One_ElecE,Two_ElecE !The one and two-body contributions to the embedded system total energy from contractions with the HL 1RDM

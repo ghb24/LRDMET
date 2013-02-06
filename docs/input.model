@@ -5,6 +5,7 @@ MODEL
     SITES   24
     U_VALS 0.0 1.5 4.0 10.0
     U   0.0 1.1 0.5
+    REUSE_CORRPOT
     PBC
     APBC
     MAXITER_DMET 150
