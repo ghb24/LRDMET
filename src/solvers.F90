@@ -632,13 +632,13 @@ module solvers
 
                         Overlap = ddot(nNp1FCIDet,V0_Cre,1,FullHamil_Np1(:,i),1)
                         Overlap = Overlap**2
-                        GFRes_p = GFRes_p + dcmplx(Overlap,0.0_dp)/dcmplx(Omega-mu-Spectrum_Np1(i)+Spectrum(1),dDelta)
+                        GFRes_p = GFRes_p + dcmplx(Overlap,0.0_dp)/dcmplx(Omega+mu-Spectrum_Np1(i)+Spectrum(1),dDelta)
                     enddo
                     do i = 1,nNm1bFCIDet
 
                         Overlap = ddot(nNm1bFCIDet,V0_Ann,1,FullHamil_Nm1b(:,i),1)
                         Overlap = Overlap**2
-                        GFRes_h = GFRes_h + dcmplx(Overlap,0.0_dp)/dcmplx(Omega-mu+Spectrum_Nm1b(i)-Spectrum(1),dDelta)
+                        GFRes_h = GFRes_h + dcmplx(Overlap,0.0_dp)/dcmplx(Omega+mu+Spectrum_Nm1b(i)-Spectrum(1),dDelta)
                     enddo
 
                     GFRes = GFRes_p + GFRes_h

@@ -381,7 +381,7 @@ module LinearResponse
             endif
 
             !First, find the non-interacting solution expressed in the schmidt basis
-            call FindSchmidtPert_Charged(Omega-mu,ni_lr_Cre,ni_lr_Ann)
+            call FindSchmidtPert_Charged(Omega+mu,ni_lr_Cre,ni_lr_Ann)
 
             !First, construct useful intermediates
             !sum_a Gc_a^* F_ax (Creation)
@@ -579,7 +579,7 @@ module LinearResponse
             do i = 1,nLinearSystem
                 do j = 1,nLinearSystem
                     if(i.eq.j) then
-                        LinearSystem_p(i,i) = dcmplx(Omega-mu,dDelta) - (LinearSystem_p(i,i) - dcmplx(GFChemPot,0.0_dp))
+                        LinearSystem_p(i,i) = dcmplx(Omega+mu,dDelta) - (LinearSystem_p(i,i) - dcmplx(GFChemPot,0.0_dp))
                     else
                         LinearSystem_p(j,i) = -LinearSystem_p(j,i) 
                     endif
@@ -611,7 +611,7 @@ module LinearResponse
 
             !Now solve the LR for the hole addition
             do i = 1,nLinearSystem
-                LinearSystem_h(i,i) = dcmplx(Omega-mu,dDelta) + (LinearSystem_h(i,i) - dcmplx(GFChemPot,0.0_dp))
+                LinearSystem_h(i,i) = dcmplx(Omega+mu,dDelta) + (LinearSystem_h(i,i) - dcmplx(GFChemPot,0.0_dp))
             enddo
             Psi1_h(:) = Ann_0(:)
             call SolveCompLinearSystem(LinearSystem_h,Psi1_h,nLinearSystem,info)
