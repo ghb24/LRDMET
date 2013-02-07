@@ -541,7 +541,7 @@ Program RealHub
     subroutine run_DMETcalc()
         implicit none
         real(dp) :: ElecPerSite,FillingFrac,VarVloc,ErrRDM,mean_vloc
-        integer :: i,it,Occ,CurrU
+        integer :: i,it,Occ,CurrU,DMETfile
         logical :: tFinishedU
         character(len=*), parameter :: t_r="run_DMETcalc"
 
@@ -571,9 +571,15 @@ Program RealHub
             !Get occupations with unique GS
             call find_occs()
 
+            !Loop over occupation numbers 
             do Occ=1,N_Occs
 
-                !Loop from low occupation numbers to high
+                if(.not.tAnderson) then
+                    call OpenDMETFile(DMETfile)
+                    write(DMETfile,"(A)") " #Iteration  E_DMET/Imp   E_HL   d[V]   Initial_Err[1RDM]   "    &
+                        //"Filling   Filling_Err   mean_diag_correlation"
+                endif
+
                 !These occupations refer to number of closed shell orbitals, so total electrons is 2 x nOcc
                 nOcc = allowed_occs(Occ)    !Number of occupied orbitals in this iteration
                 NEl = 2*nOcc    !Total electrons in system
@@ -678,8 +684,10 @@ Program RealHub
 
 
                         !Write out stats:
-                        !   Iter    E/Site  d[V]    ERR[RDM]    ERR[Filling]    mean[corr_pot]      Some RDM stuff...?
+                        !   Iter    E/Site  d[V]    Initial_ERR[RDM]    ERR[Filling]    mean[corr_pot]      Some RDM stuff...?
                         write(6,*) it,TotalE_Imp,VarVloc,ErrRDM,FillingError,mean_vloc
+                        write(DMETfile,"(I7,7G22.10)") it,TotalE_Imp,HL_Energy,VarVloc,ErrRDM,  &
+                            Actualfilling_Imp,FillingError,mean_vloc
 
                         !Update vloc
                         v_loc(:,:) = v_loc(:,:) + vloc_change(:,:)
@@ -709,32 +717,14 @@ Program RealHub
 
                 !Potentially run FCI again now to get correlation functions from 2RDMs?
 
-!                print "Eigenvalues of h0 (large system):"
-!                nPrint = 5
-!                iMin = max(0,nOcc-nPrint)
-!                iMax = min(nOcc+nPrint,len(LatticeHfResult.EigenValues))
-!                print "  iOrb:   %s" % (" ".join(["%10s"%("%i%s"%(o,[":2e","  "][o>=nOcc])) for o in range(iMin,iMax)]))
-!                print "  ew(i): [%s]" % (" ".join(["%10.5f"%o for o in LatticeHfResult.EigenValues[iMin:iMax]]))
-!                #print "EwSets += [(%.5f,%i,%r)]" % (U, nOcc,LatticeHfResult.EigenValues)
-!                ELargePerSite = dot(LatticeHfResult.Rdm.flatten(), .5*(LatticeHfResult.Fock + h0).flatten())
-!                print "Final energy per site:            %13.8f" % (HL["EnergyPerSite"])
-!                print "Final 1e energy per site:         %10.5f  (%8.5f per hop)" % (HL["EImp1perSite"], nImp*HL["EImp1perSite"]/nHoppingsImp)
-!                print "Final 2e energy per site:         %10.5f" % HL["EImp2perSite"]
-!                print "Final imp-bath energy per site:   %10.5f  (%8.5f per hop)" % (HL["EBathImpPerSite"], nImp*HL["EBathImpPerSite"]/nHoppingsEnv)
-!                print "Final filling on impurity:        %10.5f  (%+9.2f%% error)" % (HL["ActualFilling"], 100.*(HL["ActualFilling"] - Filling)/Filling)
-!                print "Final U^2 * <na nb>:              %13.8f" %(U**2*HL["<na.nb>"])
-!
-!                print "!Diag1RDM: unique elements: ", " ".join(list(set(["%.4f" % o for o in Diag1RDM])))
-!                AllResults.append( FResult(HL["EnergyPerSite"], nOcc, LatticeHfResult.Mu, LatticeHfResult.HlGap, HL["<na.nb>"], HL["EImp1perSite"], HL["EImp2perSite"], HL["EBathImpPerSite"], HL["nElec"], nImp, L,
-!                    Notes = "(sym-brk: %.2e  dfil: %+.4e  dD: %.2e  dV: %.2e)" % (max(Diag1RDM)-min(Diag1RDM), HL["FillingError"], ErrRdm, VarVloc)) )
-!                PrintResults(AllResults)
-
                 write(6,"(A,F10.4,A,G20.10)") "FINAL energy per site for U=",U,' is: ',TotalE_Imp
 
                 !Set potential for the next occupation number, or wipe it?
                 if(.not.tSaveCorrPot) then
                     v_loc(:,:) = 0.0_dp
                 endif
+
+                if(.not.tAnderson) close(DMETfile)
                 
             enddo   !Loop over occupations
 
@@ -787,6 +777,24 @@ Program RealHub
         endif
 
     end subroutine GetNextUVal
+
+    !Open an output file for the DMET convergence
+    subroutine OpenDMETFile(iunit)
+        use utils, only: get_free_unit,append_ext,append_ext_real
+        implicit none
+        integer, intent(out) :: iunit
+        character(64) :: filename,filename2
+
+        iunit = get_free_unit()
+        call append_ext_real("DMET",U,filename)
+        if(.not.tHalfFill) then
+            call append_ext(filename,nOcc,filename2)
+        else
+            filename2 = filename
+        endif
+        open(unit=iunit,file=filename2,status='unknown')
+
+    end subroutine OpenDMETFile
             
     !Construct full embedding basis, along with orthogonal core and virtual set, and check orthonormality of orbital space
     subroutine ConstructFullSchmidtBasis()
