@@ -7,18 +7,34 @@ module Davidson
 
     contains
 
+    !TODO: Do we need either CurrVec (just use memory passed in), and do we really need to store HSubspaces, or do we just
+    !need the last vector?
     !Take a real, symmetric matrix, and find the lowest eigenvalue and eigenvector
     !Via davidson diagonalization
-    subroutine Real_NonDir_Davidson(nSize,Mat,Val,Vec,tol,max_iter)
+    !If tStartingVec, then Vec(:) contains the initial state to use
+    subroutine Real_NonDir_Davidson(nSize,Mat,Val,Vec,tStartingVec,tol,max_iter)
         implicit none
-        integer, intent(in) :: nSize,max_iter
+        integer, intent(in) :: nSize
+        integer, intent(in), optional :: max_iter
         real(dp), intent(in) :: Mat(nSize,nSize)
-        real(dp), intent(out) :: Val,Vec(nSize)
-        real(dp), intent(in) :: tol
+        real(dp), intent(out) :: Val
+        real(dp), intent(inout) :: Vec(nSize)
+        real(dp), intent(in), optional :: tol
+        logical, intent(in) :: tStartingVec
 
-        real(dp), allocatable :: SubspaceVecs(:,:)
+        real(dp), allocatable :: SubspaceVecs(:,:),HSubspace(:,:)
         integer :: ierr
         real(dp) :: kappa
+
+        if(.not.present(tol)) then
+            !Set tol default
+            tol=1.0e-9_dp
+        endif
+        if(.not.present(max_iter)) then
+            !Set max iter default
+            max_iter=200
+        endif
+        tLowestVal = .true.   !Whether to compute the largest or smallest eigenvalue. Currently, it is always the lowest
 
         kappa = 0.25    !Tolerance for orthogonalization procedure
 
@@ -28,18 +44,99 @@ module Davidson
         if(ierr.ne.0) call stop_all(t_r,'Memory error')
         SubspaceVecs(:,:) = 0.0_dp
 
+        !Memory for H * subspace vectors, as they are created
+        allocate(HSubspace(nSize,max_iter),stat=ierr)
+        if(ierr.ne.0) call stop_all(t_r,'Memory error')
+        HSubspace(:,:) = 0.0_dp
+
+        !Memory for current vector
         allocate(CurrVec(nSize),stat=ierr)
         if(ierr.ne.0) call stop_all(t_r,'Memory error')
         CurrVec(:) = 0.0_dp
 
-        !Initialize current vector - random, or just 1 in first element...
-        call init_vector_real(nSize,CurrVec)
+        if(.not.tStartingVec) then
+            !Initialize current vector - random, or just 1 in first element...
+            call init_vector_real(nSize,CurrVec)
+        else
+            CurrVec(:) = Vec(:)
+        endif
 
         do iter = 1,max_iter
 
             !First, orthogonalize current vector against previous vectors, using a modified Gram-Schmidt
-            !Returns normalized
+            !Returns normalized trial vector
             call ModGramSchmidt_real(CurrVec,nSize,SubspaceVecs(:,1:iter-1),iter-1,kappa)
+
+            SubspaceVecs(:,iter) = CurrVec(:)
+
+            !Apply hamiltonian to subspace vector and store all results
+            call ApplyMat_real(Mat,SubspaceVecs(:,iter),HSubspace(:,iter),nSize)
+
+            !Form subspace matrix
+            if(allocated(SubspaceMat_new)) deallocate(SubspaceMat_new)
+            allocate(SubspaceMat_new(iter,iter))
+            !Use previous subspace matrix rather than regenerating
+            if(iter.gt.1) then
+                SubspaceMat_new(1:iter-1,1:iter-1) = SubspaceMat_old(1:iter-1,1:iter-1)
+            endif
+            !Compute final column coming from new subspace vector
+            do i = 1,iter
+                SubspaceMat_new(i,iter) = ddot(nSize,SubspaceVecs(:,i),1,HSubspace(:,iter),1)
+                SubspaceMat_new(iter,i) = SubspaceMat_new(i,iter)
+            enddo
+
+            !Now diagonalize the subspace, returning eigenvalues and associated vectors
+            call DiagSubspaceMat_real(SubspaceMat,iter,Eigenvals)
+
+            !Update Vec by expanding the appropriate eigenvector back into the full space
+            !These are current best estimates for the final eigenvalue and vector
+            if(tLowestVal) then
+                !We are after the lowest value, expand this one
+                call DGEMV('N',nSize,iter,1.0_dp,SubspaceVecs(:,1:iter),nSize,SubspaceMat(:,1), &
+                    1,0.0_dp,Vec,1)
+                Val = Eigenvals(1)
+            else
+                !We are after the lowest value, expand this one
+                call DGEMV('N',nSize,iter,1.0_dp,SubspaceVecs(:,1:iter),nSize,SubspaceMat(:,iter), &
+                    1,0.0_dp,Vec,1)
+                Val = Eigenvals(iter)
+            endif
+
+            !We also want to compute the largest vec x H
+            !Either do this by applying the matrix again to CurrVec (less memory, as don't then need to store
+            !HSubspace vectors), or expand out into the H x subspace space. We do the latter here, though its not
+            !necessarily better
+            if(tLowestVal) then
+                !We are after the lowest value, expand this one
+                call DGEMV('N',nSize,iter,1.0_dp,HSubspace(:,1:iter),nSize,SubspaceMat(:,1), &
+                    1,0.0_dp,CurrVec,1)
+            else
+                !We are after the lowest value, expand this one
+                call DGEMV('N',nSize,iter,1.0_dp,HSubspace(:,1:iter),nSize,SubspaceMat(:,iter), &
+                    1,0.0_dp,CurrVec,1)
+            endif
+
+            !Calculate residual vector
+            !r = H * CurrVec - val * CurrVec
+            !Residual vector stored in CurrVec
+            CurrVec(:) = CurrVec(:) - Val*Vec(:)
+
+            !Find norm of residual
+            dConv = ddot(nSize,CurrVec,1,CurrVec,1)
+            if(dConv.le.tol) then
+                !Praise the lord, convergence.
+                !Final vector already stored in Vec, and Val is corresponding eigenvalue
+                exit
+            endif
+
+            !Now, we need to solve for the next guess vector, r.
+            !We need to apply preconditioning, and ensure that we move orthogonally to the vector Vec
+            !We want to solve the equation Q A Q t = -r
+
+        enddo
+            
+        !Deallocate memory as appropriate
+
 
 
 
