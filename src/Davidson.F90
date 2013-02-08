@@ -23,6 +23,7 @@ module Davidson
         logical, intent(in) :: tStartingVec
 
         real(dp), allocatable :: SubspaceVecs(:,:),HSubspace(:,:)
+        real(dp), allocatable :: CurrVec(:)
         integer :: ierr
         real(dp) :: kappa
 
@@ -74,6 +75,8 @@ module Davidson
 
             !Form subspace matrix
             if(allocated(SubspaceMat_new)) deallocate(SubspaceMat_new)
+            if(allocated(Eigenvals)) deallocate(Eigenvals)
+            allocate(Eigenvals(iter))
             allocate(SubspaceMat_new(iter,iter))
             !Use previous subspace matrix rather than regenerating
             if(iter.gt.1) then
@@ -84,9 +87,12 @@ module Davidson
                 SubspaceMat_new(i,iter) = ddot(nSize,SubspaceVecs(:,i),1,HSubspace(:,iter),1)
                 SubspaceMat_new(iter,i) = SubspaceMat_new(i,iter)
             enddo
+            if(allocated(SubspaceMat_old)) deallocate(SubspaceMat_old)
+            allocate(SubspaceMat_old(iter,iter))
+            SubspaceMat_old(:,:) = SubspaceMat_new(:,:)
 
-            !Now diagonalize the subspace, returning eigenvalues and associated vectors
-            call DiagSubspaceMat_real(SubspaceMat,iter,Eigenvals)
+            !Now diagonalize the subspace, returning eigenvalues and associated vectors in SubspaceMat_new
+            call DiagSubspaceMat_real(SubspaceMat_new,iter,Eigenvals)
 
             !Update Vec by expanding the appropriate eigenvector back into the full space
             !These are current best estimates for the final eigenvalue and vector
@@ -138,10 +144,46 @@ module Davidson
         !Deallocate memory as appropriate
 
 
-
-
-
     end subroutine Real_NonDir_Davidson
+            
+    !Diagonalize the subspace hamiltonian. Essentially just a wrapper for DSYEV, but keeps the main loop clean
+    subroutine DiagSubspaceMat_real(Mat,iSize,W)
+        implicit none
+        integer, intent(in) :: iSize
+        real(dp), intent(inout) :: Mat(iSize,iSize)
+        real(dp), intent(out) :: Eigenvals(iSize)
+
+        real(dp), allocatable :: Work(:)
+        integer :: lWork,info
+        character(len=*), parameter :: t_r='DiagSubspaceMat_real'
+
+        allocate(Work(1))
+        if(ierr.ne.0) call stop_all(t_r,"alloc err")
+        W(:)=0.0_dp
+        lWork=-1
+        info=0
+        call dsyev('V','U',iSize,Mat,iSize,W,Work,lWork,info)
+        if(info.ne.0) call stop_all(t_r,'workspace query failed')
+        lwork=int(work(1))+1
+        deallocate(work)
+        allocate(work(lwork))
+        call dsyev('V','U',iSize,Mat,iSize,W,Work,lWork,info)
+        if (info.ne.0) call stop_all(t_r,"Diag failed")
+        deallocate(work)
+
+    end subroutine DiagSubspaceMat_real
+
+    !Apply the matrix to a trial vector. Essentially just a wrapper for DGEMV, but will eventually
+    !want to be modified for a direct algorithm
+    subroutine ApplyMat_real(Mat,Vec,ResVec,nSize)
+        implicit none
+        integer, intent(in) :: nSize
+        real(dp), intent(in) :: Mat(nSize,nSize),Vec(nSize)
+        real(dp), intent(out) :: ResVec(nSize)
+        
+        call DGEMV('N',nSize,nSize,1.0_dp,Mat,nSize,Vec,1,0.0_dp,ResVec,1)
+
+    end subroutine ApplyMat_real
 
     !Modified Gram-Schmidt orthogonalization with refinement.
     !Kappa is introduced, which ensures that the loss of orthogonality is restricted to 1/kappa
