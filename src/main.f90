@@ -45,6 +45,8 @@ Program RealHub
         tSCFHF = .false.
         tWriteout = .false.
         tFlipUTiling = .false.
+        tReadInCorrPot = .false.
+        CorrPot_file = 'CorrPots'
 
         !General LR options
         Start_Omega = 0.0_dp
@@ -137,14 +139,21 @@ Program RealHub
                 write(6,"(A,F10.5)") "            o U = ",U_Vals(i) 
             enddo
         endif
-        write(6,"(A,I8)") "            o Maximum iterations for DMET self-consistency: ", iMaxIterDMET
-        if(tSaveCorrPot) then
-            if(tHalfFill) then
-                write(6,"(A,I8)") "            o The correlation potential from the previous U value will " &
-                    //"be used as a starting point for self-consistency" 
-            else
-                write(6,"(A,I8)") "            o The correlation potential from the previous electron number will " &
-                    //"be used as a starting point for self-consistency"
+        if(tReadInCorrPot) then
+            write(6,"(A)") "            o Correlation potentials for system will be read from file: ", trim(CorrPot_file)
+            write(6,"(A)") "            o No DMET self-consistency of correlation potential"
+        else
+            if(.not.tAnderson) then
+                write(6,"(A,I8)") "            o Maximum iterations for DMET self-consistency: ", iMaxIterDMET
+                if(tSaveCorrPot) then
+                    if(tHalfFill) then
+                        write(6,"(A,I8)") "            o The correlation potential from the previous U value will " &
+                            //"be used as a starting point for self-consistency" 
+                    else
+                        write(6,"(A,I8)") "            o The correlation potential from the previous electron number will " &
+                            //"be used as a starting point for self-consistency"
+                    endif
+                endif
             endif
         endif
         if(tFlipUTiling) then
@@ -295,6 +304,12 @@ Program RealHub
                 tSaveCorrPot = .true.
             case("FLIP_CORRPOT_TILING")
                 tFlipUTiling = .true.
+            case("READ_CORRPOT")
+                tReadInCorrPot = .true.
+                if(item.lt.nitems) then
+                    CorrPot_file = ''
+                    call readu(CorrPot_file)
+                endif
             case("PBC")
                 tPeriodic = .true.
             case("APBC")
@@ -581,11 +596,9 @@ Program RealHub
             !Loop over occupation numbers 
             do Occ=1,N_Occs
 
-                if(.not.tAnderson) then
-                    call OpenDMETFile(DMETfile)
-                    write(DMETfile,"(A)") " #Iteration  E_DMET/Imp   E_HL   d[V]   Initial_Err[1RDM]   "    &
-                        //"Filling   Filling_Err   mean_diag_correlation"
-                endif
+                call OpenDMETFile(DMETfile)
+                write(DMETfile,"(A)") " #Iteration  E_DMET/Imp   E_HL   d[V]   Initial_Err[1RDM]   "    &
+                    //"Filling   Filling_Err   mean_diag_correlation"
 
                 !These occupations refer to number of closed shell orbitals, so total electrons is 2 x nOcc
                 nOcc = allowed_occs(Occ)    !Number of occupied orbitals in this iteration
@@ -632,6 +645,11 @@ Program RealHub
                     call SR_LinearResponse()
                 endif
 
+                if(tReadInCorrPot) then
+                    !Read in the correlation potential from another source
+                    call read_in_corrpot()
+                endif
+
                 !At this point, we have h0, U and a set of system sites (the first nImp indices), as well as a local potential
                 do it=1,iMaxIterDMET
 
@@ -671,7 +689,7 @@ Program RealHub
                     call SolveSystem(.true.)
                     call halt_timer(HL_Time)
 
-                    if(.not.tAnderson) then
+                    if((.not.tAnderson).and.(.not.tReadInCorrPot)) then
                         !Fit new potential
                         !vloc_change (global) is updated in here to reflect the optimal change
                         !VarVloc is a meansure of the change in the potential
@@ -707,6 +725,8 @@ Program RealHub
                         !Write out stats:
                         !   Iter    E/Site  d[V]    ERR[RDM]    ERR[Filling]    mean[corr_pot]      Some RDM stuff...?
                         write(6,*) it,TotalE_Imp,VarVloc,ErrRDM,FillingError,mean_vloc
+                        write(DMETfile,"(I7,7G22.10)") it,TotalE_Imp,HL_Energy,VarVloc,ErrRDM,  &
+                            Actualfilling_Imp,FillingError,mean_vloc
 
                         exit    !Anderson model, so we do not want to iterate
                     endif
@@ -784,6 +804,53 @@ Program RealHub
         endif
 
     end subroutine GetNextUVal
+
+    subroutine read_in_corrpot()
+        use utils, only: get_free_unit
+        implicit none
+        integer :: iunit,Occ_val,ios,i,j,k
+        logical :: texist,tFoundCorrPot
+        real(dp) :: U_val,CorrPot_tmp(nImp*nImp)
+        character(len=*), parameter :: t_r='read_in_corrpot'
+
+        write(6,*) "Reading in correlation potential..."
+
+        iunit = get_free_unit()
+        inquire(file=CorrPot_file,exist=texist)
+        if(.not.texist) then
+            write(6,*) "correlation potential filename: ",CorrPot_file
+            call stop_all(t_r,'Expecting to read in a file with a converged '    &
+     &          //'correlation potential, but unable to find appropriate file')
+        endif
+
+        open(iunit,file=CorrPot_file,status='old')
+
+        tFoundCorrPot = .false.
+        do while(.true.)
+            read(iunit,*,iostat=ios) U_val,Occ_val,CorrPot_tmp(1:nImp*nImp)
+            if(ios.gt.0) call stop_all(t_r,'Error reading in correlation potential')
+            if(ios.lt.0) exit   !EOF
+            if((abs(U_val-U).lt.1.0e-7_dp).and.(Occ_val.eq.nOcc)) then
+                tFoundCorrPot = .true.
+                exit
+            endif
+        enddo
+
+        if(.not.tFoundCorrPot) then
+            call stop_all(t_r,'Did not read in correlation potential corresponding to this run')
+        else
+            k=1
+            do i=1,nImp
+                do j=1,nImp
+                    v_loc(j,i) = CorrPot_tmp(k)
+                    k = k+1
+                enddo
+            enddo
+        endif
+
+        close(iunit)
+
+    end subroutine read_in_corrpot
 
     !Open an output file for the DMET convergence
     subroutine OpenDMETFile(iunit)

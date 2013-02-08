@@ -28,6 +28,8 @@ module Globals
     logical :: tRampDownOcc     !Whether to go up or down in filling fraction
     logical :: tSaveCorrPot     !Use the previous correlation potential in the initialization of the next GS DMET calculation
     logical :: tFlipUTiling     !When constructing the mean-field hamiltonian through the space, flip the tiling of the correlation potential
+    logical :: tReadInCorrPot   !Read in the correlation potential to use. No DMET SCF
+    character(len=64) :: CorrPot_file   !File name with the correlation potentials in it 
     logical :: tConstructFullSchmidtBasis   !Whether to construct the full Schmidt basis or just the embedding basis
     real(dp) :: HL_Energy   !The energy of the embedded system from the solver
     real(dp) :: One_ElecE,Two_ElecE !The one and two-body contributions to the embedded system total energy from contractions with the HL 1RDM
