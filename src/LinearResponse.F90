@@ -1172,7 +1172,7 @@ module LinearResponse
                 do gam = 1,EmbSize
                     gam_spat = gam+CoreEnd
                     !AVNorm(gam) = AVNorm(gam) + real(SchmidtPert(gam_spat,a))**2 + aimag(SchmidtPert(gam_spat,a))**2
-                    AVNorm(gam) = AVNorm(gam) + conjg(SchmidtPert(gam_spat,a))*SchmidtPert(gam_spat,a)
+                    AVNorm(gam) = AVNorm(gam) + real(conjg(SchmidtPert(gam_spat,a))*SchmidtPert(gam_spat,a),dp)
                 enddo
             enddo
             !call writevector(AVNorm,'AV Norm')

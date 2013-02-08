@@ -150,17 +150,38 @@ module mat_tools
         real(dp) , intent(in) :: core(nSites,nSites)
         real(dp) , intent(out) :: core_v(nSites,nSites)
         real(dp) , intent(in) :: CorrPot(nImp,nImp)
-        integer :: i,j,k
+        real(dp) :: CorrPot_Flip(nImp,nImp)
+        integer :: i,j,k,i_ind,j_ind
+
+        if(tFlipUTiling) then
+            write(6,*) "Flipping correlation potential when tiling mean-field hamiltonian"
+            CorrPot_Flip(:,:) = 0.0_dp
+            do i=1,nImp
+                do j=1,nImp
+                    j_ind = nImp - j + 1
+                    i_ind = nImp - i + 1
+                    CorrPot_Flip(j_ind,i_ind) = CorrPot(i,j)
+                enddo
+            enddo
+        endif
 
         if(LatticeDim.eq.1) then
             !Construct new hamiltonian which is block diagonal in the local potential
             core_v = 0.0_dp
             do k=0,(nSites/nImp)-1
-                do i=1,nImp
-                    do j=1,nImp
-                        core_v((k*nImp)+i,(k*nImp)+j)=CorrPot(i,j)
+                if(tFlipUTiling.and.(mod(k,2).eq.1)) then
+                    do i=1,nImp
+                        do j=1,nImp
+                            core_v((k*nImp)+i,(k*nImp)+j)=CorrPot_Flip(i,j)
+                        enddo
                     enddo
-                enddo
+                else
+                    do i=1,nImp
+                        do j=1,nImp
+                            core_v((k*nImp)+i,(k*nImp)+j)=CorrPot(i,j)
+                        enddo
+                    enddo
+                endif
             enddo
 
             !Add this to the original mean-field hamiltonian
@@ -370,7 +391,7 @@ module mat_tools
         logical :: tRotateOrbs
         integer :: lWork,info,iFirst,iLast,i
         real(dp) :: ThrDeg
-        complex(dp), allocatable :: k_ham(:,:)
+        !complex(dp), allocatable :: k_ham(:,:)
         character(len=*), parameter :: t_r="run_hf"
 
         !Construct fock matrix
@@ -501,7 +522,7 @@ module mat_tools
         nKpnts = nSupercell / nUnitCell
         if(mod(nKpnts,2).eq.1) then
             call stop_all(t_r,'For some reason, I am not getting hermitian operators with odd numbers of kpoints. " &
-                //"Debug this routine.')
+     &           //"Debug this routine.')
         endif
 
         allocate(KPnts(nKpnts))
@@ -587,7 +608,7 @@ module mat_tools
             allocate(K_Vals(nSuperCell))
             if(nUnitCell.eq.1) then
                 do i = 1,nSuperCell
-                    K_Vals(i) = k_Ham(i,i)
+                    K_Vals(i) = real(k_Ham(i,i),dp)
                 enddo
             else
                 lWork = max(1,2*nUnitCell-1)

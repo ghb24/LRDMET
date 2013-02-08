@@ -12,20 +12,23 @@ module Davidson
     !Take a real, symmetric matrix, and find the lowest eigenvalue and eigenvector
     !Via davidson diagonalization
     !If tStartingVec, then Vec(:) contains the initial state to use
-    subroutine Real_NonDir_Davidson(nSize,Mat,Val,Vec,tStartingVec,tol,max_iter)
+    subroutine Real_NonDir_Davidson(nSize,Mat,Val,Vec,tStartingVec,tol,max_iter,tLowestVal)
         implicit none
         integer, intent(in) :: nSize
-        integer, intent(in), optional :: max_iter
+        integer, optional :: max_iter
         real(dp), intent(in) :: Mat(nSize,nSize)
         real(dp), intent(out) :: Val
         real(dp), intent(inout) :: Vec(nSize)
-        real(dp), intent(in), optional :: tol
+        real(dp), optional :: tol
         logical, intent(in) :: tStartingVec
+        logical, optional :: tLowestVal     !Whether to converge to lowest or highest state
 
         real(dp), allocatable :: SubspaceVecs(:,:),HSubspace(:,:)
-        real(dp), allocatable :: CurrVec(:)
-        integer :: ierr
-        real(dp) :: kappa
+        real(dp), allocatable :: CurrVec(:),SubspaceMat_new(:,:),SubspaceMat_old(:,:)
+        real(dp), allocatable :: Eigenvals(:)
+        integer :: ierr,iter,i
+        real(dp) :: kappa,ddot,dConv
+        character(len=*), parameter :: t_r='Real_NonDir_Davidson'
 
         if(.not.present(tol)) then
             !Set tol default
@@ -57,7 +60,7 @@ module Davidson
 
         if(.not.tStartingVec) then
             !Initialize current vector - random, or just 1 in first element...
-            call init_vector_real(nSize,CurrVec)
+            !call init_vector_real(nSize,CurrVec)
         else
             CurrVec(:) = Vec(:)
         endif
@@ -98,12 +101,12 @@ module Davidson
             !These are current best estimates for the final eigenvalue and vector
             if(tLowestVal) then
                 !We are after the lowest value, expand this one
-                call DGEMV('N',nSize,iter,1.0_dp,SubspaceVecs(:,1:iter),nSize,SubspaceMat(:,1), &
+                call DGEMV('N',nSize,iter,1.0_dp,SubspaceVecs(:,1:iter),nSize,SubspaceMat_new(:,1), &
                     1,0.0_dp,Vec,1)
                 Val = Eigenvals(1)
             else
                 !We are after the lowest value, expand this one
-                call DGEMV('N',nSize,iter,1.0_dp,SubspaceVecs(:,1:iter),nSize,SubspaceMat(:,iter), &
+                call DGEMV('N',nSize,iter,1.0_dp,SubspaceVecs(:,1:iter),nSize,SubspaceMat_new(:,iter), &
                     1,0.0_dp,Vec,1)
                 Val = Eigenvals(iter)
             endif
@@ -114,11 +117,11 @@ module Davidson
             !necessarily better
             if(tLowestVal) then
                 !We are after the lowest value, expand this one
-                call DGEMV('N',nSize,iter,1.0_dp,HSubspace(:,1:iter),nSize,SubspaceMat(:,1), &
+                call DGEMV('N',nSize,iter,1.0_dp,HSubspace(:,1:iter),nSize,SubspaceMat_new(:,1), &
                     1,0.0_dp,CurrVec,1)
             else
                 !We are after the lowest value, expand this one
-                call DGEMV('N',nSize,iter,1.0_dp,HSubspace(:,1:iter),nSize,SubspaceMat(:,iter), &
+                call DGEMV('N',nSize,iter,1.0_dp,HSubspace(:,1:iter),nSize,SubspaceMat_new(:,iter), &
                     1,0.0_dp,CurrVec,1)
             endif
 
@@ -151,10 +154,10 @@ module Davidson
         implicit none
         integer, intent(in) :: iSize
         real(dp), intent(inout) :: Mat(iSize,iSize)
-        real(dp), intent(out) :: Eigenvals(iSize)
+        real(dp), intent(out) :: W(iSize)
 
         real(dp), allocatable :: Work(:)
-        integer :: lWork,info
+        integer :: lWork,info,ierr
         character(len=*), parameter :: t_r='DiagSubspaceMat_real'
 
         allocate(Work(1))
@@ -199,6 +202,7 @@ module Davidson
         real(dp), intent(in) :: kappa
 
         real(dp) :: Norm_in,Norm_out,Overlap,ddot
+        integer :: i
 
         !Are there even any vectors to orthogonalize against!
         if(nSubspace.eq.0) then
@@ -221,11 +225,11 @@ module Davidson
 
         if((Norm_out/Norm_in).le.kappa) then
             !Orthogonalize again!
-            do i = 1,nSizespace
+            do i = 1,nSubspace 
                 Overlap = ddot(nSize,Vec,1,Subspace(:,i),1)
                 Vec(:) = Vec(:) - Overlap*Subspace(:,i)     !Remove component
             enddo
-            Norm_out = zdotc(nSize,Vec,1,Vec,1)
+            Norm_out = ddot(nSize,Vec,1,Vec,1)
         endif
 
         Vec(:) = Vec(:)/Norm_out    !Normalize
@@ -242,6 +246,7 @@ module Davidson
         real(dp), intent(in) :: kappa
 
         complex(dp) :: Norm_in,Norm_out,Overlap,zdotc
+        integer :: i
         real(dp) :: Norm_out_re
         character(len=*), parameter :: t_r='ModGramSchmidt_comp'
 
@@ -254,7 +259,7 @@ module Davidson
         endif
 
         !Find initial normalization of vector
-        Norm_in = ddot(nSize,Vec,1,Vec,1)
+        Norm_in = zdotc(nSize,Vec,1,Vec,1)
         if(abs(aimag(Norm_in)).gt.1.0e-9_dp) call stop_all(t_r,'Norm not real')
 
         do i = 1,nSubspace
@@ -268,7 +273,7 @@ module Davidson
 
         if(abs(Norm_out/Norm_in).le.kappa) then
             !Orthogonalize again!
-            do i = 1,nSizespace
+            do i = 1,nSubspace 
                 Overlap = zdotc(nSize,Subspace(:,i),1,Vec,1)
                 Vec(:) = Vec(:) - Overlap*Subspace(:,i)     !Remove component
             enddo
@@ -278,5 +283,5 @@ module Davidson
 
         Vec(:) = Vec(:)/Norm_out_re
 
-    end subroutine ModGramSchmidt_real
+    end subroutine ModGramSchmidt_comp
 end module Davidson

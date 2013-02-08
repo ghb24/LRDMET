@@ -44,6 +44,7 @@ Program RealHub
         tDiagFullSystem = .false.
         tSCFHF = .false.
         tWriteout = .false.
+        tFlipUTiling = .false.
 
         !General LR options
         Start_Omega = 0.0_dp
@@ -145,6 +146,9 @@ Program RealHub
                 write(6,"(A,I8)") "            o The correlation potential from the previous electron number will " &
                     //"be used as a starting point for self-consistency"
             endif
+        endif
+        if(tFlipUTiling) then
+            write(6,"(A)") "            o Correlation potential flipped in tiling through space"
         endif
         if(tHalfFill) then
             write(6,"(A)") "            o Only half filling to be considered"
@@ -289,6 +293,8 @@ Program RealHub
                 call readf(UStep)
             case("REUSE_CORRPOT")
                 tSaveCorrPot = .true.
+            case("FLIP_CORRPOT_TILING")
+                tFlipUTiling = .true.
             case("PBC")
                 tPeriodic = .true.
             case("APBC")
@@ -329,7 +335,8 @@ Program RealHub
                 write(6,"(A)") "SITES"
                 write(6,"(A)") "U"
                 write(6,"(A)") "U_VALS"
-                write(6,"(A)") "START_PREVIOUS_U_CORRPOT"
+                write(6,"(A)") "REUSE_CORRPOT"
+                write(6,"(A)") "FLIP_CORRPOT_TILING"
                 write(6,"(A)") "SCF_HF"
                 write(6,"(A)") "PBC"
                 write(6,"(A)") "APBC"
