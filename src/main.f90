@@ -140,7 +140,7 @@ Program RealHub
             enddo
         endif
         if(tReadInCorrPot) then
-            write(6,"(A)") "            o Correlation potentials for system will be read from file: ", trim(CorrPot_file)
+            write(6,"(A,A)") "            o Correlation potentials for system will be read from file: ", trim(CorrPot_file)
             write(6,"(A)") "            o No DMET self-consistency of correlation potential"
         else
             if(.not.tAnderson) then
