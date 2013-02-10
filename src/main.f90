@@ -47,6 +47,7 @@ Program RealHub
         tFlipUTiling = .false.
         tReadInCorrPot = .false.
         CorrPot_file = 'CorrPots'
+        tNonDirDavidson = .false.
 
         !General LR options
         Start_Omega = 0.0_dp
@@ -328,6 +329,9 @@ Program RealHub
                 tCompleteDiag = .false.
             case("DIAG_SYSTEM")
                 tDiagFullSystem = .true.
+            case("NONDIR_DAVIDSON") 
+                tNonDirDavidson = .true.
+                tCompleteDiag = .false.
             case("REDUCE_OCC")
                 tMultipleOccs = .true.
                 tRampDownOcc = .true.

@@ -4,43 +4,52 @@ module Davidson
     use mat_tools, only: WriteVector,WriteMatrix,WriteVectorComp,WriteMatrixComp
     implicit none
 
-
     contains
 
-    !TODO: Do we need either CurrVec (just use memory passed in), and do we really need to store HSubspaces, or do we just
-    !need the last vector?
     !Take a real, symmetric matrix, and find the lowest eigenvalue and eigenvector
     !Via davidson diagonalization
     !If tStartingVec, then Vec(:) contains the initial state to use
-    subroutine Real_NonDir_Davidson(nSize,Mat,Val,Vec,tStartingVec,tol,max_iter,tLowestVal)
+    subroutine Real_NonDir_Davidson(nSize,Mat,Val,Vec,tStartingVec) !,tol,max_iter,tLowestVal)
         implicit none
         integer, intent(in) :: nSize
-        integer, optional :: max_iter
         real(dp), intent(in) :: Mat(nSize,nSize)
         real(dp), intent(out) :: Val
         real(dp), intent(inout) :: Vec(nSize)
-        real(dp), optional :: tol
         logical, intent(in) :: tStartingVec
-        logical, optional :: tLowestVal     !Whether to converge to lowest or highest state
+        !integer, optional :: max_iter
+        !real(dp), optional :: tol
+        !logical, optional :: tLowestVal     !Whether to converge to lowest or highest state
+        integer :: max_iter
+        real(dp) :: tol
+        logical :: tLowestVal     !Whether to converge to lowest or highest state
 
         real(dp), allocatable :: SubspaceVecs(:,:),HSubspace(:,:)
         real(dp), allocatable :: CurrVec(:),SubspaceMat_new(:,:),SubspaceMat_old(:,:)
         real(dp), allocatable :: Eigenvals(:)
         integer :: ierr,iter,i
+        logical :: tNonOrthDavidson
         real(dp) :: kappa,ddot,dConv
         character(len=*), parameter :: t_r='Real_NonDir_Davidson'
 
-        if(.not.present(tol)) then
+        write(6,*) "Entered non-direct davidson routine..."
+        call flush(6)
+
+        !if(.not.present(tol)) then
             !Set tol default
             tol=1.0e-9_dp
-        endif
-        if(.not.present(max_iter)) then
+        !endif
+        !if(.not.present(max_iter)) then
             !Set max iter default
             max_iter=200
-        endif
-        tLowestVal = .true.   !Whether to compute the largest or smallest eigenvalue. Currently, it is always the lowest
-
+        !endif
+        !if(.not.present(tLowestVal)) then
+            tLowestVal = .true.   !Whether to compute the largest or smallest eigenvalue. Currently, it is always the lowest
+        !endif
+        tNonOrthDavidson = .true.
         kappa = 0.25    !Tolerance for orthogonalization procedure
+
+        write(6,*) "Allocating memory"
+        call flush(6)
 
         !Allocate memory for subspace vectors
         !Ridiculous overuse of memory. Should really restrict this to < max_iter, and restart if gets too much
@@ -58,23 +67,33 @@ module Davidson
         if(ierr.ne.0) call stop_all(t_r,'Memory error')
         CurrVec(:) = 0.0_dp
 
+        write(6,*) "Initilizing vector"
+        call flush(6)
+
         if(.not.tStartingVec) then
             !Initialize current vector - random, or just 1 in first element...
-            !call init_vector_real(nSize,CurrVec)
+            call init_vector_real(nSize,CurrVec)
         else
             CurrVec(:) = Vec(:)
         endif
 
         do iter = 1,max_iter
 
+            write(6,*) "Starting iter: ",iter
+            call flush(6)
+
             !First, orthogonalize current vector against previous vectors, using a modified Gram-Schmidt
             !Returns normalized trial vector
             call ModGramSchmidt_real(CurrVec,nSize,SubspaceVecs(:,1:iter-1),iter-1,kappa)
+
+            write(6,*) "Orthogonalized subspace vector"
 
             SubspaceVecs(:,iter) = CurrVec(:)
 
             !Apply hamiltonian to subspace vector and store all results
             call ApplyMat_real(Mat,SubspaceVecs(:,iter),HSubspace(:,iter),nSize)
+
+            write(6,*) "Applied hamiltonian"
 
             !Form subspace matrix
             if(allocated(SubspaceMat_new)) deallocate(SubspaceMat_new)
@@ -94,8 +113,12 @@ module Davidson
             allocate(SubspaceMat_old(iter,iter))
             SubspaceMat_old(:,:) = SubspaceMat_new(:,:)
 
+            write(6,*) "Updated subspace hamiltonian"
+
             !Now diagonalize the subspace, returning eigenvalues and associated vectors in SubspaceMat_new
             call DiagSubspaceMat_real(SubspaceMat_new,iter,Eigenvals)
+
+            write(6,*) "Diagonalized subspace hamiltonian"
 
             !Update Vec by expanding the appropriate eigenvector back into the full space
             !These are current best estimates for the final eigenvalue and vector
@@ -125,6 +148,8 @@ module Davidson
                     1,0.0_dp,CurrVec,1)
             endif
 
+            write(6,*) "Expanded Ritz eigenvector back into full space"
+
             !Calculate residual vector
             !r = H * CurrVec - val * CurrVec
             !Residual vector stored in CurrVec
@@ -132,22 +157,45 @@ module Davidson
 
             !Find norm of residual
             dConv = ddot(nSize,CurrVec,1,CurrVec,1)
+            write(6,*) "Residual norm :",iter,dConv
             if(dConv.le.tol) then
                 !Praise the lord, convergence.
                 !Final vector already stored in Vec, and Val is corresponding eigenvalue
                 exit
             endif
 
-            !Now, we need to solve for the next guess vector, r.
-            !We need to apply preconditioning, and ensure that we move orthogonally to the vector Vec
-            !We want to solve the equation Q A Q t = -r
+            !Now, we need to solve for the next guess vector, t.
+            if(tNonOrthDavidson) then
+                !Simplest new vector, though not orthogonal to previous guess. Convergence not expected to be great.
+                !t = [1/(Diag(H) - val x I)] r
+                !Just pairwise multiplication
+                do i = 1,nSize
+                    CurrVec(i) = CurrVec(i) / (Mat(i,i) - Val)
+                enddo
+                
+            else
+                !Use preconditioning properly.
+                !We need to apply preconditioning, and ensure that we maintain orthogonally to the vector Vec
+                !We want to solve the equation Q A Q t = -r
+                call stop_all(t_r,"Need to code up proper linear equation solver - MINRES")
+            endif
 
         enddo
             
         !Deallocate memory as appropriate
-
+        deallocate(CurrVec,HSubspace,SubspaceVecs,SubspaceMat_new,SubspaceMat_old,Eigenvals)
 
     end subroutine Real_NonDir_Davidson
+
+    subroutine init_vector_real(nSize,CurrVec)
+        implicit none
+        integer, intent(in) :: nSize
+        real(dp), intent(out) :: CurrVec(nSize)
+
+        CurrVec(:) = 0.0_dp
+        CurrVec(1) = 1.0_dp
+
+    end subroutine init_vector_real
             
     !Diagonalize the subspace hamiltonian. Essentially just a wrapper for DSYEV, but keeps the main loop clean
     subroutine DiagSubspaceMat_real(Mat,iSize,W)

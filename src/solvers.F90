@@ -38,7 +38,7 @@ module solvers
 
         if(nSys.gt.EmbSize) call stop_all(t_r,"Error in determining basis")
 
-        if(.not.tCompleteDiag) then
+        if((.not.tCompleteDiag).and.(.not.tNonDirDavidson)) then
             call WriteFCIDUMP()
 
             !Solve with Geralds FCI code
@@ -664,10 +664,11 @@ module solvers
 !Generate all determinants in the FCI space and do complete diagonalization
     subroutine CompleteDiag(tCreate2RDM)
         use DetToolsData
+        use Davidson, only: Real_NonDir_Davidson
         implicit none
         logical, intent(in) :: tCreate2RDM
         integer :: OrbPairs,UMatSize,umatind
-        real(dp), allocatable :: work(:)
+        real(dp), allocatable :: work(:),HL_Vec(:)
         integer :: lwork,info,i,j
         character(len=*), parameter :: t_r='CompleteDiag'
 
@@ -722,17 +723,23 @@ module solvers
 !        call writematrix(FullHamil(1:nFCIDet,1:nFCIDet),'FCI hamil',.true.)
 
         !Diagonalize
-        allocate(Work(1))
-        lWork=-1
-        info=0
-        call dsyev('V','U',nFCIDet,FullHamil,nFCIDet,Spectrum,Work,lWork,info)
-        if(info.ne.0) call stop_all(t_r,'Workspace queiry failed')
-        lwork=int(work(1))+1
-        deallocate(work)
-        allocate(work(lwork))
-        call dsyev('V','U',nFCIDet,FullHamil,nFCIDet,Spectrum,Work,lWork,info)
-        if(info.ne.0) call stop_all(t_r,'Diag failed')
-        deallocate(work)
+        allocate(HL_Vec(nFCIDet))
+        if(tNonDirDavidson) then
+            write(6,*) "Solving for ground state with non-direct davidson diagonalizer..."
+            call Real_NonDir_Davidson(nFCIDet,FullHamil,HL_Energy,HL_Vec,.false.)
+        else
+            allocate(Work(1))
+            lWork=-1
+            info=0
+            call dsyev('V','U',nFCIDet,FullHamil,nFCIDet,Spectrum,Work,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'Workspace queiry failed')
+            lwork=int(work(1))+1
+            deallocate(work)
+            allocate(work(lwork))
+            call dsyev('V','U',nFCIDet,FullHamil,nFCIDet,Spectrum,Work,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'Diag failed')
+            deallocate(work)
+        endif
 
         call writevector(Spectrum(1:(min(10,nFCIDet))),'FCI Spectrum')
             
