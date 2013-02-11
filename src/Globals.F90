@@ -48,6 +48,8 @@ module Globals
     logical :: tIC_TDA_Response !Internall contracted response of DMET
     logical :: tCompleteDiag    !Complete rather than iterative diagonalization of the embedded system
     logical :: tNonDirDavidson  !Compute GS with a non-direct davidson algorithm
+    logical :: tMinRes_NonDir   !Solve any systems of linear equations with a non-direct linear solver
+    logical :: tPrecond_MinRes  !Apply preconditioning to the solution of the linear equations
 !    real(dp) :: Omega=1.0_dp           !Perturbation frequency
     real(dp) :: Lambda=1.0_dp          !Strength of perturbation
     real(dp) :: Start_Omega,End_Omega,Omega_Step    !Parameters for Omega sweep

@@ -14,9 +14,17 @@ module const
     integer, parameter :: i2 = selected_int_kind(3)     !int*2
     integer, parameter :: i4 = selected_int_kind(6)     !int*4
     integer, parameter :: i8 = selected_int_kind(10)    !int*8
+    integer, parameter :: ip = selected_int_kind(9)
 
     integer, parameter :: sp = selected_real_kind(6,37)     !For single precision real numbers
     integer, parameter :: dp = selected_real_kind(15,307)   !For double precision real numbers
+
+    real(dp), parameter :: zero = 0.0_dp, one = 1.0_dp
+    complex(dp), parameter :: zzero = cmplx(0.0_dp,0.0_dp,dp)
+    complex(dp), parameter :: zone = cmplx(1.0_dp,0.0_dp,dp)
+
+    real(dp), parameter :: eps = epsilon(zero)
+    real(dp), parameter :: realmin = tiny(one), realmax = huge(one)
 
     real(dp), parameter :: pi = 3.1415926535897931_dp
 
@@ -28,5 +36,7 @@ module const
     integer, parameter :: bits_n_int = bit_size(qwerty)
     integer, parameter :: end_n_int = bits_n_int - 1
     integer, parameter :: size_n_int = bits_n_int/8
+
+    logical, public :: debug = .false.  !This is just for the MINRESSLQ code
 
 end module const

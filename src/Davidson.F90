@@ -177,6 +177,11 @@ module Davidson
                 !Use preconditioning properly.
                 !We need to apply preconditioning, and ensure that we maintain orthogonally to the vector Vec
                 !We want to solve the equation Q A Q t = -r
+                !Use a MINRES algorithm
+                !call Davidson_MINRES(CurrVec,Vec,Mat
+
+                !xxx is the RHS vector on entry, and the solution on exit
+
                 call stop_all(t_r,"Need to code up proper linear equation solver - MINRES")
             endif
 

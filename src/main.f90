@@ -75,6 +75,8 @@ Program RealHub
         iSolveLR = 1
         tOrthogBasis = .false.
         tRemoveGSFromH = .false.
+        tMinRes_NonDir = .false.
+        tPreCond_MinRes = .false.
 
     end subroutine set_defaults
 
@@ -418,6 +420,10 @@ Program RealHub
                 endif
             case("IC_TDA")
                 tIC_TDA_Response = .true.
+            case("NONDIR_MINRES")
+                tMinRes_NonDir = .true.
+            case("PRECONDITION_LR")
+                tPreCond_MinRes = .true.
             case("FREQ")
                 call readf(Start_Omega)
                 call readf(End_Omega)
@@ -443,6 +449,8 @@ Program RealHub
                 write(6,"(A)") "ALLOWED KEYWORDS IN LINEAR_RESPONSE BLOCK: "
                 write(6,"(A)") "DD_RESPONSE"
                 write(6,"(A)") "GF_RESPONSE"
+                write(6,"(A)") "NONDIR_MINRES"
+                write(6,"(A)") "PRECONDITION_LR"
                 write(6,"(A)") "NONINT"
                 write(6,"(A)") "TDA"
                 write(6,"(A)") "RPA"
@@ -507,6 +515,9 @@ Program RealHub
         endif
         if(tMFResponse.and.(.not.tDDResponse)) then
             call stop_all(t_r,'Single-reference response function asked for, but only coded up for Density response')
+        endif
+        if(tPrecond_MinRes.and.(.not.tMinRes_NonDir)) then
+            call stop_all(t_r,'Cannot precondition linear response matrix if not solving iteratively!')
         endif
 
     end subroutine check_input

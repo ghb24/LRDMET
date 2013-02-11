@@ -7,6 +7,9 @@ module LinearResponse
     use globals
     implicit none
     integer :: CVIndex,AVIndex,CAIndex
+
+    complex(dp), pointer, private :: zDirMV_Mat(:,:)
+
     contains
     
     !This is the high level routine to work out how we want to do the linear response
@@ -94,24 +97,29 @@ module LinearResponse
     subroutine NonIntExCont_TDA_MCLR_Charged()
         use utils, only: get_free_unit,append_ext_real,append_ext
         use DetBitOps, only: DecodeBitDet,SQOperator,CountBits
+        use zminresqlpModule, only: MinresQLP  
         use DetToolsData
         implicit none
         real(dp), allocatable :: NFCIHam(:,:),temp(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
         real(dp), allocatable :: W(:)
-        complex(dp), allocatable :: LinearSystem_p(:,:),LinearSystem_h(:,:),Cre_0(:),Ann_0(:)
+        complex(dp), allocatable , target :: LinearSystem_p(:,:),LinearSystem_h(:,:)
+        complex(dp), allocatable :: Cre_0(:),Ann_0(:)
         complex(dp), allocatable :: FockSchmidtComp(:,:),Gc_a_F_ax(:),Gc_b_F_ab(:),GSHam(:,:)
         complex(dp), allocatable :: Psi_h(:),Psi_p(:),Psi1_p(:),Psi1_h(:),Ga_i_F_xi(:),Ga_i_F_ij(:)
         complex(dp), allocatable :: temp_vecc(:),Work(:),Psi_0(:)
         integer, allocatable :: Coup_Ann_alpha(:,:,:),Coup_Create_alpha(:,:,:)
         integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,umatind,ierr,info,iunit,nCore
         integer :: nLinearSystem,nOrbs,nVirt,OrbPairs,tempK,UMatSize,VIndex,VirtStart,VirtEnd
-        integer :: orbdum(1),gtid,nLinearSystem_h,x,nGSSpace,Np1GSInd,Nm1GSInd,lWork
+        integer :: orbdum(1),gtid,nLinearSystem_h,x,nGSSpace,Np1GSInd,Nm1GSInd,lWork,minres_unit
+        integer :: maxminres_iter
         real(dp) :: VNorm,CNorm,Omega,GFChemPot,mu
-        complex(dp) :: dNorm_p,dNorm_h,ni_lr,ni_lr_Cre,ni_lr_Ann
+        complex(dp) :: dNorm_p,dNorm_h,ni_lr,ni_lr_Cre,ni_lr_Ann,zShift
         complex(dp) :: ResponseFn,ResponseFn_h,ResponseFn_p,tempel
         logical :: tParity
         character(64) :: filename,filename2
         character(len=*), parameter :: t_r='NonIntExCont_TDA_MCLR_Charged'
+
+        maxminres_iter = 500
 
         call set_timer(LR_EC_GF_Precom)
 
@@ -254,6 +262,11 @@ module LinearResponse
             & //"4.ParticleGF(Re)   5.ParticleGF(Im)   6.HoleGF(Re)   7.HoleGF(Im)    8.Old_GS    9.New_GS   " &
             & //"10.Particle_Norm  11.Hole_Norm   12.NI_GF(Re)   13.NI_GF(Im)  14.NI_GF_Part(Re)   15.NI_GF_Part(Im)   " &
             & //"16.NI_GF_Hole(Re)   17.NI_GF_Hole(Im)  "
+                
+        if(tMinRes_NonDir) then
+            minres_unit = get_free_unit()
+            open(minres_unit,file='zMinResQLP.txt',status='unknown')
+        endif
         
         !Allocate memory for hamiltonian in this system:
         allocate(LinearSystem_p(nLinearSystem,nLinearSystem),stat=ierr)
@@ -369,6 +382,7 @@ module LinearResponse
             call set_timer(LR_EC_GF_HBuild)
         
             write(6,*) "Calculating linear response for frequency: ",Omega
+            if(tMinRes_NonDir) write(minres_unit,*) "Iteratively solving for frequency: ",Omega
             if(tLR_ReoptGS) GSHam(:,:) = dcmplx(0.0_dp,0.0_dp)
             LinearSystem_p(:,:) = dcmplx(0.0_dp,0.0_dp)
             LinearSystem_h(:,:) = dcmplx(0.0_dp,0.0_dp)
@@ -576,15 +590,13 @@ module LinearResponse
             call set_timer(LR_EC_GF_SolveLR)
 
             !Solve particle GF to start
-            do i = 1,nLinearSystem
-                do j = 1,nLinearSystem
-                    if(i.eq.j) then
-                        LinearSystem_p(i,i) = dcmplx(Omega+mu,dDelta) - (LinearSystem_p(i,i) - dcmplx(GFChemPot,0.0_dp))
-                    else
-                        LinearSystem_p(j,i) = -LinearSystem_p(j,i) 
-                    endif
+            LinearSystem_p(:,:) = -LinearSystem_p(:,:)
+            if(.not.tMinRes_NonDir) then
+                !Offset matrix
+                do i = 1,nLinearSystem
+                    LinearSystem_p(i,i) = LinearSystem_p(i,i) + dcmplx(Omega+mu+GFChemPot,dDelta)
                 enddo
-            enddo
+            endif
             !The V|0> for particle and hole perturbations are held in Cre_0 and Ann_0
             !If we have reoptimized the ground state, we will need to recompute these
             !call writevectorcomp(Psi_0,'Psi_0')
@@ -594,33 +606,59 @@ module LinearResponse
             !call writevectorcomp(Cre_0,'Ann_0')
             !call writevectorcomp(Ann_0,'Ann_0')
 
-            !Copy V|0> to another array, since if we are not reoptimizing the GS, we want to keep them.
-            Psi1_p(:) = Cre_0(:)
             !Now solve these linear equations
-            !Psi1_p will be overwritten with the solution
             !call writevectorcomp(Psi1_p,'Cre_0')
-            call SolveCompLinearSystem(LinearSystem_p,Psi1_p,nLinearSystem,info)
-            !call writevectorcomp(Psi1_p,'Psi1_p')
-            if(info.ne.0) then 
-                write(6,*) "INFO: ",info
-                call warning(t_r,'Solving linear system failed for particle hamiltonian - skipping this frequency')
-                Omega = Omega + Omega_Step
-                call halt_timer(LR_EC_GF_SolveLR)
-                cycle
+            if(tMinRes_NonDir) then
+                zShift = dcmplx(-Omega-mu-GFChemPot,-dDelta)
+                zDirMV_Mat => LinearSystem_p
+                if(tPrecond_MinRes) then
+                    call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=Cre_0,shift=zShift,nout=minres_unit,x=Psi1_p, &
+                        itnlim=maxminres_iter,Msolve=zPreCond)
+                else
+                    call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=Cre_0,shift=zShift,nout=minres_unit,x=Psi1_p, &
+                        itnlim=maxminres_iter)
+                endif
+                zDirMV_Mat => null()
+            else
+                !Copy V|0> to another array, since if we are not reoptimizing the GS, we want to keep them.
+                Psi1_p(:) = Cre_0(:)
+                !Psi1_p will be overwritten with the solution
+                call SolveCompLinearSystem(LinearSystem_p,Psi1_p,nLinearSystem,info)
+                if(info.ne.0) then 
+                    write(6,*) "INFO: ",info
+                    call warning(t_r,'Solving linear system failed for particle hamiltonian - skipping this frequency')
+                    Omega = Omega + Omega_Step
+                    call halt_timer(LR_EC_GF_SolveLR)
+                    cycle
+                endif
             endif
+            !call writevectorcomp(Psi1_p,'Psi1_p')
 
             !Now solve the LR for the hole addition
-            do i = 1,nLinearSystem
-                LinearSystem_h(i,i) = dcmplx(Omega+mu,dDelta) + (LinearSystem_h(i,i) - dcmplx(GFChemPot,0.0_dp))
-            enddo
-            Psi1_h(:) = Ann_0(:)
-            call SolveCompLinearSystem(LinearSystem_h,Psi1_h,nLinearSystem,info)
-            if(info.ne.0) then 
-                write(6,*) "INFO: ",info
-                call warning(t_r,'Solving linear system failed for hole hamiltonian - skipping this frequency')
-                Omega = Omega + Omega_Step
-                call halt_timer(LR_EC_GF_SolveLR)
-                cycle
+            if(tMinRes_NonDir) then
+                zShift = dcmplx(-Omega-mu+GFChemPot,-dDelta)
+                zDirMV_Mat => LinearSystem_h
+                if(tPrecond_MinRes) then
+                    call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=Ann_0,shift=zShift,nout=minres_unit,x=Psi1_h, &
+                        itnlim=maxminres_iter,Msolve=zPreCond)
+                else
+                    call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=Ann_0,shift=zShift,nout=minres_unit,x=Psi1_h, &
+                        itnlim=maxminres_iter)
+                endif
+                zDirMV_Mat => null()
+            else
+                do i = 1,nLinearSystem
+                    LinearSystem_h(i,i) = dcmplx(Omega+mu,dDelta) + (LinearSystem_h(i,i) - dcmplx(GFChemPot,0.0_dp))
+                enddo
+                Psi1_h(:) = Ann_0(:)
+                call SolveCompLinearSystem(LinearSystem_h,Psi1_h,nLinearSystem,info)
+                if(info.ne.0) then 
+                    write(6,*) "INFO: ",info
+                    call warning(t_r,'Solving linear system failed for hole hamiltonian - skipping this frequency')
+                    Omega = Omega + Omega_Step
+                    call halt_timer(LR_EC_GF_SolveLR)
+                    cycle
+                endif
             endif
 
             !Find normalization of first-order wavefunctions
@@ -667,6 +705,7 @@ module LinearResponse
         deallocate(LinearSystem_p,LinearSystem_h,Psi_p,Psi_h,Psi1_p,Psi1_h)
         deallocate(Cre_0,Ann_0,Psi_0)
         close(iunit)
+        if(tMinRes_NonDir) close(minres_unit)
 
         !Deallocate determinant lists
         if(allocated(FCIDetList)) deallocate(FCIDetList)
@@ -4665,6 +4704,45 @@ module LinearResponse
 
 
     end subroutine TDA_MCLR
+
+    !Apply preconditioning, solving for y = Ax for given x 
+    !Just assume that the preconditioner is the diagonal of the matrix moved just that it is positive definite
+    subroutine zPreCond(n,x,y)
+        use const
+        integer(ip), intent(in) :: n
+        complex(dp), intent(in) :: x(n)
+        complex(dp), intent(out) :: y(n)
+        integer :: i
+        real(dp) :: MinMatEl
+
+        if(.not.associated(zDirMV_Mat)) call stop_all('zPreCond','Matrix not associated!')
+
+        do i = 1,n
+            if(MinMatEl.gt.abs(zDirMV_Mat(i,i))) MinMatEl = abs(zDirMV_Mat(i,i))
+        enddo
+
+        MinMatEl = MinMatEl + 0.1
+
+        do i = 1,n
+            y(i) = x(i)/(zDirMV_Mat(i,i)-MinMatEl)
+        enddo
+!        write(6,*) "Precond: ",MinMatEl
+!        write(6,*) "x: ",x
+
+    end subroutine zPreCond
+
+    !A direct matrix multiplication
+    subroutine zDirMV(n,x,y)
+        use const
+        integer(ip), intent(in) :: n
+        complex(dp), intent(in) :: x(n)
+        complex(dp), intent(out) :: y(n)
+
+        if(.not.associated(zDirMV_Mat)) call stop_all('zDirMV','Matrix not associated!')
+
+        call ZGEMV('N',n,n,zone,zDirMV_Mat,n,x,1,zzero,y,1)
+
+    end subroutine zDirMV
 
     !Find the non-interacting solution for alpha single-particle addition and removal, and project this operator into the schmidt basis
     !This is done seperately for electron addition and removal (SchmidtPertGF_Cre and SchmidtPertGF_Add)
