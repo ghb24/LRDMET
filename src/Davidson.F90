@@ -21,6 +21,12 @@ module Davidson
         logical, intent(in), optional :: tLowestVal     !Whether to converge to lowest or highest state
         integer, intent(out), optional :: niter     !The number of iterations it took to converge
 
+        !Local variables for optional arguments
+        integer :: max_iter_
+        real(dp) :: tol_
+        logical :: tLowestVal_
+        integer :: niter_
+
         real(dp), allocatable :: SubspaceVecs(:,:),HSubspace(:,:)
         real(dp), allocatable :: CurrVec(:)
         real(dp), allocatable, target :: SubspaceMat_1(:,:),SubspaceMat_2(:,:)
@@ -36,16 +42,21 @@ module Davidson
 
         if(.not.present(tol)) then
             !Set tol default
-            tol=1.0e-9_dp
+            tol_=1.0e-9_dp
+        else
+            tol_ = tol
         endif
         if(.not.present(max_iter)) then
             !Set max iter default
-            max_iter=200
+            max_iter_=200
+        else
+            max_iter_ = max_iter
         endif
         if(.not.present(tLowestVal)) then
-            tLowestVal = .true.   !Whether to compute the largest or smallest eigenvalue. Currently, it is always the lowest
+            tLowestVal_ = .true.   !Whether to compute the largest or smallest eigenvalue. Currently, it is always the lowest
+        else
+            tLowestVal_ = tLowestVal
         endif
-        kappa = 0.25    !Tolerance for orthogonalization procedure
             
 !        allocate(Eigenvecs(nSize,nSize))
 !        allocate(Eigenvals(nSize))
@@ -68,12 +79,12 @@ module Davidson
 
         !Allocate memory for subspace vectors
         !Ridiculous overuse of memory. Should really restrict this to < max_iter, and restart if gets too much
-        allocate(SubspaceVecs(nSize,max_iter),stat=ierr)
+        allocate(SubspaceVecs(nSize,max_iter_),stat=ierr)
         if(ierr.ne.0) call stop_all(t_r,'Memory error')
         SubspaceVecs(:,:) = 0.0_dp
 
         !Memory for H * subspace vectors, as they are created
-        allocate(HSubspace(nSize,max_iter),stat=ierr)
+        allocate(HSubspace(nSize,max_iter_),stat=ierr)
         if(ierr.ne.0) call stop_all(t_r,'Memory error')
         HSubspace(:,:) = 0.0_dp
 
@@ -96,7 +107,7 @@ module Davidson
 
 !        call writevector(CurrVec,'starting vector')
 
-        do iter = 1,max_iter
+        do iter = 1,max_iter_
 
 !            write(6,*) "Starting iter: ",iter
 !            call flush(6)
@@ -177,7 +188,7 @@ module Davidson
 
             !Update Vec by expanding the appropriate eigenvector back into the full space
             !These are current best estimates for the final eigenvalue and vector
-            if(tLowestVal) then
+            if(tLowestVal_) then
                 !We are after the lowest value, expand this one
                 call DGEMV('N',nSize,iter,1.0_dp,SubspaceVecs(:,1:iter),nSize,Eigenvecs(:,1), &
                     1,0.0_dp,Vec,1)
@@ -193,7 +204,7 @@ module Davidson
             !Either do this by applying the matrix again to CurrVec (less memory, as don't then need to store
             !HSubspace vectors), or expand out into the H x subspace space. We do the latter here, though its not
             !necessarily better
-            if(tLowestVal) then
+            if(tLowestVal_) then
                 !We are after the lowest value, expand this one
                 call DGEMV('N',nSize,iter,1.0_dp,HSubspace(:,1:iter),nSize,Eigenvecs(:,1), &
                     1,0.0_dp,CurrVec,1)
@@ -213,7 +224,7 @@ module Davidson
             !Find norm of residual
             dConv = ddot(nSize,CurrVec,1,CurrVec,1)
 !            write(6,*) "Residual norm :",iter,dConv,Val
-            if(dConv.le.tol) then
+            if(dConv.le.tol_) then
                 !Praise the lord, convergence.
                 !Final vector already stored in Vec, and Val is corresponding eigenvalue
                 exit
@@ -231,9 +242,10 @@ module Davidson
 
         enddo
 
-        if(iter.gt.maxiter) call stop_all(t_r,'Davidson routine failed to converge')
+        if(iter.gt.max_iter_) call stop_all(t_r,'Davidson routine failed to converge')
 
-        niter = iter
+        niter_ = iter
+        if(present(niter)) niter = niter_
             
         !Deallocate memory as appropriate
         deallocate(CurrVec,HSubspace,SubspaceVecs,Eigenvals)
