@@ -107,7 +107,7 @@ module LinearResponse
         complex(dp), allocatable :: Cre_0(:),Ann_0(:)
         complex(dp), allocatable :: FockSchmidtComp(:,:),Gc_a_F_ax(:),Gc_b_F_ab(:),GSHam(:,:)
         complex(dp), allocatable :: Psi_h(:),Psi_p(:),Psi1_p(:),Psi1_h(:),Ga_i_F_xi(:),Ga_i_F_ij(:)
-        complex(dp), allocatable :: temp_vecc(:),Work(:),Psi_0(:)
+        complex(dp), allocatable :: temp_vecc(:),Work(:),Psi_0(:),RHS(:)
         integer, allocatable :: Coup_Ann_alpha(:,:,:),Coup_Create_alpha(:,:,:)
         integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,umatind,ierr,info,iunit,nCore
         integer :: nLinearSystem,nOrbs,nVirt,OrbPairs,tempK,UMatSize,VIndex,VirtStart,VirtEnd
@@ -267,6 +267,7 @@ module LinearResponse
         if(tMinRes_NonDir) then
             minres_unit = get_free_unit()
             open(minres_unit,file='zMinResQLP.txt',status='unknown')
+            allocate(RHS(nLinearSystem))
         endif
         
         !Allocate memory for hamiltonian in this system:
@@ -612,11 +613,12 @@ module LinearResponse
             if(tMinRes_NonDir) then
                 zShift = dcmplx(-Omega-mu-GFChemPot,-dDelta)
                 zDirMV_Mat => LinearSystem_p
+                call setup_RHS(nLinearSystem,Cre_0,RHS)
                 if(tPrecond_MinRes) then
-                    call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=Cre_0,shift=zShift,nout=minres_unit,x=Psi1_p, &
+                    call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=RHS,nout=minres_unit,x=Psi1_p, &
                         itnlim=maxminres_iter,Msolve=zPreCond)
                 else
-                    call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=Cre_0,shift=zShift,nout=minres_unit,x=Psi1_p, &
+                    call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=RHS,nout=minres_unit,x=Psi1_p, &
                         itnlim=maxminres_iter)
                 endif
                 zDirMV_Mat => null()
@@ -639,11 +641,12 @@ module LinearResponse
             if(tMinRes_NonDir) then
                 zShift = dcmplx(-Omega-mu+GFChemPot,-dDelta)
                 zDirMV_Mat => LinearSystem_h
+                call setup_RHS(nLinearSystem,Ann_0,RHS)
                 if(tPrecond_MinRes) then
-                    call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=Ann_0,shift=zShift,nout=minres_unit,x=Psi1_h, &
+                    call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=RHS,nout=minres_unit,x=Psi1_h, &
                         itnlim=maxminres_iter,Msolve=zPreCond)
                 else
-                    call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=Ann_0,shift=zShift,nout=minres_unit,x=Psi1_h, &
+                    call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=RHS,nout=minres_unit,x=Psi1_h, &
                         itnlim=maxminres_iter)
                 endif
                 zDirMV_Mat => null()
@@ -706,7 +709,10 @@ module LinearResponse
         deallocate(LinearSystem_p,LinearSystem_h,Psi_p,Psi_h,Psi1_p,Psi1_h)
         deallocate(Cre_0,Ann_0,Psi_0)
         close(iunit)
-        if(tMinRes_NonDir) close(minres_unit)
+        if(tMinRes_NonDir) then
+            close(minres_unit)
+            deallocate(RHS)
+        endif
 
         !Deallocate determinant lists
         if(allocated(FCIDetList)) deallocate(FCIDetList)
@@ -4715,11 +4721,12 @@ module LinearResponse
         complex(dp), intent(out) :: y(n)
         integer :: i
         complex(dp) :: di
+        character(len=*), parameter :: t_r='zPreCond'
 
         if(.not.associated(zDirMV_Mat)) call stop_all('zPreCond','Matrix not associated!')
 
         do i = 1,n
-            di = abs(zDirMV_Mat(i,i) - zShift)
+            di = abs(zDirMV_Mat(i,i)**2 - 2.0_dp*real(zShift,dp) + (zShift*dconjg(zShift)))
             if(abs(di).gt.1.0e-8_dp) then
                 y(i) = x(i) / di
             else
@@ -4731,16 +4738,35 @@ module LinearResponse
 
     end subroutine zPreCond
 
+    !Change the RHS so that we multiply by the hermitian conjugate of the shifted matrix, so that we are dealing with a purely hermitian problem
+    subroutine setup_RHS(n,V0,Trans_V0)
+        implicit none
+        integer, intent(in) :: n
+        complex(dp), intent(in) :: V0(n)
+        complex(dp), intent(out) :: Trans_V0(n)
+
+        Trans_V0(:) = V0(:)
+        call ZGEMV('C',n,n,zone,zDirMV_Mat,n,V0,1,-dconjg(zShift),Trans_V0,1)
+
+    end subroutine setup_RHS
+
     !A direct matrix multiplication
+    !Multiply twice, first by A-I(zShift), then by (A*-I(conjg(zShift)))
     subroutine zDirMV(n,x,y)
         use const
         integer(ip), intent(in) :: n
         complex(dp), intent(in) :: x(n)
         complex(dp), intent(out) :: y(n)
+        complex(dp) :: temp(n)
 
         if(.not.associated(zDirMV_Mat)) call stop_all('zDirMV','Matrix not associated!')
 
-        call ZGEMV('N',n,n,zone,zDirMV_Mat,n,x,1,zzero,y,1)
+        temp(:) = x(:)
+        call ZGEMV('N',n,n,zone,zDirMV_Mat,n,x,1,-zShift,temp,1)
+!        temp(:) = temp(:) - temp(:)*zShift
+        y(:) = temp(:)
+        call ZGEMV('C',n,n,zone,zDirMV_Mat,n,temp,1,-dconjg(zShift),y,1)
+!        y(:) = y(:) - y(:)*dconjg(zShift)
 
     end subroutine zDirMV
 

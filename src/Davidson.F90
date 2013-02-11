@@ -9,47 +9,62 @@ module Davidson
     !Take a real, symmetric matrix, and find the lowest eigenvalue and eigenvector
     !Via davidson diagonalization
     !If tStartingVec, then Vec(:) contains the initial state to use
-    subroutine Real_NonDir_Davidson(nSize,Mat,Val,Vec,tStartingVec) !,tol,max_iter,tLowestVal)
+    subroutine Real_NonDir_Davidson(nSize,Mat,Val,Vec,tStartingVec,tol,max_iter,tLowestVal,niter)
         implicit none
         integer, intent(in) :: nSize
         real(dp), intent(in) :: Mat(nSize,nSize)
         real(dp), intent(out) :: Val
         real(dp), intent(inout) :: Vec(nSize)
         logical, intent(in) :: tStartingVec
-        !integer, optional :: max_iter
-        !real(dp), optional :: tol
-        !logical, optional :: tLowestVal     !Whether to converge to lowest or highest state
-        integer :: max_iter
-        real(dp) :: tol
-        logical :: tLowestVal     !Whether to converge to lowest or highest state
+        integer, intent(in), optional :: max_iter
+        real(dp), intent(in), optional :: tol
+        logical, intent(in), optional :: tLowestVal     !Whether to converge to lowest or highest state
+        integer, intent(out), optional :: niter     !The number of iterations it took to converge
 
         real(dp), allocatable :: SubspaceVecs(:,:),HSubspace(:,:)
-        real(dp), allocatable :: CurrVec(:),SubspaceMat_new(:,:),SubspaceMat_old(:,:)
-        real(dp), allocatable :: Eigenvals(:)
-        integer :: ierr,iter,i
-        logical :: tNonOrthDavidson
-        real(dp) :: kappa,ddot,dConv
+        real(dp), allocatable :: CurrVec(:)
+        real(dp), allocatable, target :: SubspaceMat_1(:,:),SubspaceMat_2(:,:)
+        real(dp), pointer :: SubspaceMat(:,:)
+        real(dp), allocatable :: Eigenvals(:),Eigenvecs(:,:)
+        integer :: ierr,iter,i,lWork,j
+        real(dp) :: ddot,dConv,norm
+        real(dp), parameter :: kappa = 0.25     !Tolerance for orthogonalization procedure
         character(len=*), parameter :: t_r='Real_NonDir_Davidson'
 
-        write(6,*) "Entered non-direct davidson routine..."
-        call flush(6)
+!        write(6,*) "Entered non-direct davidson routine..."
+!        call flush(6)
 
-        !if(.not.present(tol)) then
+        if(.not.present(tol)) then
             !Set tol default
             tol=1.0e-9_dp
-        !endif
-        !if(.not.present(max_iter)) then
+        endif
+        if(.not.present(max_iter)) then
             !Set max iter default
             max_iter=200
-        !endif
-        !if(.not.present(tLowestVal)) then
+        endif
+        if(.not.present(tLowestVal)) then
             tLowestVal = .true.   !Whether to compute the largest or smallest eigenvalue. Currently, it is always the lowest
-        !endif
-        tNonOrthDavidson = .true.
+        endif
         kappa = 0.25    !Tolerance for orthogonalization procedure
+            
+!        allocate(Eigenvecs(nSize,nSize))
+!        allocate(Eigenvals(nSize))
+!        Eigenvecs(:,:) = Mat(:,:)
+!        allocate(CurrVec(1))
+!        lWork=-1
+!        ierr=0
+!        call dsyev('V','U',nSize,Eigenvecs,nSize,Eigenvals,CurrVec,lWork,ierr)
+!        if(ierr.ne.0) call stop_all(t_r,'Workspace queiry failed')
+!        lwork=int(CurrVec(1))+1
+!        deallocate(CurrVec)
+!        allocate(CurrVec(lwork))
+!        call dsyev('V','U',nSize,Eigenvecs,nSize,Eigenvals,CurrVec,lWork,ierr)
+!        if(ierr.ne.0) call stop_all(t_r,'Diag failed')
+!        write(6,*) "Exact ground state: ",Eigenvals(1)
+!        deallocate(CurrVec,Eigenvecs,Eigenvals)
 
-        write(6,*) "Allocating memory"
-        call flush(6)
+!        write(6,*) "Allocating memory"
+!        call flush(6)
 
         !Allocate memory for subspace vectors
         !Ridiculous overuse of memory. Should really restrict this to < max_iter, and restart if gets too much
@@ -67,8 +82,10 @@ module Davidson
         if(ierr.ne.0) call stop_all(t_r,'Memory error')
         CurrVec(:) = 0.0_dp
 
-        write(6,*) "Initilizing vector"
-        call flush(6)
+        SubspaceMat => null()
+
+!        write(6,*) "Initilizing vector"
+!        call flush(6)
 
         if(.not.tStartingVec) then
             !Initialize current vector - random, or just 1 in first element...
@@ -77,59 +94,97 @@ module Davidson
             CurrVec(:) = Vec(:)
         endif
 
+!        call writevector(CurrVec,'starting vector')
+
         do iter = 1,max_iter
 
-            write(6,*) "Starting iter: ",iter
-            call flush(6)
+!            write(6,*) "Starting iter: ",iter
+!            call flush(6)
 
             !First, orthogonalize current vector against previous vectors, using a modified Gram-Schmidt
             !Returns normalized trial vector
             call ModGramSchmidt_real(CurrVec,nSize,SubspaceVecs(:,1:iter-1),iter-1,kappa)
 
-            write(6,*) "Orthogonalized subspace vector"
+!            write(6,*) "Orthogonalized subspace vector"
 
             SubspaceVecs(:,iter) = CurrVec(:)
+!            call writevector(SubspaceVecs(:,iter),'Current subspace vector')
+!            do i = 1,iter
+!                do j = 1,iter
+!                    norm = ddot(nSize,SubspaceVecs(:,i),1,SubspaceVecs(:,j),1)
+!                    if(i.eq.j) then
+!                        if(abs(norm-1.0_dp).gt.1.0e-8_dp) then
+!                            write(6,*) "i,j: ",i,j,norm
+!                            call stop_all(t_r,'Subspace vectors not normalized')
+!                        endif
+!                    else
+!                        if(abs(norm).gt.1.0e-8_dp) then
+!                            call stop_all(t_r,'Subspace vectors not orthogonal')
+!                        endif
+!                    endif
+!                enddo
+!            enddo
 
             !Apply hamiltonian to subspace vector and store all results
             call ApplyMat_real(Mat,SubspaceVecs(:,iter),HSubspace(:,iter),nSize)
 
-            write(6,*) "Applied hamiltonian"
+!            write(6,*) "Applied hamiltonian"
+!            call writevector(HSubspace(:,iter),'H x subspace vector')
 
             !Form subspace matrix
-            if(allocated(SubspaceMat_new)) deallocate(SubspaceMat_new)
-            if(allocated(Eigenvals)) deallocate(Eigenvals)
-            allocate(Eigenvals(iter))
-            allocate(SubspaceMat_new(iter,iter))
-            !Use previous subspace matrix rather than regenerating
-            if(iter.gt.1) then
-                SubspaceMat_new(1:iter-1,1:iter-1) = SubspaceMat_old(1:iter-1,1:iter-1)
+            if(.not.associated(SubspaceMat)) then
+                !First iteration - subspace not allocated yet
+                if(iter.ne.1) call stop_all(t_r,'Error in determining subspace size')
+                allocate(SubspaceMat_1(iter,iter))
+                SubspaceMat => SubspaceMat_1
+            else
+                !Swap subspaces around
+                if(allocated(SubspaceMat_1)) then
+                    allocate(SubspaceMat_2(iter,iter))
+                    SubspaceMat_2(1:iter-1,1:iter-1) = SubspaceMat_1(1:iter-1,1:iter-1)
+                    SubspaceMat => SubspaceMat_2
+                    deallocate(SubspaceMat_1)
+                else
+                    allocate(SubspaceMat_1(iter,iter))
+                    SubspaceMat_1(1:iter-1,1:iter-1) = SubspaceMat_2(1:iter-1,1:iter-1)
+                    SubspaceMat => SubspaceMat_1
+                    deallocate(SubspaceMat_2)
+                endif
             endif
             !Compute final column coming from new subspace vector
             do i = 1,iter
-                SubspaceMat_new(i,iter) = ddot(nSize,SubspaceVecs(:,i),1,HSubspace(:,iter),1)
-                SubspaceMat_new(iter,i) = SubspaceMat_new(i,iter)
+                SubspaceMat(i,iter) = ddot(nSize,SubspaceVecs(:,i),1,HSubspace(:,iter),1)
+                SubspaceMat(iter,i) = SubspaceMat(i,iter)
+!                write(6,*) i,SubspaceMat(i,iter)
             enddo
-            if(allocated(SubspaceMat_old)) deallocate(SubspaceMat_old)
-            allocate(SubspaceMat_old(iter,iter))
-            SubspaceMat_old(:,:) = SubspaceMat_new(:,:)
 
-            write(6,*) "Updated subspace hamiltonian"
+!            write(6,*) "Updated subspace hamiltonian"
+            
+            if(allocated(Eigenvals)) then
+                deallocate(Eigenvals)
+                deallocate(Eigenvecs)
+            endif
+            allocate(Eigenvals(iter))
+            allocate(Eigenvecs(iter,iter))
+            Eigenvecs(:,:) = SubspaceMat(:,:)
 
-            !Now diagonalize the subspace, returning eigenvalues and associated vectors in SubspaceMat_new
-            call DiagSubspaceMat_real(SubspaceMat_new,iter,Eigenvals)
+!            call writematrix(Eigenvecs,'subspace matrix',.true.)
 
-            write(6,*) "Diagonalized subspace hamiltonian"
+            !Now diagonalize the subspace, returning eigenvalues and associated vectors in Eigenvecs
+            call DiagSubspaceMat_real(Eigenvecs,iter,Eigenvals)
+
+!            write(6,*) "Diagonalized subspace hamiltonian"
 
             !Update Vec by expanding the appropriate eigenvector back into the full space
             !These are current best estimates for the final eigenvalue and vector
             if(tLowestVal) then
                 !We are after the lowest value, expand this one
-                call DGEMV('N',nSize,iter,1.0_dp,SubspaceVecs(:,1:iter),nSize,SubspaceMat_new(:,1), &
+                call DGEMV('N',nSize,iter,1.0_dp,SubspaceVecs(:,1:iter),nSize,Eigenvecs(:,1), &
                     1,0.0_dp,Vec,1)
                 Val = Eigenvals(1)
             else
                 !We are after the lowest value, expand this one
-                call DGEMV('N',nSize,iter,1.0_dp,SubspaceVecs(:,1:iter),nSize,SubspaceMat_new(:,iter), &
+                call DGEMV('N',nSize,iter,1.0_dp,SubspaceVecs(:,1:iter),nSize,Eigenvecs(:,iter), &
                     1,0.0_dp,Vec,1)
                 Val = Eigenvals(iter)
             endif
@@ -140,15 +195,15 @@ module Davidson
             !necessarily better
             if(tLowestVal) then
                 !We are after the lowest value, expand this one
-                call DGEMV('N',nSize,iter,1.0_dp,HSubspace(:,1:iter),nSize,SubspaceMat_new(:,1), &
+                call DGEMV('N',nSize,iter,1.0_dp,HSubspace(:,1:iter),nSize,Eigenvecs(:,1), &
                     1,0.0_dp,CurrVec,1)
             else
                 !We are after the lowest value, expand this one
-                call DGEMV('N',nSize,iter,1.0_dp,HSubspace(:,1:iter),nSize,SubspaceMat_new(:,iter), &
+                call DGEMV('N',nSize,iter,1.0_dp,HSubspace(:,1:iter),nSize,Eigenvecs(:,iter), &
                     1,0.0_dp,CurrVec,1)
             endif
 
-            write(6,*) "Expanded Ritz eigenvector back into full space"
+!            write(6,*) "Expanded Ritz eigenvector back into full space"
 
             !Calculate residual vector
             !r = H * CurrVec - val * CurrVec
@@ -157,7 +212,7 @@ module Davidson
 
             !Find norm of residual
             dConv = ddot(nSize,CurrVec,1,CurrVec,1)
-            write(6,*) "Residual norm :",iter,dConv
+!            write(6,*) "Residual norm :",iter,dConv,Val
             if(dConv.le.tol) then
                 !Praise the lord, convergence.
                 !Final vector already stored in Vec, and Val is corresponding eigenvalue
@@ -165,30 +220,26 @@ module Davidson
             endif
 
             !Now, we need to solve for the next guess vector, t.
-            if(tNonOrthDavidson) then
-                !Simplest new vector, though not orthogonal to previous guess. Convergence not expected to be great.
-                !t = [1/(Diag(H) - val x I)] r
-                !Just pairwise multiplication
-                do i = 1,nSize
+            !Simplest new vector, though not orthogonal to previous guess. Convergence not expected to be great.
+            !t = [1/(Diag(H) - val x I)] r
+            !Just pairwise multiplication
+            do i = 1,nSize
+                if(abs(Mat(i,i)-Val).gt.1.0e-8_dp) then
                     CurrVec(i) = CurrVec(i) / (Mat(i,i) - Val)
-                enddo
-                
-            else
-                !Use preconditioning properly.
-                !We need to apply preconditioning, and ensure that we maintain orthogonally to the vector Vec
-                !We want to solve the equation Q A Q t = -r
-                !Use a MINRES algorithm
-                !call Davidson_MINRES(CurrVec,Vec,Mat
-
-                !xxx is the RHS vector on entry, and the solution on exit
-
-                call stop_all(t_r,"Need to code up proper linear equation solver - MINRES")
-            endif
+                endif
+            enddo
 
         enddo
+
+        if(iter.gt.maxiter) call stop_all(t_r,'Davidson routine failed to converge')
+
+        niter = iter
             
         !Deallocate memory as appropriate
-        deallocate(CurrVec,HSubspace,SubspaceVecs,SubspaceMat_new,SubspaceMat_old,Eigenvals)
+        deallocate(CurrVec,HSubspace,SubspaceVecs,Eigenvals)
+        if(allocated(SubspaceMat_1)) deallocate(SubspaceMat_1)
+        if(allocated(SubspaceMat_2)) deallocate(SubspaceMat_2)
+        nullify(SubspaceMat)
 
     end subroutine Real_NonDir_Davidson
 
@@ -198,7 +249,8 @@ module Davidson
         real(dp), intent(out) :: CurrVec(nSize)
 
         CurrVec(:) = 0.0_dp
-        CurrVec(1) = 1.0_dp
+!        CurrVec(1) = 1.0_dp
+        call Random_number(CurrVec)
 
     end subroutine init_vector_real
             
@@ -257,10 +309,16 @@ module Davidson
         real(dp) :: Norm_in,Norm_out,Overlap,ddot
         integer :: i
 
+!        call writevector(Vec,'Vec into GS')
+
         !Are there even any vectors to orthogonalize against!
         if(nSubspace.eq.0) then
             Norm_out = ddot(nSize,Vec,1,Vec,1)
-            Vec(:) = Vec(:)/Norm_out
+!            write(6,*) "Norm: ",Norm_out
+            Vec(:) = Vec(:)/sqrt(Norm_out)
+!            call writevector(Vec,'Vec out of GS')
+!            Norm_in = ddot(nSize,Vec,1,Vec,1)
+!            write(6,*) "Norm: ",Norm_in 
             return
         endif
 
@@ -285,7 +343,7 @@ module Davidson
             Norm_out = ddot(nSize,Vec,1,Vec,1)
         endif
 
-        Vec(:) = Vec(:)/Norm_out    !Normalize
+        Vec(:) = Vec(:)/sqrt(Norm_out)    !Normalize
 
     end subroutine ModGramSchmidt_real
 
@@ -307,7 +365,7 @@ module Davidson
         if(nSubspace.eq.0) then
             Norm_out = zdotc(nSize,Vec,1,Vec,1)
             Norm_out_re = real(Norm_out,dp)
-            Vec(:) = Vec(:)/Norm_out_re
+            Vec(:) = Vec(:)/sqrt(Norm_out_re)
             return
         endif
 
@@ -334,7 +392,7 @@ module Davidson
         endif
         Norm_out_re = real(Norm_out,dp)
 
-        Vec(:) = Vec(:)/Norm_out_re
+        Vec(:) = Vec(:)/sqrt(Norm_out_re)
 
     end subroutine ModGramSchmidt_comp
 end module Davidson
