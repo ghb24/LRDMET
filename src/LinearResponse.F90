@@ -98,6 +98,7 @@ module LinearResponse
     subroutine NonIntExCont_TDA_MCLR_Charged()
         use utils, only: get_free_unit,append_ext_real,append_ext
         use DetBitOps, only: DecodeBitDet,SQOperator,CountBits
+        use Davidson, only: Comp_NonDir_Davidson
         use zminresqlpModule, only: MinresQLP  
         use DetToolsData
         implicit none
@@ -126,17 +127,38 @@ module LinearResponse
 
         write(6,*) "Calculating non-interacting EC MR-TDA LR system for *hole* & *particle* alpha spin-orbital perturbations..."
         if(.not.tConstructFullSchmidtBasis) call stop_all(t_r,'To solve LR, must construct full schmidt basis')
-        if(.not.tCompleteDiag) call stop_all(t_r,'To solve LR, must perform complete diag')
-        if(iSolveLR.eq.1) then
-            write(6,"(A)") "Solving linear system with standard ZGESV linear solver"
-        elseif(iSolveLR.eq.2) then
-            write(6,"(A)") "Solving linear system with advanced ZGELS linear solver"
-        elseif(iSolveLR.eq.3) then
-            write(6,"(A)") "Solving linear system with direct inversion of hamiltonian"
-        elseif(iSolveLR.eq.4) then
-            write(6,"(A)") "Solving linear system via complete diagonalization of hamiltonian"
+        if(.not.tCompleteDiag) then
+            if(.not.tNonDirDavidson) then
+                call stop_all(t_r,'To solve LR, must perform complete diag or non-direct davidson')
+            endif
+        endif
+        if(tMinRes_NonDir) then
+            if(tPreCond_MinRes) then
+                write(6,"(A)") "Solving linear system with iterative non-direct preconditioned MinRes-QLP algorithm"
+            else
+                write(6,"(A)") "Solving linear system with iterative non-direct MinRes-QLP algorithm"
+            endif
         else
-            call stop_all(t_r,"Linear equation solver unknown")
+            if(iSolveLR.eq.1) then
+                write(6,"(A)") "Solving linear system with standard ZGESV linear solver"
+            elseif(iSolveLR.eq.2) then
+                write(6,"(A)") "Solving linear system with advanced ZGELS linear solver"
+            elseif(iSolveLR.eq.3) then
+                write(6,"(A)") "Solving linear system with direct inversion of hamiltonian"
+            elseif(iSolveLR.eq.4) then
+                write(6,"(A)") "Solving linear system via complete diagonalization of hamiltonian"
+            else
+                call stop_all(t_r,"Linear equation solver unknown")
+            endif
+        endif
+        if(tLR_ReoptGS) then
+            if(tNonDirDavidson) then
+                write(6,"(A)") "Reoptimizing ground state eigenfunction in the space of V*|1> " &
+     &              //"at each point with non-direct davidson"
+            else
+                write(6,"(A)") "Reoptimizing ground state eigenfunction in the space of V*|1> " &
+     &              //"at each point with complete diagonalizer"
+            endif
         endif
         !umat and tmat for the active space
         OrbPairs = (EmbSize*(EmbSize+1))/2
@@ -183,16 +205,11 @@ module LinearResponse
         !N electron
         allocate(NFCIHam(nFCIDet,nFCIDet))
         NFCIHam(:,:) = 0.0_dp
-        do i=1,nFCIDet
-            NFCIHam(i,i) = Spectrum(i) 
+        do i = 1,nFCIDet
+            do j = 1,nFCIDet
+                call GetHElement(FCIDetList(:,i),FCIDetList(:,j),Elec,NFCIHam(i,j))
+            enddo
         enddo
-        !Now transform this block back into the determinant basis
-        allocate(temp(nFCIDet,nFCIDet))
-        call DGEMM('N','N',nFCIDet,nFCIDet,nFCIDet,1.0_dp,FullHamil,nFCIDet,NFCIHam(1:nFCIDet,1:nFCIDet),  &
-            nFCIDet,0.0_dp,temp,nFCIDet)
-        call DGEMM('N','T',nFCIDet,nFCIDet,nFCIDet,1.0_dp,temp,nFCIDet,FullHamil,nFCIDet,0.0_dp,    &
-            NFCIHam(1:nFCIDet,1:nFCIDet),nFCIDet)
-        deallocate(temp)
 
         !N+1 hamiltonian
         if(nNp1FCIDet.ne.nNm1FCIDet) call stop_all(t_r,'Active space not half-filled')
@@ -294,8 +311,8 @@ module LinearResponse
         allocate(Ann_0(nLinearSystem))
         if(.not.tLR_ReoptGS) then
             Psi_0(:) = dcmplx(0.0_dp,0.0_dp)
-            Psi_0(1:nFCIDet) = FullHamil(1:nFCIDet,1)
-            GFChemPot = Spectrum(1)
+            Psi_0(1:nFCIDet) = HL_Vec(:)    
+            GFChemPot = HL_Energy
             call ApplySP_PertGS_EC(Psi_0,nGSSpace,Cre_0,Ann_0,nLinearSystem)
         endif
         
@@ -565,25 +582,30 @@ module LinearResponse
             call set_timer(LR_EC_GF_OptGS)
 
             if(tLR_ReoptGS) then
-                allocate(Work(max(1,3*nGSSpace-2)))
-                allocate(temp_vecc(1))
-                W(:) = 0.0_dp
-                lWork = -1
-                info = 0
-                call zheev('V','U',nGSSpace,GSHam,nGSSpace,W,temp_vecc,lWork,Work,info)
-                if(info.ne.0) call stop_all(t_r,'workspace query failed')
-                lwork = int(temp_vecc(1))+1
-                deallocate(temp_vecc)
-                allocate(temp_vecc(lwork))
-                call zheev('V','U',nGSSpace,GSHam,nGSSpace,W,temp_vecc,lWork,Work,info)
-                if(info.ne.0) call stop_all(t_r,'GS H Diag failed 1')
-                deallocate(work,temp_vecc)
+                if(tNonDirDavidson) then
+                    call Comp_NonDir_Davidson(nGSSpace,GSHam,GFChemPot,Psi_0,.false.)
+                else
+                    allocate(Work(max(1,3*nGSSpace-2)))
+                    allocate(temp_vecc(1))
+                    W(:) = 0.0_dp
+                    lWork = -1
+                    info = 0
+                    call zheev('V','U',nGSSpace,GSHam,nGSSpace,W,temp_vecc,lWork,Work,info)
+                    if(info.ne.0) call stop_all(t_r,'workspace query failed')
+                    lwork = int(temp_vecc(1))+1
+                    deallocate(temp_vecc)
+                    allocate(temp_vecc(lwork))
+                    call zheev('V','U',nGSSpace,GSHam,nGSSpace,W,temp_vecc,lWork,Work,info)
+                    if(info.ne.0) call stop_all(t_r,'GS H Diag failed 1')
+                    deallocate(work,temp_vecc)
 
-                Psi_0(:) = GSHam(:,1)
-                GFChemPot = W(1)
+                    Psi_0(:) = GSHam(:,1)
+                    GFChemPot = W(1)
+                endif
+
                 write(6,"(A,G20.10,A,G20.10,A)") "Reoptimized ground state energy is: ",GFChemPot, &  
-                    " (old = ",Spectrum(1),")"
-                !call writevector(FullHamil(:,1),'Old Psi_0')
+                    " (old = ",HL_Energy,")"
+                !call writevector(HL_Vec(:),'Old Psi_0')
                 !call writevectorcomp(Psi_0,'New Psi_0')
             endif
             !write(6,*) "E0: ",GFChemPot+CoreEnergy
@@ -695,7 +717,7 @@ module LinearResponse
 
             write(iunit,"(17G22.10)") Omega,real(ResponseFn),-aimag(ResponseFn), &
                 real(ResponseFn_p),-aimag(ResponseFn_p),real(ResponseFn_h),-aimag(ResponseFn_h),    &
-                Spectrum(1),GFChemPot,abs(dNorm_p),abs(dNorm_h),real(ni_lr),-aimag(ni_lr),real(ni_lr_Cre),    &
+                HL_Energy,GFChemPot,abs(dNorm_p),abs(dNorm_h),real(ni_lr),-aimag(ni_lr),real(ni_lr_Cre),    &
                 -aimag(ni_lr_Cre),real(ni_lr_Ann),-aimag(ni_lr_Ann)
 
             Omega = Omega + Omega_Step
@@ -826,17 +848,11 @@ module LinearResponse
         !N electron
         allocate(NFCIHam(nFCIDet,nFCIDet))
         NFCIHam(:,:) = 0.0_dp
-        do i=1,nFCIDet
-            NFCIHam(i,i) = Spectrum(i) 
+        do i = 1,nFCIDet
+            do j = 1,nFCIDet
+                call GetHElement(FCIDetList(:,i),FCIDetList(:,j),Elec,NFCIHam(i,j))
+            enddo
         enddo
-        !Now transform this block back into the determinant basis
-        allocate(temp(nFCIDet,nFCIDet))
-        call DGEMM('N','N',nFCIDet,nFCIDet,nFCIDet,1.0_dp,FullHamil,nFCIDet,NFCIHam(1:nFCIDet,1:nFCIDet),  &
-            nFCIDet,0.0_dp,temp,nFCIDet)
-        call DGEMM('N','T',nFCIDet,nFCIDet,nFCIDet,1.0_dp,temp,nFCIDet,FullHamil,nFCIDet,0.0_dp,    &
-            NFCIHam(1:nFCIDet,1:nFCIDet),nFCIDet)
-        deallocate(temp)
-
         !N-1 hamiltonian
         if(nNm1FCIDet.ne.nNm1bFCIDet) call stop_all(t_r,'Cannot deal with open shell systems')
         allocate(Nm1FCIHam_alpha(nNm1FCIDet,nNm1FCIDet))
@@ -1724,9 +1740,9 @@ module LinearResponse
 
                 GSEnergy = H_Vals(1)
                 write(6,"(A,G20.10,A,G20.10,A)") "Reoptimized ground state energy is: ",GSEnergy, &  
-                    " (old = ",Spectrum(1),")"
+                    " (old = ",HL_Energy,")"
                 if(tDiagHam) write(iunit2,*) Omega,H_Vals(:)
-                if(GSEnergy-Spectrum(1).gt.1.0e-8_dp) then
+                if(GSEnergy-HL_Energy.gt.1.0e-8_dp) then
                     call stop_all(t_r,'Reoptimized GS energy lower than original GS energy - this should not be possible')
                 endif
 
@@ -1743,9 +1759,9 @@ module LinearResponse
                 deallocate(OrthogHam,H_Vals,tempc,CanTrans)
             else
                 !We are not reoptimizing the GS
-                GSEnergy = Spectrum(1)
+                GSEnergy = HL_Energy
                 do i = 1,nFCIDet
-                    Psi_0(i) = dcmplx(FullHamil(i,1),0.0_dp)
+                    Psi_0(i) = dcmplx(HL_Vec(i),0.0_dp)
                 enddo
             endif
             call halt_timer(LR_EC_TDA_OptGS)
@@ -1990,7 +2006,7 @@ module LinearResponse
                         enddo
                     endif
                     write(iunit,"(10G22.10)") Omega,real(ResponseFn),-aimag(ResponseFn), &
-                        abs(dOrthog),abs(dNorm),GSEnergy,Spectrum(1),abs(testc),real(ni_lr),-aimag(ni_lr)
+                        abs(dOrthog),abs(dNorm),GSEnergy,HL_Energy,abs(testc),real(ni_lr),-aimag(ni_lr)
                     deallocate(temp_vecc)
                 endif
 
@@ -3757,16 +3773,16 @@ module LinearResponse
                     call GetExcitation(FCIDetList(:,det),FCIDetList(:,i),Elec,Ex,tSign)
                 endif
                 if(tSign) then
-                    Trans1RDM(gtid(Ex(1)),gtid(Ex(2))) = Trans1RDM(gtid(Ex(1)),gtid(Ex(2))) - FullHamil(i,1)
+                    Trans1RDM(gtid(Ex(1)),gtid(Ex(2))) = Trans1RDM(gtid(Ex(1)),gtid(Ex(2))) - HL_Vec(i)
                 else
-                    Trans1RDM(gtid(Ex(1)),gtid(Ex(2))) = Trans1RDM(gtid(Ex(1)),gtid(Ex(2))) + FullHamil(i,1)
+                    Trans1RDM(gtid(Ex(1)),gtid(Ex(2))) = Trans1RDM(gtid(Ex(1)),gtid(Ex(2))) + HL_Vec(i)
                 endif
             elseif(IC.eq.0) then
                 !Same det
                 if(i.ne.det) call stop_all(t_r,'Error here')
                 do k=1,Elec
                     Trans1RDM(gtid(FCIDetList(k,i)),gtid(FCIDetList(k,i))) =        &
-                        Trans1RDM(gtid(FCIDetList(k,i)),gtid(FCIDetList(k,i))) + FullHamil(i,1)
+                        Trans1RDM(gtid(FCIDetList(k,i)),gtid(FCIDetList(k,i))) + HL_Vec(i)
                 enddo
             endif
         enddo
@@ -4359,19 +4375,14 @@ module LinearResponse
 
         !First, construct FCI space, in determinant basis
         !This is the first block
-        do i=1,nFCIDet
-            LinearSystem(i,i) = Spectrum(i) 
+        do i = 1,nFCIDet
+            do j = 1,nFCIDet
+                call GetHElement(FCIDetList(:,i),FCIDetList(:,j),Elec,LinearSystem(i,j))
+            enddo
         enddo
-        !Now transform this block back into the determinant basis
-        allocate(temp(nFCIDet,nFCIDet))
-        call DGEMM('N','N',nFCIDet,nFCIDet,nFCIDet,1.0_dp,FullHamil,nFCIDet,LinearSystem(1:nFCIDet,1:nFCIDet),  &
-            nFCIDet,0.0_dp,temp,nFCIDet)
-        call DGEMM('N','T',nFCIDet,nFCIDet,nFCIDet,1.0_dp,temp,nFCIDet,FullHamil,nFCIDet,0.0_dp,    &
-            LinearSystem(1:nFCIDet,1:nFCIDet),nFCIDet)
-        deallocate(temp)
         !Finally, subtract the ground state energy from the diagonals, since we want to offset it.
         do i=1,nFCIDet
-            LinearSystem(i,i) = LinearSystem(i,i) - Spectrum(1)
+            LinearSystem(i,i) = LinearSystem(i,i) - HL_Energy 
         enddo
 
         !TODO: Check here that this is the same as the original determinant basis
@@ -4419,19 +4430,19 @@ module LinearResponse
                 do j=1,nFCIDet
                     !alpha-alpha is 2*ind2-1
                     if(tSign_a) then
-                        LinearSystem(j,nFCIDet+(2*ind2)-1) = -FullHamil(j,1)*FockSchmidt(i,a)
-                        LinearSystem(nFCIDet+(2*ind2)-1,j) = -FullHamil(j,1)*FockSchmidt(i,a)
+                        LinearSystem(j,nFCIDet+(2*ind2)-1) = -HL_Vec(j)*FockSchmidt(i,a)
+                        LinearSystem(nFCIDet+(2*ind2)-1,j) = -HL_Vec(j)*FockSchmidt(i,a)
                     else
-                        LinearSystem(j,nFCIDet+(2*ind2)-1) = FullHamil(j,1)*FockSchmidt(i,a)
-                        LinearSystem(nFCIDet+(2*ind2)-1,j) = FullHamil(j,1)*FockSchmidt(i,a)
+                        LinearSystem(j,nFCIDet+(2*ind2)-1) = HL_Vec(j)*FockSchmidt(i,a)
+                        LinearSystem(nFCIDet+(2*ind2)-1,j) = HL_Vec(j)*FockSchmidt(i,a)
                     endif
                     !beta-beta excitation is 2*ind2
                     if(tSign_b) then
-                        LinearSystem(j,nFCIDet+(2*ind2)) = -FullHamil(j,1)*FockSchmidt(i,a)
-                        LinearSystem(nFCIDet+(2*ind2),j) = -FullHamil(j,1)*FockSchmidt(i,a)
+                        LinearSystem(j,nFCIDet+(2*ind2)) = -HL_Vec(j)*FockSchmidt(i,a)
+                        LinearSystem(nFCIDet+(2*ind2),j) = -HL_Vec(j)*FockSchmidt(i,a)
                     else
-                        LinearSystem(j,nFCIDet+(2*ind2)) = FullHamil(j,1)*FockSchmidt(i,a)
-                        LinearSystem(nFCIDet+(2*ind2),j) = FullHamil(j,1)*FockSchmidt(i,a)
+                        LinearSystem(j,nFCIDet+(2*ind2)) = HL_Vec(j)*FockSchmidt(i,a)
+                        LinearSystem(nFCIDet+(2*ind2),j) = HL_Vec(j)*FockSchmidt(i,a)
                     endif
                 enddo
 
@@ -4658,10 +4669,10 @@ module LinearResponse
             do j=1,elec
                 if(FCIDetList(j,i).eq.(pertsite*2)-1) then
                     !alpha spin of the perturbation
-                    Response(i) = Response(i) + Lambda*FullHamil(i,1)
+                    Response(i) = Response(i) + Lambda*HL_Vec(i)
                 elseif(FCIDetList(j,i).eq.(pertsite*2)) then
                     !beta spin of the perturbation
-                    Response(i) = Response(i) + Lambda*FullHamil(i,1)
+                    Response(i) = Response(i) + Lambda*HL_Vec(i)
                 endif
             enddo
         enddo
@@ -4696,9 +4707,9 @@ module LinearResponse
             do i=1,nFCIDet
                 do j=1,elec
                     if(FCIDetList(j,i).eq.(pertsite*2)-1) then
-                        ResponseVal = ResponseVal + FullHamil(i,1)*Response(i)*Lambda
+                        ResponseVal = ResponseVal + HL_Vec(i)*Response(i)*Lambda
                     elseif(FCIDetList(j,i).eq.(pertsite*2)) then
-                        ResponseVal = ResponseVal + FullHamil(i,1)*Response(i)*Lambda
+                        ResponseVal = ResponseVal + HL_Vec(i)*Response(i)*Lambda
                     endif
                 enddo
             enddo

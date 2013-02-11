@@ -668,7 +668,7 @@ module solvers
         implicit none
         logical, intent(in) :: tCreate2RDM
         integer :: OrbPairs,UMatSize,umatind
-        real(dp), allocatable :: work(:),HL_Vec(:)
+        real(dp), allocatable :: work(:)
         integer :: lwork,info,i,j
         character(len=*), parameter :: t_r='CompleteDiag'
 
@@ -723,6 +723,7 @@ module solvers
 !        call writematrix(FullHamil(1:nFCIDet,1:nFCIDet),'FCI hamil',.true.)
 
         !Diagonalize
+        if(allocated(HL_Vec)) deallocate(HL_Vec)
         allocate(HL_Vec(nFCIDet))
         if(tNonDirDavidson) then
             write(6,*) "Solving for ground state with non-direct davidson diagonalizer..."
@@ -739,17 +740,20 @@ module solvers
             call dsyev('V','U',nFCIDet,FullHamil,nFCIDet,Spectrum,Work,lWork,info)
             if(info.ne.0) call stop_all(t_r,'Diag failed')
             deallocate(work)
+
+            !call writevector(Spectrum(1:(min(10,nFCIDet))),'FCI Spectrum')
+            HL_Energy = Spectrum(1) !GS eigenvalue
+            HL_Vec(:) = FullHamil(:,1)
+            deallocate(Spectrum,FullHamil)
         endif
 
-        call writevector(Spectrum(1:(min(10,nFCIDet))),'FCI Spectrum')
-            
-        HL_Energy = Spectrum(1) !GS eigenvalue
+        write(6,*) "FCI energy: ",HL_Energy
             
         if(allocated(HL_1RDM)) deallocate(HL_1RDM)
         allocate(HL_1RDM(EmbSize,EmbSize))
         HL_1RDM(:,:) = 0.0_dp
 
-        call FindFull1RDM(1,1,HL_1RDM)
+        call FindFull1RDM(1,1,.true.,HL_1RDM)
 
         if(tWriteOut) call writematrix(HL_1RDM,'HL_1RDM',.true.)
 
@@ -757,21 +761,31 @@ module solvers
             if(allocated(HL_2RDM)) deallocate(HL_2RDM)
             allocate(HL_2RDM(EmbSize,EmbSize,EmbSize,EmbSize))
             HL_2RDM(:,:,:,:) = 0.0_dp
-            call FindFull2RDM(1,1,HL_2RDM)
+            call FindFull2RDM(1,1,.true.,HL_2RDM)
         endif
 
     end subroutine CompleteDiag
 
-    subroutine FindFull1RDM(StateBra,StateKet,RDM)
+    subroutine FindFull1RDM(StateBra,StateKet,tGroundState,RDM)
         use DetToolsData, only: FCIDetList,nFCIDet
         implicit none
         real(dp) , intent(out) :: RDM(EmbSize,EmbSize)
         integer , intent(in) :: StateBra,StateKet
+        logical , intent(in) :: tGroundState
+        real(dp), pointer :: Bra(:),Ket(:)
         integer :: Ex(2),gtid,i,j,k,IC,iGetExcitLevel
         logical :: tSign
         character(len=*), parameter :: t_r='FindFull1RDM'
 
         RDM(:,:) = 0.0_dp
+
+        if(tGroundState) then
+            Bra(1:nFCIDet) => HL_Vec(1:nFCIDet)
+            Ket(1:nFCIDet) => HL_Vec(1:nFCIDet)
+        else
+            Bra(1:nFCIDet) => FullHamil(1:nFCIDet,StateBra)
+            Ket(1:nFCIDet) => FullHamil(1:nFCIDet,StateKet)
+        endif
 
         do i=1,nFCIDet
             do j=1,nFCIDet
@@ -782,17 +796,17 @@ module solvers
                     call GetExcitation(FCIDetList(:,i),FCIDetList(:,j),Elec,Ex,tSign)
                     if(tSign) then
                         RDM(gtid(Ex(1)),gtid(Ex(2))) = RDM(gtid(Ex(1)),gtid(Ex(2))) -   &
-                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                            Bra(i)*Ket(j)
                     else
                         RDM(gtid(Ex(1)),gtid(Ex(2))) = RDM(gtid(Ex(1)),gtid(Ex(2))) +   &
-                            FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                            Bra(i)*Ket(j)
                     endif
                 elseif(IC.eq.0) then
                     !Same det
                     if(i.ne.j) call stop_all(t_r,'Error here')
                     do k=1,Elec
                         RDM(gtid(FCIDetList(k,i)),gtid(FCIDetList(k,i))) = RDM(gtid(FCIDetList(k,i)),gtid(FCIDetList(k,i))) &
-                            + FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                            + Bra(i)*Ket(j)
                     enddo
                 endif
 
@@ -810,16 +824,26 @@ module solvers
     !Find spin-integrated 2RDM very inefficiently
     !According to Helgakker <0|e_pqrs|0>
     !Done by running through all N^2 determinant pairs
-    subroutine FindFull2RDM(StateBra,StateKet,RDM)
+    subroutine FindFull2RDM(StateBra,StateKet,tGroundState,RDM)
         use DetToolsData, only: FCIDetList,nFCIDet
         implicit none
         real(dp) , intent(out) :: RDM(EmbSize,EmbSize,EmbSize,EmbSize)
         integer , intent(in) :: StateBra,StateKet
+        logical , intent(in) :: tGroundState
+        real(dp), pointer :: Bra(:),Ket(:)
         integer :: Ex(2,2),gtid,i,j,k,IC,iGetExcitLevel,kel,lel,l,temp
         logical :: tSign
         character(len=*), parameter :: t_r='FindFull2RDM'
 
         RDM(:,:,:,:) = 0.0_dp
+
+        if(tGroundState) then
+            Bra(1:nFCIDet) => HL_Vec(1:nFCIDet)
+            Ket(1:nFCIDet) => HL_Vec(1:nFCIDet)
+        else
+            Bra(1:nFCIDet) => FullHamil(1:nFCIDet,StateBra)
+            Ket(1:nFCIDet) => FullHamil(1:nFCIDet,StateKet)
+        endif
 
         do i=1,nFCIDet
             do j=1,nFCIDet
@@ -844,26 +868,26 @@ module solvers
                             !same spin excitation
                             RDM(gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1))) =  &
                                 RDM(gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1))) +  &
-                                FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                Bra(i)*Ket(j)
                             RDM(gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2))) =  &
                                 RDM(gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2))) +  &
-                                FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                Bra(i)*Ket(j)
                             RDM(gtid(Ex(2,2)),gtid(Ex(1,2)),gtid(Ex(2,1)),gtid(Ex(1,1))) =  &
                                 RDM(gtid(Ex(2,2)),gtid(Ex(1,2)),gtid(Ex(2,1)),gtid(Ex(1,1))) -  &
-                                FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                Bra(i)*Ket(j)
                             RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),gtid(Ex(2,2)),gtid(Ex(1,2))) =  &
                                 RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),gtid(Ex(2,2)),gtid(Ex(1,2))) -  &
-                                FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                Bra(i)*Ket(j)
 
                         else
                             !Mixed spin excitation
                             !i has the same spin as b
                             RDM(gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1))) = &
                                 RDM(gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1))) + &
-                                FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                Bra(i)*Ket(j)
                             RDM(gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2))) = &
                                 RDM(gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2))) + &
-                                FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                Bra(i)*Ket(j)
 
                         endif
 
@@ -872,25 +896,25 @@ module solvers
                             !same spin excitation
                             RDM(gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1))) =  &
                                 RDM(gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1))) -  &
-                                FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                Bra(i)*Ket(j)
                             RDM(gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2))) =  &
                                 RDM(gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2))) -  &
-                                FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                Bra(i)*Ket(j)
                             RDM(gtid(Ex(2,2)),gtid(Ex(1,2)),gtid(Ex(2,1)),gtid(Ex(1,1))) =  &
                                 RDM(gtid(Ex(2,2)),gtid(Ex(1,2)),gtid(Ex(2,1)),gtid(Ex(1,1))) +  &
-                                FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                Bra(i)*Ket(j)
                             RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),gtid(Ex(2,2)),gtid(Ex(1,2))) =  &
                                 RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),gtid(Ex(2,2)),gtid(Ex(1,2))) +  &
-                                FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                Bra(i)*Ket(j)
                         else
                             !Mixed spin excitation
                             !i has the same spin as b
                             RDM(gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1))) = &
                                 RDM(gtid(Ex(2,1)),gtid(Ex(1,2)),gtid(Ex(2,2)),gtid(Ex(1,1))) - &
-                                FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                Bra(i)*Ket(j)
                             RDM(gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2))) = &
                                 RDM(gtid(Ex(2,2)),gtid(Ex(1,1)),gtid(Ex(2,1)),gtid(Ex(1,2))) - &
-                                FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                Bra(i)*Ket(j)
                         endif
                     endif
 
@@ -907,28 +931,28 @@ module solvers
                                     !k also same spin
                                     RDM(kel,gtid(Ex(1,1)),gtid(Ex(2,1)),kel) = &
                                         RDM(kel,gtid(Ex(1,1)),gtid(Ex(2,1)),kel) + &
-                                        FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                        Bra(i)*Ket(j)
 
                                     RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) = &
                                         RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) - &
-                                        FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                        Bra(i)*Ket(j)
 
                                     RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) = &
                                         RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) - &
-                                        FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                        Bra(i)*Ket(j)
 
                                     RDM(gtid(Ex(2,1)),kel,kel,gtid(Ex(1,1))) = &
                                         RDM(gtid(Ex(2,1)),kel,kel,gtid(Ex(1,1))) + &
-                                        FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                        Bra(i)*Ket(j)
 
                                 else
                                     !k opposite spin
                                     RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) = &
                                         RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) - &
-                                        FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                        Bra(i)*Ket(j)
                                     RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) = &
                                         RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) - &
-                                        FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                        Bra(i)*Ket(j)
                                 endif
 
 
@@ -937,27 +961,27 @@ module solvers
                                     !k also same spin
                                     RDM(kel,gtid(Ex(1,1)),gtid(Ex(2,1)),kel) = &
                                         RDM(kel,gtid(Ex(1,1)),gtid(Ex(2,1)),kel) - &
-                                        FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                        Bra(i)*Ket(j)
 
                                     RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) = &
                                         RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) + &
-                                        FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                        Bra(i)*Ket(j)
 
                                     RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) = &
                                         RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) + &
-                                        FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                        Bra(i)*Ket(j)
 
                                     RDM(gtid(Ex(2,1)),kel,kel,gtid(Ex(1,1))) = &
                                         RDM(gtid(Ex(2,1)),kel,kel,gtid(Ex(1,1))) - &
-                                        FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                        Bra(i)*Ket(j)
                                 else
                                     !k opposite spin
                                     RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) = &
                                         RDM(gtid(Ex(2,1)),gtid(Ex(1,1)),kel,kel) + &
-                                        FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                        Bra(i)*Ket(j)
                                     RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) = &
                                         RDM(kel,kel,gtid(Ex(2,1)),gtid(Ex(1,1))) + &
-                                        FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                        Bra(i)*Ket(j)
                                 endif
 
 
@@ -977,18 +1001,18 @@ module solvers
 
                             if(mod(FCIDetList(l,i),2).eq.mod(FCIDetList(k,i),2)) then
                                 RDM(kel,kel,lel,lel) = RDM(kel,kel,lel,lel) + &
-                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                    Bra(i)*Ket(j)
                                 RDM(lel,lel,kel,kel) = RDM(lel,lel,kel,kel) + &
-                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                    Bra(i)*Ket(j)
                                 RDM(lel,kel,kel,lel) = RDM(lel,kel,kel,lel) - &
-                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                    Bra(i)*Ket(j)
                                 RDM(kel,lel,lel,kel) = RDM(kel,lel,lel,kel) - &
-                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                    Bra(i)*Ket(j)
                             else
                                 RDM(kel,kel,lel,lel) = RDM(kel,kel,lel,lel) + &
-                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                    Bra(i)*Ket(j)
                                 RDM(lel,lel,kel,kel) = RDM(lel,lel,kel,kel) + &
-                                    FullHamil(i,StateBra)*FullHamil(j,StateKet)
+                                    Bra(i)*Ket(j)
                             endif
 
                         enddo
@@ -1000,103 +1024,6 @@ module solvers
 
 
     end subroutine FindFull2RDM
-
-    !This routine is horrifically written! Rewrite!
-    subroutine CompleteDiag_old()
-        implicit none
-        real(dp) , allocatable :: work(:)
-        integer :: lWork,info
-        character(len=*), parameter :: t_r='CompleteDiag_old'
-
-        write(6,*) "Entering complete diagonalization"
-
-        if(allocated(FullHamil)) deallocate(FullHamil)
-        if(allocated(Spectrum)) deallocate(Spectrum)
-
-        !Det 1: 1_alpha 1_beta
-        !Det 2: 1_alpha 2_beta
-        !Det 3: 2_alpha 1_beta
-        !Det 4: 2_alpha 2_beta
-        allocate(FullHamil(4,4))
-        allocate(Spectrum(4))
-
-        FullHamil(:,:) = 0.0_dp
-        !Diagonals first
-        FullHamil(1,1) = 2.0_dp*Emb_h0v(1,1) + U
-        FullHamil(2,2) = Emb_h0v(1,1) + Emb_h0v(2,2)
-        FullHamil(3,3) = Emb_h0v(1,1) + Emb_h0v(2,2)
-        FullHamil(4,4) = 2.0_dp*Emb_h0v(2,2) 
-
-        FullHamil(1,2) = Emb_h0v(1,2)
-        FullHamil(1,3) = - Emb_h0v(1,2)
-
-        FullHamil(2,4) = Emb_h0v(1,2)
-        FullHamil(3,4) = - Emb_h0v(1,2)
-        
-        FullHamil(2,1) = Emb_h0v(1,2)
-        FullHamil(4,1) = - Emb_h0v(1,2)
-
-        FullHamil(4,2) = Emb_h0v(1,2)
-        FullHamil(4,3) = - Emb_h0v(1,2)
-
-        allocate(Work(1))
-        lWork=-1
-        info=0
-        call dsyev('V','U',4,FullHamil,4,Spectrum,Work,lWork,info)
-        if(info.ne.0) call stop_all(t_r,'Workspace queiry failed')
-        lwork=int(work(1))+1
-        deallocate(work)
-        allocate(work(lwork))
-        call dsyev('V','U',4,FullHamil,4,Spectrum,Work,lWork,info)
-        if(info.ne.0) call stop_all(t_r,'Diag failed')
-        deallocate(work)
-
-        call writevector(Spectrum,'FCI Spectrum')
-            
-        HL_Energy = Spectrum(1) !GS eigenvalue
-            
-        if(allocated(HL_1RDM)) deallocate(HL_1RDM)
-        allocate(HL_1RDM(EmbSize,EmbSize))
-        HL_1RDM(:,:) = 0.0_dp
-
-        call FindFull1RDM_old(1,1,HL_1RDM)
-
-        call writematrix(HL_1RDM,'HL_1RDM',.true.)
-
-    end subroutine CompleteDiag_old
-
-    subroutine FindFull1RDM_old(StateBra,StateKet,RDM)
-        implicit none
-        real(dp) , intent(out) :: RDM(2,2)
-        integer , intent(in) :: StateBra,StateKet
-
-        RDM(:,:) = 0.0_dp
-
-        !First, diagonal contributions
-        RDM(1,1) = RDM(1,1) + FullHamil(1,StateBra)*FullHamil(1,StateKet)*2.0_dp !alpha alpha and beta beta component of det 1
-        RDM(1,1) = RDM(1,1) + FullHamil(2,StateBra)*FullHamil(2,StateKet)    
-        RDM(2,2) = RDM(2,2) + FullHamil(2,StateBra)*FullHamil(2,StateKet)
-        RDM(1,1) = RDM(1,1) + FullHamil(3,StateBra)*FullHamil(3,StateKet)
-        RDM(2,2) = RDM(2,2) + FullHamil(3,StateBra)*FullHamil(3,StateKet)
-        RDM(2,2) = RDM(2,2) + FullHamil(4,StateBra)*FullHamil(4,StateKet)*2.0_dp !alpha alpha and beta beta component of det 4
-
-        !Now the four off diagonal contributions    1 -> 2
-        RDM(2,1) = RDM(2,1) + FullHamil(2,StateBra)*FullHamil(1,StateKet)
-        RDM(1,2) = RDM(1,2) + FullHamil(1,StateBra)*FullHamil(2,StateKet)   ! 2 -> 1
-
-        ! 1 -> 3 (Note minus sign)
-        RDM(2,1) = RDM(2,1) - FullHamil(3,StateBra)*FullHamil(1,StateKet)   
-        RDM(1,2) = RDM(1,2) - FullHamil(1,StateBra)*FullHamil(3,StateKet)
-
-        ! 2 -> 4
-        RDM(2,1) = RDM(2,1) + FullHamil(4,StateBra)*FullHamil(2,StateKet)
-        RDM(1,2) = RDM(1,2) + FullHamil(2,StateBra)*FullHamil(4,StateKet)
-
-        !Finally 3 -> 4 (also minus sign)
-        RDM(2,1) = RDM(2,1) - FullHamil(4,StateBra)*FullHamil(3,StateKet)
-        RDM(1,2) = RDM(1,2) - FullHamil(3,StateBra)*FullHamil(4,StateKet)
-
-    end subroutine FindFull1RDM_old
 
     subroutine WriteFCIDUMP()
         use utils, only: get_free_unit

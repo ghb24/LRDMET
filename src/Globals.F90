@@ -110,7 +110,8 @@ module Globals
     real(dp) , allocatable :: vloc_change(:,:) !The change in the correlation potential over the impurity sites
     real(dp) , allocatable :: ResponseBasis(:,:)    !The impurity site + first order change in the bath wavefunction
     complex(dp) , allocatable :: SchmidtPert(:,:)
-    real(dp) , allocatable :: FullHamil(:,:)    !In case we do a complete diagonalization
+    real(dp) , allocatable, target :: HL_Vec(:)         !The ground state eigenvector
+    real(dp) , allocatable, target :: FullHamil(:,:)    !In case we do a complete diagonalization
     real(dp) , allocatable :: Spectrum(:)       !Eigenvalues in case of a complete diagonalization
     complex(dp) , allocatable :: SchmidtPertGF_Ann(:)
     complex(dp) , allocatable :: SchmidtPertGF_Cre(:) !For LR: the single particle perturbations in the schmidt basis

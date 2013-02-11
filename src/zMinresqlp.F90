@@ -25,6 +25,7 @@ module zminresqlpModule
 !  use  zminresqlpDataModule, only : dp, ip, one, zero, eps, realmin, debug, zone, zzero
 !  use  zminresqlpBlasModule, only : znrm2, zdotc 
   use const
+  use mat_tools, only: znrm2
   
   implicit none
   
@@ -1366,86 +1367,5 @@ contains
     end if
   
   end subroutine SYMORTHO
-
-
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!*****************************************************************************
-function znrm2 ( n, x, incx )
-!*****************************************************************************
-!
-!! SCNRM2 returns the euclidean norm of a complex(kind=dp) vector.
-!
-!
-!  Discussion:
-!
-!    SCNRM2 := sqrt ( sum ( conjg ( x(1:n) ) * x(1:n) ) )
-!            = sqrt ( dot_product ( x(1:n), x(1:n) ) )
-!
-!  Parameters:
-!
-!    Input, integer N, the number of entries in the vector.
-!
-!    Input, complex(kind=dp) X(*), the vector.
-!
-!    Input, integer INCX, the increment between successive entries of X.
-!
-!    Output, real(kind=dp) SCNRM2, the norm of the vector.
-!
-  implicit none
-!
-  integer(ip), intent(in)      :: incx
-  integer(ip)                  :: ix
-  integer(ip), intent(in)      :: n
-  real(kind=dp)                :: norm
- !real(kind=dp), parameter     :: one = 1.0_dp
-  real(kind=dp)                :: scale
-  real(kind=dp)                :: znrm2
-  real(kind=dp)                :: ssq
-  real(kind=dp)                :: temp
-  complex(kind=dp), intent(in) :: x(*)
- 
-!
-  if ( n < 1 .or. incx < 1 ) then
-
-    norm  = zero
-
-  else
-
-    scale = zero
-    ssq = one
-
-    do ix = 1, 1 + ( n - 1 ) * incx, incx
-      if ( real(x(ix), dp) /= zero ) then  
-        temp = abs ( real(x(ix), dp) )   
-        if ( scale < temp ) then
-          ssq = one + ssq * ( scale / temp )**2
-          scale = temp
-        else
-          ssq = ssq + ( temp / scale )**2
-        end if
-      end if
-
-      if ( aimag ( x(ix) ) /= zero ) then
-        temp = abs ( aimag ( x(ix) ) )
-        if ( scale < temp ) then
-          ssq = one + ssq * ( scale / temp )**2
-          scale = temp
-        else
-          ssq = ssq + ( temp / scale )**2
-        end if
-
-      end if
-
-    end do
-
-    norm  = scale * sqrt ( ssq )
-
-  end if
-
-  znrm2 = norm
-
-  return
-end function znrm2
   
 end module zminresqlpModule
