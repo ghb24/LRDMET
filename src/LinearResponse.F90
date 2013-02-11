@@ -9,6 +9,7 @@ module LinearResponse
     integer :: CVIndex,AVIndex,CAIndex
 
     complex(dp), pointer, private :: zDirMV_Mat(:,:)
+    complex(dp), private :: zShift
 
     contains
     
@@ -113,13 +114,13 @@ module LinearResponse
         integer :: orbdum(1),gtid,nLinearSystem_h,x,nGSSpace,Np1GSInd,Nm1GSInd,lWork,minres_unit
         integer :: maxminres_iter
         real(dp) :: VNorm,CNorm,Omega,GFChemPot,mu
-        complex(dp) :: dNorm_p,dNorm_h,ni_lr,ni_lr_Cre,ni_lr_Ann,zShift
+        complex(dp) :: dNorm_p,dNorm_h,ni_lr,ni_lr_Cre,ni_lr_Ann
         complex(dp) :: ResponseFn,ResponseFn_h,ResponseFn_p,tempel
         logical :: tParity
         character(64) :: filename,filename2
         character(len=*), parameter :: t_r='NonIntExCont_TDA_MCLR_Charged'
 
-        maxminres_iter = 500
+        maxminres_iter = 200
 
         call set_timer(LR_EC_GF_Precom)
 
@@ -4713,18 +4714,17 @@ module LinearResponse
         complex(dp), intent(in) :: x(n)
         complex(dp), intent(out) :: y(n)
         integer :: i
-        real(dp) :: MinMatEl
+        complex(dp) :: di
 
         if(.not.associated(zDirMV_Mat)) call stop_all('zPreCond','Matrix not associated!')
 
         do i = 1,n
-            if(MinMatEl.gt.abs(zDirMV_Mat(i,i))) MinMatEl = abs(zDirMV_Mat(i,i))
-        enddo
-
-        MinMatEl = MinMatEl + 0.1
-
-        do i = 1,n
-            y(i) = x(i)/(zDirMV_Mat(i,i)-MinMatEl)
+            di = abs(zDirMV_Mat(i,i) - zShift)
+            if(abs(di).gt.1.0e-8_dp) then
+                y(i) = x(i) / di
+            else
+                y(i) = x(i)
+            endif
         enddo
 !        write(6,*) "Precond: ",MinMatEl
 !        write(6,*) "x: ",x
