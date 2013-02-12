@@ -742,7 +742,7 @@ Program RealHub
                     else
                         !Write out stats:
                         !   Iter    E/Site  d[V]    ERR[RDM]    ERR[Filling]    mean[corr_pot]      Some RDM stuff...?
-                        write(6,*) it,TotalE_Imp,VarVloc,ErrRDM,FillingError,mean_vloc
+                        write(6,"(I7,5G22.10)") it,TotalE_Imp,VarVloc,ErrRDM,FillingError,mean_vloc
                         write(DMETfile,"(I7,7G22.10)") it,TotalE_Imp,HL_Energy,VarVloc,ErrRDM,  &
                             Actualfilling_Imp,FillingError,mean_vloc
 
