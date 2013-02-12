@@ -9,6 +9,7 @@ module LinearResponse
     integer :: CVIndex,AVIndex,CAIndex
 
     complex(dp), pointer, private :: zDirMV_Mat(:,:)
+    real(dp), allocatable, private :: Precond_Diag(:)
     complex(dp), private :: zShift
 
     contains
@@ -292,6 +293,9 @@ module LinearResponse
             minres_unit = get_free_unit()
             open(minres_unit,file='zMinResQLP.txt',status='unknown')
             allocate(RHS(nLinearSystem))
+            if(tPrecond_MinRes) then
+                allocate(Precond_Diag(nLinearSystem))
+            endif
         endif
         
         !Allocate memory for hamiltonian in this system:
@@ -693,6 +697,7 @@ module LinearResponse
                 minres_unit_ip = int(minres_unit,ip)
                 nLinearSystem_ip = int(nLinearSystem,ip)
                 if(tPrecond_MinRes) then
+                    call FormPrecond(nLinearSystem)
                     call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_p, &
                         itnlim=maxminres_iter_ip,Msolve=zPreCond,istop=info_ip,rtol=rtol_LR)
                 else
@@ -701,6 +706,7 @@ module LinearResponse
                 endif
                 info = info_ip
                 zDirMV_Mat => null()
+                if(info.gt.7) write(6,*) "info: ",info
                 if(info.eq.8) call stop_all(t_r,'Linear equation solver hit maximum iterations')
                 if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) call stop_all(t_r,'Input matrices to linear solver incorrect')
                 if(info.gt.11) call stop_all(t_r,'Linear equation solver failed')
@@ -728,6 +734,7 @@ module LinearResponse
                 minres_unit_ip = int(minres_unit,ip)
                 nLinearSystem_ip = int(nLinearSystem,ip)
                 if(tPrecond_MinRes) then
+                    call FormPrecond(nLinearSystem)
                     call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_h, &
                         itnlim=maxminres_iter_ip,Msolve=zPreCond,istop=info_ip,rtol=rtol_LR)
                 else
@@ -736,6 +743,7 @@ module LinearResponse
                 endif
                 info = info_ip
                 zDirMV_Mat => null()
+                if(info.gt.7) write(6,*) "info: ",info
                 if(info.eq.8) call stop_all(t_r,'Linear equation solver hit maximum iterations')
                 if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) call stop_all(t_r,'Input matrices to linear solver incorrect')
                 if(info.gt.11) call stop_all(t_r,'Linear equation solver failed')
@@ -801,6 +809,7 @@ module LinearResponse
         if(tMinRes_NonDir) then
             close(minres_unit)
             deallocate(RHS)
+            if(tPrecond_MinRes) deallocate(Precond_Diag)
         endif
 
         !Deallocate determinant lists
@@ -4821,6 +4830,33 @@ module LinearResponse
 
     end subroutine TDA_MCLR
 
+
+    !For the actual diagonal part of the matrix which is being applied
+    subroutine FormPrecond(n)
+        implicit none
+        integer, intent(in) :: n
+        real(dp) :: Scal
+        integer :: i,j
+        complex(dp) :: tmp,zdotc
+        
+        if(.not.associated(zDirMV_Mat)) call stop_all('FormPreCond','Matrix not associated!')
+
+        Scal = real(zShift*dconjg(zShift))
+
+        Precond_Diag(:) = 0.0_dp
+        do i = 1,n
+            Precond_diag(i) = real(zdotc(n,zDirMV_Mat(:,i),1,zDirMV_Mat(:,i),1),dp)
+
+            tmp = zzero
+            do j = 1,n
+                tmp = tmp + zDirMV_Mat(j,i)
+            enddo
+            tmp = tmp * dconjg(zShift)
+            Precond_diag(i) = Precond_diag(i) - 2.0_dp*real(tmp,dp) + Scal
+        enddo
+        !call writevector(Precond_diag,'Precond')
+    end subroutine FormPrecond
+
     !Apply preconditioning, solving for y = Ax for given x 
     !Just assume that the preconditioner is the diagonal of the matrix moved just that it is positive definite
     subroutine zPreCond(n,x,y)
@@ -4829,14 +4865,19 @@ module LinearResponse
         complex(dp), intent(in) :: x(n)
         complex(dp), intent(out) :: y(n)
         integer :: i
-        complex(dp) :: di
+        real(dp) :: di
         character(len=*), parameter :: t_r='zPreCond'
 
         if(.not.associated(zDirMV_Mat)) call stop_all('zPreCond','Matrix not associated!')
 
         do i = 1,n
-            di = abs(zDirMV_Mat(i,i)**2 - 2.0_dp*real(zShift,dp) + (zShift*dconjg(zShift)))
-            if(abs(di).gt.1.0e-8_dp) then
+!            di = abs(zDirMV_Mat(i,i)**2 - 2.0_dp*real(zShift,dp) + (zShift*dconjg(zShift)))
+            di = Precond_diag(i)
+!            if(di.lt.0.0_dp) then
+!                write(6,*) "Precond, i: ",i,Precond_diag(i)
+!                call stop_all(t_r,'Preconditioned matrix should be positive definite')
+!            endif
+            if(di.gt.1.0e-8_dp) then
                 y(i) = x(i) / di
             else
                 y(i) = x(i)
