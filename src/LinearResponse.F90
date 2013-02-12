@@ -116,16 +116,20 @@ module LinearResponse
         integer :: orbdum(1),gtid,nLinearSystem_h,x,nGSSpace,Np1GSInd,Nm1GSInd,lWork,minres_unit
         integer :: maxminres_iter
         integer(ip) :: nLinearSystem_ip,minres_unit_ip,info_ip,maxminres_iter_ip,iters_p,iters_h
-        real(dp) :: VNorm,CNorm,Omega,GFChemPot,mu
+        real(dp) :: VNorm,CNorm,Omega,GFChemPot,mu,SpectralWeight,Prev_Spec
         complex(dp) :: dNorm_p,dNorm_h,ni_lr,ni_lr_Cre,ni_lr_Ann
         complex(dp) :: ResponseFn,ResponseFn_h,ResponseFn_p,tempel
-        logical :: tParity
+        logical :: tParity,tFirst
         character(64) :: filename,filename2
         character(len=*), parameter :: t_r='NonIntExCont_TDA_MCLR_Charged'
 
         maxminres_iter = 20000
         iters_p = 0
         iters_h = 0
+
+        SpectralWeight = 0.0_dp
+        Prev_Spec = 0.0_dp
+        tFirst = .true.
 
         call set_timer(LR_EC_GF_Precom)
 
@@ -791,16 +795,24 @@ module LinearResponse
             ni_lr = ni_lr_Cre + ni_lr_Ann
 
             !write(6,*) Omega,-aimag(ni_lr_Cre),-aimag(ResponseFn_p)
+            if(.not.tFirst) then
+                SpectralWeight = SpectralWeight + Omega_Step*(Prev_Spec-aimag(ResponseFn))/(2.0_dp*pi)
+                Prev_Spec = -aimag(ResponseFn)
+            endif
 
-            write(iunit,"(17G22.10,2I7)") Omega,real(ResponseFn),-aimag(ResponseFn), &
+            write(iunit,"(18G22.10,2I7)") Omega,real(ResponseFn),-aimag(ResponseFn), &
                 real(ResponseFn_p),-aimag(ResponseFn_p),real(ResponseFn_h),-aimag(ResponseFn_h),    &
                 HL_Energy,GFChemPot,abs(dNorm_p),abs(dNorm_h),real(ni_lr),-aimag(ni_lr),real(ni_lr_Cre),    &
-                -aimag(ni_lr_Cre),real(ni_lr_Ann),-aimag(ni_lr_Ann),iters_p,iters_h
+                -aimag(ni_lr_Cre),real(ni_lr_Ann),-aimag(ni_lr_Ann),SpectralWeight,iters_p,iters_h
+
+
+            if(tFirst) tFirst = .false.
 
             Omega = Omega + Omega_Step
-
             call halt_timer(LR_EC_GF_SolveLR)
         enddo   !End loop over omega
+
+        write(6,"(A,G22.10)") "Total integrated spectral weight: ",SpectralWeight
 
         if(tLR_ReoptGS) then
             deallocate(W,GSHam)
