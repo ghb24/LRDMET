@@ -503,7 +503,7 @@ module Davidson
         integer :: lWork,info,ierr
         character(len=*), parameter :: t_r='DiagSubspaceMat_real'
 
-        allocate(Work(1))
+        allocate(Work(1),stat=ierr)
         if(ierr.ne.0) call stop_all(t_r,"alloc err")
         W(:)=0.0_dp
         lWork=-1
@@ -512,7 +512,8 @@ module Davidson
         if(info.ne.0) call stop_all(t_r,'workspace query failed')
         lwork=int(work(1))+1
         deallocate(work)
-        allocate(work(lwork))
+        allocate(work(lwork),stat=ierr)
+        if(ierr.ne.0) call stop_all(t_r,"alloc err")
         call dsyev('V','U',iSize,Mat,iSize,W,Work,lWork,info)
         if (info.ne.0) call stop_all(t_r,"Diag failed")
         deallocate(work)
@@ -531,8 +532,8 @@ module Davidson
         integer :: lWork,info,ierr
         character(len=*), parameter :: t_r='DiagSubspaceMat_real'
 
-        allocate(Work(1))
-        allocate(RWork(max(1,3*iSize-2)))
+        allocate(Work(1),stat=ierr)
+        allocate(RWork(max(1,3*iSize-2)),stat=ierr)
         if(ierr.ne.0) call stop_all(t_r,"alloc err")
         W(:)=0.0_dp
         lWork=-1
@@ -541,7 +542,8 @@ module Davidson
         if(info.ne.0) call stop_all(t_r,'workspace query failed')
         lwork=int(work(1))+1
         deallocate(work)
-        allocate(work(lwork))
+        allocate(work(lwork),stat=ierr)
+        if(ierr.ne.0) call stop_all(t_r,"alloc err")
         call zheev('V','U',iSize,Mat,iSize,W,Work,lWork,RWork,info)
         if (info.ne.0) call stop_all(t_r,"Diag failed")
         deallocate(work,RWork)
