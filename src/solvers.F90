@@ -780,11 +780,11 @@ module solvers
         RDM(:,:) = 0.0_dp
 
         if(tGroundState) then
-            Bra(1:nFCIDet) => HL_Vec(1:nFCIDet)
-            Ket(1:nFCIDet) => HL_Vec(1:nFCIDet)
+            Bra => HL_Vec(1:nFCIDet)
+            Ket => HL_Vec(1:nFCIDet)
         else
-            Bra(1:nFCIDet) => FullHamil(1:nFCIDet,StateBra)
-            Ket(1:nFCIDet) => FullHamil(1:nFCIDet,StateKet)
+            Bra => FullHamil(1:nFCIDet,StateBra)
+            Ket => FullHamil(1:nFCIDet,StateKet)
         endif
 
         do i=1,nFCIDet
@@ -838,11 +838,11 @@ module solvers
         RDM(:,:,:,:) = 0.0_dp
 
         if(tGroundState) then
-            Bra(1:nFCIDet) => HL_Vec(1:nFCIDet)
-            Ket(1:nFCIDet) => HL_Vec(1:nFCIDet)
+            Bra => HL_Vec(1:nFCIDet)
+            Ket => HL_Vec(1:nFCIDet)
         else
-            Bra(1:nFCIDet) => FullHamil(1:nFCIDet,StateBra)
-            Ket(1:nFCIDet) => FullHamil(1:nFCIDet,StateKet)
+            Bra => FullHamil(1:nFCIDet,StateBra)
+            Ket => FullHamil(1:nFCIDet,StateKet)
         endif
 
         do i=1,nFCIDet
