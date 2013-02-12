@@ -638,12 +638,15 @@ module LinearResponse
                 call setup_RHS(nLinearSystem,Cre_0,RHS)
                 if(tPrecond_MinRes) then
                     call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=RHS,nout=minres_unit,x=Psi1_p, &
-                        itnlim=maxminres_iter,Msolve=zPreCond)
+                        itnlim=maxminres_iter,Msolve=zPreCond,istop=info)
                 else
                     call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=RHS,nout=minres_unit,x=Psi1_p, &
-                        itnlim=maxminres_iter)
+                        itnlim=maxminres_iter,istop=info)
                 endif
                 zDirMV_Mat => null()
+                if(info.eq.8) call stop_all(t_r,'Linear equation solver hit maximum iterations')
+                if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) call stop_all(t_r,'Input matrices to linear solver incorrect')
+                if(info.gt.11) call stop_all(t_r,'Linear equation solver failed')
             else
                 !Copy V|0> to another array, since if we are not reoptimizing the GS, we want to keep them.
                 Psi1_p(:) = Cre_0(:)
@@ -666,12 +669,15 @@ module LinearResponse
                 call setup_RHS(nLinearSystem,Ann_0,RHS)
                 if(tPrecond_MinRes) then
                     call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=RHS,nout=minres_unit,x=Psi1_h, &
-                        itnlim=maxminres_iter,Msolve=zPreCond)
+                        itnlim=maxminres_iter,Msolve=zPreCond,istop=info)
                 else
                     call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=RHS,nout=minres_unit,x=Psi1_h, &
-                        itnlim=maxminres_iter)
+                        itnlim=maxminres_iter,istop=info)
                 endif
                 zDirMV_Mat => null()
+                if(info.eq.8) call stop_all(t_r,'Linear equation solver hit maximum iterations')
+                if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) call stop_all(t_r,'Input matrices to linear solver incorrect')
+                if(info.gt.11) call stop_all(t_r,'Linear equation solver failed')
             else
                 do i = 1,nLinearSystem
                     LinearSystem_h(i,i) = dcmplx(Omega+mu,dDelta) + (LinearSystem_h(i,i) - dcmplx(GFChemPot,0.0_dp))

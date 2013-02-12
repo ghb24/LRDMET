@@ -41,7 +41,7 @@ module Davidson
 
         if(.not.present(tol)) then
             !Set tol default
-            tol_=1.0e-9_dp
+            tol_=1.0e-12_dp
         else
             tol_ = tol
         endif

@@ -511,13 +511,16 @@ Program RealHub
             call stop_all(t_r,'Linear response greens function not coded up in internally contracted form')
         endif
         if(tIC_TDA_Response.and.tDDResponse) then
-            call warning(t_r,'DMET density response broken. Please fix me.')
+            call warning(t_r,'DMET internally-contracted density response broken. Please fix me.')
         endif
         if(tMFResponse.and.(.not.tDDResponse)) then
             call stop_all(t_r,'Single-reference response function asked for, but only coded up for Density response')
         endif
         if(tPrecond_MinRes.and.(.not.tMinRes_NonDir)) then
             call stop_all(t_r,'Cannot precondition linear response matrix if not solving iteratively!')
+        endif
+        if(tDDResponse.and.tLR_DMET.and.tMinRes_NonDir) then
+            call stop_all(t_r,'Iterative solution to density response equations not plumbed in yet')
         endif
 
     end subroutine check_input
