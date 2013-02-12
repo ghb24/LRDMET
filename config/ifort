@@ -7,7 +7,7 @@ libs = -lacml
 module_flag = -module
 
 [opt]
-fflags = -O3
+fflags = -O3 -ip -ipo
 cxxflags = -O3
 
 [dbg]
