@@ -115,7 +115,7 @@ module LinearResponse
         integer :: nLinearSystem,nOrbs,nVirt,OrbPairs,tempK,UMatSize,VIndex,VirtStart,VirtEnd
         integer :: orbdum(1),gtid,nLinearSystem_h,x,nGSSpace,Np1GSInd,Nm1GSInd,lWork,minres_unit
         integer :: maxminres_iter
-        integer(ip) :: nLinearSystem_ip,minres_unit_ip,info_ip,maxminres_iter_ip
+        integer(ip) :: nLinearSystem_ip,minres_unit_ip,info_ip,maxminres_iter_ip,iters_p,iters_h
         real(dp) :: VNorm,CNorm,Omega,GFChemPot,mu
         complex(dp) :: dNorm_p,dNorm_h,ni_lr,ni_lr_Cre,ni_lr_Ann
         complex(dp) :: ResponseFn,ResponseFn_h,ResponseFn_p,tempel
@@ -124,6 +124,8 @@ module LinearResponse
         character(len=*), parameter :: t_r='NonIntExCont_TDA_MCLR_Charged'
 
         maxminres_iter = 20000
+        iters_p = 0
+        iters_h = 0
 
         call set_timer(LR_EC_GF_Precom)
 
@@ -287,7 +289,7 @@ module LinearResponse
         write(iunit,"(A)") "# 1.Frequency     2.GF_LinearResponse(Re)    3.GF_LinearResponse(Im)    " &
             & //"4.ParticleGF(Re)   5.ParticleGF(Im)   6.HoleGF(Re)   7.HoleGF(Im)    8.Old_GS    9.New_GS   " &
             & //"10.Particle_Norm  11.Hole_Norm   12.NI_GF(Re)   13.NI_GF(Im)  14.NI_GF_Part(Re)   15.NI_GF_Part(Im)   " &
-            & //"16.NI_GF_Hole(Re)   17.NI_GF_Hole(Im)  "
+            & //"16.NI_GF_Hole(Re)   17.NI_GF_Hole(Im)  18.Iters_p   19.Iters_h"
                 
         if(tMinRes_NonDir) then
             minres_unit = get_free_unit()
@@ -699,10 +701,10 @@ module LinearResponse
                 if(tPrecond_MinRes) then
                     call FormPrecond(nLinearSystem)
                     call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_p, &
-                        itnlim=maxminres_iter_ip,Msolve=zPreCond,istop=info_ip,rtol=rtol_LR)
+                        itnlim=maxminres_iter_ip,Msolve=zPreCond,istop=info_ip,rtol=rtol_LR,itn=iters_p)
                 else
                     call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_p, &
-                        itnlim=maxminres_iter_ip,istop=info_ip,rtol=rtol_LR)
+                        itnlim=maxminres_iter_ip,istop=info_ip,rtol=rtol_LR,itn=iters_p)
                 endif
                 info = info_ip
                 zDirMV_Mat => null()
@@ -736,10 +738,10 @@ module LinearResponse
                 if(tPrecond_MinRes) then
                     call FormPrecond(nLinearSystem)
                     call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_h, &
-                        itnlim=maxminres_iter_ip,Msolve=zPreCond,istop=info_ip,rtol=rtol_LR)
+                        itnlim=maxminres_iter_ip,Msolve=zPreCond,istop=info_ip,rtol=rtol_LR,itn=iters_h)
                 else
                     call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_h, &
-                        itnlim=maxminres_iter_ip,istop=info_ip,rtol=rtol_LR)
+                        itnlim=maxminres_iter_ip,istop=info_ip,rtol=rtol_LR,itn=iters_h)
                 endif
                 info = info_ip
                 zDirMV_Mat => null()
@@ -790,10 +792,10 @@ module LinearResponse
 
             !write(6,*) Omega,-aimag(ni_lr_Cre),-aimag(ResponseFn_p)
 
-            write(iunit,"(17G22.10)") Omega,real(ResponseFn),-aimag(ResponseFn), &
+            write(iunit,"(17G22.10,2I7)") Omega,real(ResponseFn),-aimag(ResponseFn), &
                 real(ResponseFn_p),-aimag(ResponseFn_p),real(ResponseFn_h),-aimag(ResponseFn_h),    &
                 HL_Energy,GFChemPot,abs(dNorm_p),abs(dNorm_h),real(ni_lr),-aimag(ni_lr),real(ni_lr_Cre),    &
-                -aimag(ni_lr_Cre),real(ni_lr_Ann),-aimag(ni_lr_Ann)
+                -aimag(ni_lr_Cre),real(ni_lr_Ann),-aimag(ni_lr_Ann),iters_p,iters_h
 
             Omega = Omega + Omega_Step
 
@@ -4866,22 +4868,24 @@ module LinearResponse
         complex(dp), intent(out) :: y(n)
         integer :: i
         real(dp) :: di
+!        complex(dp) :: di
         character(len=*), parameter :: t_r='zPreCond'
 
         if(.not.associated(zDirMV_Mat)) call stop_all('zPreCond','Matrix not associated!')
 
         do i = 1,n
+            y(i) = x(i) / abs(Precond_diag(i))
 !            di = abs(zDirMV_Mat(i,i)**2 - 2.0_dp*real(zShift,dp) + (zShift*dconjg(zShift)))
-            di = Precond_diag(i)
+!            di = Precond_diag(i)
 !            if(di.lt.0.0_dp) then
 !                write(6,*) "Precond, i: ",i,Precond_diag(i)
 !                call stop_all(t_r,'Preconditioned matrix should be positive definite')
 !            endif
-            if(di.gt.1.0e-8_dp) then
-                y(i) = x(i) / di
-            else
-                y(i) = x(i)
-            endif
+!            if(abs(di).gt.1.0e-8_dp) then
+!                y(i) = x(i) / di
+!            else
+!                y(i) = x(i)  / abs(di)
+!            endif
         enddo
 !        write(6,*) "Precond: ",MinMatEl
 !        write(6,*) "x: ",x
