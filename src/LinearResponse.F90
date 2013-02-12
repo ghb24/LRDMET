@@ -126,7 +126,7 @@ module LinearResponse
 
         call set_timer(LR_EC_GF_Precom)
 
-        write(6,*) "Calculating non-interacting EC MR-TDA LR system for *hole* & *particle* alpha spin-orbital perturbations..."
+        write(6,"(A)") "Calculating non-interacting EC MR-TDA LR system for *hole* & *particle* alpha spin-orbital perturbations..."
         if(.not.tConstructFullSchmidtBasis) call stop_all(t_r,'To solve LR, must construct full schmidt basis')
         if(.not.tCompleteDiag) then
             if(.not.tNonDirDavidson) then
@@ -313,7 +313,12 @@ module LinearResponse
         write(6,"(A,F12.5,A)") "Memory required for fock matrix: ",((2.0_dp*real(nSites,dp))**2)*ComptoMb, " Mb"
         if(ierr.ne.0) call stop_all(t_r,'Error allocating')
         
-        call R_C_Copy_2D(FockSchmidtComp(:,:),FockSchmidt(:,:),nSites,nSites)
+        do i = 1,nSites
+            do j = 1,nSites
+                FockSchmidtComp(j,i) = dcmplx(FockSchmidt(j,i),0.0_dp)
+            enddo
+        enddo
+        !call R_C_Copy_2D(FockSchmidtComp(:,:),FockSchmidt(:,:),nSites,nSites)
         
         !Since this does not depend at all on the new basis, since the ground state has a completely
         !disjoint basis to |1>, the RHS of the equations can be precomputed
@@ -461,21 +466,51 @@ module LinearResponse
 
             !Block 1 for particle hamiltonian
             !First, construct n + 1 (alpha) FCI space, in determinant basis
-            call R_C_Copy_2D(LinearSystem_p(1:nNp1FCIDet,1:nNp1FCIDet),Np1FCIHam_alpha(:,:),nNp1FCIDet,nNp1FCIDet)
+            do i = 1,nNp1FCIDet
+                do j = 1,nNp1FCIDet
+                    LinearSystem_p(j,i) = dcmplx(Np1FCIHam_alpha(j,i),0.0_dp)
+                enddo
+            enddo
+            !call R_C_Copy_2D(LinearSystem_p(1:nNp1FCIDet,1:nNp1FCIDet),Np1FCIHam_alpha(:,:),nNp1FCIDet,nNp1FCIDet)
             !Block 1 for hole hamiltonian
-            call R_C_Copy_2D(LinearSystem_h(1:nNm1bFCIDet,1:nNm1bFCIDet),Nm1FCIHam_beta(:,:),nNm1bFCIDet,nNm1bFCIDet)
+            do i = 1,nNm1bFCIDet
+                do j = 1,nNm1bFCIDet
+                    LinearSystem_h(j,i) = dcmplx(Nm1FCIHam_beta(j,i),0.0_dp)
+                enddo
+            enddo
+            !call R_C_Copy_2D(LinearSystem_h(1:nNm1bFCIDet,1:nNm1bFCIDet),Nm1FCIHam_beta(:,:),nNm1bFCIDet,nNm1bFCIDet)
             if(tLR_ReoptGS) then
                 !Block 1 for GS
-                call R_C_Copy_2D(GSHam(1:nFCIDet,1:nFCIDet),nFCIHam(:,:),nFCIDet,nFCIDet)
+                do i = 1,nFCIDet
+                    do j = 1,nFCIDet
+                        GSHam(j,i) = dcmplx(nFCIHam(j,i),0.0_dp)
+                    enddo
+                enddo
+                !call R_C_Copy_2D(GSHam(1:nFCIDet,1:nFCIDet),nFCIHam(:,:),nFCIDet,nFCIDet)
                 !Block 2 (diagonal part to come)
-                call R_C_Copy_2D(GSHam(Np1GSInd:Nm1GSInd-1,Np1GSInd:Nm1GSInd-1),Np1FCIHam_alpha(:,:),nNp1FCIDet,nNp1FCIDet)
+                do i = Np1GSInd,Nm1GSInd-1
+                    do j = Np1GSInd,Nm1GSInd-1
+                        GSHam(j,i) = dcmplx(Np1FCIHam_alpha(j-Np1GSInd+1,i-Np1GSInd+1),0.0_dp)
+                    enddo
+                enddo
+                !call R_C_Copy_2D(GSHam(Np1GSInd:Nm1GSInd-1,Np1GSInd:Nm1GSInd-1),Np1FCIHam_alpha(:,:),nNp1FCIDet,nNp1FCIDet)
                 !Block 4 (diagonal part to come)
-                call R_C_Copy_2D(GSHam(Nm1GSInd:nGSSpace,Nm1GSInd:nGSSpace),Nm1FCIHam_beta(:,:),nNm1bFCIDet,nNm1bFCIDet)
+                do i = Nm1GSInd,nGSSpace
+                    do j = Nm1GSInd,nGSSpace
+                        GSHam(j,i) = dcmplx(Nm1FCIHam_beta(j-Nm1GSInd+1,i-Nm1GSInd+1),0.0_dp)
+                    enddo
+                enddo
+                !call R_C_Copy_2D(GSHam(Nm1GSInd:nGSSpace,Nm1GSInd:nGSSpace),Nm1FCIHam_beta(:,:),nNm1bFCIDet,nNm1bFCIDet)
             endif
 
             !Block 2 for particle hamiltonian
             !Copy the N electron FCI hamiltonian to this diagonal block
-            call R_C_Copy_2D(LinearSystem_p(VIndex:nLinearSystem,VIndex:nLinearSystem),nFCIHam(:,:),nFCIDet,nFCIDet)
+            do i = VIndex,nLinearSystem
+                do j = VIndex,nLinearSystem
+                    LinearSystem_p(j,i) = dcmplx(nFCIHam(j-VIndex+1,i-VIndex+1),0.0_dp)
+                enddo
+            enddo
+            !call R_C_Copy_2D(LinearSystem_p(VIndex:nLinearSystem,VIndex:nLinearSystem),nFCIHam(:,:),nFCIDet,nFCIDet)
             
             VNorm = 0.0_dp
             tempel = dcmplx(0.0_dp,0.0_dp)
@@ -499,7 +534,12 @@ module LinearResponse
 
             !Block 2 for the hole hamiltonian
             !Copy the N electron FCI hamiltonian to this diagonal blockk
-            call R_C_Copy_2D(LinearSystem_h(VIndex:nLinearSystem,VIndex:nLinearSystem),nFCIHam(:,:),nFCIDet,nFCIDet)
+            do i = VIndex,nLinearSystem
+                do j = VIndex,nLinearSystem
+                    LinearSystem_h(j,i) = dcmplx(nFCIHam(j-VIndex+1,i-VIndex+1),0.0_dp)
+                enddo
+            enddo
+            !call R_C_Copy_2D(LinearSystem_h(VIndex:nLinearSystem,VIndex:nLinearSystem),nFCIHam(:,:),nFCIDet,nFCIDet)
 
             CNorm = 0.0_dp
             tempel = dcmplx(0.0_dp,0.0_dp)
@@ -1100,7 +1140,12 @@ module LinearResponse
             
         !Store the fock matrix in complex form, so that we can ZGEMM easily
         allocate(FockSchmidtComp(nSites,nSites))
-        call R_C_Copy_2D(FockSchmidtComp(:,:),FockSchmidt(:,:),nSites,nSites)
+        do i = 1,nSites
+            do j = 1,nSites
+                FockSchmidtComp(j,i) = dcmplx(FockSchmidt(j,i),0.0_dp)
+            enddo
+        enddo
+        !call R_C_Copy_2D(FockSchmidtComp(:,:),FockSchmidt(:,:),nSites,nSites)
 
         !Space for useful intermediates
         allocate(G_ai_G_aj(nCore,nCore))    !Core,Core, contracted over virtual space
@@ -1194,7 +1239,12 @@ module LinearResponse
             
             !First, construct FCI space, in determinant basis
             !****************************   Block 1   **************************
-            call R_C_Copy_2D(LinearSystem(1:nFCIDet,1:nFCIDet),NFCIHam(:,:),nFCIDet,nFCIDet)
+            do i = 1,nFCIDet
+                do j = 1,nFCIDet
+                    LinearSystem(j,i) = dcmplx(NFCIHam(j,i),0.0_dp)
+                enddo
+            enddo
+            !call R_C_Copy_2D(LinearSystem(1:nFCIDet,1:nFCIDet),NFCIHam(:,:),nFCIDet,nFCIDet)
             !LinearSystem(1:nFCIDet,1:nFCIDet) = NFCIHam(:,:)
             !call writematrixcomp(LinearSystem(1:nFCIDet,1:nFCIDet),'N-electron hamil',.true.)
 
@@ -1283,12 +1333,23 @@ module LinearResponse
 
                     !Construct appropriate weighting factor for the hamiltonian matrix element contribution
                     !Fill with appropriate FCI hamiltonian block
-                    call R_C_Copy_2D(LinearSystem(gam1_ind:gam1_ind+nNm1bFCIDet-1,gam2_ind:gam2_ind+nNm1bFCIDet-1), &
-                        Nm1FCIHam_beta(:,:),nNm1bFCIDet,nNm1bFCIDet)
+                    do i = gam2_ind,gam2_ind+nNm1bFCIDet-1
+                        do j = gam1_ind,gam1_ind+nNm1bFCIDet-1
+                            LinearSystem(j,i) = dcmplx(Nm1FCIHam_beta(j-gam1_ind+1,i-gam2_ind+1),0.0_dp)
+                        enddo
+                    enddo
+!                    call R_C_Copy_2D(LinearSystem(gam1_ind:gam1_ind+nNm1bFCIDet-1,gam2_ind:gam2_ind+nNm1bFCIDet-1), &
+!                        Nm1FCIHam_beta(:,:),nNm1bFCIDet,nNm1bFCIDet)
 
                     !Now construct for the gam1_beta : gam2_beta block
-                    call R_C_Copy_2D(LinearSystem(gam1_ind+nNm1bFCIDet:gam1_ind+nFullNm1-1,   &
-                        gam2_ind+nNm1bFCIDet:gam2_ind+nFullNm1-1),Nm1FCIHam_alpha(:,:),nNm1FCIDet,nNm1FCIDet)
+                    do i = gam2_ind+nNm1bFCIDet,gam2_ind+nFullNm1-1
+                        do j = gam1_ind+nNm1bFCIDet,gam1_ind+nFullNm1-1
+                            LinearSystem(j,i) =     &
+                                dcmplx(Nm1FCIHam_alpha(j-(gam1_ind+nNm1bFCIDet)+1,i-(gam2_ind+nNm1bFCIDet)+1),0.0_dp)
+                        enddo
+                    enddo
+                    !call R_C_Copy_2D(LinearSystem(gam1_ind+nNm1bFCIDet:gam1_ind+nFullNm1-1,   &
+                    !    gam2_ind+nNm1bFCIDet:gam2_ind+nFullNm1-1),Nm1FCIHam_alpha(:,:),nNm1FCIDet,nNm1FCIDet)
                     
                     !Multiply every element by the appropriate weighting factor
                     !This weighting factor is the same for both spin blocks, so no need to do seperately
@@ -1399,12 +1460,22 @@ module LinearResponse
                     gam2_ind = CAIndex + (gam2-1)*nFullNp1
 
                     !Fill with appropriate FCI hamiltonian block
-                    call R_C_Copy_2D(LinearSystem(gam1_ind:gam1_ind+nNp1FCIDet-1,gam2_ind:gam2_ind+nNp1FCIDet-1),   &
-                        Np1FCIHam_alpha(:,:),nNp1FCIDet,nNp1FCIDet)
+                    do i = gam2_ind,gam2_ind+nNp1FCIDet-1
+                        do j = gam1_ind,gam1_ind+nNp1FCIDet-1
+                            LinearSystem(j,i) = dcmplx(Np1FCIHam_alpha(j-gam1_ind+1,i-gam2_ind+1),0.0_dp)
+                        enddo
+                    enddo
+                    !call R_C_Copy_2D(LinearSystem(gam1_ind:gam1_ind+nNp1FCIDet-1,gam2_ind:gam2_ind+nNp1FCIDet-1),   &
+                    !    Np1FCIHam_alpha(:,:),nNp1FCIDet,nNp1FCIDet)
 
                     !Now construct for the gam1_beta : gam2_beta block
-                    call R_C_Copy_2D(LinearSystem(gam1_ind+nNp1FCIDet:gam1_ind+nFullNp1-1,    &
-                        gam2_ind+nNp1FCIDet:gam2_ind+nFullNp1-1),Np1FCIHam_beta(:,:),nNp1bFCIDet,nNp1bFCIDet)
+                    do i = gam2_ind+nNp1FCIDet,gam2_ind+nFullNp1-1
+                        do j = gam1_ind+nNp1FCIDet,gam1_ind+nFullNp1-1
+                            LinearSystem(j,i) = dcmplx(Np1FCIHam_beta(j-(gam1_ind+nNp1FCIDet)+1,i-(gam2_ind+nNp1FCIDet)+1),0.0_dp)
+                        enddo
+                    enddo
+                    !call R_C_Copy_2D(LinearSystem(gam1_ind+nNp1FCIDet:gam1_ind+nFullNp1-1,    &
+                    !    gam2_ind+nNp1FCIDet:gam2_ind+nFullNp1-1),Np1FCIHam_beta(:,:),nNp1bFCIDet,nNp1bFCIDet)
                     
                     !Multiply every element by the appropriate weighting factor
                     !This weighting factor is the same for both spin blocks, so no need to do seperately
@@ -4875,7 +4946,7 @@ module LinearResponse
         complex(dp), allocatable :: HFPertBasis(:,:),temp(:,:)
         complex(dp), allocatable :: C_HFtoSTrans(:,:)
         real(dp) :: EDiff
-        integer :: a,i
+        integer :: a,i,j
         character(len=*), parameter :: t_r='FindSchmidtBasis'
 
         if(tNonIntTest) then
@@ -4923,7 +4994,12 @@ module LinearResponse
         !enddo
 
         allocate(C_HFtoSTrans(nSites,nSites))
-        call R_C_Copy_2D(C_HFtoSTrans(:,:),HFtoSchmidtTransform(:,:),nSites,nSites)
+        do i = 1,nSites
+            do j = 1,nSites
+                C_HFtoSTrans(j,i) = dcmplx(HFtoSchmidtTransform(j,i),0.0_dp)
+            enddo
+        enddo
+        !call R_C_Copy_2D(C_HFtoSTrans(:,:),HFtoSchmidtTransform(:,:),nSites,nSites)
 
         if(allocated(SchmidtPert)) deallocate(SchmidtPert)
         allocate(SchmidtPert(nSites,nSites))
@@ -6039,22 +6115,6 @@ module LinearResponse
 
     end subroutine non_interactingLR
             
-    !Copy from real array, to the real part of a complex array
-    pure subroutine R_C_Copy_2D(Arr_To,Arr_From,dim1,dim2)
-        implicit none
-        integer, intent(in) :: dim1,dim2
-        real(dp), intent(in) :: Arr_From(dim1,dim2)
-        complex(dp), intent(out) :: Arr_To(dim1,dim2)
-        integer :: i,j
-
-        do i=1,dim2
-            do j=1,dim1
-                Arr_To(j,i) = dcmplx(Arr_From(j,i),0.0_dp)
-            enddo
-        enddo
-
-    end subroutine R_C_Copy_2D
-
 !    !Calculate density density response to perturbation of frequency omega at site pertsite 
 !    subroutine calc_mf_dd_response()
 !        implicit none
