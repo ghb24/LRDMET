@@ -77,6 +77,7 @@ Program RealHub
         tRemoveGSFromH = .false.
         tMinRes_NonDir = .false.
         tPreCond_MinRes = .false.
+        rtol_LR = 1.0e-8_dp
 
     end subroutine set_defaults
 
@@ -422,6 +423,9 @@ Program RealHub
                 tIC_TDA_Response = .true.
             case("NONDIR_MINRES")
                 tMinRes_NonDir = .true.
+                if(item.lt.nitems) then
+                    call readf(rtol_LR)
+                endif
             case("PRECONDITION_LR")
                 tPreCond_MinRes = .true.
             case("FREQ")

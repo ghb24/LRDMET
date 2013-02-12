@@ -139,6 +139,7 @@ module LinearResponse
             else
                 write(6,"(A)") "Solving linear system with iterative non-direct MinRes-QLP algorithm"
             endif
+            write(6,"(A,G22.10)") "Tolerance for solution of linear system: ",rtol_LR
         else
             if(iSolveLR.eq.1) then
                 write(6,"(A)") "Solving linear system with standard ZGESV linear solver"
@@ -693,10 +694,10 @@ module LinearResponse
                 nLinearSystem_ip = int(nLinearSystem,ip)
                 if(tPrecond_MinRes) then
                     call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_p, &
-                        itnlim=maxminres_iter_ip,Msolve=zPreCond,istop=info_ip)
+                        itnlim=maxminres_iter_ip,Msolve=zPreCond,istop=info_ip,rtol=rtol_LR)
                 else
                     call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_p, &
-                        itnlim=maxminres_iter_ip,istop=info_ip)
+                        itnlim=maxminres_iter_ip,istop=info_ip,rtol=rtol_LR)
                 endif
                 info = info_ip
                 zDirMV_Mat => null()
@@ -728,10 +729,10 @@ module LinearResponse
                 nLinearSystem_ip = int(nLinearSystem,ip)
                 if(tPrecond_MinRes) then
                     call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_h, &
-                        itnlim=maxminres_iter_ip,Msolve=zPreCond,istop=info_ip)
+                        itnlim=maxminres_iter_ip,Msolve=zPreCond,istop=info_ip,rtol=rtol_LR)
                 else
                     call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_h, &
-                        itnlim=maxminres_iter_ip,istop=info_ip)
+                        itnlim=maxminres_iter_ip,istop=info_ip,rtol=rtol_LR)
                 endif
                 info = info_ip
                 zDirMV_Mat => null()
