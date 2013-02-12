@@ -237,7 +237,7 @@ module LinearResponse
             call stop_all(t_r,'Should change restriction on the Linear system size being the same for particle/hole addition')
         endif
         
-        write(6,"(A,F14.6,A)") "Memory required for the LR system: ",real(2*(nLinearSystem**2)*16,dp)/1048576.0_dp," Mb"
+        write(6,"(A,F14.6,A)") "Memory required for the LR system: ",2*(real(nLinearSystem,dp)**2)*16/1048576.0_dp," Mb"
 
         !If doing full optimization of the GS problem
         nGSSpace = nFCIDet + nNp1FCIDet + nNm1bFCIDet
@@ -245,7 +245,7 @@ module LinearResponse
         Nm1GSInd = np1GSInd + nNp1FCIDet
         if(tLR_ReoptGS) then
             write(6,"(A,I9)") "Size of reoptimized ground state basis: ",nGSSpace
-            write(6,"(A,F14.6,A)") "Memory required for reoptimization of GS: ",real((nGSSpace**2)*16,dp)/1048576.0_dp," Mb"
+            write(6,"(A,F14.6,A)") "Memory required for reoptimization of GS: ",(real(nGSSpace,dp)**2)*16/1048576.0_dp," Mb"
         endif
         
         !Set up orbital indices
