@@ -1,5 +1,6 @@
 module DetBitOps
     use const, only: n_int,bits_n_int,end_n_int,size_n_int
+    use errors, only: stop_all 
     implicit none
 
     contains
@@ -29,7 +30,6 @@ module DetBitOps
     !tAnn = .F. - create
     !tSign is the change in parity of the vector
     subroutine SQOperator(ilut,orb,tSign,tAnn)
-        use errors, only: stop_all 
         integer, intent(inout) :: ilut
         integer, intent(in) :: orb
         logical, intent(in) :: tAnn
