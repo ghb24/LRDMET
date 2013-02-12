@@ -74,6 +74,7 @@ subroutine GenDets(NEl,SpatOrbs,tCoupledSpaces,tCreateBitRep,tSplitMs)
             call EncodeBitDet(FCIDetList(:,i),NEl,FCIBitList(i))
         enddo
     endif
+    DetListStorage = DetListStorage + ((NEl+1)*nFCIDet)
 
     if(.not.tCoupledSpaces) then
         deallocate(NspinDetList)
@@ -198,6 +199,8 @@ subroutine GenDets(NEl,SpatOrbs,tCoupledSpaces,tCreateBitRep,tSplitMs)
             enddo
         endif
     endif
+    DetListStorage = DetListStorage + (NEl*nNm1FCIDet)
+    if(tSplitMs) DetListStorage = DetListStorage + (NEl*nNm1bFCIDet)
 
     !Now for the N+1 space
     write(6,*) "Calculating N+1 space"
@@ -284,6 +287,8 @@ subroutine GenDets(NEl,SpatOrbs,tCoupledSpaces,tCreateBitRep,tSplitMs)
             enddo
         endif
     endif
+    DetListStorage = DetListStorage + ((NEl+2)*nNp1FCIDet)
+    if(tSplitMs) DetListStorage = DetListStorage + ((NEl+2)*nNp1bFCIDet)
 
     if(tSplitMs) then
         ECoupledSpace = nFCIDet + nNm1FCIDet + nNm1bFCIDet + nNp1FCIDet + nNp1bFCIDet

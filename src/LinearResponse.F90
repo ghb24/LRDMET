@@ -165,6 +165,7 @@ module LinearResponse
         UMatSize = (OrbPairs*(OrbPairs+1))/2
         if(allocated(UMat)) deallocate(UMat)
         allocate(UMat(UMatSize))
+        write(6,"(A,F12.5,A)") "Memory required for umat storage: ",UMatSize*RealtoMb, " Mb"
         UMat(:) = 0.0_dp
         if(tAnderson) then
             umat(umatind(1,1,1,1)) = U
@@ -191,6 +192,7 @@ module LinearResponse
         !Seperate the lists into different Ms sectors in the N+- lists
         call GenDets(Elec,EmbSize,.true.,.true.,.true.) 
         write(6,*) "Number of determinants in {N,N+1,N-1} FCI space: ",ECoupledSpace
+        write(6,"(A,F12.5,A)") "Memory required for det list storage: ",DetListStorage*RealtoMb, " Mb"
 !        write(6,*) "N+1 alpha determinants"
 !        do i=1,nNp1FCIDet
 !            write(6,*) Np1FCIDetList(:,i),Np1BitList(i)
@@ -210,6 +212,7 @@ module LinearResponse
                 call GetHElement(FCIDetList(:,i),FCIDetList(:,j),Elec,NFCIHam(i,j))
             enddo
         enddo
+        write(6,"(A,F12.5,A)") "Memory required for N-electron hamil: ",(real(nFCIDet,dp)**2)*RealtoMb, " Mb"
 
         !N+1 hamiltonian
         if(nNp1FCIDet.ne.nNm1FCIDet) call stop_all(t_r,'Active space not half-filled')
@@ -221,6 +224,7 @@ module LinearResponse
                 call GetHElement(Np1FCIDetList(:,i),Np1FCIDetList(:,j),Elec+1,Np1FCIHam_alpha(i,j))
             enddo
         enddo
+        write(6,"(A,F12.5,A)") "Memory required for N+1-electron hamil: ",(real(nNp1FCIDet,dp)**2)*RealtoMb, " Mb"
         !N-1 hamiltonian for particle removal
         allocate(Nm1FCIHam_beta(nNm1bFCIDet,nNm1bFCIDet))
         Nm1FCIHam_beta(:,:) = 0.0_dp
@@ -229,6 +233,7 @@ module LinearResponse
                 call GetHElement(Nm1bFCIDetList(:,i),Nm1bFCIDetList(:,j),Elec-1,Nm1FCIHam_beta(i,j))
             enddo
         enddo
+        write(6,"(A,F12.5,A)") "Memory required for N-1-electron hamil: ",(real(nNm1bFCIDet,dp)**2)*RealtoMb, " Mb"
 
         nLinearSystem = nNp1FCIDet + nFCIDet
         nLinearSystem_h = nNm1bFCIDet + nFCIDet
@@ -292,15 +297,19 @@ module LinearResponse
         allocate(LinearSystem_h(nLinearSystem,nLinearSystem),stat=ierr)
         if(tLR_ReoptGS) then
             allocate(GSHam(nGSSpace,nGSSpace),stat=ierr)
-            allocate(W(nGSSpace))
+            allocate(W(nGSSpace),stat=ierr)
         endif
-        allocate(Psi_0(nGSSpace))   !If tLR_ReoptGS = .F. , then only the first nFCIDet elements will be used
-        allocate(Psi1_p(nLinearSystem))
-        allocate(Psi1_h(nLinearSystem))
-        allocate(Psi_p(nGSSpace))  !To store the V^T 1/H V |0> wavefunctions in the GS space
-        allocate(Psi_h(nGSSpace))  !To store the V^T 1/H V |0> wavefunctions in the GS space
+        allocate(Psi_0(nGSSpace),stat=ierr)   !If tLR_ReoptGS = .F. , then only the first nFCIDet elements will be used
+        allocate(Psi1_p(nLinearSystem),stat=ierr)
+        allocate(Psi1_h(nLinearSystem),stat=ierr)
+        allocate(Psi_p(nGSSpace),stat=ierr)  !To store the V^T 1/H V |0> wavefunctions in the GS space
+        allocate(Psi_h(nGSSpace),stat=ierr)  !To store the V^T 1/H V |0> wavefunctions in the GS space
+        if(ierr.ne.0) call stop_all(t_r,'Error allocating')
+        i = nGSSpace*3 + nLinearSystem*5
+        write(6,"(A,F12.5,A)") "Memory required for wavefunctions: ",real(i,dp)*ComptoMb, " Mb"
         !Store the fock matrix in complex form, so that we can ZGEMM easily
-        allocate(FockSchmidtComp(nSites,nSites))
+        allocate(FockSchmidtComp(nSites,nSites),stat=ierr)
+        write(6,"(A,F12.5,A)") "Memory required for fock matrix: ",((2.0_dp*real(nSites,dp))**2)*ComptoMb, " Mb"
         if(ierr.ne.0) call stop_all(t_r,'Error allocating')
         
         call R_C_Copy_2D(FockSchmidtComp(:,:),FockSchmidt(:,:),nSites,nSites)
@@ -384,14 +393,16 @@ module LinearResponse
                 endif
             enddo
         enddo
+        i = 2*nFCIDet*nNm1bFCIDet + 2*nFCIDet*nNp1FCIDet
+        write(6,"(A,F12.5,A)") "Memory required for coupling coefficient matrices: ",real(i,dp)*RealtoMb, " Mb"
 
         !Space for useful intermediates
         !For particle addition
-        allocate(Gc_a_F_ax(ActiveStart:ActiveEnd))
-        allocate(Gc_b_F_ab(VirtStart:VirtEnd))
+        allocate(Gc_a_F_ax(ActiveStart:ActiveEnd),stat=ierr)
+        allocate(Gc_b_F_ab(VirtStart:VirtEnd),stat=ierr)
         !For hole addition
-        allocate(Ga_i_F_xi(ActiveStart:ActiveEnd))
-        allocate(Ga_i_F_ij(1:nCore))
+        allocate(Ga_i_F_xi(ActiveStart:ActiveEnd),stat=ierr)
+        allocate(Ga_i_F_ij(1:nCore),stat=ierr)
 
         call halt_timer(LR_EC_GF_Precom)
 

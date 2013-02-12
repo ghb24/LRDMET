@@ -28,4 +28,6 @@ module DetToolsData
 
     integer :: ECoupledSpace !Total number of determinants in the N,N-1 and N+1 spaces
 
+    integer :: DetListStorage   !Number of integers worth of data in the storage of all det info
+
 end module DetToolsData
