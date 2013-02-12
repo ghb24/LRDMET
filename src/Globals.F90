@@ -50,6 +50,7 @@ module Globals
     logical :: tNonDirDavidson  !Compute GS with a non-direct davidson algorithm
     logical :: tMinRes_NonDir   !Solve any systems of linear equations with a non-direct linear solver
     logical :: tPrecond_MinRes  !Apply preconditioning to the solution of the linear equations
+    real(dp) :: rtol_LR         !Tolerance for exit criterion for linear solver
 !    real(dp) :: Omega=1.0_dp           !Perturbation frequency
     real(dp) :: Lambda=1.0_dp          !Strength of perturbation
     real(dp) :: Start_Omega,End_Omega,Omega_Step    !Parameters for Omega sweep

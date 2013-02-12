@@ -510,8 +510,6 @@ contains
       " /     a, 5x, a, e12.4 )" 
      character(len=*), parameter :: finalStr2 = "(      a, 5x, a )"
 
-    write(6,*) "Entering linear equation solver"
-    call flush(6)
     !------------------------------------------------------------------ 
     ! Optional inputs
     if (present(shift)) then
@@ -735,9 +733,6 @@ contains
        write(*,ddebugStr1) 'w_', itn_,   ' = ', (w(j),  j=1,nprint)
        write(*,ddebugStr1) 'x_', itn_,   ' = ', (x(j),  j=1,nprint)
     end if
-
-    write(6,*) "Get to start of main iteration loop"
-    call flush(6)
 
 
     !------------------------------------------------------------------
