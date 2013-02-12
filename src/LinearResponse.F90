@@ -114,6 +114,7 @@ module LinearResponse
         integer :: nLinearSystem,nOrbs,nVirt,OrbPairs,tempK,UMatSize,VIndex,VirtStart,VirtEnd
         integer :: orbdum(1),gtid,nLinearSystem_h,x,nGSSpace,Np1GSInd,Nm1GSInd,lWork,minres_unit
         integer :: maxminres_iter
+        integer(ip) :: nLinearSystem_ip,minres_unit_ip,info_ip,maxminres_iter_ip
         real(dp) :: VNorm,CNorm,Omega,GFChemPot,mu
         complex(dp) :: dNorm_p,dNorm_h,ni_lr,ni_lr_Cre,ni_lr_Ann
         complex(dp) :: ResponseFn,ResponseFn_h,ResponseFn_p,tempel
@@ -121,7 +122,7 @@ module LinearResponse
         character(64) :: filename,filename2
         character(len=*), parameter :: t_r='NonIntExCont_TDA_MCLR_Charged'
 
-        maxminres_iter = 200
+        maxminres_iter = 20000
 
         call set_timer(LR_EC_GF_Precom)
 
@@ -647,13 +648,17 @@ module LinearResponse
                 zShift = dcmplx(-Omega-mu-GFChemPot,-dDelta)
                 zDirMV_Mat => LinearSystem_p
                 call setup_RHS(nLinearSystem,Cre_0,RHS)
+                maxminres_iter_ip = int(maxminres_iter,ip)
+                minres_unit_ip = int(minres_unit,ip)
+                nLinearSystem_ip = int(nLinearSystem,ip)
                 if(tPrecond_MinRes) then
-                    call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=RHS,nout=minres_unit,x=Psi1_p, &
-                        itnlim=maxminres_iter,Msolve=zPreCond,istop=info)
+                    call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_p, &
+                        itnlim=maxminres_iter_ip,Msolve=zPreCond,istop=info_ip)
                 else
-                    call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=RHS,nout=minres_unit,x=Psi1_p, &
-                        itnlim=maxminres_iter,istop=info)
+                    call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_p, &
+                        itnlim=maxminres_iter_ip,istop=info_ip)
                 endif
+                info = info_ip
                 zDirMV_Mat => null()
                 if(info.eq.8) call stop_all(t_r,'Linear equation solver hit maximum iterations')
                 if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) call stop_all(t_r,'Input matrices to linear solver incorrect')
@@ -678,13 +683,17 @@ module LinearResponse
                 zShift = dcmplx(-Omega-mu+GFChemPot,-dDelta)
                 zDirMV_Mat => LinearSystem_h
                 call setup_RHS(nLinearSystem,Ann_0,RHS)
+                maxminres_iter_ip = int(maxminres_iter,ip)
+                minres_unit_ip = int(minres_unit,ip)
+                nLinearSystem_ip = int(nLinearSystem,ip)
                 if(tPrecond_MinRes) then
-                    call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=RHS,nout=minres_unit,x=Psi1_h, &
-                        itnlim=maxminres_iter,Msolve=zPreCond,istop=info)
+                    call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_h, &
+                        itnlim=maxminres_iter_ip,Msolve=zPreCond,istop=info_ip)
                 else
-                    call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=RHS,nout=minres_unit,x=Psi1_h, &
-                        itnlim=maxminres_iter,istop=info)
+                    call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_h, &
+                        itnlim=maxminres_iter_ip,istop=info_ip)
                 endif
+                info = info_ip
                 zDirMV_Mat => null()
                 if(info.eq.8) call stop_all(t_r,'Linear equation solver hit maximum iterations')
                 if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) call stop_all(t_r,'Input matrices to linear solver incorrect')
