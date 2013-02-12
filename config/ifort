@@ -11,5 +11,5 @@ fflags = -O3
 cxxflags = -O3
 
 [dbg]
-fflags = -g -traceback -CB -fp-stack-check -ftrapuv
+fflags = -g -traceback -CB -fp-stack-check -ftrapuv -integer-size 64 -check-arg_temp_created -check-format -check-bounds
 cxxflags = -g -traceback
