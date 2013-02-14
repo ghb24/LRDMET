@@ -2,7 +2,7 @@ module LinearResponse
     use const
     use timing
     use errors, only: stop_all,warning
-    use mat_tools, only: WriteVector,WriteMatrix,WriteVectorInt,WriteMatrixComp,WriteVectorComp
+    use mat_tools, only: WriteVector,WriteMatrix,WriteVectorInt,WriteMatrixComp,WriteVectorComp,znrm2
     use matrixops, only: z_inv
     use globals
     implicit none
@@ -104,24 +104,24 @@ module LinearResponse
         use zminresqlpModule, only: MinresQLP  
         use DetToolsData
         implicit none
-        real(dp), allocatable :: NFCIHam(:,:),temp(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
-        real(dp), allocatable :: W(:)
+        real(dp), allocatable :: NFCIHam(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
+        real(dp), allocatable :: W(:),dNorm_p(:),dNorm_h(:)
         complex(dp), allocatable , target :: LinearSystem_p(:,:),LinearSystem_h(:,:)
         complex(dp), allocatable :: Cre_0(:,:),Ann_0(:,:),ResponseFn_p(:,:),ResponseFn_h(:,:)
-        complex(dp), allocatable :: Gc_a_F_ax(:),Gc_b_F_ab(:),GSHam(:,:),ResponseFn_Mat(:,:)
-        complex(dp), allocatable :: Psi1_p(:),Psi1_h(:),Ga_i_F_xi(:),Ga_i_F_ij(:),ni_lr_Mat(:,:)
+        complex(dp), allocatable :: Gc_a_F_ax(:,:),Gc_b_F_ab(:,:),GSHam(:,:),ResponseFn_Mat(:,:)
+        complex(dp), allocatable :: Psi1_p(:),Psi1_h(:),Ga_i_F_xi(:,:),Ga_i_F_ij(:,:),ni_lr_Mat(:,:)
         complex(dp), allocatable :: temp_vecc(:),Work(:),Psi_0(:),RHS(:)
         complex(dp), allocatable :: NI_LRMat_Cre(:,:),NI_LRMat_Ann(:,:)
         integer, allocatable :: Coup_Ann_alpha(:,:,:),Coup_Create_alpha(:,:,:)
         integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,umatind,ierr,info,iunit,nCore
         integer :: nLinearSystem,nOrbs,nVirt,OrbPairs,tempK,UMatSize,VIndex,VirtStart,VirtEnd
-        integer :: orbdum(1),gtid,nLinearSystem_h,x,nGSSpace,Np1GSInd,Nm1GSInd,lWork,minres_unit
-        integer :: maxminres_iter
+        integer :: orbdum(1),gtid,nLinearSystem_h,nGSSpace,Np1GSInd,Nm1GSInd,lWork,minres_unit
+        integer :: maxminres_iter,nImp_GF,pertsite
         integer(ip) :: nLinearSystem_ip,minres_unit_ip,info_ip,maxminres_iter_ip,iters_p,iters_h
-        real(dp) :: VNorm,CNorm,Omega,GFChemPot,mu,SpectralWeight,Prev_Spec
-        complex(dp) :: dNorm_p,dNorm_h,ni_lr
-        complex(dp) :: ResponseFn,tempel,Diff_GF
-        logical :: tParity,tFirst
+        real(dp) :: VNorm,CNorm,Omega,GFChemPot,mu,SpectralWeight,Prev_Spec,AvdNorm_p,AvdNorm_h
+        complex(dp) :: ResponseFn,tempel,Diff_GF,ni_lr,ni_lr_p,ni_lr_h,AvResFn_p,AvResFn_h
+        complex(dp) :: zdotc
+        logical :: tParity,tFirst,tSCFConverged
         character(64) :: filename,filename2
         character(len=*), parameter :: t_r='NonIntExCont_TDA_MCLR_Charged'
 
@@ -217,7 +217,7 @@ module LinearResponse
         allocate(NFCIHam(nFCIDet,nFCIDet))
         allocate(Np1FCIHam_alpha(nNp1FCIDet,nNp1FCIDet))
         allocate(Nm1FCIHam_beta(nNm1bFCIDet,nNm1bFCIDet))
-        call Fill_N_Np1_Nm1bFCIHam(Elec,NFCIHam,Np1FCIHam_alpha,Nm1FCIHam_beta)
+        call Fill_N_Np1_Nm1b_FCIHam(Elec,NFCIHam,Np1FCIHam_alpha,Nm1FCIHam_beta)
 
         nLinearSystem = nNp1FCIDet + nFCIDet
         nLinearSystem_h = nNm1bFCIDet + nFCIDet
@@ -293,13 +293,15 @@ module LinearResponse
         allocate(ResponseFn_p(nImp_GF,nImp_GF))
         allocate(ResponseFn_h(nImp_GF,nImp_GF))
         allocate(ResponseFn_Mat(nImp_GF,nImp_GF))
+        allocate(dNorm_p(nImp_GF))
+        allocate(dNorm_h(nImp_GF))
         
         !Since this does not depend at all on the new basis, since the ground state has a completely
         !disjoint basis to |1>, the RHS of the equations can be precomputed
         allocate(Cre_0(nLinearSystem,nImp_GF))
         allocate(Ann_0(nLinearSystem,nImp_GF))
         if(.not.tLR_ReoptGS) then
-            Psi_0(:) = dcmplx(0.0_dp,0.0_dp)
+            Psi_0(:) = zzero 
             Psi_0(1:nFCIDet) = HL_Vec(:)    
             GFChemPot = HL_Energy
             do i = 1,nImp_GF
@@ -362,7 +364,7 @@ module LinearResponse
                 enddo
             enddo
         else
-            allocate(SelfEnergy(nImp,nImp)) !The self-consistently determined self-energy correction to match the interacting and non-interacting greens functions
+            allocate(SelfEnergy_Imp(nImp,nImp)) !The self-consistently determined self-energy correction to match the interacting and non-interacting greens functions
             allocate(Emb_h0v_SE(EmbSize,EmbSize))   !The 1-electron hamiltonian (with self-energy correction) over the embedded basis
         endif
         
@@ -479,7 +481,7 @@ module LinearResponse
                     !Update tmat with the new one-electron hamiltonian, with self-energy contribution
                     tmat(:,:) = Emb_h0v_SE(:,:)
                     if(tChemPot) tmat(1,1) = tmat(1,1) - U/2.0_dp
-                    call Fill_N_Np1_Nm1bFCIHam(Elec,NFCIHam,Np1FCIHam_alpha,Nm1FCIHam_beta)
+                    call Fill_N_Np1_Nm1b_FCIHam(Elec,NFCIHam,Np1FCIHam_alpha,Nm1FCIHam_beta)
                 else
                     !First, find the non-interacting solution expressed in the schmidt basis
                     !This will only calculate it over the first impurity site
@@ -505,10 +507,9 @@ module LinearResponse
                 !Find the first-order wavefunction in the interacting picture for all impurity sites 
                 do pertsite = 1,nImp_GF
 
-
-                    if(tLR_ReoptGS) GSHam(:,:) = dcmplx(0.0_dp,0.0_dp)
-                    LinearSystem_p(:,:) = dcmplx(0.0_dp,0.0_dp)
-                    LinearSystem_h(:,:) = dcmplx(0.0_dp,0.0_dp)
+                    if(tLR_ReoptGS) GSHam(:,:) = zzero 
+                    LinearSystem_p(:,:) = zzero 
+                    LinearSystem_h(:,:) = zzero 
 
                     !Block 1 for particle hamiltonian
                     !First, construct n + 1 (alpha) FCI space, in determinant basis
@@ -552,11 +553,11 @@ module LinearResponse
                         enddo
                     enddo
             
-                    VNorm = 0.0_dp
-                    tempel = dcmplx(0.0_dp,0.0_dp)
+                    VNorm = zero
+                    tempel = zzero 
                     do a = VirtStart,VirtEnd
                         !Calc normalization for the CV block
-                        VNorm = VNorm + real(SchmidtPertGF_Cre(a),PertSite)**2 + aimag(SchmidtPertGF_Cre(a,pertsite))**2
+                        VNorm = VNorm + real(SchmidtPertGF_Cre(a,pertsite))**2 + aimag(SchmidtPertGF_Cre(a,pertsite))**2
                         !Calculate the diagonal correction
                         tempel = tempel + conjg(SchmidtPertGF_Cre(a,pertsite))*Gc_b_F_ab(a,pertsite)
                     enddo
@@ -580,8 +581,8 @@ module LinearResponse
                         enddo
                     enddo
 
-                    CNorm = 0.0_dp
-                    tempel = dcmplx(0.0_dp,0.0_dp)
+                    CNorm = zero
+                    tempel = zzero 
                     do i = 1,CoreEnd
                         !Calc normalization
                         CNorm = CNorm + real(SchmidtPertGF_Ann(i,pertsite))**2 + aimag(SchmidtPertGF_Ann(i,pertsite))**2
@@ -606,11 +607,13 @@ module LinearResponse
                             if(Coup_Ann_alpha(1,K,J).ne.0) then
                                 !Determinants are connected via a single SQ operator
                                 !First index is the spatial index, second is parity 
-                                LinearSystem_p(K+VIndex-1,J) = Gc_a_F_ax(Coup_Ann_alpha(1,K,J),pertsite)*Coup_Ann_alpha(2,K,J)/sqrt(VNorm)
+                                LinearSystem_p(K+VIndex-1,J) = Gc_a_F_ax(Coup_Ann_alpha(1,K,J),pertsite)    &
+                                    *Coup_Ann_alpha(2,K,J)/sqrt(VNorm)
                                 LinearSystem_p(J,K+VIndex-1) = conjg(LinearSystem_p(K+VIndex-1,J))
                                 if(tLR_ReoptGS) then
                                     !Block 3 contribution
-                                    GSHam(K,Np1GSInd+J-1) = - conjg(Ga_i_F_xi(Coup_Ann_alpha(1,K,J),pertsite))*Coup_Ann_alpha(2,K,J)/sqrt(CNorm)
+                                    GSHam(K,Np1GSInd+J-1) = - conjg(Ga_i_F_xi(Coup_Ann_alpha(1,K,J),pertsite))  &
+                                        *Coup_Ann_alpha(2,K,J)/sqrt(CNorm)
                                     GSHam(Np1GSInd+J-1,K) = conjg(GSHam(K,Np1GSInd+J-1))
                                 endif
                             endif
@@ -622,11 +625,13 @@ module LinearResponse
                         do K = 1,nFCIDet
                             if(Coup_Create_alpha(1,K,J).ne.0) then
                                 !Determinants are connected via a single SQ operator
-                                LinearSystem_h(K+VIndex-1,J) = - Ga_i_F_xi(Coup_Create_alpha(1,K,J),pertsite)*Coup_Create_alpha(2,K,J)/sqrt(CNorm)
+                                LinearSystem_h(K+VIndex-1,J) = - Ga_i_F_xi(Coup_Create_alpha(1,K,J),pertsite)   &
+                                    *Coup_Create_alpha(2,K,J)/sqrt(CNorm)
                                 LinearSystem_h(J,K+VIndex-1) = conjg(LinearSystem_h(K+VIndex-1,J))
                                 if(tLR_ReoptGS) then
                                     !Block 6 contribution
-                                    GSHam(K,Nm1GSInd+J-1) = conjg(Gc_a_F_ax(Coup_Create_alpha(1,K,J),pertsite))*Coup_Create_alpha(2,K,J)/sqrt(VNorm)
+                                    GSHam(K,Nm1GSInd+J-1) = conjg(Gc_a_F_ax(Coup_Create_alpha(1,K,J),pertsite)) &
+                                        *Coup_Create_alpha(2,K,J)/sqrt(VNorm)
                                     GSHam(Nm1GSInd+J-1,K) = conjg(GSHam(K,Nm1GSInd+J-1))
                                 endif
                             endif
@@ -737,7 +742,9 @@ module LinearResponse
                         zDirMV_Mat => null()
                         if(info.gt.7) write(6,*) "info: ",info
                         if(info.eq.8) call stop_all(t_r,'Linear equation solver hit maximum iterations')
-                        if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) call stop_all(t_r,'Input matrices to linear solver incorrect')
+                        if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) then
+                            call stop_all(t_r,'Input matrices to linear solver incorrect')
+                        endif
                         if(info.gt.11) call stop_all(t_r,'Linear equation solver failed')
                     else
                         !Copy V|0> to another array, since if we are not reoptimizing the GS, we want to keep them.
@@ -774,7 +781,9 @@ module LinearResponse
                         zDirMV_Mat => null()
                         if(info.gt.7) write(6,*) "info: ",info
                         if(info.eq.8) call stop_all(t_r,'Linear equation solver hit maximum iterations')
-                        if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) call stop_all(t_r,'Input matrices to linear solver incorrect')
+                        if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) then
+                            call stop_all(t_r,'Input matrices to linear solver incorrect')
+                        endif
                         if(info.gt.11) call stop_all(t_r,'Linear equation solver failed')
                     else
                         do i = 1,nLinearSystem
@@ -797,10 +806,10 @@ module LinearResponse
                     !write(6,*) "Normalization of first-order wavefunction: ",dNorm_p,dNorm_h
                     
                     !Now, calculate all interacting greens funtions that we want, by dotting in the first-order space
-                    if((nImp_GS.gt.1).and.(tLR_ReoptGS)) then
+                    if((nImp_GF.gt.1).and.(tLR_ReoptGS)) then
                         call stop_all(t_r,'Cannot do dotting of vectors here, since the LHS vectors are still being computed')
                     endif
-                    do j = 1,nImp_GS
+                    do j = 1,nImp_GF
                         ResponseFn_p(pertsite,j) = zdotc(nLinearSystem,Ann_0(:,j),1,Psi1_p,1)
                         ResponseFn_h(pertsite,j) = zdotc(nLinearSystem,Cre_0(:,j),1,Psi1_h,1)
                         ResponseFn_Mat(pertsite,j) = ResponseFn_p(pertsite,j) + ResponseFn_h(pertsite,j)
@@ -829,12 +838,31 @@ module LinearResponse
                 !Now, calculate NI and interacting response function as trace over diagonal parts of the local greens functions
                 ni_lr = zzero
                 ResponseFn = zzero
-                do i = 1,nImp_GS
+                AvResFn_p = zzero
+                AvResFn_h = zzero
+                ni_lr_p = zzero
+                ni_lr_h = zzero
+                AvdNorm_p = zero
+                AvdNorm_h = zero
+                do i = 1,nImp_GF
                     ni_lr = ni_lr + ni_lr_Mat(i,i)
                     ResponseFn = ResponseFn + ResponseFn_Mat(i,i)
+                    AvResFn_p = AvResFn_p + ResponseFn_p(i,i)
+                    AvResFn_h = AvResFn_h + ResponseFn_h(i,i)
+                    ni_lr_p = ni_lr_p + NI_LRMat_Cre(i,i)
+                    ni_lr_h = ni_lr_h + NI_LRMat_Ann(i,i)
+                    AvdNorm_p = AvdNorm_p + dNorm_p(i)
+                    AvdNorm_h = AvdNorm_h + dNorm_h(i)
                 enddo
-                ni_lr = ni_lr/real(nImp_GS,dp)
-                ResponseFn = ResponseFn/real(nImp_GS,dp)
+                ni_lr = ni_lr/real(nImp_GF,dp)
+                ni_lr_p = ni_lr_p/real(nImp_GF,dp)
+                ni_lr_h = ni_lr_h/real(nImp_GF,dp)
+                ResponseFn = ResponseFn/real(nImp_GF,dp)
+                AvResFn_p = AvResFn_p/real(nImp_GF,dp)
+                AvResFn_h = AvResFn_h/real(nImp_GF,dp)
+                AvdNorm_p = AvdNorm_p/real(nImp_GF,dp)
+                AvdNorm_h = AvdNorm_h/real(nImp_GF,dp)
+
                 Diff_GF = abs(ResponseFn - ni_lr)
                 
                 if(tSC_LR) then
@@ -851,9 +879,9 @@ module LinearResponse
             endif
 
             write(iunit,"(18G22.10,2I7)") Omega,real(ResponseFn),-aimag(ResponseFn), &
-                real(ResponseFn_p),-aimag(ResponseFn_p),real(ResponseFn_h),-aimag(ResponseFn_h),    &
-                HL_Energy,GFChemPot,abs(dNorm_p),abs(dNorm_h),real(ni_lr),-aimag(ni_lr),real(ni_lr_Cre),    &
-                -aimag(ni_lr_Cre),real(ni_lr_Ann),-aimag(ni_lr_Ann),SpectralWeight,iters_p,iters_h
+                real(AvResFn_p),-aimag(AvResFn_p),real(AvResFn_h),-aimag(AvResFn_h),    &
+                HL_Energy,GFChemPot,abs(AvdNorm_p),abs(AvdNorm_h),real(ni_lr),-aimag(ni_lr),real(ni_lr_p),    &
+                -aimag(ni_lr_p),real(ni_lr_h),-aimag(ni_lr_h),SpectralWeight,iters_p,iters_h
 
 
             if(tFirst) tFirst = .false.
@@ -922,7 +950,7 @@ module LinearResponse
         complex(dp) , allocatable :: F_xi_G_ia_G_ya(:,:),G_xa_F_ya(:,:),G_xi_G_yi(:,:),G_ix_F_ij(:,:)
         complex(dp) , allocatable :: G_ix_G_jy_F_ji(:,:),G_ia_G_ix(:,:),F_ax_G_ia_G_iy(:,:),G_ix_F_iy(:,:)
         complex(dp) , allocatable :: SBlock(:,:),temp_vecc_2(:),S_Diag(:),temp_vecc_3(:)
-        real(dp), allocatable :: NFCIHam(:,:),temp(:,:),Nm1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
+        real(dp), allocatable :: NFCIHam(:,:),Nm1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
         real(dp), allocatable :: Np1FCIHam_alpha(:,:),Np1FCIHam_beta(:,:),SBlock_val(:)
         real(dp), allocatable :: AVNorm(:),CANorm(:),Work(:),H_Vals(:),S_EigVal(:)
         integer, allocatable :: Coup_Ann_alpha(:,:,:),Coup_Ann_beta(:,:,:)
@@ -2232,6 +2260,7 @@ module LinearResponse
         
     !Calculate n-electron hamiltonian
     subroutine Fill_N_Np1_Nm1b_FCIHam(nElec,NHam,Np1Ham,Nm1bHam)
+        use DetToolsData
         implicit none
         integer, intent(in) :: nElec
         real(dp), intent(out) :: NHam(nFCIDet,nFCIDet)
@@ -2251,18 +2280,18 @@ module LinearResponse
         enddo
         do i = 1,nNp1FCIDet
             do j = i,nNp1FCIDet
-                call GetHElement(Np1FCIDetList(:,i),Np1FCIDetList(:,j),nElec+1,Np1Ham(i,j)
+                call GetHElement(Np1FCIDetList(:,i),Np1FCIDetList(:,j),nElec+1,Np1Ham(i,j))
                 Np1Ham(j,i) = Np1Ham(i,j)
             enddo
         enddo
         do i = 1,nNm1bFCIDet
             do j = i,nNm1bFCIDet
-                call GetHElement(Nm1bFCIDetList(:,i),Nm1bFCIDetList(:,j),nElec-1,Nm1bHam(i,j)
+                call GetHElement(Nm1bFCIDetList(:,i),Nm1bFCIDetList(:,j),nElec-1,Nm1bHam(i,j))
                 Nm1bHam(j,i) = Nm1bHam(i,j)
             enddo
         enddo
 
-    end subroutine Fill_N_Np1_Nm1bFCIHam
+    end subroutine Fill_N_Np1_Nm1b_FCIHam
 
     !RHS is overwritten with the solution
     !LHS is destroyed
@@ -2368,11 +2397,11 @@ module LinearResponse
 
     !This will apply an alpha creation operator at site pertsite to the first order interacting wavefunction
     !Returns the wavefunction Psi in the standard N-electron determinant space
-    subroutine ApplyCre_FirstOrder_EC(Psi_1,nSize1,Psi,nSize0)
+    subroutine ApplyCre_FirstOrder_EC(Psi_1,nSize1,Psi,nSize0,pertsite)
         use DetToolsData
         use DetBitOps, only: SQOperator 
         implicit none
-        integer, intent(in) :: nSize1,nSize0
+        integer, intent(in) :: nSize1,nSize0,pertsite
         complex(dp), intent(in) :: Psi_1(nSize1)
         complex(dp), intent(out) :: Psi(nSize0)
         integer :: pertsitealpha,ilut,j,i
@@ -2441,11 +2470,11 @@ module LinearResponse
     ! nNp1FCIDet space (+) nFCIDet space with contracted creation operator applied to core
     ! The first space couples to the uncontracted N electron space of the GS, while if the GS has been reoptimized, then
     ! we also have coupling between the second space with the N-1 (third) space of the GS wavefunction
-    subroutine ApplyAnn_FirstOrder_EC(Psi_1,nSize1,Psi,nSize0)
+    subroutine ApplyAnn_FirstOrder_EC(Psi_1,nSize1,Psi,nSize0,pertsite)
         use DetToolsData
         use DetBitOps, only: SQOperator 
         implicit none
-        integer, intent(in) :: nSize1,nSize0
+        integer, intent(in) :: nSize1,nSize0,pertsite
         complex(dp), intent(in) :: Psi_1(nSize1)
         complex(dp), intent(out) :: Psi(nSize0)
         integer :: pertsitealpha,ilut,j,i
@@ -2682,8 +2711,11 @@ module LinearResponse
         integer , intent(in) :: nSize
         complex(dp), intent(in) :: GS(nSize)
         complex(dp), intent(out) :: V0(nSize)
-        integer :: pertsitealpha,pertsitebeta,i,j,ind
+        integer :: pertsitealpha,pertsitebeta,i,j,ind,pertsite
         character(len=*), parameter :: t_r='ApplyDensityPert_EC'
+
+        !Initially, assume that the perturbation only acts at site 1
+        pertsite = 1
 
         V0(:) = dcmplx(0.0_dp,0.0_dp)
         pertsitealpha = 2*pertsite-1
@@ -4549,14 +4581,17 @@ module LinearResponse
         use DetToolsData, only: nFCIDet,FCIDetList
         implicit none
         integer :: nCoreVirt,nCoreActive,nActiveVirt,nLinearSystem,ierr,info
-        integer :: i,j,CoreNEl,ind2,ind1,a,x,Ex(2),b
+        integer :: i,j,CoreNEl,ind2,ind1,a,x,Ex(2),b,pertsite
         logical :: tSign_a,tSign_b
         integer, allocatable :: Pivots(:),RefCore(:),Excit1_a(:),Excit1_b(:)
         integer, allocatable :: Excit2_a(:),Excit2_b(:)
-        real(dp), allocatable :: LinearSystem(:,:),temp(:,:),Overlap(:,:),Response(:)
+        real(dp), allocatable :: LinearSystem(:,:),Overlap(:,:),Response(:)
         real(dp), allocatable :: ResponseSaved(:), LinearSystemSaved(:,:)
         real(dp) :: Omega,ResponseVal
         character(len=*), parameter :: t_r='SolveDMETResponse'
+
+        !Assume initially that the perturbation acts only at site 1
+        pertsite = 1
 
         if(.not.tConstructFullSchmidtBasis) call stop_all(t_r,'To solve LR, must construct full schmidt basis')
         if(.not.tCompleteDiag) call stop_all(t_r,'To solve LR, must perform complete diag')
@@ -4968,11 +5003,11 @@ module LinearResponse
         complex(dp), intent(in) :: x(n)
         complex(dp), intent(out) :: y(n)
         integer :: i
-        real(dp) :: di
+!        real(dp) :: di
 !        complex(dp) :: di
         character(len=*), parameter :: t_r='zPreCond'
 
-        if(.not.associated(zDirMV_Mat)) call stop_all('zPreCond','Matrix not associated!')
+        if(.not.associated(zDirMV_Mat)) call stop_all(t_r,'Matrix not associated!')
 
         do i = 1,n
             y(i) = x(i) / abs(Precond_diag(i))
@@ -5033,12 +5068,13 @@ module LinearResponse
     !The global matrices SchmidtPertGF_Cre and SchmidtPertGF_Ann are filled, as well as the
     !new one-electron hamiltonians for the interacting problem: Emb_h0v_SE and FockSchmidt_SE
     subroutine FindNI_Charged(Omega,NI_LRMat_Cre,NI_LRMat_Ann)
+        use mat_tools, only: add_localpot
         implicit none
         real(dp), intent(in) :: Omega
         complex(dp), intent(out) :: NI_LRMat_Cre(nImp,nImp),NI_LRMat_Ann(nImp,nImp)
         real(dp), allocatable :: AO_OneE_Ham(:,:),W(:),Work(:),MOtoSchmidt(:,:),temp(:,:)
         complex(dp), allocatable :: HFPertBasis_Ann(:,:),HFPertBasis_Cre(:,:)
-        integer :: lwork,info,persite,i,a,pertBra,j
+        integer :: lwork,info,i,a,pertBra,j,b,pertsite
         character(len=*), parameter :: t_r='FindNI_Charged'
 
         if(.not.tAllImp_LR) then
@@ -5087,10 +5123,12 @@ module LinearResponse
 
                 !Now perform the set of dot products of <0|V* with |1> for all combinations of sites
                 do i = 1,nOcc
-                    NI_LRMat_Ann(pertsite,pertBra) = NI_LRMat_Ann(pertsite,pertBra) + AO_OneE_Ham(pertBra,i)*HFPertBasis_Ann(i,pertsite)
+                    NI_LRMat_Ann(pertsite,pertBra) = NI_LRMat_Ann(pertsite,pertBra) +   &
+                        AO_OneE_Ham(pertBra,i)*HFPertBasis_Ann(i,pertsite)
                 enddo
                 do a = nOcc+1,nSites
-                    NI_LRMat_Cre(pertsite,pertBra) = NI_LRMat_Cre(pertsite,pertBra) + AO_OneE_Ham(pertBra,a)*HFPertBasis_Cre(a,pertsite)
+                    NI_LRMat_Cre(pertsite,pertBra) = NI_LRMat_Cre(pertsite,pertBra) +   &
+                        AO_OneE_Ham(pertBra,a)*HFPertBasis_Cre(a,pertsite)
                 enddo
             enddo
         enddo
@@ -5253,6 +5291,7 @@ module LinearResponse
 
 
     !Find the non-interacting perturbation, and project this operator into the schmidt basis of phi^0 + its virtual space
+    !This is for the density perturbation 
     subroutine FindSchmidtPert(tNonIntTest,Omega,ni_lr)
         implicit none
         logical, intent(in) :: tNonIntTest  !Test to return just the perturbation in the normal HF basis
@@ -5261,8 +5300,11 @@ module LinearResponse
         complex(dp), allocatable :: HFPertBasis(:,:),temp(:,:)
         complex(dp), allocatable :: C_HFtoSTrans(:,:)
         real(dp) :: EDiff
-        integer :: a,i,j
+        integer :: a,i,j,pertsite
         character(len=*), parameter :: t_r='FindSchmidtBasis'
+
+        !Assume (for the moment) that the perturbation operates exclusively at the first site
+        pertsite = 1
 
         if(tNonIntTest) then
             !Screw everything up by ensuring that HFOrbs = FullHFOrbs (likewise for energy eigenvalues)
@@ -5336,7 +5378,7 @@ module LinearResponse
         use utils, only: get_free_unit,append_ext_real,append_ext
         implicit none
         integer :: ov_space,virt_start,i,a,a_spat,i_spat,ai_ind,gtid,iunit
-        integer :: highbound        !,iunit2
+        integer :: highbound,pertsite 
         real(dp) :: Omega,EDiff
         complex(dp) :: ResponseFn,ResponseFnPosW
         real(dp), allocatable :: transitions(:,:)   !(ov_space,2)   !1 = transition frequencies, 2 = moments
@@ -5344,6 +5386,10 @@ module LinearResponse
         !character(len=*), parameter :: t_r='NonInteractingLR'
 
         write(6,*) "Calculating the non-interacting linear response function"
+
+        !Assume that the perturbation is local to site 1
+        !They should all be the same in the NI limit anyway
+        pertsite = 1
 
         !First, just enumerate transitions
         ov_space =2*nOcc*(nSites-nOcc)
@@ -5452,7 +5498,7 @@ module LinearResponse
         implicit none
         integer :: ov_space,virt_start,ierr,i,j,n,m,nj_ind,mi_ind,ex(2,2),gtid
         integer :: m_spat,i_spat,lwork,info,k,umatind,l,orbpairs,umatsize,ai_ind,a
-        integer :: state,iunit,a_spat,highbound
+        integer :: state,iunit,a_spat,highbound,pertsite
         logical :: tSign
         integer, allocatable :: detHF(:),detR(:),detL(:)
         real(dp) :: HEl1,GetHFAntisymInt_spinorb,GetHFInt_spinorb,Omega
@@ -5463,6 +5509,9 @@ module LinearResponse
         character(len=*), parameter :: t_r='TDA_LR'
 
         write(6,*) "Calculating the linear response function via the Tamm-Dancoff approximation"
+
+        !Assume that the perturbation is local to site 1
+        pertsite = 1
 
         ov_space =2*nOcc*(nSites-nOcc)
         virt_start = (2*nOcc)+1
@@ -5777,6 +5826,7 @@ module LinearResponse
         implicit none
         integer :: ov_space,virt_start,ierr,j,ex(2,2),ex2(2,2),n,i,m,nj_ind,mi_ind,info,lwork
         integer :: m_spat,i_spat,StabilitySize,mu,gtid,j_spat,ai_ind,iunit,a,excit,highbound
+        integer :: pertsite
         real(dp) :: HEl1,HEl2,X_norm,Y_norm,norm,Energy_stab,DMEl1,DMEl2,Omega
         complex(dp) :: ResponseFn
         real(dp) :: GetHFAntisymInt_spinorb
@@ -5785,6 +5835,9 @@ module LinearResponse
         real(dp), allocatable :: trans_moment(:),AOMO_Spin(:,:),DM(:,:)
         character(64) :: filename,filename2
         character(len=*), parameter :: t_r='RPA_LR'
+
+        !Assume that the perturbation is local to site 1. This condition may want to be changed in the future
+        pertsite = 1
 
         ov_space = 2*nOcc*(nSites-nOcc)
         virt_start = (2*nOcc)+1
@@ -6306,7 +6359,10 @@ module LinearResponse
         real(dp) , allocatable :: TempRDM(:,:),PertBath(:),GSBath(:),PertDM(:,:)
         real(dp) :: StaticResponse,Overlap,dStep,DDOT,PertNorm
         character(len=*), parameter :: t_r='StaticMF_DD'
-        integer :: lWork, info,i,j
+        integer :: lWork, info,i,j,pertsite
+
+        !Assume that the perturbation is local to site 1
+        pertsite = 1
         
         allocate(Orbs(nSites,nSites))
         allocate(Energies(nSites))
@@ -6407,7 +6463,10 @@ module LinearResponse
     subroutine non_interactingLR()
         implicit none
         real(dp) :: MFDD_Response,EDiff,Omega
-        integer :: n,a
+        integer :: n,a,pertsite
+
+!Assume perturbation acts at site 1, and this is a local greens function. They should all be the same in the non-interacting limit
+        pertsite = 1    
 
         Omega = Start_Omega
         do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))

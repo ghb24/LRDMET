@@ -1244,7 +1244,7 @@ Program RealHub
     !Calculate the embedded basis, and transform the 1e operators into this new basis
     subroutine CalcEmbedding()
         implicit none
-        real(dp) :: ImpurityOverlap(nImp,nImp),OverlapEVs(nImp),DDOT
+        real(dp) :: ImpurityOverlap(nImp,nImp),OverlapEVs(nImp)
         real(dp), allocatable :: RDMonImp(:,:),Work(:),SminHalf(:,:),temp(:,:)
         integer :: info,lWork,i,j,nDelete
         character(len=*), parameter :: t_r="CalcEmbedding"

@@ -113,13 +113,16 @@ module Globals
                                 ! 2   ZGELS   Advanced linear solver - should be better if hamiltonian nearly singular
                                 ! 3   Direct inversion
                                 ! 4   Complete diagonalization
+    logical :: tAllImp_LR       ! Whether to calculate all nImp*nImp greens functions
+    logical :: tSC_LR           ! Whether to self-consistently optimize the self-energy part of the LR h.
     
     !DMET_LR global data
-    real(dp), allocatable :: SchmidtPertGF_Cre(:,:) !The contraction coefficients (potentially for each impurity site) for the core excitations
-    real(dp), allocatable :: SchmidtPertGF_Ann(:,:) !The contraction coefficients (potentially for each impurity site) for the core excitations
+    complex(dp), allocatable :: SchmidtPertGF_Cre(:,:) !The contraction coefficients (potentially for each impurity site) for the core excitations
+    complex(dp), allocatable :: SchmidtPertGF_Ann(:,:) !The contraction coefficients (potentially for each impurity site) for the core excitations
     complex(dp), allocatable :: NI_LRMat_Cre(:,:)   !NI particle greens functions for each value of omega
     complex(dp), allocatable :: NI_LRMat_Ann(:,:)   !NI hole-addition greens functions for each value of omega
     real(dp), allocatable :: SelfEnergy_Imp(:,:)    !The updated self-energy matrix over impurity sites
+    real(dp), allocatable :: Emb_h0v_SE(:,:)
     complex(dp), allocatable :: FockSchmidt_SE(:,:) !The one-electron hamiltonian over the whole space (apart from imp-imp block)
     complex(dp), allocatable :: FockSchmidt_SE_VV(:,:) !The one-electron hamiltonian over the virtual-virtual block
     complex(dp), allocatable :: FockSchmidt_SE_CC(:,:) !The one-electron hamiltonian over the core core block
