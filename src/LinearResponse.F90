@@ -323,7 +323,10 @@ module LinearResponse
         allocate(FockSchmidtComp(nSites,nSites),stat=ierr)
         write(6,"(A,F12.5,A)") "Memory required for fock matrix: ",((2.0_dp*real(nSites,dp))**2)*ComptoMb, " Mb"
         if(ierr.ne.0) call stop_all(t_r,'Error allocating')
-        
+
+        !Set the impurity parts to the correct values (even though we don't access them from FockSchmidt)
+        !They are different since the correlation potential is not defined over the impurity sites.
+        FockSchmidt(nOcc-nImp+1:nOcc+nImp,nOcc-nImp+1:nOcc+nImp) = Emb_h0v(:,:)
         do i = 1,nSites
             do j = 1,nSites
                 FockSchmidtComp(j,i) = dcmplx(FockSchmidt(j,i),0.0_dp)
