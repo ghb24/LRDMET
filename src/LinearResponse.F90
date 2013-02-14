@@ -107,10 +107,11 @@ module LinearResponse
         real(dp), allocatable :: NFCIHam(:,:),temp(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
         real(dp), allocatable :: W(:)
         complex(dp), allocatable , target :: LinearSystem_p(:,:),LinearSystem_h(:,:)
-        complex(dp), allocatable :: Cre_0(:),Ann_0(:)
-        complex(dp), allocatable :: Gc_a_F_ax(:),Gc_b_F_ab(:),GSHam(:,:)
-        complex(dp), allocatable :: Psi_h(:),Psi_p(:),Psi1_p(:),Psi1_h(:),Ga_i_F_xi(:),Ga_i_F_ij(:)
+        complex(dp), allocatable :: Cre_0(:,:),Ann_0(:,:),ResponseFn_p(:,:),ResponseFn_h(:,:)
+        complex(dp), allocatable :: Gc_a_F_ax(:),Gc_b_F_ab(:),GSHam(:,:),ResponseFn_Mat(:,:)
+        complex(dp), allocatable :: Psi1_p(:),Psi1_h(:),Ga_i_F_xi(:),Ga_i_F_ij(:),ni_lr_Mat(:,:)
         complex(dp), allocatable :: temp_vecc(:),Work(:),Psi_0(:),RHS(:)
+        complex(dp), allocatable :: NI_LRMat_Cre(:,:),NI_LRMat_Ann(:,:)
         integer, allocatable :: Coup_Ann_alpha(:,:,:),Coup_Create_alpha(:,:,:)
         integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,umatind,ierr,info,iunit,nCore
         integer :: nLinearSystem,nOrbs,nVirt,OrbPairs,tempK,UMatSize,VIndex,VirtStart,VirtEnd
@@ -118,8 +119,8 @@ module LinearResponse
         integer :: maxminres_iter
         integer(ip) :: nLinearSystem_ip,minres_unit_ip,info_ip,maxminres_iter_ip,iters_p,iters_h
         real(dp) :: VNorm,CNorm,Omega,GFChemPot,mu,SpectralWeight,Prev_Spec
-        complex(dp) :: dNorm_p,dNorm_h,ni_lr,ni_lr_Cre,ni_lr_Ann
-        complex(dp) :: ResponseFn,ResponseFn_h,ResponseFn_p,tempel
+        complex(dp) :: dNorm_p,dNorm_h,ni_lr
+        complex(dp) :: ResponseFn,tempel,Diff_GF
         logical :: tParity,tFirst
         character(64) :: filename,filename2
         character(len=*), parameter :: t_r='NonIntExCont_TDA_MCLR_Charged'
@@ -179,7 +180,7 @@ module LinearResponse
         !Surely if we are doing self-consistent LR, we can only have the GS in the n-electron space, since the others
         !aren't consistent across the different greens functions.
         !Would be ok with nImp = 1 I guess, since there is still then a unique GS.
-        if(tSC_LR.and.tLR_ReoptGS) call stop_all(t_r,"Reoptimizing GS not sorted yet.")
+        if(tSC_LR.and.tLR_ReoptGS) call stop_all(t_r,"Reoptimizing GS not sorted yet - probably shouldn't happen")
 
         !umat and tmat for the active space
         OrbPairs = (EmbSize*(EmbSize+1))/2
@@ -278,6 +279,34 @@ module LinearResponse
             endif
         endif
         
+        if(tAllImp_LR) then
+            !We calculate all greens functions between all impurity sites - both in the non-interacting and interacting case
+            nImp_GF = nImp 
+        else
+            nImp_GF = 1
+        endif
+        allocate(SchmidtPertGF_Cre(nOcc+nImp+1:nSites,nImp_GF))
+        allocate(SchmidtPertGF_Ann(1:nOcc-nImp,nImp_GF))
+        allocate(NI_LRMat_Cre(nImp_GF,nImp_GF))
+        allocate(NI_LRMat_Ann(nImp_GF,nImp_GF))
+        allocate(ni_lr_Mat(nImp_GF,nImp_GF))
+        allocate(ResponseFn_p(nImp_GF,nImp_GF))
+        allocate(ResponseFn_h(nImp_GF,nImp_GF))
+        allocate(ResponseFn_Mat(nImp_GF,nImp_GF))
+        
+        !Since this does not depend at all on the new basis, since the ground state has a completely
+        !disjoint basis to |1>, the RHS of the equations can be precomputed
+        allocate(Cre_0(nLinearSystem,nImp_GF))
+        allocate(Ann_0(nLinearSystem,nImp_GF))
+        if(.not.tLR_ReoptGS) then
+            Psi_0(:) = dcmplx(0.0_dp,0.0_dp)
+            Psi_0(1:nFCIDet) = HL_Vec(:)    
+            GFChemPot = HL_Energy
+            do i = 1,nImp_GF
+                call ApplySP_PertGS_EC(Psi_0,nGSSpace,Cre_0(:,i),Ann_0(:,i),nLinearSystem,i)
+            enddo
+        endif
+        
         !Allocate memory for hamiltonian in this system:
         allocate(LinearSystem_p(nLinearSystem,nLinearSystem),stat=ierr)
         allocate(LinearSystem_h(nLinearSystem,nLinearSystem),stat=ierr)
@@ -288,8 +317,6 @@ module LinearResponse
         allocate(Psi_0(nGSSpace),stat=ierr)   !If tLR_ReoptGS = .F. , then only the first nFCIDet elements will be used
         allocate(Psi1_p(nLinearSystem),stat=ierr)
         allocate(Psi1_h(nLinearSystem),stat=ierr)
-        allocate(Psi_p(nGSSpace),stat=ierr)  !To store the V^T 1/H V |0> wavefunctions in the GS space
-        allocate(Psi_h(nGSSpace),stat=ierr)  !To store the V^T 1/H V |0> wavefunctions in the GS space
         if(ierr.ne.0) call stop_all(t_r,'Error allocating')
         i = nGSSpace*3 + nLinearSystem*5
         write(6,"(A,F12.5,A)") "Memory required for wavefunctions: ",real(i,dp)*ComptoMb, " Mb"
@@ -339,17 +366,14 @@ module LinearResponse
             allocate(Emb_h0v_SE(EmbSize,EmbSize))   !The 1-electron hamiltonian (with self-energy correction) over the embedded basis
         endif
         
-        !Since this does not depend at all on the new basis, since the ground state has a completely
-        !disjoint basis to |1>, the RHS of the equations can be precomputed
-        allocate(Cre_0(nLinearSystem))
-        allocate(Ann_0(nLinearSystem))
-        if(.not.tLR_ReoptGS) then
-            Psi_0(:) = dcmplx(0.0_dp,0.0_dp)
-            Psi_0(1:nFCIDet) = HL_Vec(:)    
-            GFChemPot = HL_Energy
-            call ApplySP_PertGS_EC(Psi_0,nGSSpace,Cre_0,Ann_0,nLinearSystem)
-        endif
-        
+        !Space for useful intermediates
+        !For particle addition
+        allocate(Gc_a_F_ax(ActiveStart:ActiveEnd,nImp_GF),stat=ierr)
+        allocate(Gc_b_F_ab(VirtStart:VirtEnd,nImp_GF),stat=ierr)
+        !For hole addition
+        allocate(Ga_i_F_xi(ActiveStart:ActiveEnd,nImp_GF),stat=ierr)
+        allocate(Ga_i_F_ij(1:nCore,nImp_GF),stat=ierr)
+
         !Allocate and precompute 1-operator coupling coefficients between the different sized spaces.
         !First number is the index of operator, and the second is the parity change when applying the operator
         allocate(Coup_Create_alpha(2,nFCIDet,nNm1bFCIDet))
@@ -421,25 +445,6 @@ module LinearResponse
         i = 2*nFCIDet*nNm1bFCIDet + 2*nFCIDet*nNp1FCIDet
         write(6,"(A,F12.5,A)") "Memory required for coupling coefficient matrices: ",real(i,dp)*RealtoMb, " Mb"
 
-        if(tAllImp_LR) then
-            !We calculate all greens functions between all impurity sites - both in the non-interacting and interacting case
-            nImp_GF = nImp 
-        else
-            nImp_GF = 1
-        endif
-        allocate(SchmidtPertGF_Cre(nOcc+nImp+1:nSites,nImp_GF))
-        allocate(SchmidtPertGF_Ann(1:nOcc-nImp,nImp_GF))
-        allocate(NI_LRMat_Cre(nImp_GF,nImp_GF))
-        allocate(NI_LRMat_Ann(nImp_GF,nImp_GF))
-        
-        !Space for useful intermediates
-        !For particle addition
-        allocate(Gc_a_F_ax(ActiveStart:ActiveEnd,nImp_GF),stat=ierr)
-        allocate(Gc_b_F_ab(VirtStart:VirtEnd,nImp_GF),stat=ierr)
-        !For hole addition
-        allocate(Ga_i_F_xi(ActiveStart:ActiveEnd,nImp_GF),stat=ierr)
-        allocate(Ga_i_F_ij(1:nCore,nImp_GF),stat=ierr)
-
         if(.not.tAnderson) then
             !In the hubbard model, apply a chemical potential of U/2
             mu = U/2.0_dp
@@ -461,7 +466,6 @@ module LinearResponse
             do while(.not.tSCFConverged)
                 !Self consistently calculate a self-energy function over the impurity sites to match the 
                 !mean-field and HL GF calculations.
-                if(.not.tSC_LR) tSCFConverged = .true.  !We only do one cycle
 
                 if(tSC_LR) then
                     !Find the mean-field solution with an added self-energy. This will also return the
@@ -498,337 +502,349 @@ module LinearResponse
                 call ZGEMM('N','N',nCore,nImp_GF,nCore,zzero,FockSchmidt_SE_CC(:,:),nCore,SchmidtPertGF_Ann(:,:),nCore,zzero,   &
                     Ga_i_F_ij,nCore)
 
-
-
                 !Find the first-order wavefunction in the interacting picture for all impurity sites 
                 do pertsite = 1,nImp_GF
 
 
-            if(tLR_ReoptGS) GSHam(:,:) = dcmplx(0.0_dp,0.0_dp)
-            LinearSystem_p(:,:) = dcmplx(0.0_dp,0.0_dp)
-            LinearSystem_h(:,:) = dcmplx(0.0_dp,0.0_dp)
+                    if(tLR_ReoptGS) GSHam(:,:) = dcmplx(0.0_dp,0.0_dp)
+                    LinearSystem_p(:,:) = dcmplx(0.0_dp,0.0_dp)
+                    LinearSystem_h(:,:) = dcmplx(0.0_dp,0.0_dp)
 
+                    !Block 1 for particle hamiltonian
+                    !First, construct n + 1 (alpha) FCI space, in determinant basis
+                    do i = 1,nNp1FCIDet
+                        do j = 1,nNp1FCIDet
+                            LinearSystem_p(j,i) = dcmplx(Np1FCIHam_alpha(j,i),0.0_dp)
+                        enddo
+                    enddo
+                    !Block 1 for hole hamiltonian
+                    do i = 1,nNm1bFCIDet
+                        do j = 1,nNm1bFCIDet
+                            LinearSystem_h(j,i) = dcmplx(Nm1FCIHam_beta(j,i),0.0_dp)
+                        enddo
+                    enddo
+                    if(tLR_ReoptGS) then
+                        !Block 1 for GS
+                        do i = 1,nFCIDet
+                            do j = 1,nFCIDet
+                                GSHam(j,i) = dcmplx(nFCIHam(j,i),0.0_dp)
+                            enddo
+                        enddo
+                        !Block 2 (diagonal part to come)
+                        do i = Np1GSInd,Nm1GSInd-1
+                            do j = Np1GSInd,Nm1GSInd-1
+                                GSHam(j,i) = dcmplx(Np1FCIHam_alpha(j-Np1GSInd+1,i-Np1GSInd+1),0.0_dp)
+                            enddo
+                        enddo
+                        !Block 4 (diagonal part to come)
+                        do i = Nm1GSInd,nGSSpace
+                            do j = Nm1GSInd,nGSSpace
+                                GSHam(j,i) = dcmplx(Nm1FCIHam_beta(j-Nm1GSInd+1,i-Nm1GSInd+1),0.0_dp)
+                            enddo
+                        enddo
+                    endif
 
-            !Block 1 for particle hamiltonian
-            !First, construct n + 1 (alpha) FCI space, in determinant basis
-            do i = 1,nNp1FCIDet
-                do j = 1,nNp1FCIDet
-                    LinearSystem_p(j,i) = dcmplx(Np1FCIHam_alpha(j,i),0.0_dp)
-                enddo
-            enddo
-            !call R_C_Copy_2D(LinearSystem_p(1:nNp1FCIDet,1:nNp1FCIDet),Np1FCIHam_alpha(:,:),nNp1FCIDet,nNp1FCIDet)
-            !Block 1 for hole hamiltonian
-            do i = 1,nNm1bFCIDet
-                do j = 1,nNm1bFCIDet
-                    LinearSystem_h(j,i) = dcmplx(Nm1FCIHam_beta(j,i),0.0_dp)
-                enddo
-            enddo
-            !call R_C_Copy_2D(LinearSystem_h(1:nNm1bFCIDet,1:nNm1bFCIDet),Nm1FCIHam_beta(:,:),nNm1bFCIDet,nNm1bFCIDet)
-            if(tLR_ReoptGS) then
-                !Block 1 for GS
-                do i = 1,nFCIDet
-                    do j = 1,nFCIDet
-                        GSHam(j,i) = dcmplx(nFCIHam(j,i),0.0_dp)
+                    !Block 2 for particle hamiltonian
+                    !Copy the N electron FCI hamiltonian to this diagonal block
+                    do i = VIndex,nLinearSystem
+                        do j = VIndex,nLinearSystem
+                            LinearSystem_p(j,i) = dcmplx(nFCIHam(j-VIndex+1,i-VIndex+1),0.0_dp)
+                        enddo
                     enddo
-                enddo
-                !call R_C_Copy_2D(GSHam(1:nFCIDet,1:nFCIDet),nFCIHam(:,:),nFCIDet,nFCIDet)
-                !Block 2 (diagonal part to come)
-                do i = Np1GSInd,Nm1GSInd-1
-                    do j = Np1GSInd,Nm1GSInd-1
-                        GSHam(j,i) = dcmplx(Np1FCIHam_alpha(j-Np1GSInd+1,i-Np1GSInd+1),0.0_dp)
-                    enddo
-                enddo
-                !call R_C_Copy_2D(GSHam(Np1GSInd:Nm1GSInd-1,Np1GSInd:Nm1GSInd-1),Np1FCIHam_alpha(:,:),nNp1FCIDet,nNp1FCIDet)
-                !Block 4 (diagonal part to come)
-                do i = Nm1GSInd,nGSSpace
-                    do j = Nm1GSInd,nGSSpace
-                        GSHam(j,i) = dcmplx(Nm1FCIHam_beta(j-Nm1GSInd+1,i-Nm1GSInd+1),0.0_dp)
-                    enddo
-                enddo
-                !call R_C_Copy_2D(GSHam(Nm1GSInd:nGSSpace,Nm1GSInd:nGSSpace),Nm1FCIHam_beta(:,:),nNm1bFCIDet,nNm1bFCIDet)
-            endif
-
-            !Block 2 for particle hamiltonian
-            !Copy the N electron FCI hamiltonian to this diagonal block
-            do i = VIndex,nLinearSystem
-                do j = VIndex,nLinearSystem
-                    LinearSystem_p(j,i) = dcmplx(nFCIHam(j-VIndex+1,i-VIndex+1),0.0_dp)
-                enddo
-            enddo
-            !call R_C_Copy_2D(LinearSystem_p(VIndex:nLinearSystem,VIndex:nLinearSystem),nFCIHam(:,:),nFCIDet,nFCIDet)
             
-            VNorm = 0.0_dp
-            tempel = dcmplx(0.0_dp,0.0_dp)
-            do a = VirtStart,VirtEnd
-                !Calc normalization for the CV block
-                VNorm = VNorm + real(SchmidtPertGF_Cre(a))**2 + aimag(SchmidtPertGF_Cre(a))**2
-                !Calculate the diagonal correction
-                tempel = tempel + conjg(SchmidtPertGF_Cre(a))*Gc_b_F_ab(a)
-            enddo
-            tempel = tempel / VNorm
-            !Add diagonal virtual correction
-            do i = VIndex,nLinearSystem
-                LinearSystem_p(i,i) = LinearSystem_p(i,i) + tempel
-            enddo
-            if(tLR_ReoptGS) then
-                !Diagonal part of block 4
-                do i = Nm1GSInd,nGSSpace
-                    GSHam(i,i) = GSHam(i,i) + tempel
-                enddo
-            endif
-
-            !Block 2 for the hole hamiltonian
-            !Copy the N electron FCI hamiltonian to this diagonal blockk
-            do i = VIndex,nLinearSystem
-                do j = VIndex,nLinearSystem
-                    LinearSystem_h(j,i) = dcmplx(nFCIHam(j-VIndex+1,i-VIndex+1),0.0_dp)
-                enddo
-            enddo
-            !call R_C_Copy_2D(LinearSystem_h(VIndex:nLinearSystem,VIndex:nLinearSystem),nFCIHam(:,:),nFCIDet,nFCIDet)
-
-            CNorm = 0.0_dp
-            tempel = dcmplx(0.0_dp,0.0_dp)
-            do i = 1,CoreEnd
-                !Calc normalization
-                CNorm = CNorm + real(SchmidtPertGF_Ann(i))**2 + aimag(SchmidtPertGF_Ann(i))**2
-                !Calc diagonal correction
-                tempel = tempel + conjg(SchmidtPertGF_Ann(i))*Ga_i_F_ij(i)
-            enddo
-            tempel = -tempel / CNorm
-            !Add diagonal correction
-            do i = VIndex,nLinearSystem
-                LinearSystem_h(i,i) = LinearSystem_h(i,i) + tempel
-            enddo
-            if(tLR_ReoptGS) then
-                !Diagonal part of block 2
-                do i = Np1GSInd,Nm1GSInd-1
-                    GSHam(i,i) = GSHam(i,i) + tempel
-                enddo
-            endif
-                
-            !Block 3 for particle hamiltonian
-            do J = 1,nNp1FCIDet
-                do K = 1,nFCIDet    !VIndex,nLinearSystem
-                    if(Coup_Ann_alpha(1,K,J).ne.0) then
-                        !Determinants are connected via a single SQ operator
-                        !First index is the spatial index, second is parity 
-                        LinearSystem_p(K+VIndex-1,J) = Gc_a_F_ax(Coup_Ann_alpha(1,K,J))*Coup_Ann_alpha(2,K,J)/sqrt(VNorm)
-                        LinearSystem_p(J,K+VIndex-1) = conjg(LinearSystem_p(K+VIndex-1,J))
-                        if(tLR_ReoptGS) then
-                            !Block 3 contribution
-                            GSHam(K,Np1GSInd+J-1) = - conjg(Ga_i_F_xi(Coup_Ann_alpha(1,K,J)))*Coup_Ann_alpha(2,K,J)/sqrt(CNorm)
-                            GSHam(Np1GSInd+J-1,K) = conjg(GSHam(K,Np1GSInd+J-1))
-                        endif
-                    endif
-                enddo
-            enddo
-
-            !Block 3 for hole hamiltonian
-            do J = 1,nNm1bFCIDet
-                do K = 1,nFCIDet
-                    if(Coup_Create_alpha(1,K,J).ne.0) then
-                        !Determinants are connected via a single SQ operator
-                        LinearSystem_h(K+VIndex-1,J) = - Ga_i_F_xi(Coup_Create_alpha(1,K,J))*Coup_Create_alpha(2,K,J)/sqrt(CNorm)
-                        LinearSystem_h(J,K+VIndex-1) = conjg(LinearSystem_h(K+VIndex-1,J))
-                        if(tLR_ReoptGS) then
-                            !Block 6 contribution
-                            GSHam(K,Nm1GSInd+J-1) = conjg(Gc_a_F_ax(Coup_Create_alpha(1,K,J)))*Coup_Create_alpha(2,K,J)/sqrt(VNorm)
-                            GSHam(Nm1GSInd+J-1,K) = conjg(GSHam(K,Nm1GSInd+J-1))
-                        endif
-                    endif
-                enddo
-            enddo
-
-!            do i = 1,nLinearSystem
-!                do j = 1,nLinearSystem
-!                    write(6,*) i,j, LinearSystem_p(i,j)
-!                enddo
-!            enddo
-
-            !Now, check hessian is hermitian
-            do i = 1,nLinearSystem
-                do j=i,nLinearSystem
-                    if(abs(LinearSystem_p(i,j)-conjg(LinearSystem_p(j,i))).gt.1.0e-8_dp) then
-                        write(6,*) "i, j: ",i,j
-                        write(6,*) "LinearSystem_p(i,j): ",LinearSystem_p(i,j)
-                        write(6,*) "LinearSystem_p(j,i): ",LinearSystem_p(j,i)
-                        call stop_all(t_r,'Particle hessian for EC-LR not hermitian')
-                    endif
-                    if(abs(LinearSystem_h(i,j)-conjg(LinearSystem_h(j,i))).gt.1.0e-8_dp) then
-                        write(6,*) "i, j: ",i,j
-                        write(6,*) "LinearSystem_h(i,j): ",LinearSystem_h(i,j)
-                        write(6,*) "LinearSystem_h(j,i): ",LinearSystem_h(j,i)
-                        call stop_all(t_r,'Hole hessian for EC-LR not hermitian')
-                    endif
-                enddo
-            enddo
-
-            if(tLR_ReoptGS) then
-                !Check GS hamiltonian is hermitian
-                do i = 1,nGSSpace
-                    do j = i,nGSSpace
-                        if(abs(GSHam(j,i)-conjg(GSHam(i,j))).gt.1.0e-8_dp) then
-                            call stop_all(t_r,'Reoptimized ground state hamiltonian is not hermitian')
-                        endif
+                    VNorm = 0.0_dp
+                    tempel = dcmplx(0.0_dp,0.0_dp)
+                    do a = VirtStart,VirtEnd
+                        !Calc normalization for the CV block
+                        VNorm = VNorm + real(SchmidtPertGF_Cre(a),PertSite)**2 + aimag(SchmidtPertGF_Cre(a,pertsite))**2
+                        !Calculate the diagonal correction
+                        tempel = tempel + conjg(SchmidtPertGF_Cre(a,pertsite))*Gc_b_F_ab(a,pertsite)
                     enddo
+                    tempel = tempel / VNorm
+                    !Add diagonal virtual correction
+                    do i = VIndex,nLinearSystem
+                        LinearSystem_p(i,i) = LinearSystem_p(i,i) + tempel
+                    enddo
+                    if(tLR_ReoptGS) then
+                        !Diagonal part of block 4
+                        do i = Nm1GSInd,nGSSpace
+                            GSHam(i,i) = GSHam(i,i) + tempel
+                        enddo
+                    endif
+
+                    !Block 2 for the hole hamiltonian
+                    !Copy the N electron FCI hamiltonian to this diagonal blockk
+                    do i = VIndex,nLinearSystem
+                        do j = VIndex,nLinearSystem
+                            LinearSystem_h(j,i) = dcmplx(nFCIHam(j-VIndex+1,i-VIndex+1),0.0_dp)
+                        enddo
+                    enddo
+
+                    CNorm = 0.0_dp
+                    tempel = dcmplx(0.0_dp,0.0_dp)
+                    do i = 1,CoreEnd
+                        !Calc normalization
+                        CNorm = CNorm + real(SchmidtPertGF_Ann(i,pertsite))**2 + aimag(SchmidtPertGF_Ann(i,pertsite))**2
+                        !Calc diagonal correction
+                        tempel = tempel + conjg(SchmidtPertGF_Ann(i,pertsite))*Ga_i_F_ij(i,pertsite)
+                    enddo
+                    tempel = -tempel / CNorm
+                    !Add diagonal correction
+                    do i = VIndex,nLinearSystem
+                        LinearSystem_h(i,i) = LinearSystem_h(i,i) + tempel
+                    enddo
+                    if(tLR_ReoptGS) then
+                        !Diagonal part of block 2
+                        do i = Np1GSInd,Nm1GSInd-1
+                            GSHam(i,i) = GSHam(i,i) + tempel
+                        enddo
+                    endif
+                
+                    !Block 3 for particle hamiltonian
+                    do J = 1,nNp1FCIDet
+                        do K = 1,nFCIDet    !VIndex,nLinearSystem
+                            if(Coup_Ann_alpha(1,K,J).ne.0) then
+                                !Determinants are connected via a single SQ operator
+                                !First index is the spatial index, second is parity 
+                                LinearSystem_p(K+VIndex-1,J) = Gc_a_F_ax(Coup_Ann_alpha(1,K,J),pertsite)*Coup_Ann_alpha(2,K,J)/sqrt(VNorm)
+                                LinearSystem_p(J,K+VIndex-1) = conjg(LinearSystem_p(K+VIndex-1,J))
+                                if(tLR_ReoptGS) then
+                                    !Block 3 contribution
+                                    GSHam(K,Np1GSInd+J-1) = - conjg(Ga_i_F_xi(Coup_Ann_alpha(1,K,J),pertsite))*Coup_Ann_alpha(2,K,J)/sqrt(CNorm)
+                                    GSHam(Np1GSInd+J-1,K) = conjg(GSHam(K,Np1GSInd+J-1))
+                                endif
+                            endif
+                        enddo
+                    enddo
+
+                    !Block 3 for hole hamiltonian
+                    do J = 1,nNm1bFCIDet
+                        do K = 1,nFCIDet
+                            if(Coup_Create_alpha(1,K,J).ne.0) then
+                                !Determinants are connected via a single SQ operator
+                                LinearSystem_h(K+VIndex-1,J) = - Ga_i_F_xi(Coup_Create_alpha(1,K,J),pertsite)*Coup_Create_alpha(2,K,J)/sqrt(CNorm)
+                                LinearSystem_h(J,K+VIndex-1) = conjg(LinearSystem_h(K+VIndex-1,J))
+                                if(tLR_ReoptGS) then
+                                    !Block 6 contribution
+                                    GSHam(K,Nm1GSInd+J-1) = conjg(Gc_a_F_ax(Coup_Create_alpha(1,K,J),pertsite))*Coup_Create_alpha(2,K,J)/sqrt(VNorm)
+                                    GSHam(Nm1GSInd+J-1,K) = conjg(GSHam(K,Nm1GSInd+J-1))
+                                endif
+                            endif
+                        enddo
+                    enddo
+
+                    !Now, check hessian is hermitian
+                    do i = 1,nLinearSystem
+                        do j=i,nLinearSystem
+                            if(abs(LinearSystem_p(i,j)-conjg(LinearSystem_p(j,i))).gt.1.0e-8_dp) then
+                                write(6,*) "i, j: ",i,j
+                                write(6,*) "LinearSystem_p(i,j): ",LinearSystem_p(i,j)
+                                write(6,*) "LinearSystem_p(j,i): ",LinearSystem_p(j,i)
+                                call stop_all(t_r,'Particle hessian for EC-LR not hermitian')
+                            endif
+                            if(abs(LinearSystem_h(i,j)-conjg(LinearSystem_h(j,i))).gt.1.0e-8_dp) then
+                                write(6,*) "i, j: ",i,j
+                                write(6,*) "LinearSystem_h(i,j): ",LinearSystem_h(i,j)
+                                write(6,*) "LinearSystem_h(j,i): ",LinearSystem_h(j,i)
+                                call stop_all(t_r,'Hole hessian for EC-LR not hermitian')
+                            endif
+                        enddo
+                    enddo
+
+                    if(tLR_ReoptGS) then
+                        !Check GS hamiltonian is hermitian
+                        do i = 1,nGSSpace
+                            do j = i,nGSSpace
+                                if(abs(GSHam(j,i)-conjg(GSHam(i,j))).gt.1.0e-8_dp) then
+                                    call stop_all(t_r,'Reoptimized ground state hamiltonian is not hermitian')
+                                endif
+                            enddo
+                        enddo
+                    endif
+
+                    !write(6,*) "Hessian constructed successfully...",Omega
+                    call halt_timer(LR_EC_GF_HBuild)
+                    call set_timer(LR_EC_GF_OptGS)
+
+                    if(tLR_ReoptGS) then
+                        if(tNonDirDavidson) then
+                            call Comp_NonDir_Davidson(nGSSpace,GSHam,GFChemPot,Psi_0,.false.)
+                        else
+                            allocate(Work(max(1,3*nGSSpace-2)))
+                            allocate(temp_vecc(1))
+                            W(:) = 0.0_dp
+                            lWork = -1
+                            info = 0
+                            call zheev('V','U',nGSSpace,GSHam,nGSSpace,W,temp_vecc,lWork,Work,info)
+                            if(info.ne.0) call stop_all(t_r,'workspace query failed')
+                            lwork = int(temp_vecc(1))+1
+                            deallocate(temp_vecc)
+                            allocate(temp_vecc(lwork))
+                            call zheev('V','U',nGSSpace,GSHam,nGSSpace,W,temp_vecc,lWork,Work,info)
+                            if(info.ne.0) call stop_all(t_r,'GS H Diag failed 1')
+                            deallocate(work,temp_vecc)
+
+                            Psi_0(:) = GSHam(:,1)
+                            GFChemPot = W(1)
+                        endif
+
+                        write(6,"(A,G20.10,A,G20.10,A)") "Reoptimized ground state energy is: ",GFChemPot, &  
+                            " (old = ",HL_Energy,")"
+                        !call writevector(HL_Vec(:),'Old Psi_0')
+                        !call writevectorcomp(Psi_0,'New Psi_0')
+                    endif
+                    !write(6,*) "E0: ",GFChemPot+CoreEnergy
+
+                    call halt_timer(LR_EC_GF_OptGS)
+                    call set_timer(LR_EC_GF_SolveLR)
+
+                    !Solve particle GF to start
+                    LinearSystem_p(:,:) = -LinearSystem_p(:,:)
+                    if(.not.tMinRes_NonDir) then
+                        !Offset matrix
+                        do i = 1,nLinearSystem
+                            LinearSystem_p(i,i) = LinearSystem_p(i,i) + dcmplx(Omega+mu+GFChemPot,dDelta)
+                        enddo
+                    endif
+                    !The V|0> for particle and hole perturbations are held in Cre_0 and Ann_0
+                    !If we have reoptimized the ground state, we will need to recompute these
+                    !call writevectorcomp(Psi_0,'Psi_0')
+                    if(tLR_ReoptGS) then
+                        !Since we are only keeping these one at a time, we don't actually need to store all pertsite vectors
+                        call ApplySP_PertGS_EC(Psi_0,nGSSpace,Cre_0(:,pertsite),Ann_0(:,pertsite),nLinearSystem,pertsite)
+                    endif
+                    !call writevectorcomp(Cre_0(:,'Ann_0')
+                    !call writevectorcomp(Ann_0,'Ann_0')
+
+                    !Now solve these linear equations
+                    !call writevectorcomp(Psi1_p,'Cre_0')
+                    if(tMinRes_NonDir) then
+                        zShift = dcmplx(-Omega-mu-GFChemPot,-dDelta)
+                        zDirMV_Mat => LinearSystem_p
+                        call setup_RHS(nLinearSystem,Cre_0(:,pertsite),RHS)
+                        maxminres_iter_ip = int(maxminres_iter,ip)
+                        minres_unit_ip = int(minres_unit,ip)
+                        nLinearSystem_ip = int(nLinearSystem,ip)
+                        if(tPrecond_MinRes) then
+                            call FormPrecond(nLinearSystem)
+                            call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_p, &
+                                itnlim=maxminres_iter_ip,Msolve=zPreCond,istop=info_ip,rtol=rtol_LR,itn=iters_p)
+                        else
+                            call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_p, &
+                                itnlim=maxminres_iter_ip,istop=info_ip,rtol=rtol_LR,itn=iters_p)
+                        endif
+                        info = info_ip
+                        zDirMV_Mat => null()
+                        if(info.gt.7) write(6,*) "info: ",info
+                        if(info.eq.8) call stop_all(t_r,'Linear equation solver hit maximum iterations')
+                        if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) call stop_all(t_r,'Input matrices to linear solver incorrect')
+                        if(info.gt.11) call stop_all(t_r,'Linear equation solver failed')
+                    else
+                        !Copy V|0> to another array, since if we are not reoptimizing the GS, we want to keep them.
+                        Psi1_p(:) = Cre_0(:,pertsite)
+                        !Psi1_p will be overwritten with the solution
+                        call SolveCompLinearSystem(LinearSystem_p,Psi1_p,nLinearSystem,info)
+                        if(info.ne.0) then 
+                            write(6,*) "INFO: ",info
+                            call warning(t_r,'Solving linear system failed for particle hamiltonian - skipping this frequency')
+                            Omega = Omega + Omega_Step
+                            call halt_timer(LR_EC_GF_SolveLR)
+                            cycle
+                        endif
+                    endif
+                    !call writevectorcomp(Psi1_p,'Psi1_p')
+
+                    !Now solve the LR for the hole addition
+                    if(tMinRes_NonDir) then
+                        zShift = dcmplx(-Omega-mu+GFChemPot,-dDelta)
+                        zDirMV_Mat => LinearSystem_h
+                        call setup_RHS(nLinearSystem,Ann_0(:,pertsite),RHS)
+                        maxminres_iter_ip = int(maxminres_iter,ip)
+                        minres_unit_ip = int(minres_unit,ip)
+                        nLinearSystem_ip = int(nLinearSystem,ip)
+                        if(tPrecond_MinRes) then
+                            call FormPrecond(nLinearSystem)
+                            call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_h, &
+                                itnlim=maxminres_iter_ip,Msolve=zPreCond,istop=info_ip,rtol=rtol_LR,itn=iters_h)
+                        else
+                            call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_h, &
+                                itnlim=maxminres_iter_ip,istop=info_ip,rtol=rtol_LR,itn=iters_h)
+                        endif
+                        info = info_ip
+                        zDirMV_Mat => null()
+                        if(info.gt.7) write(6,*) "info: ",info
+                        if(info.eq.8) call stop_all(t_r,'Linear equation solver hit maximum iterations')
+                        if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) call stop_all(t_r,'Input matrices to linear solver incorrect')
+                        if(info.gt.11) call stop_all(t_r,'Linear equation solver failed')
+                    else
+                        do i = 1,nLinearSystem
+                            LinearSystem_h(i,i) = dcmplx(Omega+mu,dDelta) + (LinearSystem_h(i,i) - dcmplx(GFChemPot,0.0_dp))
+                        enddo
+                        Psi1_h(:) = Ann_0(:,pertsite)
+                        call SolveCompLinearSystem(LinearSystem_h,Psi1_h,nLinearSystem,info)
+                        if(info.ne.0) then 
+                            write(6,*) "INFO: ",info
+                            call warning(t_r,'Solving linear system failed for hole hamiltonian - skipping this frequency')
+                            Omega = Omega + Omega_Step
+                            call halt_timer(LR_EC_GF_SolveLR)
+                            cycle
+                        endif
+                    endif
+            
+                    !Find normalization of first-order wavefunctions
+                    dNorm_p(pertsite) = znrm2(nLinearSystem,Psi1_p,1)
+                    dNorm_h(pertsite) = znrm2(nLinearSystem,Psi1_h,1)
+                    !write(6,*) "Normalization of first-order wavefunction: ",dNorm_p,dNorm_h
+                    
+                    !Now, calculate all interacting greens funtions that we want, by dotting in the first-order space
+                    if((nImp_GS.gt.1).and.(tLR_ReoptGS)) then
+                        call stop_all(t_r,'Cannot do dotting of vectors here, since the LHS vectors are still being computed')
+                    endif
+                    do j = 1,nImp_GS
+                        ResponseFn_p(pertsite,j) = zdotc(nLinearSystem,Ann_0(:,j),1,Psi1_p,1)
+                        ResponseFn_h(pertsite,j) = zdotc(nLinearSystem,Cre_0(:,j),1,Psi1_h,1)
+                        ResponseFn_Mat(pertsite,j) = ResponseFn_p(pertsite,j) + ResponseFn_h(pertsite,j)
+                        ni_lr_Mat(pertsite,j) = NI_LRMat_Cre(pertsite,j) + NI_LRMat_Ann(pertsite,j) 
+                    enddo
+
+                enddo   !End do over pertsite. We now have all the greens funtions 
+
+!                !Now, want to calculate V^T|1>  
+!                !This will apply an alpha annihilation operator at site pertsite to the first order interacting wavefunction
+!                call ApplyAnn_FirstOrder_EC(Psi1_p,nLinearSystem,Psi_p,nGSSpace)
+!                !This will apply an alpha creation operator at site pertsite to the first order interacting wavefunction
+!                call ApplyCre_FirstOrder_EC(Psi1_h,nLinearSystem,Psi_h,nGSSpace)
+!                !call writevectorcomp(Psi_h,'Psi_h')
+
+!                !Now find the overlap with the original wavefunction
+!                ResponseFn_p = dcmplx(0.0_dp,0.0_dp)
+!                ResponseFn_h = dcmplx(0.0_dp,0.0_dp)
+!                do j = 1,nGSSpace
+!                    ResponseFn_p = ResponseFn_p + Psi_p(j)*conjg(Psi_0(j))
+!                    ResponseFn_h = ResponseFn_h + Psi_h(j)*conjg(Psi_0(j))
+!                enddo
+!                ResponseFn = ResponseFn_p + ResponseFn_h    !Full response is sum of particle and hole response
+!                ni_lr = ni_lr_Cre + ni_lr_Ann
+
+                !Now, calculate NI and interacting response function as trace over diagonal parts of the local greens functions
+                ni_lr = zzero
+                ResponseFn = zzero
+                do i = 1,nImp_GS
+                    ni_lr = ni_lr + ni_lr_Mat(i,i)
+                    ResponseFn = ResponseFn + ResponseFn_Mat(i,i)
                 enddo
-            endif
-
-            !write(6,*) "Hessian constructed successfully...",Omega
-            call halt_timer(LR_EC_GF_HBuild)
-            call set_timer(LR_EC_GF_OptGS)
-
-            if(tLR_ReoptGS) then
-                if(tNonDirDavidson) then
-                    call Comp_NonDir_Davidson(nGSSpace,GSHam,GFChemPot,Psi_0,.false.)
+                ni_lr = ni_lr/real(nImp_GS,dp)
+                ResponseFn = ResponseFn/real(nImp_GS,dp)
+                Diff_GF = abs(ResponseFn - ni_lr)
+                
+                if(tSC_LR) then
+                    !Do the fitting of the self energy and iterate.
                 else
-                    allocate(Work(max(1,3*nGSSpace-2)))
-                    allocate(temp_vecc(1))
-                    W(:) = 0.0_dp
-                    lWork = -1
-                    info = 0
-                    call zheev('V','U',nGSSpace,GSHam,nGSSpace,W,temp_vecc,lWork,Work,info)
-                    if(info.ne.0) call stop_all(t_r,'workspace query failed')
-                    lwork = int(temp_vecc(1))+1
-                    deallocate(temp_vecc)
-                    allocate(temp_vecc(lwork))
-                    call zheev('V','U',nGSSpace,GSHam,nGSSpace,W,temp_vecc,lWork,Work,info)
-                    if(info.ne.0) call stop_all(t_r,'GS H Diag failed 1')
-                    deallocate(work,temp_vecc)
-
-                    Psi_0(:) = GSHam(:,1)
-                    GFChemPot = W(1)
+                    tSCFConverged = .true.  !We only do one cycle, and do not try to match the greens functions.
                 endif
 
-                write(6,"(A,G20.10,A,G20.10,A)") "Reoptimized ground state energy is: ",GFChemPot, &  
-                    " (old = ",HL_Energy,")"
-                !call writevector(HL_Vec(:),'Old Psi_0')
-                !call writevectorcomp(Psi_0,'New Psi_0')
-            endif
-            !write(6,*) "E0: ",GFChemPot+CoreEnergy
+            enddo   !Finish the self consistency
 
-            call halt_timer(LR_EC_GF_OptGS)
-            call set_timer(LR_EC_GF_SolveLR)
-
-            !Solve particle GF to start
-            LinearSystem_p(:,:) = -LinearSystem_p(:,:)
-            if(.not.tMinRes_NonDir) then
-                !Offset matrix
-                do i = 1,nLinearSystem
-                    LinearSystem_p(i,i) = LinearSystem_p(i,i) + dcmplx(Omega+mu+GFChemPot,dDelta)
-                enddo
-            endif
-            !The V|0> for particle and hole perturbations are held in Cre_0 and Ann_0
-            !If we have reoptimized the ground state, we will need to recompute these
-            !call writevectorcomp(Psi_0,'Psi_0')
-            if(tLR_ReoptGS) then
-                call ApplySP_PertGS_EC(Psi_0,nGSSpace,Cre_0,Ann_0,nLinearSystem)
-            endif
-            !call writevectorcomp(Cre_0,'Ann_0')
-            !call writevectorcomp(Ann_0,'Ann_0')
-
-            !Now solve these linear equations
-            !call writevectorcomp(Psi1_p,'Cre_0')
-            if(tMinRes_NonDir) then
-                zShift = dcmplx(-Omega-mu-GFChemPot,-dDelta)
-                zDirMV_Mat => LinearSystem_p
-                call setup_RHS(nLinearSystem,Cre_0,RHS)
-                maxminres_iter_ip = int(maxminres_iter,ip)
-                minres_unit_ip = int(minres_unit,ip)
-                nLinearSystem_ip = int(nLinearSystem,ip)
-                if(tPrecond_MinRes) then
-                    call FormPrecond(nLinearSystem)
-                    call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_p, &
-                        itnlim=maxminres_iter_ip,Msolve=zPreCond,istop=info_ip,rtol=rtol_LR,itn=iters_p)
-                else
-                    call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_p, &
-                        itnlim=maxminres_iter_ip,istop=info_ip,rtol=rtol_LR,itn=iters_p)
-                endif
-                info = info_ip
-                zDirMV_Mat => null()
-                if(info.gt.7) write(6,*) "info: ",info
-                if(info.eq.8) call stop_all(t_r,'Linear equation solver hit maximum iterations')
-                if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) call stop_all(t_r,'Input matrices to linear solver incorrect')
-                if(info.gt.11) call stop_all(t_r,'Linear equation solver failed')
-            else
-                !Copy V|0> to another array, since if we are not reoptimizing the GS, we want to keep them.
-                Psi1_p(:) = Cre_0(:)
-                !Psi1_p will be overwritten with the solution
-                call SolveCompLinearSystem(LinearSystem_p,Psi1_p,nLinearSystem,info)
-                if(info.ne.0) then 
-                    write(6,*) "INFO: ",info
-                    call warning(t_r,'Solving linear system failed for particle hamiltonian - skipping this frequency')
-                    Omega = Omega + Omega_Step
-                    call halt_timer(LR_EC_GF_SolveLR)
-                    cycle
-                endif
-            endif
-            !call writevectorcomp(Psi1_p,'Psi1_p')
-
-            !Now solve the LR for the hole addition
-            if(tMinRes_NonDir) then
-                zShift = dcmplx(-Omega-mu+GFChemPot,-dDelta)
-                zDirMV_Mat => LinearSystem_h
-                call setup_RHS(nLinearSystem,Ann_0,RHS)
-                maxminres_iter_ip = int(maxminres_iter,ip)
-                minres_unit_ip = int(minres_unit,ip)
-                nLinearSystem_ip = int(nLinearSystem,ip)
-                if(tPrecond_MinRes) then
-                    call FormPrecond(nLinearSystem)
-                    call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_h, &
-                        itnlim=maxminres_iter_ip,Msolve=zPreCond,istop=info_ip,rtol=rtol_LR,itn=iters_h)
-                else
-                    call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_h, &
-                        itnlim=maxminres_iter_ip,istop=info_ip,rtol=rtol_LR,itn=iters_h)
-                endif
-                info = info_ip
-                zDirMV_Mat => null()
-                if(info.gt.7) write(6,*) "info: ",info
-                if(info.eq.8) call stop_all(t_r,'Linear equation solver hit maximum iterations')
-                if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) call stop_all(t_r,'Input matrices to linear solver incorrect')
-                if(info.gt.11) call stop_all(t_r,'Linear equation solver failed')
-            else
-                do i = 1,nLinearSystem
-                    LinearSystem_h(i,i) = dcmplx(Omega+mu,dDelta) + (LinearSystem_h(i,i) - dcmplx(GFChemPot,0.0_dp))
-                enddo
-                Psi1_h(:) = Ann_0(:)
-                call SolveCompLinearSystem(LinearSystem_h,Psi1_h,nLinearSystem,info)
-                if(info.ne.0) then 
-                    write(6,*) "INFO: ",info
-                    call warning(t_r,'Solving linear system failed for hole hamiltonian - skipping this frequency')
-                    Omega = Omega + Omega_Step
-                    call halt_timer(LR_EC_GF_SolveLR)
-                    cycle
-                endif
-            endif
-
-            !Find normalization of first-order wavefunctions
-            dNorm_p = dcmplx(0.0_dp,0.0_dp)
-            dNorm_h = dcmplx(0.0_dp,0.0_dp)
-            do j = 1,nLinearSystem
-                dNorm_p = dNorm_p + conjg(Psi1_p(j))*Psi1_p(j)
-                dNorm_h = dNorm_h + conjg(Psi1_h(j))*Psi1_h(j)
-            enddo
-            !write(6,*) "Normalization of first-order wavefunction: ",dNorm_p,dNorm_h
-
-            !Now, want to calculate V^T|1>  
-            !This will apply an alpha annihilation operator at site pertsite to the first order interacting wavefunction
-            call ApplyAnn_FirstOrder_EC(Psi1_p,nLinearSystem,Psi_p,nGSSpace)
-            !This will apply an alpha creation operator at site pertsite to the first order interacting wavefunction
-            call ApplyCre_FirstOrder_EC(Psi1_h,nLinearSystem,Psi_h,nGSSpace)
-            !call writevectorcomp(Psi_h,'Psi_h')
-
-            !Now find the overlap with the original wavefunction
-            ResponseFn_p = dcmplx(0.0_dp,0.0_dp)
-            ResponseFn_h = dcmplx(0.0_dp,0.0_dp)
-            do j = 1,nGSSpace
-                ResponseFn_p = ResponseFn_p + Psi_p(j)*conjg(Psi_0(j))
-                ResponseFn_h = ResponseFn_h + Psi_h(j)*conjg(Psi_0(j))
-            enddo
-            ResponseFn = ResponseFn_p + ResponseFn_h    !Full response is sum of particle and hole response
-            ni_lr = ni_lr_Cre + ni_lr_Ann
-
-            !write(6,*) Omega,-aimag(ni_lr_Cre),-aimag(ResponseFn_p)
             if(.not.tFirst) then
                 SpectralWeight = SpectralWeight + Omega_Step*(Prev_Spec-aimag(ResponseFn))/(2.0_dp*pi)
                 Prev_Spec = -aimag(ResponseFn)
@@ -851,9 +867,10 @@ module LinearResponse
         if(tLR_ReoptGS) then
             deallocate(W,GSHam)
         endif
-        deallocate(LinearSystem_p,LinearSystem_h,Psi_p,Psi_h,Psi1_p,Psi1_h)
+        deallocate(LinearSystem_p,LinearSystem_h,Psi1_p,Psi1_h)
         deallocate(Cre_0,Ann_0,Psi_0,SchmidtPertGF_Cre,SchmidtPertGF_Ann)
-        deallocate(NI_LRMat_Cre,NI_LRMat_Ann)
+        deallocate(NI_LRMat_Cre,NI_LRMat_Ann,ResponseFn_p,ResponseFn_h,ResponseFn_Mat)
+        deallocate(ni_lr_Mat)
         if(tSC_LR) deallocate(SelfEnergy_Imp)
         close(iunit)
         if(tMinRes_NonDir) then
@@ -2492,13 +2509,13 @@ module LinearResponse
 
     end subroutine ApplyAnn_FirstOrder_EC
             
-    !It is only trying to create/distroy the alpha orbital applied to the ground state wavefunction
-    !Will return the ground state, with a particle created or distroyed in pertsite
-    subroutine ApplySP_PertGS_EC(Psi_0,SizeGS,V0_Cre,V0_Ann,nSizeLR)
+    !It is only trying to create/destroy the alpha orbital applied to the ground state wavefunction
+    !Will return the ground state, with a particle created or destroyed in pertsite
+    subroutine ApplySP_PertGS_EC(Psi_0,SizeGS,V0_Cre,V0_Ann,nSizeLR,pertsite)
         use DetToolsData
         use DetBitOps, only: SQOperator 
         implicit none
-        integer, intent(in) :: SizeGS,nSizeLR
+        integer, intent(in) :: SizeGS,nSizeLR,pertsite
         complex(dp), intent(in) :: Psi_0(SizeGS)
         complex(dp), intent(out) :: V0_Cre(nSizeLR),V0_Ann(nSizeLR)
         integer :: ilut,pertsitealpha,i,j,GSInd
