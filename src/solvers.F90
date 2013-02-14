@@ -301,7 +301,7 @@ module solvers
         use DetToolsData
         implicit none
         integer :: pSpaceDim,i,j,iunit,pertsitealpha,pertsitebeta,UMatSize,OrbPairs
-        integer :: umatind,lWork,info,ilut
+        integer :: umatind,lWork,info,ilut,pertsite
         logical :: tParity
         complex(dp) :: DDRes,GFRes,GFRes_h,GFRes_p
         real(dp) :: ddot,Overlap,Omega,mu
@@ -461,7 +461,7 @@ module solvers
             call flush(6)
 
             if(tDDResponse) then
-                write(6,*) "Calculating the exact density-density response function..."
+                write(6,*) "Calculating the exact *LOCAL* density-density response function..."
 
                 iunit = get_free_unit()
                 call append_ext_real('Exact_DDResponse',U,filename)
@@ -476,6 +476,8 @@ module solvers
                 !Find V|0>
                 allocate(V0(nFCIDet))
                 V0(:) = 0.0_dp
+
+                pertsite = 1    !The AO site that the perturbation takes place at
         
                 pertsitealpha = 2*pertsite-1
                 pertsitebeta = 2*pertsite
@@ -510,7 +512,7 @@ module solvers
 
             endif
             if(tChargedResponse) then
-                write(6,*) "Calculating the exact greens function..."
+                write(6,*) "Calculating the exact *LOCAL* greens function..."
                 
                 iunit = get_free_unit()
                 call append_ext_real('Exact_GFResponse',U,filename)
@@ -528,6 +530,8 @@ module solvers
                 allocate(V0_Ann(nNm1bFCIDet))
                 V0_Cre(:) = 0.0_dp
                 V0_Ann(:) = 0.0_dp
+
+                pertsite = 1
         
                 pertsitealpha = 2*pertsite-1
                 do i = 1,nFCIDet

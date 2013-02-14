@@ -54,31 +54,14 @@ module Globals
 !    real(dp) :: Omega=1.0_dp           !Perturbation frequency
     real(dp) :: Lambda=1.0_dp          !Strength of perturbation
     real(dp) :: Start_Omega,End_Omega,Omega_Step    !Parameters for Omega sweep
-    integer :: pertsite=1          !Site of the density perturbation
-    real(dp) :: ZerothBathNorm  !Normalization of the original bath orbital (required for correct normalization in the linear response)
     logical :: tDumpFCIDUMP
     logical :: tAnderson        !Whether to do anderson model, rather than hubbard model
     logical :: tChemPot         !Whether to include a chemical potential of U/2 at the impurity site of the anderson model
                                 !Note that this potential only acts on the impurity site, and only acts on the interacting system.
                                 !At half-filling, the system is naturally correct, so the chemical potential only wants to be added to the
                                 !interacting case to stop the electrons fleeing the impurity site.
-    logical :: tProjectOutNull  !For the LR - whether to attempt to remove linear dependencies in the basis before solving the equations
-    logical :: tLR_ReoptGS      !For the LR - whether to reoptimize the ground state in the full space
-    real(dp) :: MinS_Eigval     !For the LR - the smallest eigenvalue of S to keep
-    logical :: tExplicitlyOrthog    !For the LR - explicitly orthogonalize the first-order solution
-    logical :: tOrthogBasis     !For the LR - explicit calculate V and Q matrices, and do all calculations, in the orthogonal linear span of S
-    logical :: tRemoveGSFromH   !For the LR - whether to explicitly remove the GS from the hamiltonian before forming and solving the LR equations.
-                                !Warning - this can remove the hermiticity of the hamiltonian
-    integer :: iSolveLR         !For the LR - which routine to use to solve the LR equations.
-                                ! 1   ZGESV   standard linear solver
-                                ! 2   ZGELS   Advanced linear solver - should be better if hamiltonian nearly singular
-                                ! 3   Direct inversion
-                                ! 4   Complete diagonalization
 
     real(dp) :: HFEnergy    !Calculated HF energy
-    real(dp) :: dDelta      !Broadening for spectral functions
-    logical :: tDDResponse          !Calculate neutral DD response
-    logical :: tChargedResponse     !The different perturbations to calculate the response for
 
     real(dp), allocatable :: U_Vals(:)      !The list of U_Values to loop over
     integer , allocatable :: allowed_occs(:)   !The list of CS occupations for the mean-field solution
@@ -109,13 +92,41 @@ module Globals
     real(dp) , allocatable :: Emb_Fock(:,:)     !The fock matrix in the embedded basis (h0 + v_loc (Emb_CorrPot) for hubbard)
     real(dp) , allocatable :: MFEmbOccs(:)      !The occupation numbers over the embedded system solved by the Emb_Fock
     real(dp) , allocatable :: vloc_change(:,:) !The change in the correlation potential over the impurity sites
-    real(dp) , allocatable :: ResponseBasis(:,:)    !The impurity site + first order change in the bath wavefunction
     complex(dp) , allocatable :: SchmidtPert(:,:)
     real(dp) , allocatable, target :: HL_Vec(:)         !The ground state eigenvector
     real(dp) , allocatable, target :: FullHamil(:,:)    !In case we do a complete diagonalization
     real(dp) , allocatable :: Spectrum(:)       !Eigenvalues in case of a complete diagonalization
-    complex(dp) , allocatable :: SchmidtPertGF_Ann(:)
-    complex(dp) , allocatable :: SchmidtPertGF_Cre(:) !For LR: the single particle perturbations in the schmidt basis
+
+    !Linear response options
+    real(dp) :: dDelta      !Broadening for spectral functions
+    logical :: tDDResponse          !Calculate neutral DD response
+    logical :: tChargedResponse     !The different perturbations to calculate the response for
+    logical :: tProjectOutNull  !For the LR - whether to attempt to remove linear dependencies in the basis before solving the equations
+    logical :: tLR_ReoptGS      !For the LR - whether to reoptimize the ground state in the full space
+    real(dp) :: MinS_Eigval     !For the LR - the smallest eigenvalue of S to keep
+    logical :: tExplicitlyOrthog    !For the LR - explicitly orthogonalize the first-order solution
+    logical :: tOrthogBasis     !For the LR - explicit calculate V and Q matrices, and do all calculations, in the orthogonal linear span of S
+    logical :: tRemoveGSFromH   !For the LR - whether to explicitly remove the GS from the hamiltonian before forming and solving the LR equations.
+                                !Warning - this can remove the hermiticity of the hamiltonian
+    integer :: iSolveLR         !For the LR - which routine to use to solve the LR equations.
+                                ! 1   ZGESV   standard linear solver
+                                ! 2   ZGELS   Advanced linear solver - should be better if hamiltonian nearly singular
+                                ! 3   Direct inversion
+                                ! 4   Complete diagonalization
+    
+    !DMET_LR global data
+    real(dp), allocatable :: SchmidtPertGF_Cre(:,:) !The contraction coefficients (potentially for each impurity site) for the core excitations
+    real(dp), allocatable :: SchmidtPertGF_Ann(:,:) !The contraction coefficients (potentially for each impurity site) for the core excitations
+    complex(dp), allocatable :: NI_LRMat_Cre(:,:)   !NI particle greens functions for each value of omega
+    complex(dp), allocatable :: NI_LRMat_Ann(:,:)   !NI hole-addition greens functions for each value of omega
+    real(dp), allocatable :: SelfEnergy_Imp(:,:)    !The updated self-energy matrix over impurity sites
+    complex(dp), allocatable :: FockSchmidt_SE(:,:) !The one-electron hamiltonian over the whole space (apart from imp-imp block)
+    complex(dp), allocatable :: FockSchmidt_SE_VV(:,:) !The one-electron hamiltonian over the virtual-virtual block
+    complex(dp), allocatable :: FockSchmidt_SE_CC(:,:) !The one-electron hamiltonian over the core core block
+    complex(dp), allocatable :: FockSchmidt_SE_VX(:,:) !The one-electron hamiltonian over the virtual:active block
+    complex(dp), allocatable :: FockSchmidt_SE_CX(:,:) !The one-electron hamiltonian over the core:active block
+
+
 
     !timers
     type(timer) :: Full_timer   !All routines 

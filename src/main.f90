@@ -1257,10 +1257,6 @@ Program RealHub
             enddo
         enddo
 
-        !For response normalizationi
-        ZerothBathNorm = 0.0_dp
-        ZerothBathNorm = DDOT(nSites-nImp,RDMonImp(1:nSites-nImp,1),1,RDMonImp(1:nSites-nImp,1),1)
-
 !        call writematrix(RDMonImp,'RDMonImp',.true.)
 
         !Now, we want to Lowdin orthogonalize these orbitals, i.e. |psi_alpha> = |psi_beta> S_beta,alpha^(-1/2)

@@ -145,13 +145,22 @@ module mat_tools
 
     !Add the local potential striped across the core hamiltonian 
     !(only possible with translational invariance)
-    subroutine add_localpot(core,core_v,CorrPot)
+    !If tAdd, then the correlation potential is added to the core potential, otherwise it is subtracted
+    subroutine add_localpot(core,core_v,CorrPot,tAdd)
         implicit none
         real(dp) , intent(in) :: core(nSites,nSites)
         real(dp) , intent(out) :: core_v(nSites,nSites)
         real(dp) , intent(in) :: CorrPot(nImp,nImp)
+        logical , intent(in), optional :: tAdd
         real(dp) :: CorrPot_Flip(nImp,nImp)
         integer :: i,j,k,i_ind,j_ind
+        logical :: tAdd_
+
+        if(present(tAdd)) then
+            tAdd_ = tAdd
+        else
+            tAdd_ = .true.
+        endif
 
         if(tFlipUTiling) then
             write(6,*) "Flipping correlation potential when tiling mean-field hamiltonian"
@@ -172,13 +181,21 @@ module mat_tools
                 if(tFlipUTiling.and.(mod(k,2).eq.1)) then
                     do i=1,nImp
                         do j=1,nImp
-                            core_v((k*nImp)+i,(k*nImp)+j)=CorrPot_Flip(i,j)
+                            if(tAdd_) then
+                                core_v((k*nImp)+i,(k*nImp)+j)=CorrPot_Flip(i,j)
+                            else
+                                core_v((k*nImp)+i,(k*nImp)+j)=-CorrPot_Flip(i,j)
+                            endif
                         enddo
                     enddo
                 else
                     do i=1,nImp
                         do j=1,nImp
-                            core_v((k*nImp)+i,(k*nImp)+j)=CorrPot(i,j)
+                            if(tAdd_) then
+                                core_v((k*nImp)+i,(k*nImp)+j)=CorrPot(i,j)
+                            else
+                                core_v((k*nImp)+i,(k*nImp)+j)=-CorrPot(i,j)
+                            endif
                         enddo
                     enddo
                 endif
@@ -203,7 +220,7 @@ module mat_tools
         real(dp), allocatable :: fock(:,:),temp(:,:),h0HF(:,:)
         integer :: i,lWork,info,ex(2,2),j,nIter
         logical :: tFailedSCF
-        character(len=*), parameter :: t_r='run_hf'
+        character(len=*), parameter :: t_r='run_true_hf'
 
         write(6,"(A)") "Constructing full HF solution. DMET will start from core hamiltonian solution."
 

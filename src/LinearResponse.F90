@@ -7,7 +7,8 @@ module LinearResponse
     use globals
     implicit none
     integer :: CVIndex,AVIndex,CAIndex
-
+    
+    !Parameters for matrix-vector multiplications within iterative solvers
     complex(dp), pointer, private :: zDirMV_Mat(:,:)
     real(dp), allocatable, private :: Precond_Diag(:)
     complex(dp), private :: zShift
@@ -107,7 +108,7 @@ module LinearResponse
         real(dp), allocatable :: W(:)
         complex(dp), allocatable , target :: LinearSystem_p(:,:),LinearSystem_h(:,:)
         complex(dp), allocatable :: Cre_0(:),Ann_0(:)
-        complex(dp), allocatable :: FockSchmidtComp(:,:),Gc_a_F_ax(:),Gc_b_F_ab(:),GSHam(:,:)
+        complex(dp), allocatable :: Gc_a_F_ax(:),Gc_b_F_ab(:),GSHam(:,:)
         complex(dp), allocatable :: Psi_h(:),Psi_p(:),Psi1_p(:),Psi1_h(:),Ga_i_F_xi(:),Ga_i_F_ij(:)
         complex(dp), allocatable :: temp_vecc(:),Work(:),Psi_0(:),RHS(:)
         integer, allocatable :: Coup_Ann_alpha(:,:,:),Coup_Create_alpha(:,:,:)
@@ -169,6 +170,17 @@ module LinearResponse
      &              //"at each point with complete diagonalizer"
             endif
         endif
+        if(tSC_LR.and.(mod(nOcc,nImp).ne.0)) then
+            ! This criteria must be satisfied, because otherwise, the orbitals resulting from the diagonalization of
+            ! h + Self_energy will mix the occupied and virtual spaces. This will result in the NI greens function
+            ! spanning a different space to previous iterations
+            call stop_all(t_r,'Cannot tile the self-energy through the occupied and virtual space seperately without mixing them')
+        endif
+        !Surely if we are doing self-consistent LR, we can only have the GS in the n-electron space, since the others
+        !aren't consistent across the different greens functions.
+        !Would be ok with nImp = 1 I guess, since there is still then a unique GS.
+        if(tSC_LR.and.tLR_ReoptGS) call stop_all(t_r,"Reoptimizing GS not sorted yet.")
+
         !umat and tmat for the active space
         OrbPairs = (EmbSize*(EmbSize+1))/2
         UMatSize = (OrbPairs*(OrbPairs+1))/2
@@ -185,64 +197,26 @@ module LinearResponse
         endif
         if(allocated(tmat)) deallocate(tmat)
         allocate(tmat(EmbSize,EmbSize))
-        tmat(:,:) = 0.0_dp
-        do i=1,EmbSize
-            do j=1,EmbSize
-                if(abs(Emb_h0v(i,j)).gt.1.0e-10_dp) then
-                    tmat(i,j) = Emb_h0v(i,j)
-                endif
-            enddo
-        enddo
-        if(tChemPot) then
-            tmat(1,1) = tmat(1,1) - U/2.0_dp
-        endif
+        tmat(:,:) = Emb_h0v(:,:)
+        if(tChemPot) tmat(1,1) = tmat(1,1) - U/2.0_dp
         
         !Enumerate excitations for fully coupled space
         !Seperate the lists into different Ms sectors in the N+- lists
         call GenDets(Elec,EmbSize,.true.,.true.,.true.) 
         write(6,*) "Number of determinants in {N,N+1,N-1} FCI space: ",ECoupledSpace
         write(6,"(A,F12.5,A)") "Memory required for det list storage: ",DetListStorage*RealtoMb, " Mb"
-!        write(6,*) "N+1 alpha determinants"
-!        do i=1,nNp1FCIDet
-!            write(6,*) Np1FCIDetList(:,i),Np1BitList(i)
-!        enddo
-!        write(6,*) "Neutral excitations: "
-!        do i=1,nFCIDet
-!            write(6,*) FCIDetList(:,i),FCIBitList(i)
-!        enddo
 
-        !We are going to choose the uncontracted space to have an Ms of 1 (i.e. alpha spin)
-        !Construct FCI hamiltonians for the N and N+1_alpha spaces
-        !N electron
-        allocate(NFCIHam(nFCIDet,nFCIDet))
-        NFCIHam(:,:) = 0.0_dp
-        do i = 1,nFCIDet
-            do j = 1,nFCIDet
-                call GetHElement(FCIDetList(:,i),FCIDetList(:,j),Elec,NFCIHam(i,j))
-            enddo
-        enddo
-        write(6,"(A,F12.5,A)") "Memory required for N-electron hamil: ",(real(nFCIDet,dp)**2)*RealtoMb, " Mb"
-
-        !N+1 hamiltonian
+        !We are going to choose the uncontracted particle space to have an Ms of 1 (i.e. alpha spin)
+        !Construct FCI hamiltonians for the N, N+1_alpha and N-1_beta spaces
         if(nNp1FCIDet.ne.nNm1FCIDet) call stop_all(t_r,'Active space not half-filled')
         if(nNp1FCIDet.ne.nNp1bFCIDet) call stop_all(t_r,'Cannot deal with open shell systems')
-        allocate(Np1FCIHam_alpha(nNp1FCIDet,nNp1FCIDet))
-        Np1FCIHam_alpha(:,:) = 0.0_dp
-        do i=1,nNp1FCIDet
-            do j=1,nNp1FCIDet
-                call GetHElement(Np1FCIDetList(:,i),Np1FCIDetList(:,j),Elec+1,Np1FCIHam_alpha(i,j))
-            enddo
-        enddo
+        write(6,"(A,F12.5,A)") "Memory required for N-electron hamil: ",(real(nFCIDet,dp)**2)*RealtoMb, " Mb"
         write(6,"(A,F12.5,A)") "Memory required for N+1-electron hamil: ",(real(nNp1FCIDet,dp)**2)*RealtoMb, " Mb"
-        !N-1 hamiltonian for particle removal
-        allocate(Nm1FCIHam_beta(nNm1bFCIDet,nNm1bFCIDet))
-        Nm1FCIHam_beta(:,:) = 0.0_dp
-        do i=1,nNm1bFCIDet
-            do j=1,nNm1bFCIDet
-                call GetHElement(Nm1bFCIDetList(:,i),Nm1bFCIDetList(:,j),Elec-1,Nm1FCIHam_beta(i,j))
-            enddo
-        enddo
         write(6,"(A,F12.5,A)") "Memory required for N-1-electron hamil: ",(real(nNm1bFCIDet,dp)**2)*RealtoMb, " Mb"
+        allocate(NFCIHam(nFCIDet,nFCIDet))
+        allocate(Np1FCIHam_alpha(nNp1FCIDet,nNp1FCIDet))
+        allocate(Nm1FCIHam_beta(nNm1bFCIDet,nNm1bFCIDet))
+        call Fill_N_Np1_Nm1bFCIHam(Elec,NFCIHam,Np1FCIHam_alpha,Nm1FCIHam_beta)
 
         nLinearSystem = nNp1FCIDet + nFCIDet
         nLinearSystem_h = nNm1bFCIDet + nFCIDet
@@ -320,16 +294,50 @@ module LinearResponse
         i = nGSSpace*3 + nLinearSystem*5
         write(6,"(A,F12.5,A)") "Memory required for wavefunctions: ",real(i,dp)*ComptoMb, " Mb"
         !Store the fock matrix in complex form, so that we can ZGEMM easily
-        allocate(FockSchmidtComp(nSites,nSites),stat=ierr)
-        write(6,"(A,F12.5,A)") "Memory required for fock matrix: ",((2.0_dp*real(nSites,dp))**2)*ComptoMb, " Mb"
+        !Also allocate the subblocks seperately. More memory, but will ensure we don't get stack overflow problems
+        allocate(FockSchmidt_SE(nSites,nSites),stat=ierr)
+        allocate(FockSchmidt_SE_VV(VirtStart:VirtEnd,VirtStart:VirtEnd),stat=ierr)    !Just defined over core-core blocks
+        allocate(FockSchmidt_SE_CC(1:CoreEnd,1:CoreEnd),stat=ierr)    !Just defined over virtual-virtual blocks
+        allocate(FockSchmidt_SE_VX(VirtStart:VirtEnd,ActiveStart:ActiveEnd),stat=ierr)
+        allocate(FockSchmidt_SE_CX(1:CoreEnd,ActiveStart:ActiveEnd),stat=ierr)
+        write(6,"(A,F12.5,A)") "Memory required for fock matrix: ", &
+            (((2.0_dp*real(nSites,dp))**2)+(real(nOcc,dp)**2)+(real(nSites-nOcc,dp)**2))*ComptoMb, " Mb"
         if(ierr.ne.0) call stop_all(t_r,'Error allocating')
         
-        do i = 1,nSites
-            do j = 1,nSites
-                FockSchmidtComp(j,i) = dcmplx(FockSchmidt(j,i),0.0_dp)
+        !Set the impurity parts to the correct values (even though we don't access them from FockSchmidt)
+        !They are different since the correlation potential is not defined over the impurity sites.
+        FockSchmidt(nOcc-nImp+1:nOcc+nImp,nOcc-nImp+1:nOcc+nImp) = Emb_h0v(:,:)
+        if(.not.tSC_LR) then
+            !If we are doing self-consistent linear response, with a self-energy, then this is calculated later, since it is now omega and iteration dependent
+            do i = 1,nSites
+                do j = 1,nSites
+                    FockSchmidt_SE(j,i) = dcmplx(FockSchmidt(j,i),0.0_dp)
+                enddo
             enddo
-        enddo
-        !call R_C_Copy_2D(FockSchmidtComp(:,:),FockSchmidt(:,:),nSites,nSites)
+            do i = 1,nOcc
+                do j = 1,nOcc
+                    FockSchmidt_SE_CC(j,i) = dcmplx(FockSchmidt(j,i),0.0_dp)
+                enddo
+            enddo
+            do i = nOcc + 1,nSites
+                do j = nOcc + 1,nSites
+                    FockSchmidt_SE_VV(j,i) = dcmplx(FockSchmidt(j,i),0.0_dp)
+                enddo
+            enddo
+            do i = ActiveStart,ActiveEnd
+                do j = VirtStart,VirtEnd
+                    FockSchmidt_SE_VX(j,i) = dcmplx(FockSchmidt(j,i),0.0_dp)
+                enddo
+            enddo
+            do i = ActiveStart,ActiveEnd
+                do j = 1,CoreEnd
+                    FockSchmidt_SE_CX(j,i) = dcmplx(FockSchmidt(j,i),0.0_dp)
+                enddo
+            enddo
+        else
+            allocate(SelfEnergy(nImp,nImp)) !The self-consistently determined self-energy correction to match the interacting and non-interacting greens functions
+            allocate(Emb_h0v_SE(EmbSize,EmbSize))   !The 1-electron hamiltonian (with self-energy correction) over the embedded basis
+        endif
         
         !Since this does not depend at all on the new basis, since the ground state has a completely
         !disjoint basis to |1>, the RHS of the equations can be precomputed
@@ -413,13 +421,31 @@ module LinearResponse
         i = 2*nFCIDet*nNm1bFCIDet + 2*nFCIDet*nNp1FCIDet
         write(6,"(A,F12.5,A)") "Memory required for coupling coefficient matrices: ",real(i,dp)*RealtoMb, " Mb"
 
+        if(tAllImp_LR) then
+            !We calculate all greens functions between all impurity sites - both in the non-interacting and interacting case
+            nImp_GF = nImp 
+        else
+            nImp_GF = 1
+        endif
+        allocate(SchmidtPertGF_Cre(nOcc+nImp+1:nSites,nImp_GF))
+        allocate(SchmidtPertGF_Ann(1:nOcc-nImp,nImp_GF))
+        allocate(NI_LRMat_Cre(nImp_GF,nImp_GF))
+        allocate(NI_LRMat_Ann(nImp_GF,nImp_GF))
+        
         !Space for useful intermediates
         !For particle addition
-        allocate(Gc_a_F_ax(ActiveStart:ActiveEnd),stat=ierr)
-        allocate(Gc_b_F_ab(VirtStart:VirtEnd),stat=ierr)
+        allocate(Gc_a_F_ax(ActiveStart:ActiveEnd,nImp_GF),stat=ierr)
+        allocate(Gc_b_F_ab(VirtStart:VirtEnd,nImp_GF),stat=ierr)
         !For hole addition
-        allocate(Ga_i_F_xi(ActiveStart:ActiveEnd),stat=ierr)
-        allocate(Ga_i_F_ij(1:nCore),stat=ierr)
+        allocate(Ga_i_F_xi(ActiveStart:ActiveEnd,nImp_GF),stat=ierr)
+        allocate(Ga_i_F_ij(1:nCore,nImp_GF),stat=ierr)
+
+        if(.not.tAnderson) then
+            !In the hubbard model, apply a chemical potential of U/2
+            mu = U/2.0_dp
+        else
+            mu = 0.0_dp
+        endif
 
         call halt_timer(LR_EC_GF_Precom)
 
@@ -430,50 +456,58 @@ module LinearResponse
         
             write(6,*) "Calculating linear response for frequency: ",Omega
             if(tMinRes_NonDir) write(minres_unit,*) "Iteratively solving for frequency: ",Omega
+
+            tSCFConverged = .false.
+            do while(.not.tSCFConverged)
+                !Self consistently calculate a self-energy function over the impurity sites to match the 
+                !mean-field and HL GF calculations.
+                if(.not.tSC_LR) tSCFConverged = .true.  !We only do one cycle
+
+                if(tSC_LR) then
+                    !Find the mean-field solution with an added self-energy. This will also return the
+                    !non-interacting greens functions over the requested impurity sites
+                    !In addition, this will calculate the 1 electron hamiltonian in the schmidt basis
+                    !with the additional self-energy contribution: Emb_h0v_SE
+                    call FindNI_Charged(Omega+mu,NI_LRMat_Cre,NI_LRMat_Ann)
+
+                    !If we have a self-consistent self-energy contribution, we also need to update
+                    !the hamiltonians which have been stored.
+                    !Update tmat with the new one-electron hamiltonian, with self-energy contribution
+                    tmat(:,:) = Emb_h0v_SE(:,:)
+                    if(tChemPot) tmat(1,1) = tmat(1,1) - U/2.0_dp
+                    call Fill_N_Np1_Nm1bFCIHam(Elec,NFCIHam,Np1FCIHam_alpha,Nm1FCIHam_beta)
+                else
+                    !First, find the non-interacting solution expressed in the schmidt basis
+                    !This will only calculate it over the first impurity site
+                    call FindSchmidtPert_Charged(Omega+mu,NI_LRMat_Cre,NI_LRMat_Ann)
+                endif
+
+                !Construct useful intermediates, using zgemm
+                !sum_a Gc_a^* F_ax (Creation)
+                call ZGEMM('T','N',EmbSize,nImp_GF,nVirt,zzero,FockSchmidt_SE_VX(VirtStart:VirtEnd,ActiveStart:ActiveEnd),  &
+                    nVirt,SchmidtPertGF_Cre(VirtStart:VirtEnd,:),nVirt,zzero,Gc_a_F_ax,EmbSize)
+                Gc_a_F_ax(:,:) = dconjg(Gc_a_F_ax(:,:))
+                !sum_b Gc_b F_ab  (Creation)
+                call ZGEMM('N','N',nVirt,nImp_GF,nVirt,zzero,FockSchmidt_SE_VV(VirtStart:VirtEnd,VirtStart:VirtEnd),    &
+                    nVirt,SchmidtPertGF_Cre(VirtStart:VirtEnd,:),nVirt,zzero,Gc_b_F_ab,nVirt)
+                !sum_i Ga_i^* F_xi (Annihilation)
+                call ZGEMM('T','N',EmbSize,nImp_GF,nCore,zzero,FockSchmidt_SE_CX(1:CoreEnd,ActiveStart:ActiveEnd),nCore,    &
+                    SchmidtPertGF_Ann(1:nCore,:),nCore,zzero,Ga_i_F_xi,EmbSize)
+                Ga_i_F_xi(:,:) = dconjg(Ga_i_F_xi(:,:))
+                !sum_i Ga_i F_ij (Annihilation)
+                call ZGEMM('N','N',nCore,nImp_GF,nCore,zzero,FockSchmidt_SE_CC(:,:),nCore,SchmidtPertGF_Ann(:,:),nCore,zzero,   &
+                    Ga_i_F_ij,nCore)
+
+
+
+                !Find the first-order wavefunction in the interacting picture for all impurity sites 
+                do pertsite = 1,nImp_GF
+
+
             if(tLR_ReoptGS) GSHam(:,:) = dcmplx(0.0_dp,0.0_dp)
             LinearSystem_p(:,:) = dcmplx(0.0_dp,0.0_dp)
             LinearSystem_h(:,:) = dcmplx(0.0_dp,0.0_dp)
 
-            if(.not.tAnderson) then
-                !In the hubbard model, apply a chemical potential of U/2
-                mu = U/2.0_dp
-            else
-                mu = 0.0_dp
-            endif
-
-            !First, find the non-interacting solution expressed in the schmidt basis
-            call FindSchmidtPert_Charged(Omega+mu,ni_lr_Cre,ni_lr_Ann)
-
-            !First, construct useful intermediates
-            !sum_a Gc_a^* F_ax (Creation)
-!            call ZGEMM('C','N',1,EmbSize,nVirt,dcmplx(1.0_dp,0.0_dp),SchmidtPertGF_Cre(VirtStart:VirtEnd),nVirt, &
-!                FockSchmidtComp(VirtStart:VirtEnd,ActiveStart:ActiveEnd),nVirt,dcmplx(0.0_dp,0.0_dp),Gc_a_F_ax,1)
-            Gc_a_F_ax(:) = dcmplx(0.0_dp,0.0_dp)
-            do x = ActiveStart,ActiveEnd
-                do a = VirtStart,VirtEnd
-                    Gc_a_F_ax(x) = Gc_a_F_ax(x) + conjg(SchmidtPertGF_Cre(a))*FockSchmidt(a,x)
-                enddo
-            enddo
-            !sum_b Gc_b F_ab  (Creation)
-            call ZGEMV('N',nVirt,nVirt,dcmplx(1.0_dp,0.0_dp),FockSchmidtComp(VirtStart:VirtEnd,VirtStart:VirtEnd), &
-                nVirt,SchmidtPertGF_Cre(VirtStart:VirtEnd),1,dcmplx(0.0_dp,0.0_dp),Gc_b_F_ab,1)
-!            call ZGEMM('T','T',1,nVirt,nVirt,dcmplx(1.0_dp,0.0_dp),SchmidtPertGF_Cre(VirtStart:VirtEnd),nVirt,   &
-!                FockSchmidtComp(VirtStart:VirtEnd,VirtStart:VirtEnd),nVirt,dcmplx(0.0_dp,0.0_dp),Gc_b_F_ab,1)
-
-            !sum_i Ga_i^* F_xi (Annihilation)
-!            call ZGEMM('C','T',1,EmbSize,nCore,dcmplx(1.0_dp,0.0_dp),SchmidtPertGF_Ann(1:CoreEnd),nCore,   &
-!                FockSchmidtComp(ActiveStart:ActiveEnd,1:CoreEnd),EmbSize,dcmplx(0.0_dp,0.0_dp),Ga_i_F_xi,EmbSize)
-            Ga_i_F_xi(:) = dcmplx(0.0_dp,0.0_dp)
-            do x = ActiveStart,ActiveEnd
-                do i = 1,CoreEnd
-                    Ga_i_F_xi(x) = Ga_i_F_xi(x) + conjg(SchmidtPertGF_Ann(i))*FockSchmidt(i,x)
-                enddo
-            enddo
-            !sum_i Ga_i F_ij (Annihilation)
-            call ZGEMV('T',nCore,nCore,dcmplx(1.0_dp,0.0_dp),FockSchmidtComp(1:CoreEnd,1:CoreEnd),nCore,   &
-                SchmidtPertGF_Ann(1:CoreEnd),1,dcmplx(0.0_dp,0.0_dp),Ga_i_F_ij,1)
-!            call ZGEMM('T','N',1,nCore,nCore,dcmplx(1.0_dp,0.0_dp),SchmidtPertGF_Ann(1:CoreEnd),nCore, &
-!                FockSchmidtComp(1:nCore,1:nCore),nCore,dcmplx(0.0_dp,0.0_dp),Ga_i_F_ij,1)
 
             !Block 1 for particle hamiltonian
             !First, construct n + 1 (alpha) FCI space, in determinant basis
@@ -818,7 +852,9 @@ module LinearResponse
             deallocate(W,GSHam)
         endif
         deallocate(LinearSystem_p,LinearSystem_h,Psi_p,Psi_h,Psi1_p,Psi1_h)
-        deallocate(Cre_0,Ann_0,Psi_0)
+        deallocate(Cre_0,Ann_0,Psi_0,SchmidtPertGF_Cre,SchmidtPertGF_Ann)
+        deallocate(NI_LRMat_Cre,NI_LRMat_Ann)
+        if(tSC_LR) deallocate(SelfEnergy_Imp)
         close(iunit)
         if(tMinRes_NonDir) then
             close(minres_unit)
@@ -842,7 +878,9 @@ module LinearResponse
 
         !Stored intermediates
         deallocate(NFCIHam,Nm1FCIHam_beta,Np1FCIHam_alpha)
-        deallocate(Coup_Create_alpha,Coup_Ann_alpha,FockSchmidtComp)
+        deallocate(Coup_Create_alpha,Coup_Ann_alpha)
+        deallocate(FockSchmidt_SE,FockSchmidt_SE_VV,FockSchmidt_SE_CC)
+        deallocate(FockSchmidt_SE_VX,FockSchmidt_SE_CX)
         deallocate(Gc_a_F_ax,Gc_b_F_ab,Ga_i_F_xi,Ga_i_F_ij)
 
     end subroutine NonIntExCont_TDA_MCLR_Charged
@@ -2174,6 +2212,40 @@ module LinearResponse
 
 
     end subroutine NonIntExContracted_TDA_MCLR
+        
+    !Calculate n-electron hamiltonian
+    subroutine Fill_N_Np1_Nm1b_FCIHam(nElec,NHam,Np1Ham,Nm1bHam)
+        implicit none
+        integer, intent(in) :: nElec
+        real(dp), intent(out) :: NHam(nFCIDet,nFCIDet)
+        real(dp), intent(out) :: Np1Ham(nNp1FCIDet,nNp1FCIDet)
+        real(dp), intent(out) :: Nm1bHam(nNm1bFCIDet,nNm1bFCIDet)
+        integer :: i,j
+
+        NHam(:,:) = zero
+        Np1Ham(:,:) = zero
+        Nm1bHam(:,:) = zero
+
+        do i = 1,nFCIDet
+            do j = i,nFCIDet
+                call GetHElement(FCIDetList(:,i),FCIDetList(:,j),nElec,NHam(i,j))
+                NHam(j,i) = NHam(i,j)
+            enddo
+        enddo
+        do i = 1,nNp1FCIDet
+            do j = i,nNp1FCIDet
+                call GetHElement(Np1FCIDetList(:,i),Np1FCIDetList(:,j),nElec+1,Np1Ham(i,j)
+                Np1Ham(j,i) = Np1Ham(i,j)
+            enddo
+        enddo
+        do i = 1,nNm1bFCIDet
+            do j = i,nNm1bFCIDet
+                call GetHElement(Nm1bFCIDetList(:,i),Nm1bFCIDetList(:,j),nElec-1,Nm1bHam(i,j)
+                Nm1bHam(j,i) = Nm1bHam(i,j)
+            enddo
+        enddo
+
+    end subroutine Fill_N_Np1_Nm1bFCIHam
 
     !RHS is overwritten with the solution
     !LHS is destroyed
@@ -4936,55 +5008,223 @@ module LinearResponse
 
     end subroutine zDirMV
 
+    !Calculate the non-interacting greens functions, with empirical self-energy correction
+    !Also, find the contraction coefficients for all impurity-impurity greens functions
+    !Then, calculate the new 1-electron hamiltonian (with implicit self-energy term) for 
+    !the embedded basis, as well as the core hamiltonian.
+    !The NI_LRMat_Cre and NI_LRMat_Ann matrices are returned as the non-interacting LR
+    !The global matrices SchmidtPertGF_Cre and SchmidtPertGF_Ann are filled, as well as the
+    !new one-electron hamiltonians for the interacting problem: Emb_h0v_SE and FockSchmidt_SE
+    subroutine FindNI_Charged(Omega,NI_LRMat_Cre,NI_LRMat_Ann)
+        implicit none
+        real(dp), intent(in) :: Omega
+        complex(dp), intent(out) :: NI_LRMat_Cre(nImp,nImp),NI_LRMat_Ann(nImp,nImp)
+        real(dp), allocatable :: AO_OneE_Ham(:,:),W(:),Work(:),MOtoSchmidt(:,:),temp(:,:)
+        complex(dp), allocatable :: HFPertBasis_Ann(:,:),HFPertBasis_Cre(:,:)
+        integer :: lwork,info,persite,i,a,pertBra,j
+        character(len=*), parameter :: t_r='FindNI_Charged'
+
+        if(.not.tAllImp_LR) then
+            call stop_all(t_r,"Should not be in this routine if you want to calc all greens functions")
+        endif
+
+        allocate(AO_OneE_Ham(nSites,nSites))
+        !Stripe the (-)self-energy through the AO one-electron hamiltonian
+        call add_localpot(h0v,AO_OneE_Ham,SelfEnergy_Imp,tAdd=.false.)
+
+        !Now, diagonalize the one-electron hamiltonian
+        allocate(W(nSites))
+        allocate(Work(1))
+        lWork = -1
+        info = 0
+        call dsyev('V','U',nSites,AO_OneE_Ham,nSites,W,Work,lWork,info)
+        if(info.ne.0) call stop_all(t_r,'Workspace quiery failed')
+        lwork = int(work(1))+1
+        deallocate(work)
+        allocate(Work(lwork))
+        call dsyev('V','U',nSites,AO_OneE_Ham,nSites,W,Work,lWork,info)
+        if(info.ne.0) call stop_all(t_r,'Diag Failed')
+        deallocate(Work)
+        
+        NI_LRMat_Cre(:,:) = zzero
+        NI_LRMat_Ann(:,:) = zzero 
+
+        !Memory to temperarily store the first order wavefunctions of each impurity site, in the MO basis
+        allocate(HFPertBasis_Ann(1:nOcc,nImp))
+        allocate(HFPertBasis_Cre(nOcc+1:nSites,nImp))
+        HFPertBasis_Ann(:,:) = zzero
+        HFPertBasis_Cre(:,:) = zzero
+
+        !Now, form the non-interacting greens functions (but with u *and* self-energy)
+        do pertsite = 1,nImp
+            !Form the set of non-interacting first order wavefunctions from the new one-electron h
+            do i = 1,nOcc
+                HFPertBasis_Ann(i,pertsite) = dcmplx(AO_OneE_Ham(pertsite,i),0.0_dp)/dcmplx(Omega-W(i),dDelta)
+            enddo
+            do a = nOcc+1,nSites
+                HFPertBasis_Cre(a,pertsite) = dcmplx(AO_OneE_Ham(pertsite,a),0.0_dp)/dcmplx(Omega-W(a),dDelta)
+            enddo
+
+            !Run over operators acting of the Bra in the impurity space
+            do pertBra = 1,nImp
+
+                !Now perform the set of dot products of <0|V* with |1> for all combinations of sites
+                do i = 1,nOcc
+                    NI_LRMat_Ann(pertsite,pertBra) = NI_LRMat_Ann(pertsite,pertBra) + AO_OneE_Ham(pertBra,i)*HFPertBasis_Ann(i,pertsite)
+                enddo
+                do a = nOcc+1,nSites
+                    NI_LRMat_Cre(pertsite,pertBra) = NI_LRMat_Cre(pertsite,pertBra) + AO_OneE_Ham(pertBra,a)*HFPertBasis_Cre(a,pertsite)
+                enddo
+            enddo
+        enddo
+
+
+        !Now, we need to project these NI wavefunctions into the schmidt basis
+        !However, this is not the original MO basis, so first, find the transformation matrix from the
+        !new MO basis to the original schmidt basis, since we do not want to modify this basis
+        allocate(MOtoSchmidt(nSites,nSites))    !Fast index MO
+        call DGEMM('T','N',nSites,nSites,nSites,one,AO_OneE_Ham,nSites,FullSchmidtBasis,nSites,zero,MOtoSchmidt,nSites)
+
+        !Now, rotate the greens functions in this modified MO basis to the original schmidt basis
+        do pertsite = 1,nImp
+            do i = 1,nOcc-nImp  !Schmidt Occ space
+                do j = 1,nOcc
+                    SchmidtPertGF_Ann(i,pertsite) = SchmidtPertGF_Ann(i,pertsite) + MOtoSchmidt(j,i)*HFPertBasis_Ann(j,pertsite)
+                enddo
+            enddo
+            do a = nOcc+nImp+1,nSites   !Schmidt virtual space
+                do b = nOcc+1,nSites
+                    SchmidtPertGF_Cre(a,pertsite) = SchmidtPertGF_Cre(a,pertsite) + MOtoSchmidt(b,a)*HFPertBasis_Cre(b,pertsite)
+                enddo
+            enddo
+        enddo
+
+        !Now, we need to find the new 1 electron hamiltonian for the interacting problem.
+        !This wants to have the self-energy projected into the schmidt basis, but only over the bath and
+        !core sites, not the impurity.
+
+        !First, deal with the embedded basis
+        !Stripe the self energy through the space
+        allocate(temp(nSites,nSites))
+        temp(:,:) = zero
+        call add_localpot(temp,AO_OneE_Ham,SelfEnergy_Imp,tAdd=.true.)
+        deallocate(temp)
+        !AO_OneE_Ham is now just the self-energy striped through the space
+        !Rotate this into the embedding basis
+        allocate(temp(EmbSize,nSites))
+        call DGEMM('T','N',EmbSize,nSites,nSites,one,EmbeddedBasis,nSites,AO_OneE_Ham,nSites,zero,temp,EmbSize)
+        call DGEMM('N','N',EmbSize,EmbSize,nSites,one,temp,EmbSize,EmbeddedBasis,nSites,zero,Emb_h0v_SE,EmbSize)
+        deallocate(temp)
+
+        !Now, zero out the self-energy contribution over the impurity site
+        Emb_h0v_SE(1:nImp,1:nImp) = zero
+        !Now subtract this self-energy correction from the normal one-electron hamiltonian in the embedded space (with corr pot)
+        Emb_h0v_SE(:,:) = Emb_h0v(:,:) - Emb_h0v_SE(:,:)
+
+        !But what about the core hamiltonian?
+        !Here, we do need to include
+        !the effect of the self-energy on the core orbitals, since it is explicitly a coupling between the
+        !(non-bath) environment and the embedded basis which we want to consider, and we are not changing
+        !the bath orbital to account for it as we do in the ground state problem.
+        !Calculate the new 1-electron hamiltonian
+        AO_OneE_Ham(:,:) = zero
+        do i = 1,nSites
+            AO_OneE_Ham(i,i) = W(i)  !Start in the new MO basis, where the whole matrix is diagonal
+        enddo
+        !Then rotate into the orbital Schmidt basis, using the transformation matrices already calculated
+        allocate(temp(nSites,nSites))
+        call DGEMM('T','N',nSites,nSites,nSites,one,MOtoSchmidt,nSites,AO_OneE_Ham,nSites,zero,temp,nSites)
+        call DGEMM('N','N',nSites,nSites,nSites,one,temp,nSites,MOtoSchmidt,nSites,zero,AO_OneE_Ham,nSites)
+        do i=nImp+1,EmbSize
+            do j=1,EmbSize
+                !The bath orbitals, and coupling to the impurity site blocks of the one-electron hamiltonain should now agree between FockSchmidt_SE and Emb_h0v_SE surely?
+                if(abs(Emb_h0v_SE(j,i)-AO_OneE_Ham(nOcc-nImp+j,nOcc-nImp+i)).gt.1.0e-8_dp) then
+                    call stop_all(t_r,'One electron hamiltonians with self energy not consistent')
+                endif
+            enddo
+        enddo
+
+        !Now, convert this into a complex number (for easy ZGEMM'ing), and store it in the global array
+        do i = 1,nOcc
+            do j = 1,nOcc
+                FockSchmidt_SE_CC(j,i) = dcmplx(AO_OneE_Ham(j,i),0.0_dp)
+            enddo
+        enddo
+        do i = nOcc+1,nSites
+            do j = nOcc+1,nSites
+                FockSchmidt_SE_VV(j,i) = dcmplx(AO_OneE_Ham(j,i),0.0_dp)
+            enddo
+        enddo
+        do i = 1,nSites
+            do j = 1,nSites
+                FockSchmidt_SE(j,i) = dcmplx(AO_OneE_Ham(j,i),0.0_dp)
+            enddo
+        enddo
+        do i = nOcc-nImp+1,nOcc+nImp    !Active space
+            do j = 1,nOcc
+                FockSchmidt_SE_CX(j,i) = dcmplx(AO_OneE_Ham(j,i),0.0_dp)
+            enddo
+            do j = nOcc+1,nSites
+                FockSchmidt_SE_VX(j,i) = dcmplx(AO_OneE_Ham(j,i),0.0_dp)
+            enddo
+        enddo
+        
+        !Set the impurity:impurity parts to the correct values (even though we don't access them from FockSchmidt)
+        !They are different since the correlation potential is not defined over the impurity sites.
+        FockSchmidt_SE(nOcc-nImp+1:nOcc+nImp,nOcc-nImp+1:nOcc+nImp) = Emb_h0v_SE(:,:)
+        
+        deallocate(temp,AO_OneE_Ham,W,MOtoSchmidt,HFPertBasis_Ann,HFPertBasis_Cre)
+
+    end subroutine FindNI_Charged
+
     !Find the non-interacting solution for alpha single-particle addition and removal, and project this operator into the schmidt basis
     !This is done seperately for electron addition and removal (SchmidtPertGF_Cre and SchmidtPertGF_Add)
     ! G_0^+
-    subroutine FindSchmidtPert_Charged(Omega,ni_lr_Cre,ni_lr_Ann)
+    ! This is ONLY done for the local greens functions at site 1
+    subroutine FindSchmidtPert_Charged(Omega,NI_LRMat_Cre,NI_LRMat_Ann)
         implicit none
         real(dp), intent(in) :: Omega
-        complex(dp), intent(out) :: ni_lr_Cre,ni_lr_Ann
+        complex(dp), intent(out) :: NI_LRMat_Cre(1,1),NI_LRMat_Ann(1,1)
         complex(dp), allocatable :: HFPertBasis_Cre(:),HFPertBasis_Ann(:)
-        integer :: i,j,a,b
+        integer :: i,j,a,b,pertsite
         character(len=*), parameter :: t_r='FindSchmidtPert_Charged'
+
+        if(tAllImp_LR) then
+            call stop_all(t_r,'Should not be in this routine if you need to calculate all nImp GFs')
+        endif
 
         allocate(HFPertBasis_Cre(nOcc+1:nSites))
         HFPertBasis_Cre(:) = dcmplx(0.0_dp,0.0_dp)
         allocate(HFPertBasis_Ann(1:nOcc))
         HFPertBasis_Ann(:) = dcmplx(0.0_dp,0.0_dp)
-        ni_lr_Cre = dcmplx(0.0_dp,0.0_dp)
-        ni_lr_Ann = dcmplx(0.0_dp,0.0_dp)
+        NI_LRMat_Cre(1,1) = dcmplx(0.0_dp,0.0_dp)
+        NI_LRMat_Ann(1,1) = dcmplx(0.0_dp,0.0_dp)
 
         !Assume perturbation is local to the first impurity site (pertsite = 1).
-        if(pertsite.ne.1) call stop_all(t_r,'Perturbation is not local to the impurity site')
+        pertsite = 1
         !Assuming that MF GF operator is V_ia/w-e_a, V_ia/w-e_i+w
         do i = 1,nOcc
             HFPertBasis_Ann(i) = dcmplx(HFOrbs(pertsite,i),0.0_dp)/(dcmplx(Omega,dDelta)-HFEnergies(i))
-            ni_lr_Ann = ni_lr_Ann + dcmplx(HFOrbs(pertsite,i)**2,0.0_dp)/(dcmplx(Omega,dDelta)-HFEnergies(i))
+            NI_LRMat_Ann(1,1) = NI_LRMat_Ann(1,1) + dcmplx(HFOrbs(pertsite,i)**2,0.0_dp)/(dcmplx(Omega,dDelta)-HFEnergies(i))
         enddo
         do a = nOcc+1,nSites
             HFPertBasis_Cre(a) = dcmplx(HFOrbs(pertsite,a),0.0_dp)/(dcmplx(Omega,dDelta)-HFEnergies(a))
-            ni_lr_Cre = ni_lr_Cre + dcmplx(HFOrbs(pertsite,a)**2,0.0_dp)/(dcmplx(Omega,dDelta)-HFEnergies(a))
+            NI_LRMat_Cre(1,1) = NI_LRMat_Cre(1,1) + dcmplx(HFOrbs(pertsite,a)**2,0.0_dp)/(dcmplx(Omega,dDelta)-HFEnergies(a))
         enddo
 
 !        call writevectorcomp(HFPertBasis_Cre,'HFPertBasis_Cre')
-
-        if(allocated(SchmidtPertGF_Cre)) deallocate(SchmidtPertGF_Cre)
-        allocate(SchmidtPertGF_Cre(nOcc+nImp+1:nSites))
-        SchmidtPertGF_Cre(:) = dcmplx(0.0_dp,0.0_dp)
-        
-        if(allocated(SchmidtPertGF_Ann)) deallocate(SchmidtPertGF_Ann)
-        allocate(SchmidtPertGF_Ann(1:nOcc-nImp))
-        SchmidtPertGF_Ann(:) = dcmplx(0.0_dp,0.0_dp)
+        SchmidtPertGF_Cre(:,1) = dcmplx(0.0_dp,0.0_dp)
+        SchmidtPertGF_Ann(:,1) = dcmplx(0.0_dp,0.0_dp)
 
         !Transform into schmidt basis
         do a = nOcc+nImp+1,nSites
             do b = nOcc+1,nSites
-                SchmidtPertGF_Cre(a) = SchmidtPertGF_Cre(a) + HFtoSchmidtTransform(b,a)*HFPertBasis_Cre(b)
+                SchmidtPertGF_Cre(a,1) = SchmidtPertGF_Cre(a,1) + HFtoSchmidtTransform(b,a)*HFPertBasis_Cre(b)
             enddo
         enddo
         do i = 1,nOcc-nImp
             do j = 1,nOcc
-                SchmidtPertGF_Ann(i) = SchmidtPertGF_Ann(i) + HFtoSchmidtTransform(j,i)*HFPertBasis_Ann(j)
+                SchmidtPertGF_Ann(i,1) = SchmidtPertGF_Ann(i,1) + HFtoSchmidtTransform(j,i)*HFPertBasis_Ann(j)
             enddo
         enddo
 
