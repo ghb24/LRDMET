@@ -211,6 +211,74 @@ module mat_tools
 
     end subroutine add_localpot
 
+    !Add a *complex* local potential striped across a *real* hamiltonian 
+    !(only possible with translational invariance)
+    !If tAdd, then the correlation potential is added to the core potential, otherwise it is subtracted
+    subroutine add_localpot_comp(core,core_v,CorrPot,tAdd)
+        implicit none
+        real(dp) , intent(in) :: core(nSites,nSites)
+        complex(dp) , intent(out) :: core_v(nSites,nSites)
+        complex(dp) , intent(in) :: CorrPot(nImp,nImp)
+        logical , intent(in), optional :: tAdd
+        complex(dp) :: CorrPot_Flip(nImp,nImp)
+        integer :: i,j,k,i_ind,j_ind
+        logical :: tAdd_
+
+        if(present(tAdd)) then
+            tAdd_ = tAdd
+        else
+            tAdd_ = .true.
+        endif
+
+        if(tFlipUTiling) then
+            write(6,*) "Flipping correlation potential when tiling mean-field hamiltonian"
+            CorrPot_Flip(:,:) = zzero
+            do i=1,nImp
+                do j=1,nImp
+                    j_ind = nImp - j + 1
+                    i_ind = nImp - i + 1
+                    CorrPot_Flip(j_ind,i_ind) = CorrPot(i,j)
+                enddo
+            enddo
+        endif
+
+        if(LatticeDim.eq.1) then
+            !Construct new hamiltonian which is block diagonal in the local potential
+            core_v = zzero
+            do k=0,(nSites/nImp)-1
+                if(tFlipUTiling.and.(mod(k,2).eq.1)) then
+                    do i=1,nImp
+                        do j=1,nImp
+                            if(tAdd_) then
+                                core_v((k*nImp)+i,(k*nImp)+j)=CorrPot_Flip(i,j)
+                            else
+                                core_v((k*nImp)+i,(k*nImp)+j)=-CorrPot_Flip(i,j)
+                            endif
+                        enddo
+                    enddo
+                else
+                    do i=1,nImp
+                        do j=1,nImp
+                            if(tAdd_) then
+                                core_v((k*nImp)+i,(k*nImp)+j)=CorrPot(i,j)
+                            else
+                                core_v((k*nImp)+i,(k*nImp)+j)=-CorrPot(i,j)
+                            endif
+                        enddo
+                    enddo
+                endif
+            enddo
+
+            !Add this to the original mean-field hamiltonian
+            do i=1,nSites
+                do j=1,nSites
+                    core_v(i,j) = core_v(i,j) + core(i,j)
+                enddo
+            enddo
+        endif
+
+    end subroutine add_localpot_comp
+
     !Run a full HF, including mean-field on-site repulsion term in the fock matrix
     !These are stored in FullHFOrbs and FullHFEnergies
     subroutine run_true_hf()

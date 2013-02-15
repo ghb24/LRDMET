@@ -121,8 +121,8 @@ module Globals
     complex(dp), allocatable :: SchmidtPertGF_Ann(:,:) !The contraction coefficients (potentially for each impurity site) for the core excitations
     complex(dp), allocatable :: NI_LRMat_Cre(:,:)   !NI particle greens functions for each value of omega
     complex(dp), allocatable :: NI_LRMat_Ann(:,:)   !NI hole-addition greens functions for each value of omega
-    real(dp), allocatable :: SelfEnergy_Imp(:,:)    !The updated self-energy matrix over impurity sites
-    real(dp), allocatable :: Emb_h0v_SE(:,:)
+    complex(dp), allocatable :: SelfEnergy_Imp(:,:)    !The updated self-energy matrix over impurity sites
+    complex(dp), allocatable :: Emb_h0v_SE(:,:)        !Neither this, or the selfEnergy itself, are hermitian
     complex(dp), allocatable :: FockSchmidt_SE(:,:) !The one-electron hamiltonian over the whole space (apart from imp-imp block)
     complex(dp), allocatable :: FockSchmidt_SE_VV(:,:) !The one-electron hamiltonian over the virtual-virtual block
     complex(dp), allocatable :: FockSchmidt_SE_CC(:,:) !The one-electron hamiltonian over the core core block
