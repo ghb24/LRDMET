@@ -117,8 +117,12 @@ module Globals
     logical :: tSC_LR           ! Whether to self-consistently optimize the self-energy part of the LR h.
     
     !DMET_LR global data
-    complex(dp), allocatable :: SchmidtPertGF_Cre(:,:) !The contraction coefficients (potentially for each impurity site) for the core excitations
-    complex(dp), allocatable :: SchmidtPertGF_Ann(:,:) !The contraction coefficients (potentially for each impurity site) for the core excitations
+    !When a non-hermitian self-energy is added, we need to seperately calculate the non-interacting wavefunctions expressed in the right-eigenvector space
+    !and the left eigenvector space. Kets are in the right eigenvector space, and Bras in the left space.
+    complex(dp), allocatable :: SchmidtPertGF_Cre_Ket(:,:) !The contraction coefficients (potentially for each impurity site) for the core excitations
+    complex(dp), allocatable :: SchmidtPertGF_Ann_Ket(:,:) !The contraction coefficients (potentially for each impurity site) for the core excitations
+    complex(dp), allocatable :: SchmidtPertGF_Cre_Bra(:,:) !The contraction coefficients (potentially for each impurity site) for the core excitations
+    complex(dp), allocatable :: SchmidtPertGF_Ann_Bra(:,:) !The contraction coefficients (potentially for each impurity site) for the core excitations
     complex(dp), allocatable :: NI_LRMat_Cre(:,:)   !NI particle greens functions for each value of omega
     complex(dp), allocatable :: NI_LRMat_Ann(:,:)   !NI hole-addition greens functions for each value of omega
     complex(dp), allocatable :: SelfEnergy_Imp(:,:)    !The updated self-energy matrix over impurity sites

@@ -374,6 +374,89 @@ subroutine GetHElement(nI,nJ,NEl,HEl)
 
 end subroutine GetHElement
 
+subroutine GetHElement_comp(nI,nJ,NEl,HEl)
+    use const
+    implicit none
+    integer, intent(in) :: NEl
+    integer, intent(in) :: nI(NEl),nJ(NEl)
+    complex(dp), intent(out) :: HEl
+    complex(dp) :: sltcnd_0_comp,sltcnd_1_comp,sltcnd_2_comp
+    integer :: Ex(2,2),iGetExcitLevel,IC,DeltaSpin
+    logical :: tSign
+
+    IC = IGETEXCITLEVEL(NI,NJ,NEL)
+    Ex(1,1) = IC
+    if(Ex(1,1).le.2) then
+        call GetExcitation(nI,nJ,NEl,Ex,tSign)
+    else
+        HEl = zzero
+        return
+    endif
+
+    if(IC.eq.0) then
+        !Diagonal hamiltonian matrix element
+        !Sum in 1 electron terms
+        hel = sltcnd_0_comp(nI,NEl)
+    elseif(IC.eq.1) then
+        !Single excitation
+        DeltaSpin = mod(Ex(1,1),2) + mod(Ex(2,1),2)
+        if(mod(DeltaSpin,2).eq.1) then
+            !We have changed Ms - forbidden excitation
+            HEl = zzero
+            return
+        endif
+        hel = sltcnd_1_comp(nI, Ex, tSign, NEl)
+    elseif(IC.eq.2) then
+        DeltaSpin = mod(Ex(1,1),2) + mod(Ex(2,1),2) + mod(Ex(1,2),2) + mod(Ex(2,2),2)
+        if(mod(DeltaSpin,2).eq.1) then
+            !We have changed Ms - forbidden excitation
+            HEl = zzero
+            return
+        endif
+        hel = sltcnd_2_comp(Ex, tSign)
+    endif
+
+end subroutine GetHElement_comp
+
+function sltcnd_0_comp (nI,NEl) result(hel)
+    use const
+    use DetToolsData, only: TMat_comp
+    implicit none
+    integer, intent(in) :: NEl
+    integer, intent(in) :: nI(NEl)
+    integer :: id(nel),gtid,i,idX,idN,j
+    complex(dp) :: hel
+    real(dp) :: umatel
+
+    do i=1,NEl
+        id(i) = gtID(nI(i))   !turn to spatial orbital representation
+    enddo
+
+    hel = zzero
+    do i=1,NEl
+        hel = hel + tmat_comp(id(i),id(i))
+    enddo
+
+    do i=1,nel-1
+        do j=i+1,nel
+            idX = max(id(i), id(j))
+            idN = min(id(i), id(j))
+            hel = hel + umatel(idN, idX, idN, idX)
+        enddo
+    enddo
+
+    do i=1,nel-1
+        do j=i+1,nel
+            if(mod(nI(i),2).eq.mod(nI(j),2)) then
+                idX = max(id(i), id(j))
+                idN = min(id(i), id(j))
+                hel = hel - umatel(idN, idX, idX, idN)
+            endif
+        enddo
+    enddo
+
+end function sltcnd_0_comp
+
 function sltcnd_0 (nI,NEl) result(hel)
     use const
     use DetToolsData, only: TMat
@@ -411,6 +494,48 @@ function sltcnd_0 (nI,NEl) result(hel)
     enddo
 
 end function sltcnd_0
+
+function sltcnd_1_comp (nI, ex, tSign, nel) result(hel)
+    use const
+    use DetToolsData, only: TMat_comp
+    implicit none
+    integer, intent(in) :: nel,nI(nel),ex(2)
+    logical, intent(in) :: tSign
+    real(dp) :: umatel
+    complex(dp) :: hel
+    integer :: id_ex(2), id, i,gtid
+
+    do i=1,2
+        id_ex(i) = gtid(ex(i))
+    enddo
+
+    hel = zzero
+    if(mod(ex(1),2).eq.mod(ex(2),2)) then
+        do i=1,nel
+            if(ex(1).ne.nI(i)) then
+                id = gtID(nI(i))
+                hel = hel + umatel(id_ex(1),id,id_ex(2),id)
+            endif
+        enddo
+    endif
+
+    if(mod(ex(1),2).eq.mod(ex(2),2)) then
+        do i=1,nel
+            if(ex(1).ne.nI(i)) then
+                if(mod(ex(1),2).eq.mod(nI(i),2)) then
+                    id = gtid(nI(i))
+                    hel = hel - umatel(id_ex(1),id,id,id_ex(2))
+                endif
+            endif
+        enddo
+    endif
+
+    if(mod(ex(1),2).eq.mod(ex(2),2)) then
+        hel = hel + tmat_comp(id_ex(1),id_ex(2))
+    endif
+    if(tSign) hel = -hel
+
+end function sltcnd_1
 
 function sltcnd_1 (nI, ex, tSign, nel) result(hel)
     use const
@@ -481,6 +606,36 @@ function sltcnd_2 (ex, tSign) result(hel)
     if(tSign) hel = -hel
 
 end function sltcnd_2
+
+function sltcnd_2_comp (ex, tSign) result(hel)
+    use const
+    implicit none
+    integer, intent(in) :: ex(2,2)
+    logical, intent(in) :: tSign
+    real(dp) :: umatel
+    complex(dp) :: hel
+    integer :: id(2,2),gtid,i,j
+
+    do i=1,2
+        do j=1,2
+            id(j,i) = gtid(ex(j,i))
+        enddo
+    enddo
+
+    if((mod(ex(1,1),2).eq.mod(ex(2,1),2)).and.    &
+       (mod(ex(1,2),2).eq.mod(ex(2,2),2))) then
+        hel = dcmplx(umatel(id(1,1),id(1,2),id(2,1),id(2,2)),0.0_dp)
+    else
+        hel = zzero
+    endif
+
+    if((mod(ex(1,1),2).eq.mod(ex(2,2),2)).and.    &
+       (mod(ex(1,2),2).eq.mod(ex(2,1),2))) then
+        hel = hel - dcmplx(umatel(id(1,1),id(1,2),id(2,2),id(2,1)),0.0_dp)
+    endif
+    if(tSign) hel = -hel
+
+end function sltcnd_2_comp
 
 !In physical notation and spatial orbitals
 function umatind(i,j,k,l) result(ind)

@@ -11,7 +11,6 @@ module LinearResponse
     !Parameters for matrix-vector multiplications within iterative solvers
     complex(dp), pointer, private :: zDirMV_Mat(:,:)
     real(dp), allocatable, private :: Precond_Diag(:)
-    complex(dp), private :: zShift
 
     contains
     
@@ -104,7 +103,7 @@ module LinearResponse
         use zminresqlpModule, only: MinresQLP  
         use DetToolsData
         implicit none
-        real(dp), allocatable :: NFCIHam(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
+        complex(dp), allocatable :: NFCIHam(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
         real(dp), allocatable :: W(:),dNorm_p(:),dNorm_h(:)
         complex(dp), allocatable , target :: LinearSystem_p(:,:),LinearSystem_h(:,:)
         complex(dp), allocatable :: Cre_0(:,:),Ann_0(:,:),ResponseFn_p(:,:),ResponseFn_h(:,:)
@@ -188,7 +187,7 @@ module LinearResponse
         if(allocated(UMat)) deallocate(UMat)
         allocate(UMat(UMatSize))
         write(6,"(A,F12.5,A)") "Memory required for umat storage: ",UMatSize*RealtoMb, " Mb"
-        UMat(:) = 0.0_dp
+        UMat(:) = zero
         if(tAnderson) then
             umat(umatind(1,1,1,1)) = U
         else
@@ -196,10 +195,14 @@ module LinearResponse
                 umat(umatind(i,i,i,i)) = U
             enddo
         endif
-        if(allocated(tmat)) deallocate(tmat)
+        if(allocated(tmat_comp)) deallocate(tmat_comp)
         allocate(tmat(EmbSize,EmbSize))
-        tmat(:,:) = Emb_h0v(:,:)
-        if(tChemPot) tmat(1,1) = tmat(1,1) - U/2.0_dp
+        do i = 1,EmbSize
+            do j = 1,EmbSize
+                tmat_comp(j,i) = dcmplx(Emb_h0v(j,i),0.0_dp)
+            enddo
+        enddo
+        if(tChemPot) tmat_comp(1,1) = tmat_comp(1,1) - dcmplx(U/2.0_dp,0.0_dp)
         
         !Enumerate excitations for fully coupled space
         !Seperate the lists into different Ms sectors in the N+- lists
@@ -211,9 +214,9 @@ module LinearResponse
         !Construct FCI hamiltonians for the N, N+1_alpha and N-1_beta spaces
         if(nNp1FCIDet.ne.nNm1FCIDet) call stop_all(t_r,'Active space not half-filled')
         if(nNp1FCIDet.ne.nNp1bFCIDet) call stop_all(t_r,'Cannot deal with open shell systems')
-        write(6,"(A,F12.5,A)") "Memory required for N-electron hamil: ",(real(nFCIDet,dp)**2)*RealtoMb, " Mb"
-        write(6,"(A,F12.5,A)") "Memory required for N+1-electron hamil: ",(real(nNp1FCIDet,dp)**2)*RealtoMb, " Mb"
-        write(6,"(A,F12.5,A)") "Memory required for N-1-electron hamil: ",(real(nNm1bFCIDet,dp)**2)*RealtoMb, " Mb"
+        write(6,"(A,F12.5,A)") "Memory required for N-electron hamil: ",(real(nFCIDet,dp)**2)*ComptoMb, " Mb"
+        write(6,"(A,F12.5,A)") "Memory required for N+1-electron hamil: ",(real(nNp1FCIDet,dp)**2)*ComptoMb, " Mb"
+        write(6,"(A,F12.5,A)") "Memory required for N-1-electron hamil: ",(real(nNm1bFCIDet,dp)**2)*ComptoMb, " Mb"
         allocate(NFCIHam(nFCIDet,nFCIDet))
         allocate(Np1FCIHam_alpha(nNp1FCIDet,nNp1FCIDet))
         allocate(Nm1FCIHam_beta(nNm1bFCIDet,nNm1bFCIDet))
@@ -479,8 +482,8 @@ module LinearResponse
                     !If we have a self-consistent self-energy contribution, we also need to update
                     !the hamiltonians which have been stored.
                     !Update tmat with the new one-electron hamiltonian, with self-energy contribution
-                    tmat(:,:) = Emb_h0v_SE(:,:)
-                    if(tChemPot) tmat(1,1) = tmat(1,1) - U/2.0_dp
+                    tmat_comp(:,:) = Emb_h0v_SE(:,:)
+                    if(tChemPot) tmat_comp(1,1) = tmat_comp(1,1) - dcmplx(U/2.0_dp,0.0_dp)
                     call Fill_N_Np1_Nm1b_FCIHam(Elec,NFCIHam,Np1FCIHam_alpha,Nm1FCIHam_beta)
                 else
                     !First, find the non-interacting solution expressed in the schmidt basis
@@ -513,45 +516,21 @@ module LinearResponse
 
                     !Block 1 for particle hamiltonian
                     !First, construct n + 1 (alpha) FCI space, in determinant basis
-                    do i = 1,nNp1FCIDet
-                        do j = 1,nNp1FCIDet
-                            LinearSystem_p(j,i) = dcmplx(Np1FCIHam_alpha(j,i),0.0_dp)
-                        enddo
-                    enddo
+                    LinearSystem_p(1:nNp1FCIDet,1:nNp1FCIDet) = Np1FCIHam_alpha(:,:)
                     !Block 1 for hole hamiltonian
-                    do i = 1,nNm1bFCIDet
-                        do j = 1,nNm1bFCIDet
-                            LinearSystem_h(j,i) = dcmplx(Nm1FCIHam_beta(j,i),0.0_dp)
-                        enddo
-                    enddo
+                    LinearSystem_h(1:nNm1bFCIDet,1:nNm1bFCIDet) = Nm1FCIHam_beta(:,:)
                     if(tLR_ReoptGS) then
                         !Block 1 for GS
-                        do i = 1,nFCIDet
-                            do j = 1,nFCIDet
-                                GSHam(j,i) = dcmplx(nFCIHam(j,i),0.0_dp)
-                            enddo
-                        enddo
+                        GSHam(1:nFCIDet,1:nFCIDet) = nFCIHam(:,:)
                         !Block 2 (diagonal part to come)
-                        do i = Np1GSInd,Nm1GSInd-1
-                            do j = Np1GSInd,Nm1GSInd-1
-                                GSHam(j,i) = dcmplx(Np1FCIHam_alpha(j-Np1GSInd+1,i-Np1GSInd+1),0.0_dp)
-                            enddo
-                        enddo
+                        GSHam(Np1GSInd:Nm1GSInd-1,Np1GSInd:Nm1GSInd-1) = Np1FCIHam_alpha(:,:)
                         !Block 4 (diagonal part to come)
-                        do i = Nm1GSInd,nGSSpace
-                            do j = Nm1GSInd,nGSSpace
-                                GSHam(j,i) = dcmplx(Nm1FCIHam_beta(j-Nm1GSInd+1,i-Nm1GSInd+1),0.0_dp)
-                            enddo
-                        enddo
+                        GSHam(Nm1GSInd:nGSSpace,Nm1GSInd:nGSSpace) = Nm1FCIHam_beta(:,:)
                     endif
 
                     !Block 2 for particle hamiltonian
                     !Copy the N electron FCI hamiltonian to this diagonal block
-                    do i = VIndex,nLinearSystem
-                        do j = VIndex,nLinearSystem
-                            LinearSystem_p(j,i) = dcmplx(nFCIHam(j-VIndex+1,i-VIndex+1),0.0_dp)
-                        enddo
-                    enddo
+                    LinearSystem_p(VIndex:nLinearSystem,VIndex:nLinearSystem) = nFCIHam(:,:)
             
                     VNorm = zero
                     tempel = zzero 
@@ -575,11 +554,7 @@ module LinearResponse
 
                     !Block 2 for the hole hamiltonian
                     !Copy the N electron FCI hamiltonian to this diagonal blockk
-                    do i = VIndex,nLinearSystem
-                        do j = VIndex,nLinearSystem
-                            LinearSystem_h(j,i) = dcmplx(nFCIHam(j-VIndex+1,i-VIndex+1),0.0_dp)
-                        enddo
-                    enddo
+                    LinearSystem_h(VIndex:nLinearSystem,VIndex:nLinearSystem) = nFCIHam(:,:)
 
                     CNorm = zero
                     tempel = zzero 
@@ -638,33 +613,35 @@ module LinearResponse
                         enddo
                     enddo
 
-                    !Now, check hessian is hermitian
-                    do i = 1,nLinearSystem
-                        do j=i,nLinearSystem
-                            if(abs(LinearSystem_p(i,j)-conjg(LinearSystem_p(j,i))).gt.1.0e-8_dp) then
-                                write(6,*) "i, j: ",i,j
-                                write(6,*) "LinearSystem_p(i,j): ",LinearSystem_p(i,j)
-                                write(6,*) "LinearSystem_p(j,i): ",LinearSystem_p(j,i)
-                                call stop_all(t_r,'Particle hessian for EC-LR not hermitian')
-                            endif
-                            if(abs(LinearSystem_h(i,j)-conjg(LinearSystem_h(j,i))).gt.1.0e-8_dp) then
-                                write(6,*) "i, j: ",i,j
-                                write(6,*) "LinearSystem_h(i,j): ",LinearSystem_h(i,j)
-                                write(6,*) "LinearSystem_h(j,i): ",LinearSystem_h(j,i)
-                                call stop_all(t_r,'Hole hessian for EC-LR not hermitian')
-                            endif
-                        enddo
-                    enddo
-
-                    if(tLR_ReoptGS) then
-                        !Check GS hamiltonian is hermitian
-                        do i = 1,nGSSpace
-                            do j = i,nGSSpace
-                                if(abs(GSHam(j,i)-conjg(GSHam(i,j))).gt.1.0e-8_dp) then
-                                    call stop_all(t_r,'Reoptimized ground state hamiltonian is not hermitian')
+                    if(.not.tSC_LR) then
+                        !Now, check hessian is hermitian
+                        do i = 1,nLinearSystem
+                            do j=i,nLinearSystem
+                                if(abs(LinearSystem_p(i,j)-conjg(LinearSystem_p(j,i))).gt.1.0e-8_dp) then
+                                    write(6,*) "i, j: ",i,j
+                                    write(6,*) "LinearSystem_p(i,j): ",LinearSystem_p(i,j)
+                                    write(6,*) "LinearSystem_p(j,i): ",LinearSystem_p(j,i)
+                                    call stop_all(t_r,'Particle hessian for EC-LR not hermitian')
+                                endif
+                                if(abs(LinearSystem_h(i,j)-conjg(LinearSystem_h(j,i))).gt.1.0e-8_dp) then
+                                    write(6,*) "i, j: ",i,j
+                                    write(6,*) "LinearSystem_h(i,j): ",LinearSystem_h(i,j)
+                                    write(6,*) "LinearSystem_h(j,i): ",LinearSystem_h(j,i)
+                                    call stop_all(t_r,'Hole hessian for EC-LR not hermitian')
                                 endif
                             enddo
                         enddo
+
+                        if(tLR_ReoptGS) then
+                            !Check GS hamiltonian is hermitian
+                            do i = 1,nGSSpace
+                                do j = i,nGSSpace
+                                    if(abs(GSHam(j,i)-conjg(GSHam(i,j))).gt.1.0e-8_dp) then
+                                        call stop_all(t_r,'Reoptimized ground state hamiltonian is not hermitian')
+                                    endif
+                                enddo
+                            enddo
+                        endif
                     endif
 
                     !write(6,*) "Hessian constructed successfully...",Omega
@@ -704,13 +681,6 @@ module LinearResponse
                     call set_timer(LR_EC_GF_SolveLR)
 
                     !Solve particle GF to start
-                    LinearSystem_p(:,:) = -LinearSystem_p(:,:)
-                    if(.not.tMinRes_NonDir) then
-                        !Offset matrix
-                        do i = 1,nLinearSystem
-                            LinearSystem_p(i,i) = LinearSystem_p(i,i) + dcmplx(Omega+mu+GFChemPot,dDelta)
-                        enddo
-                    endif
                     !The V|0> for particle and hole perturbations are held in Cre_0 and Ann_0
                     !If we have reoptimized the ground state, we will need to recompute these
                     !call writevectorcomp(Psi_0,'Psi_0')
@@ -720,11 +690,17 @@ module LinearResponse
                     endif
                     !call writevectorcomp(Cre_0(:,'Ann_0')
                     !call writevectorcomp(Ann_0,'Ann_0')
+                    
+                    LinearSystem_p(:,:) = -LinearSystem_p(:,:)
+                    !Offset matrix
+                    do i = 1,nLinearSystem
+                        LinearSystem_p(i,i) = LinearSystem_p(i,i) + dcmplx(Omega+mu+GFChemPot,dDelta)
+                    enddo
 
                     !Now solve these linear equations
                     !call writevectorcomp(Psi1_p,'Cre_0')
                     if(tMinRes_NonDir) then
-                        zShift = dcmplx(-Omega-mu-GFChemPot,-dDelta)
+!                        zShift = dcmplx(-Omega-mu-GFChemPot,-dDelta)
                         zDirMV_Mat => LinearSystem_p
                         call setup_RHS(nLinearSystem,Cre_0(:,pertsite),RHS)
                         maxminres_iter_ip = int(maxminres_iter,ip)
@@ -762,8 +738,11 @@ module LinearResponse
                     !call writevectorcomp(Psi1_p,'Psi1_p')
 
                     !Now solve the LR for the hole addition
+                    do i = 1,nLinearSystem
+                        LinearSystem_h(i,i) = dcmplx(Omega+mu,dDelta) + (LinearSystem_h(i,i) - dcmplx(GFChemPot,0.0_dp))
+                    enddo
                     if(tMinRes_NonDir) then
-                        zShift = dcmplx(-Omega-mu+GFChemPot,-dDelta)
+                        !zShift = dcmplx(-Omega-mu+GFChemPot,-dDelta)
                         zDirMV_Mat => LinearSystem_h
                         call setup_RHS(nLinearSystem,Ann_0(:,pertsite),RHS)
                         maxminres_iter_ip = int(maxminres_iter,ip)
@@ -786,9 +765,6 @@ module LinearResponse
                         endif
                         if(info.gt.11) call stop_all(t_r,'Linear equation solver failed')
                     else
-                        do i = 1,nLinearSystem
-                            LinearSystem_h(i,i) = dcmplx(Omega+mu,dDelta) + (LinearSystem_h(i,i) - dcmplx(GFChemPot,0.0_dp))
-                        enddo
                         Psi1_h(:) = Ann_0(:,pertsite)
                         call SolveCompLinearSystem(LinearSystem_h,Psi1_h,nLinearSystem,info)
                         if(info.ne.0) then 
@@ -2263,31 +2239,29 @@ module LinearResponse
         use DetToolsData
         implicit none
         integer, intent(in) :: nElec
-        real(dp), intent(out) :: NHam(nFCIDet,nFCIDet)
-        real(dp), intent(out) :: Np1Ham(nNp1FCIDet,nNp1FCIDet)
-        real(dp), intent(out) :: Nm1bHam(nNm1bFCIDet,nNm1bFCIDet)
+        complex(dp), intent(out) :: NHam(nFCIDet,nFCIDet)
+        complex(dp), intent(out) :: Np1Ham(nNp1FCIDet,nNp1FCIDet)
+        complex(dp), intent(out) :: Nm1bHam(nNm1bFCIDet,nNm1bFCIDet)
         integer :: i,j
 
-        NHam(:,:) = zero
-        Np1Ham(:,:) = zero
-        Nm1bHam(:,:) = zero
+        NHam(:,:) = zzero
+        Np1Ham(:,:) = zzero
+        Nm1bHam(:,:) = zzero
 
+        !Beware - these can be non-hermitian. Ensure that the indices are the right way around!
         do i = 1,nFCIDet
-            do j = i,nFCIDet
-                call GetHElement(FCIDetList(:,i),FCIDetList(:,j),nElec,NHam(i,j))
-                NHam(j,i) = NHam(i,j)
+            do j = 1,nFCIDet
+                call GetHElement_comp(FCIDetList(:,i),FCIDetList(:,j),nElec,NHam(i,j))
             enddo
         enddo
         do i = 1,nNp1FCIDet
-            do j = i,nNp1FCIDet
-                call GetHElement(Np1FCIDetList(:,i),Np1FCIDetList(:,j),nElec+1,Np1Ham(i,j))
-                Np1Ham(j,i) = Np1Ham(i,j)
+            do j = 1,nNp1FCIDet
+                call GetHElement_comp(Np1FCIDetList(:,i),Np1FCIDetList(:,j),nElec+1,Np1Ham(i,j))
             enddo
         enddo
         do i = 1,nNm1bFCIDet
-            do j = i,nNm1bFCIDet
-                call GetHElement(Nm1bFCIDetList(:,i),Nm1bFCIDetList(:,j),nElec-1,Nm1bHam(i,j))
-                Nm1bHam(j,i) = Nm1bHam(i,j)
+            do j = 1,nNm1bFCIDet
+                call GetHElement_comp(Nm1bFCIDetList(:,i),Nm1bFCIDetList(:,j),nElec-1,Nm1bHam(i,j))
             enddo
         enddo
 
@@ -4973,24 +4947,24 @@ module LinearResponse
     subroutine FormPrecond(n)
         implicit none
         integer, intent(in) :: n
-        real(dp) :: Scal
+!        real(dp) :: Scal
         integer :: i,j
         complex(dp) :: tmp,zdotc
         
         if(.not.associated(zDirMV_Mat)) call stop_all('FormPreCond','Matrix not associated!')
 
-        Scal = real(zShift*dconjg(zShift))
-
+!        Scal = real(zShift*dconjg(zShift))
+!The matrix diagonals are not long necessarily real
         Precond_Diag(:) = 0.0_dp
         do i = 1,n
             Precond_diag(i) = real(zdotc(n,zDirMV_Mat(:,i),1,zDirMV_Mat(:,i),1),dp)
-
-            tmp = zzero
-            do j = 1,n
-                tmp = tmp + zDirMV_Mat(j,i)
-            enddo
-            tmp = tmp * dconjg(zShift)
-            Precond_diag(i) = Precond_diag(i) - 2.0_dp*real(tmp,dp) + Scal
+!
+!            tmp = zzero
+!            do j = 1,n
+!                tmp = tmp + zDirMV_Mat(j,i)
+!            enddo
+!            tmp = tmp * dconjg(zShift)
+!            Precond_diag(i) = Precond_diag(i) - 2.0_dp*real(tmp,dp) + Scal
         enddo
         !call writevector(Precond_diag,'Precond')
     end subroutine FormPrecond
@@ -5035,13 +5009,15 @@ module LinearResponse
         complex(dp), intent(in) :: V0(n)
         complex(dp), intent(out) :: Trans_V0(n)
 
-        Trans_V0(:) = V0(:)
-        call ZGEMV('C',n,n,zone,zDirMV_Mat,n,V0,1,-dconjg(zShift),Trans_V0,1)
+!        Trans_V0(:) = V0(:)
+!        call ZGEMV('C',n,n,zone,zDirMV_Mat,n,V0,1,-dconjg(zShift),Trans_V0,1)
+        call ZGEMV('C',n,n,zone,zDirMV_Mat,n,V0,1,zzero,Trans_V0,1)
 
     end subroutine setup_RHS
 
     !A direct matrix multiplication
     !Multiply twice, first by A-I(zShift), then by (A*-I(conjg(zShift)))
+    !The shift is now included in the matrix
     subroutine zDirMV(n,x,y)
         use const
         integer(ip), intent(in) :: n
@@ -5051,12 +5027,15 @@ module LinearResponse
 
         if(.not.associated(zDirMV_Mat)) call stop_all('zDirMV','Matrix not associated!')
 
-        temp(:) = x(:)
-        call ZGEMV('N',n,n,zone,zDirMV_Mat,n,x,1,-zShift,temp,1)
-!        temp(:) = temp(:) - temp(:)*zShift
-        y(:) = temp(:)
-        call ZGEMV('C',n,n,zone,zDirMV_Mat,n,temp,1,-dconjg(zShift),y,1)
-!        y(:) = y(:) - y(:)*dconjg(zShift)
+        call ZGEMV('N',n,n,zone,zDirMV_Mat,n,x,1,zzero,temp,1)
+        call ZGEMV('C',n,n,zone,zDirMV_Mat,n,temp,1,zzero,y,1)
+
+!        temp(:) = x(:)
+!        call ZGEMV('N',n,n,zone,zDirMV_Mat,n,x,1,-zShift,temp,1)
+!!        temp(:) = temp(:) - temp(:)*zShift
+!        y(:) = temp(:)
+!        call ZGEMV('C',n,n,zone,zDirMV_Mat,n,temp,1,-dconjg(zShift),y,1)
+!!        y(:) = y(:) - y(:)*dconjg(zShift)
 
     end subroutine zDirMV
 
@@ -5074,7 +5053,8 @@ module LinearResponse
         complex(dp), intent(out) :: NI_LRMat_Cre(nImp,nImp),NI_LRMat_Ann(nImp,nImp)
         real(dp), allocatable :: Work(:),temp_real(:,:)
         complex(dp), allocatable :: AO_OneE_Ham(:,:),W_Vals(:),RVec(:,:),LVec(:,:)
-        complex(dp), allocatable :: HFPertBasis_Ann(:,:),HFPertBasis_Cre(:,:),temp(:,:),MOtoSchmidt(:,:)
+        complex(dp), allocatable :: HFPertBasis_Ann_Ket(:,:),HFPertBasis_Cre_Ket(:,:),temp(:,:),MOtoSchmidt(:,:)
+        complex(dp), allocatable :: HFPertBasis_Ann_Bra(:,:),HFPertBasis_Cre_Bra(:,:)
         integer :: lwork,info,i,a,pertBra,j,b,pertsite
         character(len=*), parameter :: t_r='FindNI_Charged'
 
@@ -5109,34 +5089,40 @@ module LinearResponse
         NI_LRMat_Cre(:,:) = zzero
         NI_LRMat_Ann(:,:) = zzero 
 
-        !Memory to temperarily store the first order wavefunctions of each impurity site, in the right MO basis
-        allocate(HFPertBasis_Ann(1:nOcc,nImp))
-        allocate(HFPertBasis_Cre(nOcc+1:nSites,nImp))
-        HFPertBasis_Ann(:,:) = zzero
-        HFPertBasis_Cre(:,:) = zzero
+        !Memory to temperarily store the first order wavefunctions of each impurity site, in the right MO basis (For the Kets)
+        !and the left MO space (for the Bras)
+        allocate(HFPertBasis_Ann_Bra(1:nOcc,nImp))
+        allocate(HFPertBasis_Cre_Bra(nOcc+1:nSites,nImp))
+        allocate(HFPertBasis_Ann_Ket(1:nOcc,nImp))
+        allocate(HFPertBasis_Cre_Ket(nOcc+1:nSites,nImp))
+        HFPertBasis_Ann_Bra(:,:) = zzero
+        HFPertBasis_Cre_Bra(:,:) = zzero
+        HFPertBasis_Ann_Ket(:,:) = zzero
+        HFPertBasis_Cre_Ket(:,:) = zzero
 
         !Now, form the non-interacting greens functions (but with u *and* self-energy)
         do pertsite = 1,nImp
-            !Form the set of non-interacting first order wavefunctions from the new one-electron h
-            !I assume I want the Left hand (Bra) eigenvector
+            !Form the set of non-interacting first order wavefunctions from the new one-electron h for both Bra and Ket versions
+            !TODO: Check whether I want this dconj around the LVec?
             do i = 1,nOcc
-                HFPertBasis_Ann(i,pertsite) = dconjg(LVec(pertsite,i))/(dcmplx(Omega,dDelta)-W_Vals(i))
+                HFPertBasis_Ann_Ket(i,pertsite) = dconjg(LVec(pertsite,i))/(dcmplx(Omega,dDelta)-W_Vals(i))
+                HFPertBasis_Ann_Bra(i,pertsite) = RVec(pertsite,i)/(dcmplx(Omega,-dDelta)-W_Vals(i))
             enddo
             do a = nOcc+1,nSites
-                HFPertBasis_Cre(a,pertsite) = dconjg(LVec(pertsite,a))/(dcmplx(Omega,dDelta)-W_Vals(a))
+                HFPertBasis_Cre_Ket(a,pertsite) = dconjg(LVec(pertsite,a))/(dcmplx(Omega,dDelta)-W_Vals(a))
+                HFPertBasis_Cre_Bra(a,pertsite) = RVec(pertsite,a)/(dcmplx(Omega,-dDelta)-W_Vals(a))
             enddo
 
             !Run over operators acting of the Bra in the impurity space
             do pertBra = 1,nImp
-
                 !Now perform the set of dot products of <0|V* with |1> for all combinations of sites
                 do i = 1,nOcc
                     NI_LRMat_Ann(pertsite,pertBra) = NI_LRMat_Ann(pertsite,pertBra) +   &
-                        RVec(pertBra,i)*HFPertBasis_Ann(i,pertsite)
+                        RVec(pertBra,i)*HFPertBasis_Ann_Ket(i,pertsite)
                 enddo
                 do a = nOcc+1,nSites
                     NI_LRMat_Cre(pertsite,pertBra) = NI_LRMat_Cre(pertsite,pertBra) +   &
-                        RVec(pertBra,a)*HFPertBasis_Cre(a,pertsite)
+                        RVec(pertBra,a)*HFPertBasis_Cre_Ket(a,pertsite)
                 enddo
             enddo
         enddo
@@ -5147,32 +5133,51 @@ module LinearResponse
         allocate(FullSchmidtTrans_C(nSites,nSites))
         do i = 1,nSites
             do j = 1,nSites
-                FullSchmidtTrans_C(j,i) = dcmplx(FullSchmidtBasis(j,i),0.0_dp)
+                FullSchmidtTrans_C(j,i) = dcmplx(FullSchmidtBasis(j,i),0.0_dp)  !(ao,schmidt)
             enddo
         enddo
 
         allocate(temp(nSites,nImp))
-        allocate(temp2(nSites,nOcc))
-        temp2(:,:) = RVec(:,1:nOcc)
-        call ZGEMM('N','N',nSites,nImp,nOcc,zone,temp2,nSites,HFPertBasis_Ann(1:nOcc,:),nOcc,zzero,  &
+        call ZGEMM('N','N',nSites,nImp,nOcc,zone,RVec(:,1:nOcc),nSites,HFPertBasis_Ann_Ket(1:nOcc,:),nOcc,zzero,  &
             temp,nSites)
-        deallocate(temp2)
             !temp is now the (nSites,nImp) rotated HFPertBasis_Ann into the AO basis
             !Now rotate this into the occupied schmidt basis
         call ZGEMM('T','N',nOcc-nImp,nImp,nSites,zone,FullSchmidtTrans_C(:,1:nOcc-nImp),nSites,temp,nSites,zzero,   &
-            SchmidtPertGF_Ann(1:nOcc-nImp,:),nOcc-nImp)
+            SchmidtPertGF_Ann_Ket(1:nOcc-nImp,:),nOcc-nImp)
+        !Now do the same for the bra contraction coefficients
+        allocate(temp2(nSites,1:nOcc))
+        do i=1,nOcc
+            do j=1,nSites
+                temp2(j,i) = dconjg(LVec(j,i))
+            enddo
+        enddo
+        call ZGEMM('N','N',nSites,nImp,nOcc,zone,temp2(:,1:nOcc),nSites,HFPertBasis_Ann_Bra(1:nOcc,:),nOcc,zzero,    &
+            temp,nSites)
+        deallocate(temp2)
+        call ZGEMM('T','N',nOcc-nImp,nImp,nSites,zone,FullSchmidtTrans_C(:,1:nOcc-nImp),nSites,temp,nSites,zzero,   &
+            SchmidtPertGF_Ann_Bra(1:nOcc-nImp,:),nOcc-nImp)
 
         !Do the same with the particle NI GF
-        allocate(temp2(nSites,nOcc+1:nSites))
-        temp2(:,nOcc+1:nSites) = RVec(:,nOcc+1:nSites)
-        call ZGEMM('N','N',nSites,nImp,nSites-nOcc,zone,temp2(:,nOcc+1:nSites),nSites,  &
-            HFPertBasis_Cre,nSites-nOcc,zzero,temp,nSites)
-        deallocate(temp2)
+        call ZGEMM('N','N',nSites,nImp,nSites-nOcc,zone,RVec(:,nOcc+1:nSites),nSites,  &
+            HFPertBasis_Cre_Ket,nSites-nOcc,zzero,temp,nSites)
         nVirt = nSites-nOcc-nImp   
         !Now rotate into schmidt basis
         call ZGEMM('T','N',nVirt,nImp,nSites,zone,FullSchmidtTrans_C(:,nOcc+nImp+1:nSites),nSites,temp,nSites,zzero,    &
-            SchmidtPertGF_Cre(nOcc+nImp+1:nSites,:),nVirt)
-
+            SchmidtPertGF_Cre_Ket(nOcc+nImp+1:nSites,:),nVirt)
+        !Now for the Bra version of the particle NI GF
+        allocate(temp2(nSites,nOcc+1:nSites))
+        do i = nOcc+1,nSites
+            do j = 1,nSites
+                temp2(j,i) = dconjg(LVec(j,i))
+            enddo
+        enddo
+        call ZGEMM('N','N',nSites,nImp,nSites-nOcc,zone,temp2(:,nOcc+1:nSites),nSites,  &
+            HFPertBasis_Cre_Bra,nSites-nOcc,zzero,temp,nSites)
+        !Now rotate into schmidt basis
+        call ZGEMM('T','N',nVirt,nImp,nSites,zone,FullSchmidtTrans_C(:,nOcc+nImp+1:nSites),nSites,temp,nSites,zzero,    &
+            SchmidtPertGF_Cre_Bra(nOcc+nImp+1:nSites,:),nVirt)
+        
+        !TODO: Check that in the absence of a self-energy, the Bra and Ket are complex conjugates of each other.
 
 !        !However, this is not the original MO basis, so first, find the transformation matrix from the
 !        !new (right) MO basis to the original schmidt basis, since we do not want to modify this basis
@@ -5256,7 +5261,8 @@ module LinearResponse
         !They are different since the correlation potential is not defined over the impurity sites.
         FockSchmidt_SE(nOcc-nImp+1:nOcc+nImp,nOcc-nImp+1:nOcc+nImp) = Emb_h0v_SE(:,:)
         
-        deallocate(FullSchmidtTrans_C,AO_OneE_Ham,W,MOtoSchmidt,HFPertBasis_Ann,HFPertBasis_Cre)
+        deallocate(FullSchmidtTrans_C,AO_OneE_Ham,W,MOtoSchmidt,HFPertBasis_Ann_Bra,HFPertBasis_Cre_Bra,    &
+            HFPertBasis_Ann_Ket,HFPertBasis_Cre_Ket)
 
     end subroutine FindNI_Charged
 
