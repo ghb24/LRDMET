@@ -535,7 +535,7 @@ function sltcnd_1_comp (nI, ex, tSign, nel) result(hel)
     endif
     if(tSign) hel = -hel
 
-end function sltcnd_1
+end function sltcnd_1_comp
 
 function sltcnd_1 (nI, ex, tSign, nel) result(hel)
     use const

@@ -107,8 +107,9 @@ module LinearResponse
         real(dp), allocatable :: W(:),dNorm_p(:),dNorm_h(:)
         complex(dp), allocatable , target :: LinearSystem_p(:,:),LinearSystem_h(:,:)
         complex(dp), allocatable :: Cre_0(:,:),Ann_0(:,:),ResponseFn_p(:,:),ResponseFn_h(:,:)
-        complex(dp), allocatable :: Gc_a_F_ax(:,:),Gc_b_F_ab(:,:),GSHam(:,:),ResponseFn_Mat(:,:)
-        complex(dp), allocatable :: Psi1_p(:),Psi1_h(:),Ga_i_F_xi(:,:),Ga_i_F_ij(:,:),ni_lr_Mat(:,:)
+        complex(dp), allocatable :: Gc_a_F_ax_Bra(:,:),Gc_a_F_ax_Ket(:,:),Gc_b_F_ab(:,:),GSHam(:,:)
+        complex(dp), allocatable :: ResponseFn_Mat(:,:),Ga_i_F_xi_Ket(:,:)
+        complex(dp), allocatable :: Psi1_p(:),Psi1_h(:),Ga_i_F_xi_Bra(:,:),Ga_i_F_ij(:,:),ni_lr_Mat(:,:)
         complex(dp), allocatable :: temp_vecc(:),Work(:),Psi_0(:),RHS(:)
         complex(dp), allocatable :: NI_LRMat_Cre(:,:),NI_LRMat_Ann(:,:)
         integer, allocatable :: Coup_Ann_alpha(:,:,:),Coup_Create_alpha(:,:,:)
@@ -117,9 +118,9 @@ module LinearResponse
         integer :: orbdum(1),gtid,nLinearSystem_h,nGSSpace,Np1GSInd,Nm1GSInd,lWork,minres_unit
         integer :: maxminres_iter,nImp_GF,pertsite
         integer(ip) :: nLinearSystem_ip,minres_unit_ip,info_ip,maxminres_iter_ip,iters_p,iters_h
-        real(dp) :: VNorm,CNorm,Omega,GFChemPot,mu,SpectralWeight,Prev_Spec,AvdNorm_p,AvdNorm_h
+        real(dp) :: Omega,GFChemPot,mu,SpectralWeight,Prev_Spec,AvdNorm_p,AvdNorm_h
         complex(dp) :: ResponseFn,tempel,Diff_GF,ni_lr,ni_lr_p,ni_lr_h,AvResFn_p,AvResFn_h
-        complex(dp) :: zdotc
+        complex(dp) :: zdotc,VNorm,CNorm
         logical :: tParity,tFirst,tSCFConverged
         character(64) :: filename,filename2
         character(len=*), parameter :: t_r='NonIntExCont_TDA_MCLR_Charged'
@@ -136,11 +137,6 @@ module LinearResponse
 
         write(6,"(A)") "Calculating non-interacting EC MR-TDA LR system for *hole* & *particle* alpha spin-orbital perturbations..."
         if(.not.tConstructFullSchmidtBasis) call stop_all(t_r,'To solve LR, must construct full schmidt basis')
-        if(.not.tCompleteDiag) then
-            if(.not.tNonDirDavidson) then
-                call stop_all(t_r,'To solve LR, must perform complete diag or non-direct davidson')
-            endif
-        endif
         if(tMinRes_NonDir) then
             if(tPreCond_MinRes) then
                 write(6,"(A)") "Solving linear system with iterative non-direct preconditioned MinRes-QLP algorithm"
@@ -288,8 +284,10 @@ module LinearResponse
         else
             nImp_GF = 1
         endif
-        allocate(SchmidtPertGF_Cre(nOcc+nImp+1:nSites,nImp_GF))
-        allocate(SchmidtPertGF_Ann(1:nOcc-nImp,nImp_GF))
+        allocate(SchmidtPertGF_Cre_Ket(nOcc+nImp+1:nSites,nImp_GF))
+        allocate(SchmidtPertGF_Cre_Bra(nOcc+nImp+1:nSites,nImp_GF))
+        allocate(SchmidtPertGF_Ann_Ket(1:nOcc-nImp,nImp_GF))
+        allocate(SchmidtPertGF_Ann_Bra(1:nOcc-nImp,nImp_GF))
         allocate(NI_LRMat_Cre(nImp_GF,nImp_GF))
         allocate(NI_LRMat_Ann(nImp_GF,nImp_GF))
         allocate(ni_lr_Mat(nImp_GF,nImp_GF))
@@ -331,7 +329,9 @@ module LinearResponse
         allocate(FockSchmidt_SE_VV(VirtStart:VirtEnd,VirtStart:VirtEnd),stat=ierr)    !Just defined over core-core blocks
         allocate(FockSchmidt_SE_CC(1:CoreEnd,1:CoreEnd),stat=ierr)    !Just defined over virtual-virtual blocks
         allocate(FockSchmidt_SE_VX(VirtStart:VirtEnd,ActiveStart:ActiveEnd),stat=ierr)
+        allocate(FockSchmidt_SE_XV(ActiveStart:ActiveEnd,VirtStart:VirtEnd),stat=ierr)
         allocate(FockSchmidt_SE_CX(1:CoreEnd,ActiveStart:ActiveEnd),stat=ierr)
+        allocate(FockSchmidt_SE_XC(ActiveStart:ActiveEnd,1:CoreEnd),stat=ierr)
         write(6,"(A,F12.5,A)") "Memory required for fock matrix: ", &
             (((2.0_dp*real(nSites,dp))**2)+(real(nOcc,dp)**2)+(real(nSites-nOcc,dp)**2))*ComptoMb, " Mb"
         if(ierr.ne.0) call stop_all(t_r,'Error allocating')
@@ -346,37 +346,26 @@ module LinearResponse
                     FockSchmidt_SE(j,i) = dcmplx(FockSchmidt(j,i),0.0_dp)
                 enddo
             enddo
-            do i = 1,nOcc
-                do j = 1,nOcc
-                    FockSchmidt_SE_CC(j,i) = dcmplx(FockSchmidt(j,i),0.0_dp)
-                enddo
-            enddo
-            do i = nOcc + 1,nSites
-                do j = nOcc + 1,nSites
-                    FockSchmidt_SE_VV(j,i) = dcmplx(FockSchmidt(j,i),0.0_dp)
-                enddo
-            enddo
-            do i = ActiveStart,ActiveEnd
-                do j = VirtStart,VirtEnd
-                    FockSchmidt_SE_VX(j,i) = dcmplx(FockSchmidt(j,i),0.0_dp)
-                enddo
-            enddo
-            do i = ActiveStart,ActiveEnd
-                do j = 1,CoreEnd
-                    FockSchmidt_SE_CX(j,i) = dcmplx(FockSchmidt(j,i),0.0_dp)
-                enddo
-            enddo
+            FockSchmidt_SE_CC(1:nOcc,1:nOcc) = FockSchmidt_SE(1:nOcc,1:nOcc)
+            FockSchmidt_SE_VV(nOcc+1:nSites,nOcc+1:nSites) = FockSchmidt_SE(nOcc+1:nSites,nOcc+1:nSites)
+            FockSchmidt_SE_VX(VirtStart:VirtEnd,ActiveStart:ActiveEnd) = FockSchmidt_SE(VirtStart:VirtEnd,ActiveStart:ActiveEnd)
+            FockSchmidt_SE_CX(1:CoreEnd,ActiveStart:ActiveEnd) = FockSchmidt_SE(1:CoreEnd,ActiveStart:ActiveEnd)
+            FockSchmidt_SE_XV(ActiveStart:ActiveEnd,VirtStart:VirtEnd) = FockSchmidt_SE(ActiveStart:ActiveEnd,VirtStart:VirtEnd)
+            FockSchmidt_SE_XC(ActiveStart:ActiveEnd,1:CoreEnd) = FockSchmidt_SE(ActiveStart:ActiveEnd,1:CoreEnd)
         else
             allocate(SelfEnergy_Imp(nImp,nImp)) !The self-consistently determined self-energy correction to match the interacting and non-interacting greens functions
+            SelfEnergy_Imp(:,:) = zzero
             allocate(Emb_h0v_SE(EmbSize,EmbSize))   !The 1-electron hamiltonian (with self-energy correction) over the embedded basis
         endif
         
         !Space for useful intermediates
         !For particle addition
-        allocate(Gc_a_F_ax(ActiveStart:ActiveEnd,nImp_GF),stat=ierr)
+        allocate(Gc_a_F_ax_Bra(ActiveStart:ActiveEnd,nImp_GF),stat=ierr)
+        allocate(Gc_a_F_ax_Ket(ActiveStart:ActiveEnd,nImp_GF),stat=ierr)
         allocate(Gc_b_F_ab(VirtStart:VirtEnd,nImp_GF),stat=ierr)
         !For hole addition
-        allocate(Ga_i_F_xi(ActiveStart:ActiveEnd,nImp_GF),stat=ierr)
+        allocate(Ga_i_F_xi_Bra(ActiveStart:ActiveEnd,nImp_GF),stat=ierr)
+        allocate(Ga_i_F_xi_Ket(ActiveStart:ActiveEnd,nImp_GF),stat=ierr)
         allocate(Ga_i_F_ij(1:nCore,nImp_GF),stat=ierr)
 
         !Allocate and precompute 1-operator coupling coefficients between the different sized spaces.
@@ -494,17 +483,19 @@ module LinearResponse
                 !Construct useful intermediates, using zgemm
                 !sum_a Gc_a^* F_ax (Creation)
                 call ZGEMM('T','N',EmbSize,nImp_GF,nVirt,zzero,FockSchmidt_SE_VX(VirtStart:VirtEnd,ActiveStart:ActiveEnd),  &
-                    nVirt,SchmidtPertGF_Cre(VirtStart:VirtEnd,:),nVirt,zzero,Gc_a_F_ax,EmbSize)
-                Gc_a_F_ax(:,:) = dconjg(Gc_a_F_ax(:,:))
+                    nVirt,SchmidtPertGF_Cre_Bra(VirtStart:VirtEnd,:),nVirt,zzero,Gc_a_F_ax_Bra,EmbSize)
+                call ZGEMM('N','N',EmbSize,nImp_GF,nVirt,zzero,FockSchmidt_SE_XV(ActiveStart:ActiveEnd,VirtStart:VirtEnd),  &
+                    EmbSize,SchmidtPertGF_Cre_Ket(VirtStart:VirtEnd,:),nVirt,zzero,Gc_a_F_ax_Ket,EmbSize)
                 !sum_b Gc_b F_ab  (Creation)
                 call ZGEMM('N','N',nVirt,nImp_GF,nVirt,zzero,FockSchmidt_SE_VV(VirtStart:VirtEnd,VirtStart:VirtEnd),    &
-                    nVirt,SchmidtPertGF_Cre(VirtStart:VirtEnd,:),nVirt,zzero,Gc_b_F_ab,nVirt)
-                !sum_i Ga_i^* F_xi (Annihilation)
+                    nVirt,SchmidtPertGF_Cre_Ket(VirtStart:VirtEnd,:),nVirt,zzero,Gc_b_F_ab,nVirt)
+                !sum_i Ga_i^bra F_xi (Annihilation)
+                call ZGEMM('N','N',EmbSize,nImp_GF,nCore,zzero,FockSchmidt_SE_XC(ActiveStart:ActiveEnd,1:CoreEnd),nCore,    &
+                    SchmidtPertGF_Ann_Bra(1:nCore,:),nCore,zzero,Ga_i_F_xi_Bra,EmbSize)
                 call ZGEMM('T','N',EmbSize,nImp_GF,nCore,zzero,FockSchmidt_SE_CX(1:CoreEnd,ActiveStart:ActiveEnd),nCore,    &
-                    SchmidtPertGF_Ann(1:nCore,:),nCore,zzero,Ga_i_F_xi,EmbSize)
-                Ga_i_F_xi(:,:) = dconjg(Ga_i_F_xi(:,:))
+                    SchmidtPertGF_Ann_Ket(1:nCore,:),nCore,zzero,Ga_i_F_xi_Ket,EmbSize)
                 !sum_i Ga_i F_ij (Annihilation)
-                call ZGEMM('N','N',nCore,nImp_GF,nCore,zzero,FockSchmidt_SE_CC(:,:),nCore,SchmidtPertGF_Ann(:,:),nCore,zzero,   &
+                call ZGEMM('T','N',nCore,nImp_GF,nCore,zzero,FockSchmidt_SE_CC(:,:),nCore,SchmidtPertGF_Ann_Ket(:,:),nCore,zzero, &
                     Ga_i_F_ij,nCore)
 
                 !Find the first-order wavefunction in the interacting picture for all impurity sites 
@@ -532,13 +523,15 @@ module LinearResponse
                     !Copy the N electron FCI hamiltonian to this diagonal block
                     LinearSystem_p(VIndex:nLinearSystem,VIndex:nLinearSystem) = nFCIHam(:,:)
             
-                    VNorm = zero
+                    VNorm = zzero
                     tempel = zzero 
                     do a = VirtStart,VirtEnd
                         !Calc normalization for the CV block
-                        VNorm = VNorm + real(SchmidtPertGF_Cre(a,pertsite))**2 + aimag(SchmidtPertGF_Cre(a,pertsite))**2
+                        VNorm = VNorm + SchmidtPertGF_Cre_Bra(a,pertsite)*SchmidtPertGF_Cre_Ket(a,pertsite) 
+                        !VNorm = VNorm + real(SchmidtPertGF_Cre(a,pertsite))**2 + aimag(SchmidtPertGF_Cre(a,pertsite))**2
                         !Calculate the diagonal correction
-                        tempel = tempel + conjg(SchmidtPertGF_Cre(a,pertsite))*Gc_b_F_ab(a,pertsite)
+                        !tempel = tempel + conjg(SchmidtPertGF_Cre(a,pertsite))*Gc_b_F_ab(a,pertsite)
+                        tempel = tempel + SchmidtPertGF_Cre_Bra(a,pertsite)*Gc_b_F_ab(a,pertsite)
                     enddo
                     tempel = tempel / VNorm
                     !Add diagonal virtual correction
@@ -556,13 +549,14 @@ module LinearResponse
                     !Copy the N electron FCI hamiltonian to this diagonal blockk
                     LinearSystem_h(VIndex:nLinearSystem,VIndex:nLinearSystem) = nFCIHam(:,:)
 
-                    CNorm = zero
+                    CNorm = zzero
                     tempel = zzero 
                     do i = 1,CoreEnd
                         !Calc normalization
-                        CNorm = CNorm + real(SchmidtPertGF_Ann(i,pertsite))**2 + aimag(SchmidtPertGF_Ann(i,pertsite))**2
+                        !CNorm = CNorm + real(SchmidtPertGF_Ann(i,pertsite))**2 + aimag(SchmidtPertGF_Ann(i,pertsite))**2
+                        CNorm = CNorm + SchmidtPertGF_Ann_Bra(i,pertsite) + SchmidtPertGF_Ann_Ket(i,pertsite)
                         !Calc diagonal correction
-                        tempel = tempel + conjg(SchmidtPertGF_Ann(i,pertsite))*Ga_i_F_ij(i,pertsite)
+                        tempel = tempel + SchmidtPertGF_Ann_Bra(i,pertsite)*Ga_i_F_ij(i,pertsite)
                     enddo
                     tempel = -tempel / CNorm
                     !Add diagonal correction
@@ -582,12 +576,16 @@ module LinearResponse
                             if(Coup_Ann_alpha(1,K,J).ne.0) then
                                 !Determinants are connected via a single SQ operator
                                 !First index is the spatial index, second is parity 
-                                LinearSystem_p(K+VIndex-1,J) = Gc_a_F_ax(Coup_Ann_alpha(1,K,J),pertsite)    &
+                                !Matrices not necessarily hermitian with self-energy term, so need to construct them seperately
+                                LinearSystem_p(K+VIndex-1,J) = Gc_a_F_ax_Bra(Coup_Ann_alpha(1,K,J),pertsite)    &
                                     *Coup_Ann_alpha(2,K,J)/sqrt(VNorm)
-                                LinearSystem_p(J,K+VIndex-1) = conjg(LinearSystem_p(K+VIndex-1,J))
+                                !LinearSystem_p(J,K+VIndex-1) = conjg(LinearSystem_p(K+VIndex-1,J))
+                                LinearSystem_p(J,K+VIndex-1) = Gc_a_F_ax_Ket(Coup_Ann_alpha(1,K,J),pertsite)    &
+                                    *Coup_Ann_alpha(2,K,J)/sqrt(VNorm)
                                 if(tLR_ReoptGS) then
                                     !Block 3 contribution
-                                    GSHam(K,Np1GSInd+J-1) = - conjg(Ga_i_F_xi(Coup_Ann_alpha(1,K,J),pertsite))  &
+                                    !Assume that all the matrices are hermitian as we shouldn't be reoptimizing the GS with self-energy
+                                    GSHam(K,Np1GSInd+J-1) = - conjg(Ga_i_F_xi_Ket(Coup_Ann_alpha(1,K,J),pertsite))  &
                                         *Coup_Ann_alpha(2,K,J)/sqrt(CNorm)
                                     GSHam(Np1GSInd+J-1,K) = conjg(GSHam(K,Np1GSInd+J-1))
                                 endif
@@ -600,12 +598,14 @@ module LinearResponse
                         do K = 1,nFCIDet
                             if(Coup_Create_alpha(1,K,J).ne.0) then
                                 !Determinants are connected via a single SQ operator
-                                LinearSystem_h(K+VIndex-1,J) = - Ga_i_F_xi(Coup_Create_alpha(1,K,J),pertsite)   &
+                                LinearSystem_h(K+VIndex-1,J) = - Ga_i_F_xi_Bra(Coup_Create_alpha(1,K,J),pertsite)   &
                                     *Coup_Create_alpha(2,K,J)/sqrt(CNorm)
-                                LinearSystem_h(J,K+VIndex-1) = conjg(LinearSystem_h(K+VIndex-1,J))
+                                LinearSystem_h(J,K+VIndex-1) = - Ga_i_F_xi_Ket(Coup_Create_alpha(1,K,J),pertsite)   &
+                                    *Coup_Create_alpha(2,K,J)/sqrt(CNorm)
+!                                LinearSystem_h(J,K+VIndex-1) = conjg(LinearSystem_h(K+VIndex-1,J))
                                 if(tLR_ReoptGS) then
                                     !Block 6 contribution
-                                    GSHam(K,Nm1GSInd+J-1) = conjg(Gc_a_F_ax(Coup_Create_alpha(1,K,J),pertsite)) &
+                                    GSHam(K,Nm1GSInd+J-1) = conjg(Gc_a_F_ax_Ket(Coup_Create_alpha(1,K,J),pertsite)) &
                                         *Coup_Create_alpha(2,K,J)/sqrt(VNorm)
                                     GSHam(Nm1GSInd+J-1,K) = conjg(GSHam(K,Nm1GSInd+J-1))
                                 endif
@@ -843,6 +843,7 @@ module LinearResponse
                 
                 if(tSC_LR) then
                     !Do the fitting of the self energy and iterate.
+                    tSCFConverged = .true.
                 else
                     tSCFConverged = .true.  !We only do one cycle, and do not try to match the greens functions.
                 endif
@@ -872,9 +873,9 @@ module LinearResponse
             deallocate(W,GSHam)
         endif
         deallocate(LinearSystem_p,LinearSystem_h,Psi1_p,Psi1_h)
-        deallocate(Cre_0,Ann_0,Psi_0,SchmidtPertGF_Cre,SchmidtPertGF_Ann)
+        deallocate(Cre_0,Ann_0,Psi_0,SchmidtPertGF_Cre_Ket,SchmidtPertGF_Ann_Ket)
         deallocate(NI_LRMat_Cre,NI_LRMat_Ann,ResponseFn_p,ResponseFn_h,ResponseFn_Mat)
-        deallocate(ni_lr_Mat)
+        deallocate(ni_lr_Mat,SchmidtPertGF_Cre_Bra,SchmidtPertGF_Ann_Bra)
         if(tSC_LR) deallocate(SelfEnergy_Imp)
         close(iunit)
         if(tMinRes_NonDir) then
@@ -902,7 +903,7 @@ module LinearResponse
         deallocate(Coup_Create_alpha,Coup_Ann_alpha)
         deallocate(FockSchmidt_SE,FockSchmidt_SE_VV,FockSchmidt_SE_CC)
         deallocate(FockSchmidt_SE_VX,FockSchmidt_SE_CX)
-        deallocate(Gc_a_F_ax,Gc_b_F_ab,Ga_i_F_xi,Ga_i_F_ij)
+        deallocate(Gc_a_F_ax_Bra,Gc_a_F_ax_Ket,Gc_b_F_ab,Ga_i_F_xi_Bra,Ga_i_F_xi_Ket,Ga_i_F_ij)
 
     end subroutine NonIntExCont_TDA_MCLR_Charged
 
@@ -4948,8 +4949,8 @@ module LinearResponse
         implicit none
         integer, intent(in) :: n
 !        real(dp) :: Scal
-        integer :: i,j
-        complex(dp) :: tmp,zdotc
+        integer :: i
+        complex(dp) :: zdotc
         
         if(.not.associated(zDirMV_Mat)) call stop_all('FormPreCond','Matrix not associated!')
 
@@ -5052,10 +5053,10 @@ module LinearResponse
         real(dp), intent(in) :: Omega
         complex(dp), intent(out) :: NI_LRMat_Cre(nImp,nImp),NI_LRMat_Ann(nImp,nImp)
         real(dp), allocatable :: Work(:),temp_real(:,:)
-        complex(dp), allocatable :: AO_OneE_Ham(:,:),W_Vals(:),RVec(:,:),LVec(:,:)
-        complex(dp), allocatable :: HFPertBasis_Ann_Ket(:,:),HFPertBasis_Cre_Ket(:,:),temp(:,:),MOtoSchmidt(:,:)
-        complex(dp), allocatable :: HFPertBasis_Ann_Bra(:,:),HFPertBasis_Cre_Bra(:,:)
-        integer :: lwork,info,i,a,pertBra,j,b,pertsite
+        complex(dp), allocatable :: AO_OneE_Ham(:,:),W_Vals(:),RVec(:,:),LVec(:,:),FullSchmidtTrans_C(:,:)
+        complex(dp), allocatable :: HFPertBasis_Ann_Ket(:,:),HFPertBasis_Cre_Ket(:,:),temp(:,:),temp2(:,:)
+        complex(dp), allocatable :: HFPertBasis_Ann_Bra(:,:),HFPertBasis_Cre_Bra(:,:),cWork(:)
+        integer :: lwork,info,i,a,pertBra,j,pertsite,nVirt
         character(len=*), parameter :: t_r='FindNI_Charged'
 
         if(.not.tAllImp_LR) then
@@ -5239,8 +5240,9 @@ module LinearResponse
         !This now gives the one-electron hamiltonian in the AO basis, with the self-energy subtracted.
         call add_localpot_comp(h0v,AO_OneE_Ham,SelfEnergy_Imp,tAdd=.false.)
         !Rotate from the AO basis, to the Schmidt basis
-        call ZGEMM('T','N',nSites,nSites,nSites,zone,FullSchmidtTrans_C,nSites,AO_OneE_Ham,nSites,zzero,MOtoSchmidt,nSites)
-        call ZGEMM('N','N',nSites,nSites,nSites,zone,MOtoSchmidt,nSites,FullSchmidtTrans_C,nSites,zzero,FockSchmidt_SE,nSites)
+        allocate(temp(nSites,nSites))
+        call ZGEMM('T','N',nSites,nSites,nSites,zone,FullSchmidtTrans_C,nSites,AO_OneE_Ham,nSites,zzero,temp,nSites)
+        call ZGEMM('N','N',nSites,nSites,nSites,zone,temp,nSites,FullSchmidtTrans_C,nSites,zzero,FockSchmidt_SE,nSites)
 
         do i=nImp+1,EmbSize
             do j=1,EmbSize
@@ -5253,16 +5255,18 @@ module LinearResponse
 
         !Now, convert this into a complex number (for easy ZGEMM'ing), and store it in the global array
         FockSchmidt_SE_CC(1:nOcc,1:nOcc) = FockSchmidt_SE(1:nOcc,1:nOcc)
-        FockSchmidt_SE_VV(nOcc+1,nSites,nOcc+1,nSites) = FockSchmidt_SE(nOcc+1:nSites,nOcc+1:nSites)
+        FockSchmidt_SE_VV(nOcc+1:nSites,nOcc+1:nSites) = FockSchmidt_SE(nOcc+1:nSites,nOcc+1:nSites)
         FockSchmidt_SE_CX(1:nOcc,nOcc-nImp+1:nOcc+nImp) = FockSchmidt_SE(1:nOcc,nOcc-nImp+1:nOcc+nImp)
+        FockSchmidt_SE_XC(nOcc-nImp+1:nOcc+nImp,1:nOcc) = FockSchmidt_SE(nOcc-nImp+1:nOcc+nImp,1:nOcc)
         FockSchmidt_SE_VX(nOcc+1:nSites,nOcc-nImp+1:nOcc+nImp) = FockSchmidt_SE(nOcc+1:nSites,nOcc-nImp+1:nOcc+nImp)
+        FockSchmidt_SE_XV(nOcc-nImp+1:nOcc+nImp,nOcc+1:nSites) = FockSchmidt_SE(nOcc-nImp+1:nOcc+nImp,nOcc+1:nSites)
         
         !Set the impurity:impurity parts to the correct values (even though we don't access them from FockSchmidt)
         !They are different since the correlation potential is not defined over the impurity sites.
         FockSchmidt_SE(nOcc-nImp+1:nOcc+nImp,nOcc-nImp+1:nOcc+nImp) = Emb_h0v_SE(:,:)
         
-        deallocate(FullSchmidtTrans_C,AO_OneE_Ham,W,MOtoSchmidt,HFPertBasis_Ann_Bra,HFPertBasis_Cre_Bra,    &
-            HFPertBasis_Ann_Ket,HFPertBasis_Cre_Ket)
+        deallocate(FullSchmidtTrans_C,AO_OneE_Ham,W_Vals,temp,HFPertBasis_Ann_Bra,HFPertBasis_Cre_Bra,    &
+            HFPertBasis_Ann_Ket,HFPertBasis_Cre_Ket,LVec,RVec)
 
     end subroutine FindNI_Charged
 
@@ -5283,11 +5287,11 @@ module LinearResponse
         endif
 
         allocate(HFPertBasis_Cre(nOcc+1:nSites))
-        HFPertBasis_Cre(:) = dcmplx(0.0_dp,0.0_dp)
+        HFPertBasis_Cre(:) = zzero 
         allocate(HFPertBasis_Ann(1:nOcc))
-        HFPertBasis_Ann(:) = dcmplx(0.0_dp,0.0_dp)
-        NI_LRMat_Cre(1,1) = dcmplx(0.0_dp,0.0_dp)
-        NI_LRMat_Ann(1,1) = dcmplx(0.0_dp,0.0_dp)
+        HFPertBasis_Ann(:) = zzero 
+        NI_LRMat_Cre(1,1) = zzero 
+        NI_LRMat_Ann(1,1) = zzero 
 
         !Assume perturbation is local to the first impurity site (pertsite = 1).
         pertsite = 1
@@ -5302,20 +5306,23 @@ module LinearResponse
         enddo
 
 !        call writevectorcomp(HFPertBasis_Cre,'HFPertBasis_Cre')
-        SchmidtPertGF_Cre(:,1) = dcmplx(0.0_dp,0.0_dp)
-        SchmidtPertGF_Ann(:,1) = dcmplx(0.0_dp,0.0_dp)
+        SchmidtPertGF_Cre_Ket(:,1) = zzero 
+        SchmidtPertGF_Ann_Ket(:,1) = zzero 
 
         !Transform into schmidt basis
         do a = nOcc+nImp+1,nSites
             do b = nOcc+1,nSites
-                SchmidtPertGF_Cre(a,1) = SchmidtPertGF_Cre(a,1) + HFtoSchmidtTransform(b,a)*HFPertBasis_Cre(b)
+                SchmidtPertGF_Cre_Ket(a,1) = SchmidtPertGF_Cre_Ket(a,1) + HFtoSchmidtTransform(b,a)*HFPertBasis_Cre(b)
             enddo
         enddo
         do i = 1,nOcc-nImp
             do j = 1,nOcc
-                SchmidtPertGF_Ann(i,1) = SchmidtPertGF_Ann(i,1) + HFtoSchmidtTransform(j,i)*HFPertBasis_Ann(j)
+                SchmidtPertGF_Ann_Ket(i,1) = SchmidtPertGF_Ann_Ket(i,1) + HFtoSchmidtTransform(j,i)*HFPertBasis_Ann(j)
             enddo
         enddo
+
+        SchmidtPertGF_Cre_Bra(:,:) = dconjg(SchmidtPertGF_Cre_Ket(:,:))
+        SchmidtPertGF_Ann_Bra(:,:) = dconjg(SchmidtPertGF_Ann_Ket(:,:))
 
 !        call writevectorcomp(SchmidtPertGF_Cre,'SchmidtPertGF_Cre')
 

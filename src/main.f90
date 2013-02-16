@@ -78,6 +78,8 @@ Program RealHub
         tMinRes_NonDir = .false.
         tPreCond_MinRes = .false.
         rtol_LR = 1.0e-8_dp
+        tSC_LR = .false.
+        tAllImp_LR = .false.
 
     end subroutine set_defaults
 
@@ -330,11 +332,11 @@ Program RealHub
                 tCompleteDiag = .true.
             case("DAVIDSON")
                 tCompleteDiag = .false.
-            case("DIAG_SYSTEM")
-                tDiagFullSystem = .true.
             case("NONDIR_DAVIDSON") 
                 tNonDirDavidson = .true.
                 tCompleteDiag = .false.
+            case("DIAG_SYSTEM")
+                tDiagFullSystem = .true.
             case("REDUCE_OCC")
                 tMultipleOccs = .true.
                 tRampDownOcc = .true.
@@ -434,6 +436,10 @@ Program RealHub
                 call readf(Omega_Step)
             case("BROADENING")
                 call readf(dDelta)
+            case("SELF-CONSISTENCY")
+                tSC_LR = .true.
+            case("RESPONSE_ALLIMP")
+                tAllImp_LR = .true.
             case("NON_NULL")
                 tProjectOutNull = .true.
                 if(item.lt.nitems) then
@@ -462,6 +468,8 @@ Program RealHub
                 write(6,"(A)") "IC_TDA"
                 write(6,"(A)") "FREQ"
                 write(6,"(A)") "BROADENING"
+                write(6,"(A)") "SELF-CONSISTENCY"
+                write(6,"(A)") "RESPONSE_ALLIMP"
                 write(6,"(A)") "NON_NULL"
                 write(6,"(A)") "REOPT_GS"
                 write(6,"(A)") "EXPLICIT_ORTHOG"
@@ -518,13 +526,31 @@ Program RealHub
             call warning(t_r,'DMET internally-contracted density response broken. Please fix me.')
         endif
         if(tMFResponse.and.(.not.tDDResponse)) then
-            call stop_all(t_r,'Single-reference response function asked for, but only coded up for Density response')
+            call stop_all(t_r,  &
+                'A single-reference particle + hole response function asked for, but SR only coded up for Density response')
         endif
         if(tPrecond_MinRes.and.(.not.tMinRes_NonDir)) then
             call stop_all(t_r,'Cannot precondition linear response matrix if not solving iteratively!')
         endif
         if(tDDResponse.and.tLR_DMET.and.tMinRes_NonDir) then
             call stop_all(t_r,'Iterative solution to density response equations not plumbed in yet')
+        endif
+        if(tDDResponse.and.tSC_LR) then
+            call stop_all(t_r,'Self-consistency not yet implemented for density response')
+        endif
+        if(tSC_LR.and.(.not.tAllImp_LR)) then
+            call stop_all(t_r,'Self-consistency not yet implemented without considering all impurity response functions')
+        endif
+        if(tAllImp_LR.and.(.not.tSC_LR)) then
+            call stop_all(t_r,'Cannot yet calculate all impurity response functions, without including self-consistency loops')
+        endif
+        if((.not.tCompleteDiag).and.(.not.tNonDirDavidson).and.tLR_DMET) then
+            call stop_all(t_r,'To solve DMET_LR, must perform complete diag or non-direct davidson, '   &
+     &          //'rather than direct davidson solver')
+        endif
+        if(tSC_LR.and.tLR_ReoptGS.and.tLR_DMET) then
+            call stop_all(t_r,"Reoptimizing ground state not sorted yet for self-consistent response "  &
+     &          //"calculations - probably shouldn't happen")
         endif
 
     end subroutine check_input

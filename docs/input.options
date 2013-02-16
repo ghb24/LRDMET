@@ -1,0 +1,87 @@
+MODEL
+(Hubbard model)
+    HUBBARD
+(Anderson model)
+    ANDERSON
+(Add chemical potential to the anderson model at impurity site)
+    CHEMPOT
+(Number of sites (in each dimension) in the model)
+    SITES   24
+(List of U values to consider)
+    U_VALS 0.0 1.5 4.0 10.0
+(Range of U values to consider (Start End Step) Step can be negative to ramp down in U)
+    U   0.0 1.1 0.5
+(Read converged correlation potentials from file)
+    READ_CORRPOT CORRPOT_FILE
+(Use previous U converged correlation potential when starting next U value)
+    REUSE_CORRPOT
+(Invert the correlation potential as it is tiled through the mean-field space)
+    FLIP_CORRPOT_TILING
+(Periodic boundary conditions)
+    PBC
+(Anti-periodic boundary conditions)
+    APBC
+(Maximum iterations in the DMET convergence)
+    MAXITER_DMET 150
+(Perform self-consistent hartree--fock calculation (required for single-reference response calculations))
+    SCF_HF
+(Number of impurity sites)
+    IMPSITES 1
+(Half-filling or not)
+    HALF_FILL
+(Impurity solver is complete diagonalization)
+    COMPLETE_DIAG
+(Impurity solver is direct davidson diagonalizer)
+    DAVIDSON
+(Impurity solver is non-direct davidson diagonalizer)
+    NONDIR_DAVIDSON
+(Diagonalize the complete system (and calculate exact response functions if specified))
+    DIAG_SYSTEM
+(Perform calculation on all closed shell occupations (Decrease from half filling))
+    REDUCE_OCC
+(Perform calculation on all closed shell occupations (Increase to half filling))
+    INCREASE_OCC
+(Write out FCIDUMP files (in both AO and MO basis))
+    FCIDUMP
+(Debugging output)
+    DEBUGOUTPUT
+END
+
+LINEAR_RESPONSE
+(Calculate density-density response functions)
+    DD_RESPONSE
+(Calculate charged particle + hole response functions)
+    GF_RESPONSE
+(Solve linear system with a non-direct iterative solver)
+    NONDIR_MINRES
+(Use preconditioning with iterative linear system solver)
+    PRECONDITION_LR
+(Calculate non-interacting response functions with HF orbitals)
+    NONINT
+(Calculate TDA response functions with HF orbitals)
+    TDA
+(Calculate RPA response functions with HF orbitals)
+    RPA
+(Calculate externally contracted DMET response functions with TDA-type excitations (Argument 1-4 changes type of non-iterative solver))
+    EC_TDA 2
+(Calculate internally contracted DMET response functions with TDA-type excitations)
+    IC_TDA
+(Range of frequencies to calculate (Start End Step))
+    FREQ 0.0 8.0 0.01
+(Spectral broadening)
+    BROADENING 0.01
+(Option for self-consistency for optimization of linear response functions)
+    SELF-CONSISTENCY
+(Option to calculate local response functions over all impurity sites)
+    RESPONSE_ALLIMP
+(Option to reoptimize ground state in space of V**H |1> for each response function)
+    REOPT_GS
+(Option for the density response: remove the non-null vectors of the overlap in the first-order space (argument gives threshold for non-null overlap eigenvalues))
+    NON_NULL 1.0E-9
+(Option for the density response: reexpress the first-order space in the orthogonal eigenspace of the overlap matrix)
+    EXPLICIT_ORTHOG
+(Option for the density response: Explicitly project out any component of the ground state from the first-order wavefunction)
+    WORKLINEARSPAN
+(Option for the density response: Explicitly remove the component of the ground state from the hamiltonian matrix)
+    REMOVE_GS_FROM_H
+END

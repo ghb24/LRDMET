@@ -132,6 +132,8 @@ module Globals
     complex(dp), allocatable :: FockSchmidt_SE_CC(:,:) !The one-electron hamiltonian over the core core block
     complex(dp), allocatable :: FockSchmidt_SE_VX(:,:) !The one-electron hamiltonian over the virtual:active block
     complex(dp), allocatable :: FockSchmidt_SE_CX(:,:) !The one-electron hamiltonian over the core:active block
+    complex(dp), allocatable :: FockSchmidt_SE_XV(:,:) !The one-electron hamiltonian over the active:virtual block
+    complex(dp), allocatable :: FockSchmidt_SE_XC(:,:) !The one-electron hamiltonian over the active:core block
 
 
 
