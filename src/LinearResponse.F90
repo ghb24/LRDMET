@@ -591,7 +591,7 @@ module LinearResponse
                                 if(tLR_ReoptGS) then
                                     !Block 3 contribution
                                     !Assume that all the matrices are hermitian as we shouldn't be reoptimizing the GS with self-energy
-                                    GSHam(K,Np1GSInd+J-1) = - conjg(Ga_i_F_xi_Ket(Coup_Ann_alpha(1,K,J),pertsite))  &
+                                    GSHam(K,Np1GSInd+J-1) = -Ga_i_F_xi_Ket(Coup_Ann_alpha(1,K,J),pertsite)  &
                                         *Coup_Ann_alpha(2,K,J)/sqrt(CNorm)
                                     GSHam(Np1GSInd+J-1,K) = conjg(GSHam(K,Np1GSInd+J-1))
                                 endif
@@ -611,7 +611,7 @@ module LinearResponse
 !                                LinearSystem_h(J,K+VIndex-1) = conjg(LinearSystem_h(K+VIndex-1,J))
                                 if(tLR_ReoptGS) then
                                     !Block 6 contribution
-                                    GSHam(K,Nm1GSInd+J-1) = conjg(Gc_a_F_ax_Ket(Coup_Create_alpha(1,K,J),pertsite)) &
+                                    GSHam(K,Nm1GSInd+J-1) = Gc_a_F_ax_Ket(Coup_Create_alpha(1,K,J),pertsite) &
                                         *Coup_Create_alpha(2,K,J)/sqrt(VNorm)
                                     GSHam(Nm1GSInd+J-1,K) = conjg(GSHam(K,Nm1GSInd+J-1))
                                 endif
@@ -697,7 +697,8 @@ module LinearResponse
                         !Since we are only keeping these one at a time, we don't actually need to store all pertsite vectors
                         call ApplySP_PertGS_EC(Psi_0,nGSSpace,Cre_0(:,pertsite),Ann_0(:,pertsite),nLinearSystem,pertsite)
                     endif
-                    !call writevectorcomp(Cre_0(:,'Ann_0')
+                    !call writevectorcomp(Psi_0,'Psi_0')
+                    !call writevectorcomp(Cre_0(:,1),'Ann_0')
                     !call writevectorcomp(Ann_0,'Ann_0')
                     
                     LinearSystem_p(:,:) = -LinearSystem_p(:,:)
