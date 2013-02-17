@@ -192,7 +192,7 @@ module LinearResponse
             enddo
         endif
         if(allocated(tmat_comp)) deallocate(tmat_comp)
-        allocate(tmat(EmbSize,EmbSize))
+        allocate(tmat_comp(EmbSize,EmbSize))
         do i = 1,EmbSize
             do j = 1,EmbSize
                 tmat_comp(j,i) = dcmplx(Emb_h0v(j,i),0.0_dp)
@@ -236,7 +236,7 @@ module LinearResponse
             write(6,"(A,F14.6,A)") "Memory required for reoptimization of GS: ",(real(nGSSpace,dp)**2)*16/1048576.0_dp," Mb"
         endif
         
-        !Set up orbital indices
+        !Set up orbital indices for SCHMIDT basis
         CoreEnd = nOcc-nImp
         VirtStart = nOcc+nImp+1
         VirtEnd = nSites
@@ -284,10 +284,10 @@ module LinearResponse
         else
             nImp_GF = 1
         endif
-        allocate(SchmidtPertGF_Cre_Ket(nOcc+nImp+1:nSites,nImp_GF))
-        allocate(SchmidtPertGF_Cre_Bra(nOcc+nImp+1:nSites,nImp_GF))
-        allocate(SchmidtPertGF_Ann_Ket(1:nOcc-nImp,nImp_GF))
-        allocate(SchmidtPertGF_Ann_Bra(1:nOcc-nImp,nImp_GF))
+        allocate(SchmidtPertGF_Cre_Ket(VirtStart:nSites,nImp_GF))
+        allocate(SchmidtPertGF_Cre_Bra(VirtStart:nSites,nImp_GF))
+        allocate(SchmidtPertGF_Ann_Ket(1:CoreEnd,nImp_GF))
+        allocate(SchmidtPertGF_Ann_Bra(1:CoreEnd,nImp_GF))
         allocate(NI_LRMat_Cre(nImp_GF,nImp_GF))
         allocate(NI_LRMat_Ann(nImp_GF,nImp_GF))
         allocate(ni_lr_Mat(nImp_GF,nImp_GF))
@@ -296,19 +296,6 @@ module LinearResponse
         allocate(ResponseFn_Mat(nImp_GF,nImp_GF))
         allocate(dNorm_p(nImp_GF))
         allocate(dNorm_h(nImp_GF))
-        
-        !Since this does not depend at all on the new basis, since the ground state has a completely
-        !disjoint basis to |1>, the RHS of the equations can be precomputed
-        allocate(Cre_0(nLinearSystem,nImp_GF))
-        allocate(Ann_0(nLinearSystem,nImp_GF))
-        if(.not.tLR_ReoptGS) then
-            Psi_0(:) = zzero 
-            Psi_0(1:nFCIDet) = HL_Vec(:)    
-            GFChemPot = HL_Energy
-            do i = 1,nImp_GF
-                call ApplySP_PertGS_EC(Psi_0,nGSSpace,Cre_0(:,i),Ann_0(:,i),nLinearSystem,i)
-            enddo
-        endif
         
         !Allocate memory for hamiltonian in this system:
         allocate(LinearSystem_p(nLinearSystem,nLinearSystem),stat=ierr)
@@ -323,6 +310,20 @@ module LinearResponse
         if(ierr.ne.0) call stop_all(t_r,'Error allocating')
         i = nGSSpace*3 + nLinearSystem*5
         write(6,"(A,F12.5,A)") "Memory required for wavefunctions: ",real(i,dp)*ComptoMb, " Mb"
+        
+        !Since this does not depend at all on the new basis, since the ground state has a completely
+        !disjoint basis to |1>, the RHS of the equations can be precomputed
+        allocate(Cre_0(nLinearSystem,nImp_GF))
+        allocate(Ann_0(nLinearSystem,nImp_GF))
+        if(.not.tLR_ReoptGS) then
+            Psi_0(:) = zzero 
+            Psi_0(1:nFCIDet) = HL_Vec(:)    
+            GFChemPot = HL_Energy
+            do i = 1,nImp_GF
+                call ApplySP_PertGS_EC(Psi_0,nGSSpace,Cre_0(:,i),Ann_0(:,i),nLinearSystem,i)
+            enddo
+        endif
+        
         !Store the fock matrix in complex form, so that we can ZGEMM easily
         !Also allocate the subblocks seperately. More memory, but will ensure we don't get stack overflow problems
         allocate(FockSchmidt_SE(nSites,nSites),stat=ierr)
@@ -346,8 +347,8 @@ module LinearResponse
                     FockSchmidt_SE(j,i) = dcmplx(FockSchmidt(j,i),0.0_dp)
                 enddo
             enddo
-            FockSchmidt_SE_CC(1:nOcc,1:nOcc) = FockSchmidt_SE(1:nOcc,1:nOcc)
-            FockSchmidt_SE_VV(nOcc+1:nSites,nOcc+1:nSites) = FockSchmidt_SE(nOcc+1:nSites,nOcc+1:nSites)
+            FockSchmidt_SE_CC(1:CoreEnd,1:CoreEnd) = FockSchmidt_SE(1:CoreEnd,1:CoreEnd)
+            FockSchmidt_SE_VV(VirtStart:nSites,VirtStart:nSites) = FockSchmidt_SE(VirtStart:nSites,VirtStart:nSites)
             FockSchmidt_SE_VX(VirtStart:VirtEnd,ActiveStart:ActiveEnd) = FockSchmidt_SE(VirtStart:VirtEnd,ActiveStart:ActiveEnd)
             FockSchmidt_SE_CX(1:CoreEnd,ActiveStart:ActiveEnd) = FockSchmidt_SE(1:CoreEnd,ActiveStart:ActiveEnd)
             FockSchmidt_SE_XV(ActiveStart:ActiveEnd,VirtStart:VirtEnd) = FockSchmidt_SE(ActiveStart:ActiveEnd,VirtStart:VirtEnd)
@@ -482,20 +483,25 @@ module LinearResponse
 
                 !Construct useful intermediates, using zgemm
                 !sum_a Gc_a^* F_ax (Creation)
-                call ZGEMM('T','N',EmbSize,nImp_GF,nVirt,zzero,FockSchmidt_SE_VX(VirtStart:VirtEnd,ActiveStart:ActiveEnd),  &
+                call ZGEMM('T','N',EmbSize,nImp_GF,nVirt,zone,FockSchmidt_SE_VX(VirtStart:VirtEnd,ActiveStart:ActiveEnd),  &
                     nVirt,SchmidtPertGF_Cre_Bra(VirtStart:VirtEnd,:),nVirt,zzero,Gc_a_F_ax_Bra,EmbSize)
-                call ZGEMM('N','N',EmbSize,nImp_GF,nVirt,zzero,FockSchmidt_SE_XV(ActiveStart:ActiveEnd,VirtStart:VirtEnd),  &
+                call ZGEMM('N','N',EmbSize,nImp_GF,nVirt,zone,FockSchmidt_SE_XV(ActiveStart:ActiveEnd,VirtStart:VirtEnd),  &
                     EmbSize,SchmidtPertGF_Cre_Ket(VirtStart:VirtEnd,:),nVirt,zzero,Gc_a_F_ax_Ket,EmbSize)
                 !sum_b Gc_b F_ab  (Creation)
-                call ZGEMM('N','N',nVirt,nImp_GF,nVirt,zzero,FockSchmidt_SE_VV(VirtStart:VirtEnd,VirtStart:VirtEnd),    &
+                call ZGEMM('N','N',nVirt,nImp_GF,nVirt,zone,FockSchmidt_SE_VV(VirtStart:VirtEnd,VirtStart:VirtEnd),    &
                     nVirt,SchmidtPertGF_Cre_Ket(VirtStart:VirtEnd,:),nVirt,zzero,Gc_b_F_ab,nVirt)
+
                 !sum_i Ga_i^bra F_xi (Annihilation)
-                call ZGEMM('N','N',EmbSize,nImp_GF,nCore,zzero,FockSchmidt_SE_XC(ActiveStart:ActiveEnd,1:CoreEnd),nCore,    &
+                call ZGEMM('N','N',EmbSize,nImp_GF,nCore,zone,FockSchmidt_SE_XC(ActiveStart:ActiveEnd,1:CoreEnd),EmbSize,    &
                     SchmidtPertGF_Ann_Bra(1:nCore,:),nCore,zzero,Ga_i_F_xi_Bra,EmbSize)
-                call ZGEMM('T','N',EmbSize,nImp_GF,nCore,zzero,FockSchmidt_SE_CX(1:CoreEnd,ActiveStart:ActiveEnd),nCore,    &
+!                call writematrixcomp(FockSchmidt_SE_XC,'FockSchmidt_SE_XC',.false.)
+!                call writevectorcomp(SchmidtPertGF_Ann_Bra(:,1),'SchmidtPertGF_Ann_Bra')
+!                call writevectorcomp(Ga_i_F_xi_Bra(:,1),'Ga_i_F_xi_Bra')
+                call ZGEMM('T','N',EmbSize,nImp_GF,nCore,zone,FockSchmidt_SE_CX(1:CoreEnd,ActiveStart:ActiveEnd),nCore,    &
                     SchmidtPertGF_Ann_Ket(1:nCore,:),nCore,zzero,Ga_i_F_xi_Ket,EmbSize)
+!                call writevectorcomp(Ga_i_F_xi_Bra(:,1),'Ga_i_F_xi_Ket')
                 !sum_i Ga_i F_ij (Annihilation)
-                call ZGEMM('T','N',nCore,nImp_GF,nCore,zzero,FockSchmidt_SE_CC(:,:),nCore,SchmidtPertGF_Ann_Ket(:,:),nCore,zzero, &
+                call ZGEMM('T','N',nCore,nImp_GF,nCore,zone,FockSchmidt_SE_CC(:,:),nCore,SchmidtPertGF_Ann_Ket(:,:),nCore,zzero, &
                     Ga_i_F_ij,nCore)
 
                 !Find the first-order wavefunction in the interacting picture for all impurity sites 
@@ -554,7 +560,7 @@ module LinearResponse
                     do i = 1,CoreEnd
                         !Calc normalization
                         !CNorm = CNorm + real(SchmidtPertGF_Ann(i,pertsite))**2 + aimag(SchmidtPertGF_Ann(i,pertsite))**2
-                        CNorm = CNorm + SchmidtPertGF_Ann_Bra(i,pertsite) + SchmidtPertGF_Ann_Ket(i,pertsite)
+                        CNorm = CNorm + SchmidtPertGF_Ann_Bra(i,pertsite)*SchmidtPertGF_Ann_Ket(i,pertsite)
                         !Calc diagonal correction
                         tempel = tempel + SchmidtPertGF_Ann_Bra(i,pertsite)*Ga_i_F_ij(i,pertsite)
                     enddo
@@ -612,6 +618,9 @@ module LinearResponse
                             endif
                         enddo
                     enddo
+                    
+                    !call writematrixcomp(LinearSystem_p,'LinearSystem_p',.false.)
+                    !call writematrixcomp(LinearSystem_h,'LinearSystem_h',.false.)
 
                     if(.not.tSC_LR) then
                         !Now, check hessian is hermitian
@@ -786,8 +795,8 @@ module LinearResponse
                         call stop_all(t_r,'Cannot do dotting of vectors here, since the LHS vectors are still being computed')
                     endif
                     do j = 1,nImp_GF
-                        ResponseFn_p(pertsite,j) = zdotc(nLinearSystem,Ann_0(:,j),1,Psi1_p,1)
-                        ResponseFn_h(pertsite,j) = zdotc(nLinearSystem,Cre_0(:,j),1,Psi1_h,1)
+                        ResponseFn_p(pertsite,j) = zdotc(nLinearSystem,Cre_0(:,j),1,Psi1_p,1)
+                        ResponseFn_h(pertsite,j) = zdotc(nLinearSystem,Ann_0(:,j),1,Psi1_h,1)
                         ResponseFn_Mat(pertsite,j) = ResponseFn_p(pertsite,j) + ResponseFn_h(pertsite,j)
                         ni_lr_Mat(pertsite,j) = NI_LRMat_Cre(pertsite,j) + NI_LRMat_Ann(pertsite,j) 
                     enddo
@@ -902,7 +911,7 @@ module LinearResponse
         deallocate(NFCIHam,Nm1FCIHam_beta,Np1FCIHam_alpha)
         deallocate(Coup_Create_alpha,Coup_Ann_alpha)
         deallocate(FockSchmidt_SE,FockSchmidt_SE_VV,FockSchmidt_SE_CC)
-        deallocate(FockSchmidt_SE_VX,FockSchmidt_SE_CX)
+        deallocate(FockSchmidt_SE_VX,FockSchmidt_SE_CX,FockSchmidt_SE_XV,FockSchmidt_SE_XC)
         deallocate(Gc_a_F_ax_Bra,Gc_a_F_ax_Ket,Gc_b_F_ab,Ga_i_F_xi_Bra,Ga_i_F_xi_Ket,Ga_i_F_ij)
 
     end subroutine NonIntExCont_TDA_MCLR_Charged
@@ -5056,7 +5065,7 @@ module LinearResponse
         complex(dp), allocatable :: AO_OneE_Ham(:,:),W_Vals(:),RVec(:,:),LVec(:,:),FullSchmidtTrans_C(:,:)
         complex(dp), allocatable :: HFPertBasis_Ann_Ket(:,:),HFPertBasis_Cre_Ket(:,:),temp(:,:),temp2(:,:)
         complex(dp), allocatable :: HFPertBasis_Ann_Bra(:,:),HFPertBasis_Cre_Bra(:,:),cWork(:)
-        integer :: lwork,info,i,a,pertBra,j,pertsite,nVirt
+        integer :: lwork,info,i,a,pertBra,j,pertsite,nVirt,CoreEnd,VirtStart,ActiveStart,ActiveEnd,nCore
         character(len=*), parameter :: t_r='FindNI_Charged'
 
         if(.not.tAllImp_LR) then
@@ -5089,6 +5098,14 @@ module LinearResponse
         
         NI_LRMat_Cre(:,:) = zzero
         NI_LRMat_Ann(:,:) = zzero 
+        
+        !Schmidt basis bounds
+        nVirt = nSites-nOcc-nImp   
+        nCore = nOcc-nImp
+        CoreEnd = nOcc-nImp
+        VirtStart = nOcc+nImp+1
+        ActiveStart = nOcc-nImp+1
+        ActiveEnd = nOcc+nImp
 
         !Memory to temperarily store the first order wavefunctions of each impurity site, in the right MO basis (For the Kets)
         !and the left MO space (for the Bras)
@@ -5143,8 +5160,8 @@ module LinearResponse
             temp,nSites)
             !temp is now the (nSites,nImp) rotated HFPertBasis_Ann into the AO basis
             !Now rotate this into the occupied schmidt basis
-        call ZGEMM('T','N',nOcc-nImp,nImp,nSites,zone,FullSchmidtTrans_C(:,1:nOcc-nImp),nSites,temp,nSites,zzero,   &
-            SchmidtPertGF_Ann_Ket(1:nOcc-nImp,:),nOcc-nImp)
+        call ZGEMM('T','N',nCore,nImp,nSites,zone,FullSchmidtTrans_C(:,1:CoreEnd),nSites,temp,nSites,zzero,   &
+            SchmidtPertGF_Ann_Ket(1:CoreEnd,:),nCore)
         !Now do the same for the bra contraction coefficients
         allocate(temp2(nSites,1:nOcc))
         do i=1,nOcc
@@ -5155,16 +5172,15 @@ module LinearResponse
         call ZGEMM('N','N',nSites,nImp,nOcc,zone,temp2(:,1:nOcc),nSites,HFPertBasis_Ann_Bra(1:nOcc,:),nOcc,zzero,    &
             temp,nSites)
         deallocate(temp2)
-        call ZGEMM('T','N',nOcc-nImp,nImp,nSites,zone,FullSchmidtTrans_C(:,1:nOcc-nImp),nSites,temp,nSites,zzero,   &
-            SchmidtPertGF_Ann_Bra(1:nOcc-nImp,:),nOcc-nImp)
+        call ZGEMM('T','N',nCore,nImp,nSites,zone,FullSchmidtTrans_C(:,1:CoreEnd),nSites,temp,nSites,zzero,   &
+            SchmidtPertGF_Ann_Bra(1:CoreEnd,:),nCore)
 
         !Do the same with the particle NI GF
         call ZGEMM('N','N',nSites,nImp,nSites-nOcc,zone,RVec(:,nOcc+1:nSites),nSites,  &
             HFPertBasis_Cre_Ket,nSites-nOcc,zzero,temp,nSites)
-        nVirt = nSites-nOcc-nImp   
         !Now rotate into schmidt basis
-        call ZGEMM('T','N',nVirt,nImp,nSites,zone,FullSchmidtTrans_C(:,nOcc+nImp+1:nSites),nSites,temp,nSites,zzero,    &
-            SchmidtPertGF_Cre_Ket(nOcc+nImp+1:nSites,:),nVirt)
+        call ZGEMM('T','N',nVirt,nImp,nSites,zone,FullSchmidtTrans_C(:,VirtStart:nSites),nSites,temp,nSites,zzero,    &
+            SchmidtPertGF_Cre_Ket(VirtStart:nSites,:),nVirt)
         !Now for the Bra version of the particle NI GF
         allocate(temp2(nSites,nOcc+1:nSites))
         do i = nOcc+1,nSites
@@ -5175,8 +5191,8 @@ module LinearResponse
         call ZGEMM('N','N',nSites,nImp,nSites-nOcc,zone,temp2(:,nOcc+1:nSites),nSites,  &
             HFPertBasis_Cre_Bra,nSites-nOcc,zzero,temp,nSites)
         !Now rotate into schmidt basis
-        call ZGEMM('T','N',nVirt,nImp,nSites,zone,FullSchmidtTrans_C(:,nOcc+nImp+1:nSites),nSites,temp,nSites,zzero,    &
-            SchmidtPertGF_Cre_Bra(nOcc+nImp+1:nSites,:),nVirt)
+        call ZGEMM('T','N',nVirt,nImp,nSites,zone,FullSchmidtTrans_C(:,VirtStart:nSites),nSites,temp,nSites,zzero,    &
+            SchmidtPertGF_Cre_Bra(VirtStart:nSites,:),nVirt)
         
         !TODO: Check that in the absence of a self-energy, the Bra and Ket are complex conjugates of each other.
 
@@ -5254,12 +5270,12 @@ module LinearResponse
         enddo
 
         !Now, convert this into a complex number (for easy ZGEMM'ing), and store it in the global array
-        FockSchmidt_SE_CC(1:nOcc,1:nOcc) = FockSchmidt_SE(1:nOcc,1:nOcc)
-        FockSchmidt_SE_VV(nOcc+1:nSites,nOcc+1:nSites) = FockSchmidt_SE(nOcc+1:nSites,nOcc+1:nSites)
-        FockSchmidt_SE_CX(1:nOcc,nOcc-nImp+1:nOcc+nImp) = FockSchmidt_SE(1:nOcc,nOcc-nImp+1:nOcc+nImp)
-        FockSchmidt_SE_XC(nOcc-nImp+1:nOcc+nImp,1:nOcc) = FockSchmidt_SE(nOcc-nImp+1:nOcc+nImp,1:nOcc)
-        FockSchmidt_SE_VX(nOcc+1:nSites,nOcc-nImp+1:nOcc+nImp) = FockSchmidt_SE(nOcc+1:nSites,nOcc-nImp+1:nOcc+nImp)
-        FockSchmidt_SE_XV(nOcc-nImp+1:nOcc+nImp,nOcc+1:nSites) = FockSchmidt_SE(nOcc-nImp+1:nOcc+nImp,nOcc+1:nSites)
+        FockSchmidt_SE_CC(1:CoreEnd,1:CoreEnd) = FockSchmidt_SE(1:CoreEnd,1:CoreEnd)
+        FockSchmidt_SE_VV(VirtStart:nSites,VirtStart:nSites) = FockSchmidt_SE(VirtStart:nSites,VirtStart:nSites)
+        FockSchmidt_SE_CX(1:CoreEnd,ActiveStart:ActiveEnd) = FockSchmidt_SE(1:CoreEnd,ActiveStart:ActiveEnd)
+        FockSchmidt_SE_XC(ActiveStart:ActiveEnd,1:CoreEnd) = FockSchmidt_SE(ActiveStart:ActiveEnd,1:CoreEnd)
+        FockSchmidt_SE_VX(VirtStart:nSites,ActiveStart:ActiveEnd) = FockSchmidt_SE(VirtStart:nSites,ActiveStart:ActiveEnd)
+        FockSchmidt_SE_XV(ActiveStart:ActiveEnd,VirtStart:nSites) = FockSchmidt_SE(ActiveStart:ActiveEnd,VirtStart:nSites)
         
         !Set the impurity:impurity parts to the correct values (even though we don't access them from FockSchmidt)
         !They are different since the correlation potential is not defined over the impurity sites.
@@ -5324,8 +5340,8 @@ module LinearResponse
         SchmidtPertGF_Cre_Bra(:,:) = dconjg(SchmidtPertGF_Cre_Ket(:,:))
         SchmidtPertGF_Ann_Bra(:,:) = dconjg(SchmidtPertGF_Ann_Ket(:,:))
 
-!        call writevectorcomp(SchmidtPertGF_Cre,'SchmidtPertGF_Cre')
-
+!        call writevectorcomp(SchmidtPertGF_Ann_Ket(:,1),'SchmidtPertGF_Ann_Ket')
+!        call writevectorcomp(SchmidtPertGF_Ann_Bra(:,1),'SchmidtPertGF_Ann_Bra')
         deallocate(HFPertBasis_Ann,HFPertBasis_Cre)
 
     end subroutine FindSchmidtPert_Charged

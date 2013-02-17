@@ -32,10 +32,10 @@ MODEL
 (Impurity solver is complete diagonalization)
     COMPLETE_DIAG
 (Impurity solver is direct davidson diagonalizer)
-    DAVIDSON
-(Impurity solver is non-direct davidson diagonalizer)
     NONDIR_DAVIDSON
 (Diagonalize the complete system (and calculate exact response functions if specified))
+    DAVIDSON
+(Impurity solver is non-direct davidson diagonalizer)
     DIAG_SYSTEM
 (Perform calculation on all closed shell occupations (Decrease from half filling))
     REDUCE_OCC
@@ -63,7 +63,7 @@ LINEAR_RESPONSE
 (Calculate RPA response functions with HF orbitals)
     RPA
 (Calculate externally contracted DMET response functions with TDA-type excitations (Argument 1-4 changes type of non-iterative solver))
-    EC_TDA 2
+    EC_TDA 1
 (Calculate internally contracted DMET response functions with TDA-type excitations)
     IC_TDA
 (Range of frequencies to calculate (Start End Step))
