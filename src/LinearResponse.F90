@@ -5061,6 +5061,7 @@ module LinearResponse
     !new one-electron hamiltonians for the interacting problem: Emb_h0v_SE and FockSchmidt_SE
     subroutine FindNI_Charged(Omega,NI_LRMat_Cre,NI_LRMat_Ann)
         use mat_tools, only: add_localpot_comp
+        use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
         implicit none
         real(dp), intent(in) :: Omega
         complex(dp), intent(out) :: NI_LRMat_Cre(nImp,nImp),NI_LRMat_Ann(nImp,nImp)
@@ -5069,6 +5070,7 @@ module LinearResponse
         complex(dp), allocatable :: HFPertBasis_Ann_Ket(:,:),HFPertBasis_Cre_Ket(:,:),temp(:,:),temp2(:,:)
         complex(dp), allocatable :: HFPertBasis_Ann_Bra(:,:),HFPertBasis_Cre_Bra(:,:),cWork(:)
         integer :: lwork,info,i,a,pertBra,j,pertsite,nVirt,CoreEnd,VirtStart,ActiveStart,ActiveEnd,nCore
+        complex(dp) :: test_R_Ann,test_R_Cre,test_L_Ann,test_L_Cre
         character(len=*), parameter :: t_r='FindNI_Charged'
 
         if(.not.tAllImp_LR) then
@@ -5098,9 +5100,15 @@ module LinearResponse
         call zgeev('V','V',nSites,AO_OneE_Ham,nSites,W_Vals,LVec,nSites,RVec,nSites,cWork,lWork,Work,info)
         if(info.ne.0) call stop_all(t_r,'Diag of H-sigma failed')
         deallocate(work,cWork)
+
+        !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
+        call Order_zgeev_vecs(W_Vals,LVec,RVec)
         
         NI_LRMat_Cre(:,:) = zzero
         NI_LRMat_Ann(:,:) = zzero 
+
+        call writevectorcomp(W_Vals,'HF energies')
+        call writematrixcomp(RVec,'Orbitals',.false.)
         
         !Schmidt basis bounds
         nVirt = nSites-nOcc-nImp   
@@ -5121,15 +5129,24 @@ module LinearResponse
         HFPertBasis_Ann_Ket(:,:) = zzero
         HFPertBasis_Cre_Ket(:,:) = zzero
 
+        test_R_Ann = zzero
+        test_L_Ann = zzero
+        test_R_Cre = zzero
+        test_L_Cre = zzero
+
         !Now, form the non-interacting greens functions (but with u *and* self-energy)
         do pertsite = 1,nImp
             !Form the set of non-interacting first order wavefunctions from the new one-electron h for both Bra and Ket versions
             !TODO: Check whether I want this dconj around the LVec? Similarly with the RVec, and -dDelta's
             do i = 1,nOcc
+                test_R_Ann = test_R_Ann + RVec(pertsite,i)*dconjg(RVec(pertsite,i))/(dcmplx(Omega,dDelta)-HFEnergies(i))
+                test_L_Ann = test_L_Ann + LVec(pertsite,i)*dconjg(LVec(pertsite,i))/(dcmplx(Omega,dDelta)-HFEnergies(i))
                 HFPertBasis_Ann_Ket(i,pertsite) = dconjg(LVec(pertsite,i))/(dcmplx(Omega,dDelta)-W_Vals(i))
                 HFPertBasis_Ann_Bra(i,pertsite) = RVec(pertsite,i)/(dcmplx(Omega,-dDelta)-W_Vals(i))
             enddo
             do a = nOcc+1,nSites
+                test_R_Cre = test_R_Cre + RVec(pertsite,a)*dconjg(RVec(pertsite,i))/(dcmplx(Omega,dDelta)-HFEnergies(i))
+                test_L_Cre = test_L_Cre + LVec(pertsite,a)*dconjg(LVec(pertsite,i))/(dcmplx(Omega,dDelta)-HFEnergies(i))
                 HFPertBasis_Cre_Ket(a,pertsite) = dconjg(LVec(pertsite,a))/(dcmplx(Omega,dDelta)-W_Vals(a))
                 HFPertBasis_Cre_Bra(a,pertsite) = RVec(pertsite,a)/(dcmplx(Omega,-dDelta)-W_Vals(a))
             enddo
@@ -5147,6 +5164,11 @@ module LinearResponse
                 enddo
             enddo
         enddo
+
+        write(6,*) "test_R_Ann: ",test_R_Ann
+        write(6,*) "test_L_Ann: ",test_L_Ann
+        write(6,*) "test_R_Cre: ",test_R_Cre
+        write(6,*) "test_L_Cre: ",test_L_Cre
 
         write(6,*) "NI_Ann: ",NI_LRMat_Ann(:,:)
         write(6,*) "NI_Cre: ",NI_LRMat_Cre(:,:)
