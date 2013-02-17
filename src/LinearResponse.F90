@@ -886,7 +886,9 @@ module LinearResponse
         deallocate(Cre_0,Ann_0,Psi_0,SchmidtPertGF_Cre_Ket,SchmidtPertGF_Ann_Ket)
         deallocate(NI_LRMat_Cre,NI_LRMat_Ann,ResponseFn_p,ResponseFn_h,ResponseFn_Mat)
         deallocate(ni_lr_Mat,SchmidtPertGF_Cre_Bra,SchmidtPertGF_Ann_Bra)
-        if(tSC_LR) deallocate(SelfEnergy_Imp)
+        if(tSC_LR) then
+            deallocate(SelfEnergy_Imp,Emb_h0v_SE)
+        endif
         close(iunit)
         if(tMinRes_NonDir) then
             close(minres_unit)
@@ -5122,7 +5124,7 @@ module LinearResponse
         !Now, form the non-interacting greens functions (but with u *and* self-energy)
         do pertsite = 1,nImp
             !Form the set of non-interacting first order wavefunctions from the new one-electron h for both Bra and Ket versions
-            !TODO: Check whether I want this dconj around the LVec?
+            !TODO: Check whether I want this dconj around the LVec? Similarly with the RVec, and -dDelta's
             do i = 1,nOcc
                 HFPertBasis_Ann_Ket(i,pertsite) = dconjg(LVec(pertsite,i))/(dcmplx(Omega,dDelta)-W_Vals(i))
                 HFPertBasis_Ann_Bra(i,pertsite) = RVec(pertsite,i)/(dcmplx(Omega,-dDelta)-W_Vals(i))
@@ -5145,6 +5147,9 @@ module LinearResponse
                 enddo
             enddo
         enddo
+
+        write(6,*) "NI_Ann: ",NI_LRMat_Ann(:,:)
+        write(6,*) "NI_Cre: ",NI_LRMat_Cre(:,:)
 
         !Now, we need to project these NI wavefunctions into the schmidt basis
         !We want to rotate the vectors, expressed in the 'right' basis, back into that AO basis.
@@ -5194,6 +5199,7 @@ module LinearResponse
         !Now rotate into schmidt basis
         call ZGEMM('T','N',nVirt,nImp,nSites,zone,FullSchmidtTrans_C(:,VirtStart:nSites),nSites,temp,nSites,zzero,    &
             SchmidtPertGF_Cre_Bra(VirtStart:nSites,:),nVirt)
+        deallocate(temp,temp2)
         
         !TODO: Check that in the absence of a self-energy, the Bra and Ket are complex conjugates of each other.
 
@@ -5230,16 +5236,18 @@ module LinearResponse
 
         !First, deal with the embedded basis
         !Stripe the self energy through the space
+        allocate(temp(nSites,nSites))
         allocate(temp_real(nSites,nSites))
         temp_real(:,:) = zero
+        temp(:,:) = zzero
         call add_localpot_comp(temp_real,temp,SelfEnergy_Imp,tAdd=.true.)
         deallocate(temp_real)
         !temp is now just the self-energy striped through the space, in the AO basis
         !Rotate this into the embedding basis
-        allocate(temp(EmbSize,nSites))
-        call ZGEMM('T','N',EmbSize,nSites,nSites,zone,EmbeddedBasis,nSites,temp,nSites,zzero,temp,EmbSize)
-        call ZGEMM('N','N',EmbSize,EmbSize,nSites,zone,temp,EmbSize,EmbeddedBasis,nSites,zzero,Emb_h0v_SE,EmbSize)
-        deallocate(temp)
+        allocate(temp2(EmbSize,nSites))
+        call ZGEMM('T','N',EmbSize,nSites,nSites,zone,EmbeddedBasis,nSites,temp,nSites,zzero,temp2,EmbSize)
+        call ZGEMM('N','N',EmbSize,EmbSize,nSites,zone,temp2,EmbSize,EmbeddedBasis,nSites,zzero,Emb_h0v_SE,EmbSize)
+        deallocate(temp2)
         
         !Now, zero out the self-energy contribution over the impurity site
         Emb_h0v_SE(1:nImp,1:nImp) = zzero
@@ -5257,7 +5265,6 @@ module LinearResponse
         !This now gives the one-electron hamiltonian in the AO basis, with the self-energy subtracted.
         call add_localpot_comp(h0v,AO_OneE_Ham,SelfEnergy_Imp,tAdd=.false.)
         !Rotate from the AO basis, to the Schmidt basis
-        allocate(temp(nSites,nSites))
         call ZGEMM('T','N',nSites,nSites,nSites,zone,FullSchmidtTrans_C,nSites,AO_OneE_Ham,nSites,zzero,temp,nSites)
         call ZGEMM('N','N',nSites,nSites,nSites,zone,temp,nSites,FullSchmidtTrans_C,nSites,zzero,FockSchmidt_SE,nSites)
 
@@ -5284,6 +5291,9 @@ module LinearResponse
         
         deallocate(FullSchmidtTrans_C,AO_OneE_Ham,W_Vals,temp,HFPertBasis_Ann_Bra,HFPertBasis_Cre_Bra,    &
             HFPertBasis_Ann_Ket,HFPertBasis_Cre_Ket,LVec,RVec)
+
+        call writevectorcomp(SchmidtPertGF_Cre_Ket(:,1),'SchmidtPertGF_Cre')
+        call writevectorcomp(SchmidtPertGF_Ann_Ket(:,1),'SchmidtPertGF_Ann')
 
     end subroutine FindNI_Charged
 
