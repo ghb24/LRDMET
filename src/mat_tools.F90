@@ -863,9 +863,9 @@ module mat_tools
         do i=1,size(mat,1)
             do j=1,size(mat,2)
                 if(tOneLine) then
-                    write(6,"(2G25.10)",advance='no') mat(i,j)
+                    write(6,"(2G18.7)",advance='no') mat(i,j)
                 else
-                    write(6,"(2I6,2G25.10)") i,j,mat(i,j)
+                    write(6,"(2I6,2G18.7)") i,j,mat(i,j)
                 endif
             enddo
             write(6,*)

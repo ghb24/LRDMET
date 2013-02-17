@@ -5078,6 +5078,7 @@ module LinearResponse
         endif
 
         allocate(AO_OneE_Ham(nSites,nSites))
+        AO_OneE_Ham(:,:) = zzero
         !Stripe the complex (-)self-energy through the AO one-electron hamiltonian
         call add_localpot_comp(h0v,AO_OneE_Ham,SelfEnergy_Imp,tAdd=.false.)
 
@@ -5098,17 +5099,38 @@ module LinearResponse
         deallocate(cWork)
         allocate(cWork(lWork))
         call zgeev('V','V',nSites,AO_OneE_Ham,nSites,W_Vals,LVec,nSites,RVec,nSites,cWork,lWork,Work,info)
-        if(info.ne.0) call stop_all(t_r,'Diag of H-sigma failed')
+        if(info.ne.0) call stop_all(t_r,'Diag of H - SE failed')
         deallocate(work,cWork)
+
+        !*** TEST ***
+!        allocate(temp(nSites,nSites))
+!        allocate(temp2(nSites,nSites))
+!        call writematrixcomp(SelfEnergy_Imp,'SelfEnergy',.true.)
+!        call writevectorcomp(W_Vals,'Eigenvalues')
+!        AO_OneE_Ham(:,:) = zzero
+!        call add_localpot_comp(h0v,AO_OneE_Ham,SelfEnergy_Imp,tAdd=.false.)
+!        !call writematrixcomp(AO_OneE_Ham,'h0v',.false.)
+!        call zGEMM('C','N',nSites,nSites,nSites,zone,LVec,nSites,AO_OneE_Ham,nSites,zzero,temp,nSites)
+!        call zGEMM('N','N',nSites,nSites,nSites,zone,temp,nSites,RVec,nSites,zzero,temp2,nSites)
+!        call writematrixcomp(temp2,'L* H R',.false.)
 
         !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
         call Order_zgeev_vecs(W_Vals,LVec,RVec)
         
+!        call writevectorcomp(W_Vals,'Eigenvalues ordered')
+!        AO_OneE_Ham(:,:) = zzero
+!        call add_localpot_comp(h0v,AO_OneE_Ham,SelfEnergy_Imp,tAdd=.false.)
+!        !call writematrixcomp(AO_OneE_Ham,'h0v',.false.)
+!        call zGEMM('C','N',nSites,nSites,nSites,zone,LVec,nSites,AO_OneE_Ham,nSites,zzero,temp,nSites)
+!        call zGEMM('N','N',nSites,nSites,nSites,zone,temp,nSites,RVec,nSites,zzero,temp2,nSites)
+!        call writematrixcomp(temp2,'L* H R ordered',.false.)
+!        deallocate(temp,temp2)
+
         NI_LRMat_Cre(:,:) = zzero
         NI_LRMat_Ann(:,:) = zzero 
 
-        call writevectorcomp(W_Vals,'HF energies')
-        call writematrixcomp(RVec,'Orbitals',.false.)
+!        call writevectorcomp(W_Vals,'HF energies')
+!        call writematrixcomp(RVec,'Orbitals',.false.)
         
         !Schmidt basis bounds
         nVirt = nSites-nOcc-nImp   
@@ -5165,13 +5187,13 @@ module LinearResponse
             enddo
         enddo
 
-        write(6,*) "test_R_Ann: ",test_R_Ann
-        write(6,*) "test_L_Ann: ",test_L_Ann
-        write(6,*) "test_R_Cre: ",test_R_Cre
-        write(6,*) "test_L_Cre: ",test_L_Cre
+!        write(6,*) "test_R_Ann: ",test_R_Ann
+!        write(6,*) "test_L_Ann: ",test_L_Ann
+!        write(6,*) "test_R_Cre: ",test_R_Cre
+!        write(6,*) "test_L_Cre: ",test_L_Cre
 
-        write(6,*) "NI_Ann: ",NI_LRMat_Ann(:,:)
-        write(6,*) "NI_Cre: ",NI_LRMat_Cre(:,:)
+!        write(6,*) "NI_Ann: ",NI_LRMat_Ann(:,:)
+!        write(6,*) "NI_Cre: ",NI_LRMat_Cre(:,:)
 
         !Now, we need to project these NI wavefunctions into the schmidt basis
         !We want to rotate the vectors, expressed in the 'right' basis, back into that AO basis.
@@ -5314,8 +5336,8 @@ module LinearResponse
         deallocate(FullSchmidtTrans_C,AO_OneE_Ham,W_Vals,temp,HFPertBasis_Ann_Bra,HFPertBasis_Cre_Bra,    &
             HFPertBasis_Ann_Ket,HFPertBasis_Cre_Ket,LVec,RVec)
 
-        call writevectorcomp(SchmidtPertGF_Cre_Ket(:,1),'SchmidtPertGF_Cre')
-        call writevectorcomp(SchmidtPertGF_Ann_Ket(:,1),'SchmidtPertGF_Ann')
+!        call writevectorcomp(SchmidtPertGF_Cre_Ket(:,1),'SchmidtPertGF_Cre')
+!        call writevectorcomp(SchmidtPertGF_Ann_Ket(:,1),'SchmidtPertGF_Ann')
 
     end subroutine FindNI_Charged
 
