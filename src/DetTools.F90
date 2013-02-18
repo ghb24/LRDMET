@@ -1295,6 +1295,60 @@ subroutine sort_real2(arr, length, length2)
     enddo
 end subroutine sort_real2
 
+!Ensure that all LVecs are orthonormal with respect to the RVec vectors
+!LVec vectors need to be complex conjugated.
+!This will involve gram-schmidt rotation of the vectors in degenerate sets
+subroutine Orthonorm_zgeev_vecs(N,W,LVec,RVec)
+    use const
+    implicit none
+    integer, intent(in) :: N
+    complex(dp), intent(in) :: W(N)
+    complex(dp), intent(inout) :: LVec(N,N),RVec(N,N)
+    integer :: i,StartingInd,R,L
+    complex(dp) :: zdotc,norm,overlap
+
+    i = 1
+    do while(i.le.N)
+
+        StartingInd = i
+
+        if(i.lt.N) then
+            do while(abs(W(i+1)-W(i)).lt.1.0e-9_dp)
+                !We are in a degenerate set
+                i = i+1
+                if(i.eq.N) exit !We have found the last degenerate block
+            enddo
+        endif
+
+!        write(6,*) "Degenerate block from ",StartingInd,' to ',i
+!        call flush(6)
+
+        !The degenerate set goes from StartingInd to i
+        !Orthogonalize the R vectors against the L vectors
+        do R = StartingInd,i    !Run through the R vectors
+            do L = StartingInd,i    !Run through the L vectors
+                if(R.eq.L) cycle    !We want to maintain overlap with the corresponding vector
+
+                !Gram-Schmidt
+                overlap = zdotc(N,LVec(:,L),1,RVec(:,R),1)
+                RVec(:,R) = RVec(:,R) - overlap * dconjg(LVec(:,L))
+            enddo
+        enddo
+            
+        do R = StartingInd,i
+            !Now, normalize the vectors
+            norm = zdotc(N,LVec(:,R),1,RVec(:,R),1)
+            RVec(:,R) = RVec(:,R) / sqrt(norm)
+            LVec(:,R) = LVec(:,R) / sqrt(norm)
+        enddo
+
+        i = i+1
+
+    enddo
+
+end subroutine Orthonorm_zgeev_vecs
+
+
 module sort_mod_c_a_c_a_c
     implicit none
 

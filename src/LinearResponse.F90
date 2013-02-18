@@ -5070,8 +5070,9 @@ module LinearResponse
         complex(dp), allocatable :: HFPertBasis_Ann_Ket(:,:),HFPertBasis_Cre_Ket(:,:),temp(:,:),temp2(:,:)
         complex(dp), allocatable :: HFPertBasis_Ann_Bra(:,:),HFPertBasis_Cre_Bra(:,:),cWork(:)
         integer :: lwork,info,i,a,pertBra,j,pertsite,nVirt,CoreEnd,VirtStart,ActiveStart,ActiveEnd,nCore
-        complex(dp) :: test_R_Ann,test_R_Cre,test_L_Ann,test_L_Cre
+        complex(dp) :: test_R_Ann,test_R_Cre,test_L_Ann,test_L_Cre,zdotc
         character(len=*), parameter :: t_r='FindNI_Charged'
+        logical, parameter :: tCheck = .true.
 
         if(.not.tAllImp_LR) then
             call stop_all(t_r,"Should not be in this routine if you don't want to calc all greens functions")
@@ -5102,29 +5103,84 @@ module LinearResponse
         if(info.ne.0) call stop_all(t_r,'Diag of H - SE failed')
         deallocate(work,cWork)
 
-        !*** TEST ***
-!        allocate(temp(nSites,nSites))
-!        allocate(temp2(nSites,nSites))
-!        call writematrixcomp(SelfEnergy_Imp,'SelfEnergy',.true.)
-!        call writevectorcomp(W_Vals,'Eigenvalues')
-!        AO_OneE_Ham(:,:) = zzero
-!        call add_localpot_comp(h0v,AO_OneE_Ham,SelfEnergy_Imp,tAdd=.false.)
-!        !call writematrixcomp(AO_OneE_Ham,'h0v',.false.)
-!        call zGEMM('C','N',nSites,nSites,nSites,zone,LVec,nSites,AO_OneE_Ham,nSites,zzero,temp,nSites)
-!        call zGEMM('N','N',nSites,nSites,nSites,zone,temp,nSites,RVec,nSites,zzero,temp2,nSites)
-!        call writematrixcomp(temp2,'L* H R',.false.)
-
         !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
+        !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
         call Order_zgeev_vecs(W_Vals,LVec,RVec)
-        
-!        call writevectorcomp(W_Vals,'Eigenvalues ordered')
-!        AO_OneE_Ham(:,:) = zzero
-!        call add_localpot_comp(h0v,AO_OneE_Ham,SelfEnergy_Imp,tAdd=.false.)
-!        !call writematrixcomp(AO_OneE_Ham,'h0v',.false.)
-!        call zGEMM('C','N',nSites,nSites,nSites,zone,LVec,nSites,AO_OneE_Ham,nSites,zzero,temp,nSites)
-!        call zGEMM('N','N',nSites,nSites,nSites,zone,temp,nSites,RVec,nSites,zzero,temp2,nSites)
-!        call writematrixcomp(temp2,'L* H R ordered',.false.)
-!        deallocate(temp,temp2)
+        !call writevectorcomp(W_Vals,'Eigenvalues ordered')
+        !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
+        call Orthonorm_zgeev_vecs(nSites,W_Vals,LVec,RVec)
+
+        if(tCheck) then
+            !*** TEST ***
+            allocate(temp(nSites,nSites))
+            allocate(temp2(nSites,nSites))
+            !call writematrixcomp(SelfEnergy_Imp,'SelfEnergy',.true.)
+            !call writevectorcomp(W_Vals,'Eigenvalues')
+            AO_OneE_Ham(:,:) = zzero
+            call add_localpot_comp(h0v,AO_OneE_Ham,SelfEnergy_Imp,tAdd=.false.)
+    
+            call ZGEMM('C','N',nSites,nSites,nSites,zone,LVec,nSites,AO_OneE_Ham,nSites,zzero,temp,nSites)
+            do j = 1,nSites
+                do a = 1,nSites
+                    if(abs(temp(j,a)-(W_Vals(j)*dconjg(LVec(a,j)))).gt.1.0e-8) then
+                        write(6,*) "Eigenvector: ",j
+                        write(6,*) "Component: ",a
+                        write(6,*) temp(j,a),W_Vals(j)*dconjg(LVec(a,j))
+                        call stop_all(t_r,'LVecs not computed correctly')
+                    endif
+                enddo
+            enddo
+    !
+    !        write(6,*) "Left eigenvectors computed correctly..."
+    !
+            call ZGEMM('N','N',nSites,nSites,nSites,zone,AO_OneE_Ham,nSites,RVec,nSites,zzero,temp,nSites)
+            do j = 1,nSites
+                do a = 1,nSites
+                    if(abs(temp(a,j)-(W_Vals(j)*RVec(a,j))).gt.1.0e-8) then
+                        write(6,*) "Eigenvector: ",j
+                        write(6,*) "Component: ",a
+                        write(6,*) temp(a,j),W_Vals(j)*RVec(a,j)
+                        call stop_all(t_r,'RVecs not computed correctly')
+                    endif
+                enddo
+            enddo
+    !
+    !        write(6,*) "Right eigenvectors computed correctly..."
+    !
+            
+            do i = 1,nSites
+                do j = 1,nSites
+                    test_R_Cre = zdotc(nSites,dconjg(LVec(:,i)),1,RVec(:,j),1)
+                    !write(6,*) "LVec: ",i,"RVec: ",j,test_R_Cre
+                    if((i.eq.j).and.(abs(abs(test_R_Cre)-1.0_dp).gt.1.0e-8_dp)) then
+                        write(6,*) "Normalization not maintained"
+                        write(6,*) "LVec: ",i,"RVec: ",j,test_R_Cre
+                        call stop_all(t_r,'Normalization error')
+                    elseif((i.ne.j).and.(abs(test_R_Cre).gt.1.0e-8_dp)) then
+                        write(6,*) "Orthogonality not maintained"
+                        write(6,*) "LVec: ",i,"RVec: ",j,test_R_Cre
+                        call stop_all(t_r,'Orthogonality error')
+                    endif
+                enddo
+            enddo
+
+    !        call writevectorcomp(W_Vals,'Eigenvalues ordered and orthonormed')
+            !call writematrixcomp(AO_OneE_Ham,'h0v',.false.)
+            call zGEMM('C','N',nSites,nSites,nSites,zone,LVec,nSites,AO_OneE_Ham,nSites,zzero,temp,nSites)
+            call zGEMM('N','N',nSites,nSites,nSites,zone,temp,nSites,RVec,nSites,zzero,temp2,nSites)
+    !        call writematrixcomp(temp2,'L* H R ordered and orthonormed',.false.)
+            do i = 1,nSites
+                do j = 1,nSites
+                    if((i.ne.j).and.abs(temp2(j,i)).gt.1.0e-9_dp) then
+                        call stop_all(t_r,'L* H R does not reproduce eigenvalues')
+                    elseif((i.eq.j).and.(abs(temp2(j,i)-W_Vals(j))).gt.1.0e-9_dp) then
+                        call stop_all(t_r,'L* H R does not reproduce eigenvalues')
+                    endif
+                enddo
+            enddo
+            deallocate(temp,temp2)
+
+        endif !Endif tCheck
 
         NI_LRMat_Cre(:,:) = zzero
         NI_LRMat_Ann(:,:) = zzero 
@@ -5187,13 +5243,13 @@ module LinearResponse
             enddo
         enddo
 
-!        write(6,*) "test_R_Ann: ",test_R_Ann
-!        write(6,*) "test_L_Ann: ",test_L_Ann
-!        write(6,*) "test_R_Cre: ",test_R_Cre
-!        write(6,*) "test_L_Cre: ",test_L_Cre
+        write(6,*) "test_R_Ann: ",test_R_Ann
+        write(6,*) "test_L_Ann: ",test_L_Ann
+        write(6,*) "test_R_Cre: ",test_R_Cre
+        write(6,*) "test_L_Cre: ",test_L_Cre
 
-!        write(6,*) "NI_Ann: ",NI_LRMat_Ann(:,:)
-!        write(6,*) "NI_Cre: ",NI_LRMat_Cre(:,:)
+        write(6,*) "NI_Ann: ",NI_LRMat_Ann(:,:)
+        write(6,*) "NI_Cre: ",NI_LRMat_Cre(:,:)
 
         !Now, we need to project these NI wavefunctions into the schmidt basis
         !We want to rotate the vectors, expressed in the 'right' basis, back into that AO basis.
