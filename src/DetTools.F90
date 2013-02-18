@@ -1319,7 +1319,6 @@ subroutine Orthonorm_zgeev_vecs(N,W,LVec,RVec)
                 if(i.eq.N) exit !We have found the last degenerate block
             enddo
         endif
-
 !        write(6,*) "Degenerate block from ",StartingInd,' to ',i
 !        call flush(6)
 
@@ -1337,9 +1336,11 @@ subroutine Orthonorm_zgeev_vecs(N,W,LVec,RVec)
             
         do R = StartingInd,i
             !Now, normalize the vectors
+            !Remember that the square root of a complex number will have two roots, given by +- w
             norm = zdotc(N,LVec(:,R),1,RVec(:,R),1)
-            RVec(:,R) = RVec(:,R) / sqrt(norm)
-            LVec(:,R) = LVec(:,R) / sqrt(norm)
+            norm = sqrt(norm)
+            RVec(:,R) = RVec(:,R) / norm
+            LVec(:,R) = LVec(:,R) / dconjg(norm)
         enddo
 
         i = i+1

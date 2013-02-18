@@ -5150,9 +5150,9 @@ module LinearResponse
             
             do i = 1,nSites
                 do j = 1,nSites
-                    test_R_Cre = zdotc(nSites,dconjg(LVec(:,i)),1,RVec(:,j),1)
+                    test_R_Cre = zdotc(nSites,LVec(:,i),1,RVec(:,j),1)
                     !write(6,*) "LVec: ",i,"RVec: ",j,test_R_Cre
-                    if((i.eq.j).and.(abs(abs(test_R_Cre)-1.0_dp).gt.1.0e-8_dp)) then
+                    if((i.eq.j).and.(abs(test_R_Cre-zone).gt.1.0e-8_dp)) then
                         write(6,*) "Normalization not maintained"
                         write(6,*) "LVec: ",i,"RVec: ",j,test_R_Cre
                         call stop_all(t_r,'Normalization error')
@@ -5172,8 +5172,11 @@ module LinearResponse
             do i = 1,nSites
                 do j = 1,nSites
                     if((i.ne.j).and.abs(temp2(j,i)).gt.1.0e-9_dp) then
-                        call stop_all(t_r,'L* H R does not reproduce eigenvalues')
+                        write(6,*) "i,j: ",i,j,temp2(j,i)
+                        call stop_all(t_r,'L* H R does not reproduce diagonal matrix')
                     elseif((i.eq.j).and.(abs(temp2(j,i)-W_Vals(j))).gt.1.0e-9_dp) then
+                        write(6,*) "i,j: ",i,j,temp2(j,i),W_Vals(j),abs(temp2(j,i)-W_Vals(j))
+                        call writevectorcomp(W_Vals,'Ordered eigenvalues')
                         call stop_all(t_r,'L* H R does not reproduce eigenvalues')
                     endif
                 enddo
