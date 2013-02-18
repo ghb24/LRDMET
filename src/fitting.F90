@@ -307,7 +307,7 @@ module fitting
         implicit none
         integer, intent(in) :: nx,nr
         complex(dp), intent(inout) :: x0(nx)    !Initial guess for potential 
-        real(dp) :: x(nx), r(nr)
+        complex(dp) :: x(nx), r(nr)
         real(dp) :: g(nr,nx)
         real(dp) :: g2(nr+nx,nx)    !Gradient (with added stuff)
         real(dp) :: r2(nr+nx)              !Fit residuals (with added stuff)
@@ -318,7 +318,7 @@ module fitting
         integer :: lWork,info,i,it
         real(dp) :: err,err_temp,step,Opt_step,Min_val,Searchstep,dstep,f1,f2,f3,norm,s1,s2,s3
         real(dp) :: NoMoveVal,LargestDiff
-        character(len=*), parameter :: t_r='NR_opt'
+        character(len=*), parameter :: t_r='NR_opt_comp'
 
 !        nr = EmbCombs   !Number of residuals = number of triangular packed
 !        nx = nImpCombs  !Number of variables = number of triangular packed

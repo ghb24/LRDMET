@@ -732,11 +732,88 @@ module mat_tools
         deallocate(KPnts)
 
     end subroutine Convert1DtoKSpace
+
+    !The error metric used for the fitting of the self-energy in order to match the greens functions
+    !IN: SE is the guess for the self-energy *correction* over the impurity sites (packed form)
+    !    HL_GF is the set of greens functions for the DMET calculation
+    !OUT: GF_Diff is the difference between the High-level greens functions, and the NI GF with the self-energy correction added (In packed form)
+    subroutine GFErr(se,GF_Diff,HL_GF)
+        implicit none
+        complex(dp), intent(in) :: se(nImpCombs)    !The guess for the self-energy *correction* 
+        complex(dp), intent(in) :: HL_GF(nImp,nImp) !The DMET calculated greens functions over all impurity sites
+        complex(dp), intent(out) :: GF_Diff(nImpCombs) 
+        complex(dp) :: ni_GFs(nImp,nImp),GF_Diff_unpacked(nImp,nImp)
+
+        !Add se to h0v_SE, diagonalize and construct the non-interacting solutions for all impurity sites
+        call mkgf(se,ni_GFs)
+        GF_Diff_unpacked(:,:) = ni_GFs(:,:) - HL_GF(:,:)
+        call ToTriangularPacked_comp(nImp,GF_Diff_unpacked,GF_Diff)
+
+    end subroutine GFErr
+
+    !Add se to h0v_SE, diagonalize and construct the non-interacting greens functions between all impurity sites (unpacked)
+    !This should really be diagonalized in k-space
+    subroutine mkgf(se,ni_GFs,Omega)
+        implicit none
+        complex(dp), intent(in) :: se(nImpCombs)
+        real(dp), intent(in) :: Omega
+        complex(dp), intent(out) :: ni_GFs(nImp,nImp)
+        complex(dp) :: se_unpacked(nImp,nImp)
+        integer :: lWork,info,i,pertsite,pertBra
+        complex(dp), allocatable :: AO_Ham(:,:),W_Vals(:),RVec(:,:),LVec(:,:),cWork(:)
+        real(dp), allocatable :: Work(:)
+        character(len=*), parameter :: t_r='mkgf'
+
+        call FromTriangularPacked_comp(nImp,se,se_unpacked)
+
+        !Now, stripe the (-)new self energy through the space
+        allocate(AO_Ham(nSites,nSites))
+        AO_Ham(:,:) = zzero
+        call add_localpot_comp(h0v_SE,AO_Ham,se_unpacked,tAdd=.false.)
+
+        !Now, diagonalize the resultant non-hermitian one-electron hamiltonian
+        allocate(W_Vals(nSites))
+        allocate(RVec(nSites,nSites))
+        allocate(LVec(nSites,nSites))
+        RVec = zzero
+        LVec = zzero
+        W_Vals = zzero
+        allocate(Work(max(1,2*nSites)))
+        allocate(cWork(1))
+        lwork = -1
+        info = 0
+        call zgeev('V','V',nSites,AO_Ham,nSites,W_Vals,LVec,nSites,RVec,nSites,cWork,lWork,Work,info)
+        if(info.ne.0) call stop_all(t_r,'Workspace query failed')
+        lwork = int(abs(cWork(1)))+1
+        deallocate(cWork)
+        allocate(cWork(lWork))
+        call zgeev('V','V',nSites,AO_Ham,nSites,W_Vals,LVec,nSites,RVec,nSites,cWork,lWork,Work,info)
+        if(info.ne.0) call stop_all(t_r,'Diag of H - SE failed')
+        deallocate(work,cWork,AO_Ham)
+
+        !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
+        !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
+        call Order_zgeev_vecs(W_Vals,LVec,RVec)
+        !call writevectorcomp(W_Vals,'Eigenvalues ordered')
+        !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
+        call Orthonorm_zgeev_vecs(nSites,W_Vals,LVec,RVec)
+
+        ni_gfs(:,:) = zzero
+        do pertsite = 1,nImp
+            do pertBra = 1,nImp
+                do i = 1,nSites
+                    ni_GFs(pertsite,pertBra) = ni_GFs(pertsite,pertBra) + RVec(pertBra,i)*dconjg(LVec(pertsite,i))/(dcmplx(Omega,dDelta)-W_Vals(i))
+                enddo
+            enddo
+        enddo
+
+        deallocate(W_Vals,RVec,LVec)
+    end subroutine mkgf
     
     !The error metric used for the fitting of the vloc in order to match the RDMs
     !The error metric is not actually calculated, but can be considered as the squared sum of the elements in the
     !returned matrix. The matrix is then the gradients in each direction, and the jacobian is made numerically.
-    !IN: vloc over impurity sites in triangular packed form
+    !IN: vloc over impurity sites in triangular packed form. This is the *correction* to the correlation potential
     !OUT: Error matrix between the systems (just difference over all embedded sys) (triangular packed)
     subroutine RDMErr(v,ErrMat_packed)
         implicit none
@@ -839,7 +916,6 @@ module mat_tools
         real(dp) , intent(out) :: Unpacked(Length,Length)
         real(dp) , intent(in) :: Packed((Length*(Length+1))/2)
         integer :: i,j,k
-
         k=1
         do i=1,Length
             do j=1,i
@@ -848,7 +924,6 @@ module mat_tools
                 k=k+1
             enddo
         enddo
-
     end subroutine FromTriangularPacked
 
     subroutine WriteMatrixcomp(mat,matname,tOneLine)
