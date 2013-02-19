@@ -856,6 +856,7 @@ module LinearResponse
                 
                 if(tSC_LR) then
                     !Do the fitting of the self energy and iterate.
+                    !Update SelfEnergy_Imp and h0v_se
                     tSCFConverged = .true.
                 else
                     tSCFConverged = .true.  !We only do one cycle, and do not try to match the greens functions.
@@ -5068,10 +5069,10 @@ module LinearResponse
         implicit none
         real(dp), intent(in) :: Omega
         complex(dp), intent(out) :: NI_LRMat_Cre(nImp,nImp),NI_LRMat_Ann(nImp,nImp)
-        real(dp), allocatable :: Work(:),temp_real(:,:)
+        real(dp), allocatable :: Work(:)
         complex(dp), allocatable :: AO_OneE_Ham(:,:),W_Vals(:),RVec(:,:),LVec(:,:),FullSchmidtTrans_C(:,:)
         complex(dp), allocatable :: HFPertBasis_Ann_Ket(:,:),HFPertBasis_Cre_Ket(:,:),temp(:,:),temp2(:,:)
-        complex(dp), allocatable :: HFPertBasis_Ann_Bra(:,:),HFPertBasis_Cre_Bra(:,:),cWork(:)
+        complex(dp), allocatable :: HFPertBasis_Ann_Bra(:,:),HFPertBasis_Cre_Bra(:,:),cWork(:),EmbeddedBasis_C(:,:)
         integer :: lwork,info,i,a,pertBra,j,pertsite,nVirt,CoreEnd,VirtStart,ActiveStart,ActiveEnd,nCore
         complex(dp) :: zdotc,test
         character(len=*), parameter :: t_r='FindNI_Charged'
@@ -5294,33 +5295,6 @@ module LinearResponse
         
         !TODO: Check that in the absence of a self-energy, the Bra and Ket are complex conjugates of each other.
 
-!        !However, this is not the original MO basis, so first, find the transformation matrix from the
-!        !new (right) MO basis to the original schmidt basis, since we do not want to modify this basis
-!        allocate(MOtoSchmidt(nSites,nSites))    !Fast index MO, then Schmidt
-!        allocate(temp(nSites,nSites))
-!        do i = 1,nSites
-!            do j = 1,nSites
-!                temp(j,i) = dcmplx(FullSchmidtBasis(j,i),0.0_dp)    !(AO,Schmidt)
-!            enddo
-!        enddo
-!        !The functions are expressed now in the right eigenvector space. Find a transformation into the schmidt basis
-!        call ZGEMM('T','N',nSites,nSites,nSites,zone,RVec,nSites,temp,nSites,zzero,MOtoSchmidt,nSites)
-!
-!        !Now, rotate the greens functions in this modified MO basis to the original schmidt basis
-!        do pertsite = 1,nImp
-!            do i = 1,nOcc-nImp  !Schmidt Occ space
-!                do j = 1,nOcc
-!                    SchmidtPertGF_Ann(i,pertsite) = SchmidtPertGF_Ann(i,pertsite) + MOtoSchmidt(j,i)*HFPertBasis_Ann(j,pertsite)
-!                enddo
-!            enddo
-!            do a = nOcc+nImp+1,nSites   !Schmidt virtual space
-!                do b = nOcc+1,nSites
-!                    SchmidtPertGF_Cre(a,pertsite) = SchmidtPertGF_Cre(a,pertsite) + MOtoSchmidt(b,a)*HFPertBasis_Cre(b,pertsite)
-!                enddo
-!            enddo
-!        enddo
-
-
         !Now, we need to find the new 1 electron hamiltonian for the interacting problem.
         !This wants to have the self-energy projected into the schmidt basis, but only over the bath and
         !core sites, not the impurity.
@@ -5332,13 +5306,20 @@ module LinearResponse
         temp2(:,:) = zzero
         temp(:,:) = zzero
         call add_localpot_comp(temp2,temp,SelfEnergy_Imp,tAdd=.true.)
+
         deallocate(temp2)
         !temp is now just the self-energy striped through the space, in the AO basis
         !Rotate this into the embedding basis
         allocate(temp2(EmbSize,nSites))
-        call ZGEMM('T','N',EmbSize,nSites,nSites,zone,EmbeddedBasis,nSites,temp,nSites,zzero,temp2,EmbSize)
-        call ZGEMM('N','N',EmbSize,EmbSize,nSites,zone,temp2,EmbSize,EmbeddedBasis,nSites,zzero,Emb_h0v_SE,EmbSize)
-        deallocate(temp2)
+        allocate(EmbeddedBasis_C(nSites,EmbSize))
+        do i = 1,EmbSize
+            do j = 1,nSites
+                EmbeddedBasis_C(j,i) = dcmplx(EmbeddedBasis(j,i),0.0_dp)
+            enddo
+        enddo
+        call ZGEMM('T','N',EmbSize,nSites,nSites,zone,EmbeddedBasis_C,nSites,temp,nSites,zzero,temp2,EmbSize)
+        call ZGEMM('N','N',EmbSize,EmbSize,nSites,zone,temp2,EmbSize,EmbeddedBasis_C,nSites,zzero,Emb_h0v_SE,EmbSize)
+        deallocate(temp2,EmbeddedBasis_C)
         
         !Now, zero out the self-energy contribution over the impurity site
         Emb_h0v_SE(1:nImp,1:nImp) = zzero
@@ -5354,10 +5335,8 @@ module LinearResponse
         !Calculate the new 1-electron hamiltonian
 
         !This now gives the one-electron hamiltonian in the AO basis, with the self-energy subtracted.
-        !call add_localpot_comp(h0v,AO_OneE_Ham,SelfEnergy_Imp,tAdd=.false.)
-        AO_OneE_Ham(:,:) = h0v_SE(:,:)
         !Rotate from the AO basis, to the Schmidt basis
-        call ZGEMM('T','N',nSites,nSites,nSites,zone,FullSchmidtTrans_C,nSites,AO_OneE_Ham,nSites,zzero,temp,nSites)
+        call ZGEMM('T','N',nSites,nSites,nSites,zone,FullSchmidtTrans_C,nSites,h0v_SE,nSites,zzero,temp,nSites)
         call ZGEMM('N','N',nSites,nSites,nSites,zone,temp,nSites,FullSchmidtTrans_C,nSites,zzero,FockSchmidt_SE,nSites)
 
         do i=nImp+1,EmbSize
@@ -5384,8 +5363,8 @@ module LinearResponse
         deallocate(FullSchmidtTrans_C,AO_OneE_Ham,W_Vals,temp,HFPertBasis_Ann_Bra,HFPertBasis_Cre_Bra,    &
             HFPertBasis_Ann_Ket,HFPertBasis_Cre_Ket,LVec,RVec)
 
-!        call writevectorcomp(SchmidtPertGF_Cre_Ket(:,1),'SchmidtPertGF_Cre')
-!        call writevectorcomp(SchmidtPertGF_Ann_Ket(:,1),'SchmidtPertGF_Ann')
+        !call writevectorcomp(SchmidtPertGF_Cre_Ket(:,1),'SchmidtPertGF_Cre')
+        !call writevectorcomp(SchmidtPertGF_Ann_Ket(:,1),'SchmidtPertGF_Ann')
 
     end subroutine FindNI_Charged
 

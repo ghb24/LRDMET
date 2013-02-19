@@ -739,24 +739,25 @@ module mat_tools
     !OUT: GF_Diff is the difference between the High-level greens functions, and the NI GF with the self-energy correction added (In packed form)
     subroutine GFErr(se,GF_Diff,HL_GF,Omega)
         implicit none
-        complex(dp), intent(in) :: se(nImpCombs)    !The guess for the self-energy *correction* 
+        complex(dp), intent(in) :: se(nImp*nImp)    !The guess for the self-energy *correction* (packed)
         complex(dp), intent(in) :: HL_GF(nImp,nImp) !The DMET calculated greens functions over all impurity sites
         real(dp), intent(in) :: Omega
-        complex(dp), intent(out) :: GF_Diff(nImpCombs) 
+        complex(dp), intent(out) :: GF_Diff(nImp*nImp) 
         complex(dp) :: ni_GFs(nImp,nImp),GF_Diff_unpacked(nImp,nImp)
 
         !Add se to h0v_SE, diagonalize and construct the non-interacting solutions for all impurity sites
         call mkgf(se,ni_GFs,Omega)
         GF_Diff_unpacked(:,:) = ni_GFs(:,:) - HL_GF(:,:)
-        call ToTriangularPacked_comp(nImp,GF_Diff_unpacked,GF_Diff)
+        call ToCompPacked(nImp,GF_Diff_unpacked,GF_Diff)
 
     end subroutine GFErr
 
     !Add se to h0v_SE, diagonalize and construct the non-interacting greens functions between all impurity sites (unpacked)
     !This should really be diagonalized in k-space
     subroutine mkgf(se,ni_GFs,Omega)
+        use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
         implicit none
-        complex(dp), intent(in) :: se(nImpCombs)
+        complex(dp), intent(in) :: se(nImp*nImp)
         real(dp), intent(in) :: Omega
         complex(dp), intent(out) :: ni_GFs(nImp,nImp)
         complex(dp) :: se_unpacked(nImp,nImp)
@@ -765,7 +766,7 @@ module mat_tools
         real(dp), allocatable :: Work(:)
         character(len=*), parameter :: t_r='mkgf'
 
-        call FromTriangularPacked_comp(nImp,se,se_unpacked)
+        call FromCompPacked(nImp,se,se_unpacked)
 
         !Now, stripe the (-)new self energy through the space
         allocate(AO_Ham(nSites,nSites))
@@ -803,7 +804,8 @@ module mat_tools
         do pertsite = 1,nImp
             do pertBra = 1,nImp
                 do i = 1,nSites
-                    ni_GFs(pertsite,pertBra) = ni_GFs(pertsite,pertBra) + RVec(pertBra,i)*dconjg(LVec(pertsite,i))/(dcmplx(Omega,dDelta)-W_Vals(i))
+                    ni_GFs(pertsite,pertBra) = ni_GFs(pertsite,pertBra) +   &
+                        RVec(pertBra,i)*dconjg(LVec(pertsite,i))/(dcmplx(Omega,dDelta)-W_Vals(i))
                 enddo
             enddo
         enddo
@@ -891,6 +893,43 @@ module mat_tools
         deallocate(work)
 
     end subroutine mkorb
+
+    !Pack a 2D complex matrix to a 1D array.
+    !To start, assume nothing about the array
+    pure subroutine ToCompPacked(n,unpacked,packed)
+        implicit none
+        integer, intent(in) :: n
+        complex(dp), intent(in) :: unpacked(n,n)
+        complex(dp), intent(out) :: packed(n*n)
+        integer :: i,j,k
+
+        packed(:) = zzero
+        k = 1
+        do i = 1,n
+            do j = 1,n
+                packed(k) = unpacked(j,i)
+                k = k + 1
+            enddo
+        enddo
+    end subroutine ToCompPacked
+
+    pure subroutine FromCompPacked(n,packed,unpacked)
+        implicit none
+        integer, intent(in) :: n
+        complex(dp), intent(in) :: packed(n*n)
+        complex(dp), intent(out) :: unpacked(n,n)
+        integer :: i,j,k
+
+        unpacked(:,:) = zzero
+        k = 1
+        do i = 1,n
+            do j = 1,n
+                unpacked(j,i) = packed(k)
+                k = k + 1
+            enddo
+        enddo
+
+    end subroutine FromCompPacked
 
     !Routine to triangular pack a matrix and return it in 'Packed'.
     pure subroutine ToTriangularPacked(Length,Unpacked,Packed)

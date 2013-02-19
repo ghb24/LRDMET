@@ -1,11 +1,164 @@
 module fitting
     use const
-    use errors, only: stop_all
+    use errors, only: stop_all, warning
     use globals
-    use mat_tools, only: RDMErr,FromTriangularPacked,ToTriangularPacked
+    use mat_tools, only: GFErr,RDMErr,FromTriangularPacked,ToTriangularPacked,FromCompPacked,ToCompPacked
     implicit none
 
     contains
+
+    !Fit the self-energy, st. the non-interacting and interacting greens functions match
+    subroutine Fit_SE(SE_Change_unpacked,Var_SE,Error_GF,HL_GF,Omega)
+        implicit none
+        complex(dp), intent(in) :: HL_GF(nImp,nImp)
+        real(dp), intent(in) :: Omega
+        complex(dp), intent(out) :: se_change_unpacked(nImp,nImp)   !The correction to the self-energy
+        real(dp), intent(out) :: Error_GF   !The sum squared difference between the NI and HL GFs
+        real(dp), intent(out) :: Var_SE     !The sum squared magnitude of the change in self-energy contribution
+        complex(dp), allocatable :: se_change(:)    !The packed change in SE which is calculated
+        integer :: i,j
+    
+        !Initially, assume that there are no constraints on the form of the self-energy
+        !This means that se_change is 1D, of size nImp^2
+        allocate(se_change(nImp*nImp))
+        
+        !The aim now, is to find a Self-energy (over the impurity sites) which when added to the fock matrix
+        !will give the same non-interacting GF as the high-level calculation 
+        !Initial guess of vloc over impurity sites
+        se_change(:) = zzero  !Is this a good choice?? Often analytic functions are conditionally convergent!
+        !Newton-raphson fit.
+        !GF_Err is the difference between the new converged NI solution and the HL calculation
+        call NR_opt_comp(se_change,nImp*nImp,nImp*nImp,Error_GF,HL_GF,Omega)
+
+        !se_change should now be the new correction to the self-energy
+        call FromCompPacked(nImp,se_change,se_change_unpacked) !unpack
+
+        !Change in self-energy: Our convergence metric 
+        !Just sum of squared elements
+        Var_SE = zero
+        do i = 1,nImp
+            do j = 1,nImp
+                Var_SE = Var_SE + real(se_change_unpacked(j,i)*dconjg(se_change_unpacked(j,i)))
+            enddo
+        enddo
+
+        deallocate(se_change)
+
+    end subroutine Fit_SE
+    
+    !For optimization of the self-energy st. triangular-packed greens functions match
+    !We have a function of the nx variables, which returns a residual over nr parameters, 
+    !which we want to reduce so that their summed squares is zero.
+    !nx = number of variables to optimize ( = nImpCombs)
+    !nr = number of residuals in the functions to match ( = EmbCombs)
+    !Omega and HL_GF needs to be passed through
+    subroutine NR_opt_comp(x0,nx,nr,err,HL_GF,Omega)
+        implicit none
+        integer, intent(in) :: nx,nr
+        real(dp), intent(in) :: Omega
+        complex(dp), intent(in) :: HL_GF(nImp,nImp)
+        complex(dp), intent(inout) :: x0(nx)    !Initial guess for potential 
+        real(dp), intent(out) :: err
+        complex(dp) :: x(nx), r(nr)
+        complex(dp) :: g(nr,nx)
+        complex(dp) :: dx(nx)
+        integer, allocatable :: Pivots(:)
+        integer :: info,it
+        real(dp) :: step
+        complex(dp) :: zdotc
+        character(len=*), parameter :: t_r='NR_opt_comp'
+
+        x(:) = x0(:)    !Starting guess for potential
+        Step = 1.0_dp
+
+        do it=1,100     !NR iterations
+
+!            call writevector(x,'inputvars')
+            call GFErr(x,r,HL_GF,Omega) !Update residuals (r)
+            err = real(zdotc(nr,r,1,r,1))  !Error metric
+
+!            call writevector(r,'residuals')
+!            write(6,*) "Fitting iteration: ",it,err
+
+            if(err.lt.1.0e-11_dp) exit  !Convergence satisfied
+            call MakeGradMatrix_comp(x,g,nr,nx,HL_GF,Omega)    !Returns the numerically calculated gradient matrix in g from the potential x
+            !g is now the jacobian
+
+            !Now get the appropriate direction to move x in
+            !just get the solution to the equation r == g * dx for the update to x
+            if(nx.ne.nr) call stop_all(t_r,'Only set up for equal numbers of residuals as variables')
+            allocate(Pivots(nx))
+            call ZGESV(nx,1,g,nx,Pivots,r,nx,info)
+            deallocate(Pivots)
+            dx(:) = r(:)
+            !dx is now the direction to move in
+            !Assume that the correct distance to move is dcmplx(1.0,0.0)
+            !Better would be to do some sort of line search, but to keep it cheap, we'll just assume it is 1
+            x(:) = x(:) - step*dx(:)    !Move x
+
+        enddo
+        if(it.gt.100) call warning(t_r,"NR took more than 100 iterations and didn't converge")
+        x0(:) = x(:)  !Return the optimal vloc.
+
+    end subroutine NR_opt_comp
+
+    !Numerically construct the Jacobian matrix, which is nr by nx
+    !nr is number of residuals, nx is number of dimensions in variable
+    !Calculate the differential as
+    ! f(z) = u(z) + i v(z)      with
+    ! u(z) = Re[f(z)] and v(z) = Im[f(z)]
+    ! f'(z) = 1/2(du/dx + dv/dy) + i/2 ( dv/dx - du/dy)
+    !Of course, if cauchy-reimann conditions were to hold exactly, we would only need to differentiate the real part
+    !Solve differentials by central finite-difference
+    subroutine MakeGradMatrix_comp(x,g,nr,nx,HL_GF,Omega)
+        implicit none
+        complex(dp), intent(in) :: x(nx)
+        complex(dp), intent(out) :: g(nr,nx)  !Jacobian
+        integer, intent(in) :: nr,nx
+        real(dp), intent(in) :: Omega
+        complex(dp), intent(in) :: HL_GF(:,:)
+        real(dp) :: step
+        complex(dp) :: r_1_r(nr),r_2_r(nr),x_1_r(nx),x_2_r(nx)
+        complex(dp) :: r_1_i(nr),r_2_i(nr),x_1_i(nx),x_2_i(nx)
+        real(dp) :: dubdxi(nr),dvbdxi(nr),dubdyi(nr),dvbdyi(nr)
+        integer :: i,j
+
+        g(:,:) = zzero
+        step = 1.0e-5_dp
+        do i=1,nx
+            !First, differentiate real part
+            !increase real part by differential
+            x_1_r(:) = x(:)
+            x_1_r(i) = x(i) + dcmplx(step,0.0_dp)
+            call GFErr(x_1_r,r_1_r,HL_GF,Omega) !Update residuals (r)
+
+            !decrease real part by differential
+            x_2_r(:) = x(:)
+            x_2_r(i) = x(i) - dcmplx(step,0.0_dp)
+            call GFErr(x_2_r,r_2_r,HL_GF,Omega)
+
+            !Increase imaginary part by differential
+            x_1_i(:) = x(:)
+            x_1_i(i) = x(i) + dcmplx(0.0_dp,step)
+            call GFErr(x_1_i,r_1_i,HL_GF,Omega)
+
+            !Decrease imaginary part by differential
+            x_2_i(:) = x(:)
+            x_2_i(i) = x(i) - dcmplx(0.0_dp,step)
+            call GFErr(x_2_i,r_2_i,HL_GF,Omega)
+
+            do j = 1,nr
+                dubdxi(j) = (real(r_1_r(j)) - real(r_2_r(j)))/(2.0_dp*step)
+                dvbdxi(j) = (aimag(r_1_r(j)) - aimag(r_2_r(j)))/(2.0_dp*step)
+                dubdyi(j) = (real(r_1_i(j)) - real(r_2_i(j)))/(2.0_dp*step)
+                dvbdyi(j) = (aimag(r_1_i(j)) - aimag(r_2_i(j)))/(2.0_dp*step)
+
+                !If Cauchy-reimann holds, dubdxi = dvbdyi and dvbdxi = - dubdyi
+                g(j,i) = 0.5_dp*dcmplx(dubdxi(j) + dvbdyi(j), dvbdxi(j) - dubdyi(j))
+            enddo
+        enddo
+
+    end subroutine MakeGradMatrix_comp
 
     !Fit the correlation potential so that the RDMs match. This is returned in the global vloc_change, as well as a
     !measure of the change in the potential (VarVloc) and the initial error in the RDMs (ErrRDM)
@@ -298,206 +451,5 @@ module fitting
 
     end subroutine MakeGradMatrix
     
-    !For optimization of the self-energy st. triangular-packed greens functions match
-    !We have a function of the nx variables, which returns a residual over nr parameters, 
-    !which we want to reduce so that their summed squares is zero.
-    !nx = number of variables to optimize ( = nImpCombs)
-    !nr = number of residuals in the functions to match ( = EmbCombs)
-    !Omega needs to be passed through
-    subroutine NR_opt_comp(x0,nx,nr,HL_GF,Omega)
-        implicit none
-        integer, intent(in) :: nx,nr
-        real(dp), intent(in) :: Omega
-        complex(dp), intent(in) :: HL_GF(nImp,nImp)
-        complex(dp), intent(inout) :: x0(nx)    !Initial guess for potential 
-        complex(dp) :: x(nx), r(nr)
-        real(dp) :: g(nr,nx)
-        real(dp) :: g2(nr+nx,nx)    !Gradient (with added stuff)
-        real(dp) :: r2(nr+nx)              !Fit residuals (with added stuff)
-        real(dp) :: Sing(nx),U(nr+nx,nx),VT(nx,nx)
-        real(dp) :: InvDiag(nx,nx),temp(nx,nx),temp2(nx,nr+nx)
-        real(dp) :: dx(nx),x_temp(nx),r_temp(nr)
-        real(dp), allocatable :: work(:)
-        integer :: lWork,info,i,it
-        real(dp) :: err,err_temp,step,Opt_step,Min_val,Searchstep,dstep,f1,f2,f3,norm,s1,s2,s3
-        real(dp) :: NoMoveVal,LargestDiff
-        character(len=*), parameter :: t_r='NR_opt_comp'
-
-!        nr = EmbCombs   !Number of residuals = number of triangular packed
-!        nx = nImpCombs  !Number of variables = number of triangular packed
-        x(:) = x0(:)    !Starting guess for potential
-
-        step = 3.0e-3_dp    !Step size
-        do it=1,100     !NR iterations
-
-!            call writevector(x,'inputvars')
-            call GFErr(x,r,HL_GF,Omega) !Update residuals (r)
-            err = real(zdotc(mr,r,1,r,1))  !Error metric
-
-!            call writevector(r,'residuals')
-!            write(6,*) "Fitting iteration: ",it,err
-
-            if(err.lt.1.0e-11_dp) exit  !Convergence satisfied
-            call MakeGradMatrix_GF(x,g,nr,nx)    !Returns the numerically calculated gradient matrix in g from the potential x
-            !g is now the jacobian
-
-            !Now get the appropriate direction to move x in
-            !Normally, we would just get the solution to the equation r == g * dx for the update to x
-            !However, we have some extra padding here, with a error-dependent damping for the step length.
-            !I.e. the smaller the error, the more the damping to restrict step length
-            g2(:,:) = 0.0_dp
-            g2(1:nr,1:nx) = g(:,:)
-            do i=1,nx
-                g2(nr+1+(i-1),i) = 0.1*sqrt(err)
-            enddo
-            r2(:) = 0.0_dp
-            r2(1:nr) = r(:)
-
-            !Least fitting for overcomplete specification: SVD.
-            !Ax=b where A=g2 and b = r2
-            !A = U D V^T from SVD
-            !x = V (1/D) U^T b
-            allocate(Work(1))
-            lWork=-1
-            info=0
-            call DGESVD('S','S',nr+nx,nx,g2,nr+nx,Sing,U,nr+nx,VT,nx,work,lwork,info)
-            if(info.ne.0) call stop_all(t_r,'SVD Workspace queiry failed')
-            lwork=int(work(1))+1
-            deallocate(work)
-            allocate(work(lwork))
-            call DGESVD('S','S',nr+nx,nx,g2,nr+nx,Sing,U,nr+nx,VT,nx,work,lwork,info)
-            if(info.ne.0) call stop_all(t_r,'SVD failed')
-            deallocate(work)
-
-            !Now calculate x as V (1/D) U^T b
-            !Calculate the matrix representation of 1/D
-            InvDiag(:,:) = 0.0_dp
-            do i=1,nx
-                InvDiag(i,i) = 1.0_dp/Sing(i)
-            enddo
-            call DGEMM('T','N',nx,nx,nx,1.0_dp,VT,nx,InvDiag,nx,0.0_dp,temp,nx)
-            call DGEMM('N','T',nx,nr+nx,nx,1.0_dp,temp,nx,U,nr+nx,0.0_dp,temp2,nx)
-            call DGEMM('N','N',nx,1,nr+nx,1.0_dp,temp2,nx,r2,nr+nx,0.0_dp,dx,nx)
-            !dx is now the direction to move in to improve the potential
-
-            !However, we also want to find the correct distance to move in
-            !Calculate the optimal step size via a crude line search
-            !We could just set this stepsize to 1, but better (but more expensive) would be to search along its length for the best
-            Searchstep = 0.2_dp
-            step = 0.0_dp           !Initial step attempt
-            Min_val = 1.0e15_dp     !minimum value of error metric
-            LargestDiff = 0.0_dp
-            Opt_step = step       !Optimal step size for x
-            do i=1,11
-                !Calculate over relatively coarse grid
-                !Calculate error function
-                x_temp(:) = x(:) - (step * dx(:))   
-                call GFErr(x_temp,r_temp,HL_GF,Omega)  !Update residuals (r)
-                err_temp = sum(r_temp(:)**2)  !Error metric
-                if(i.eq.1) then
-                    NoMoveVal = err_temp
-                else
-                    if(abs(NoMoveVal-err_temp).gt.abs(LargestDiff)) LargestDiff = NoMoveVal-err_temp
-                endif
-!                write(6,*) "***",i,err_temp
-                if(err_temp.lt.Min_val) then
-                    !Better value - take it
-                    Opt_step = step
-                    Min_val = err_temp
-                endif
-                step = step + Searchstep
-            enddo
-!            write(6,*) "OptStep, MinVal: ",Opt_Step,Min_Val
-            if(abs(LargestDiff).lt.1.0e-15) then
-                !We're not moving. 
-                exit
-            endif
-            if(Opt_step.lt.0.1) then
-                !i.e. the optimal stepsize is between 0 and 0.2.
-                !Now do a finer bisection to nail it down completely
-                !Assume that we are bracketed by 0.0 and 0.2
-                !write(6,*) "Entering bisection..."
-                s1 = 0.0_dp
-                s2 = 0.2_dp
-                f1 = Min_val
-                x_temp(:) = x(:) - (s2 * dx(:))   
-                call RDMErr(x_temp,r_temp) !Update residuals (r)
-                f2 = sum(r_temp(:)**2)  !Error metric
-                dstep = 0.2 
-                do while(dstep.gt.1.0e-10)
-                    s3 = (s1 + s2)/2.0_dp
-                    x_temp(:) = x(:) - (s3 * dx(:))   
-                    call RDMErr(x_temp,r_temp) !Update residuals (r)
-                    f3 = sum(r_temp(:)**2)  !Error metric
-                    if(f3.gt.max(f1,f2)) then
-                        write(6,"(A)") "WARNING: Bisection not bracketed..."
-                        dstep = 0.2_dp
-                        exit
-                    endif
-
-                    !Replace the largest f with one from s3
-                    if(f1.gt.f2) then
-                        !Replace f1
-                        f1 = f3
-                        s1 = s3
-                    else
-                        !Replace f2
-                        f2 = f3
-                        s2 = s3
-                    endif
-                    dstep = s1-s2
-                    if(s2.lt.s1) call stop_all(t_r,'s1 and s2 have swapped sides?!')
-                enddo
-                Opt_step = s3
-                if(Opt_step.lt.0.0_dp) call stop_all(t_r,'Optimal step size is negative?!')
-            endif
-
-            !We now have the optimal step size as Opt_step :)
-            norm = 0.0_dp
-            do i=1,nx
-                norm = norm + dx(i)**2
-            enddo
-            norm = sqrt(norm)
-            if(abs(step)*norm.lt.1.0e-10_dp) then
-                !I think we've probably got it  - we're not moving any more
-                exit
-            endif
-
-            x(:) = x(:) - Opt_step*dx(:)    !Move x
-
-        enddo
-        x0(:) = x(:)  !Return the optimal vloc.
-
-    end subroutine NR_opt_comp
-
-    !Numerically construct the Jacobian matrix, which is nr by nx
-    !nr is number of residuals, nx is number of dimensions in variable
-    subroutine MakeGradMatrix_comp(x,g,nr,nx,Omega)
-        implicit none
-        complex(dp), intent(in) :: x(nx)
-        complex(dp), intent(out) :: g(nr,nx)  !Jacobian
-        integer, intent(in) :: nr,nx
-        real(dp), intent(in) :: Omega
-        real(dp) :: step
-        complex(dp) :: r_1(nr),r_2(nr),x_1(nx),x_2(nx)
-        integer :: i
-
-        g(:,:) = zzero
-        step = 1.0e-5_dp
-        do i=1,nx
-            !x with x_i increase by differential
-            x_1(:) = x(:)
-            x_1(i) = x(i) + step
-            call RDMErr(x_1,r_1)
-
-            !x with x_i decreased by differential
-            x_2(:) = x(:)
-            x_2(i) = x(i) - step
-            call RDMErr(x_2,r_2)
-
-            g(:,i) = (r_1(:)-r_2(:))/(2.0_dp*step)
-        enddo
-
-    end subroutine MakeGradMatrix_comp
 
 end module fitting
