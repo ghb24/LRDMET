@@ -8,13 +8,14 @@ module fitting
     contains
 
     !Fit the self-energy, st. the non-interacting and interacting greens functions match
-    subroutine Fit_SE(SE_Change_unpacked,Var_SE,Error_GF,HL_GF,Omega)
+    subroutine Fit_SE(SE_Change_unpacked,Var_SE,Error_GF,nNR_Iters,HL_GF,Omega)
         implicit none
         complex(dp), intent(in) :: HL_GF(nImp,nImp)
         real(dp), intent(in) :: Omega
         complex(dp), intent(out) :: se_change_unpacked(nImp,nImp)   !The correction to the self-energy
         real(dp), intent(out) :: Error_GF   !The sum squared difference between the NI and HL GFs
         real(dp), intent(out) :: Var_SE     !The sum squared magnitude of the change in self-energy contribution
+        integer, intent(out) :: nNR_Iters   !The number of iterations the NR required
         complex(dp), allocatable :: se_change(:)    !The packed change in SE which is calculated
         integer :: i,j
     
@@ -28,7 +29,7 @@ module fitting
         se_change(:) = zzero  !Is this a good choice?? Often analytic functions are conditionally convergent!
         !Newton-raphson fit.
         !GF_Err is the difference between the new converged NI solution and the HL calculation
-        call NR_opt_comp(se_change,nImp*nImp,nImp*nImp,Error_GF,HL_GF,Omega)
+        call NR_opt_comp(se_change,nImp*nImp,nImp*nImp,Error_GF,nNR_Iters,HL_GF,Omega)
 
         !se_change should now be the new correction to the self-energy
         call FromCompPacked(nImp,se_change,se_change_unpacked) !unpack
@@ -52,13 +53,14 @@ module fitting
     !nx = number of variables to optimize ( = nImpCombs)
     !nr = number of residuals in the functions to match ( = EmbCombs)
     !Omega and HL_GF needs to be passed through
-    subroutine NR_opt_comp(x0,nx,nr,err,HL_GF,Omega)
+    subroutine NR_opt_comp(x0,nx,nr,err,nNR_Iters,HL_GF,Omega)
         implicit none
         integer, intent(in) :: nx,nr
         real(dp), intent(in) :: Omega
         complex(dp), intent(in) :: HL_GF(nImp,nImp)
         complex(dp), intent(inout) :: x0(nx)    !Initial guess for potential 
         real(dp), intent(out) :: err
+        integer, intent(out) :: nNR_Iters
         complex(dp) :: x(nx), r(nr)
         complex(dp) :: g(nr,nx)
         complex(dp) :: dx(nx)
@@ -98,6 +100,7 @@ module fitting
 
         enddo
         if(it.gt.100) call warning(t_r,"NR took more than 100 iterations and didn't converge")
+        nNR_Iters = it
         x0(:) = x(:)  !Return the optimal vloc.
 
     end subroutine NR_opt_comp

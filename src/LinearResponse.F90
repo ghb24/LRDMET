@@ -97,9 +97,11 @@ module LinearResponse
 
     !Calculate linear response for charged excitations - add the hole creation to particle creation
     subroutine NonIntExCont_TDA_MCLR_Charged()
+        use mat_tools, only: add_localpot_comp_inplace
         use utils, only: get_free_unit,append_ext_real,append_ext
         use DetBitOps, only: DecodeBitDet,SQOperator,CountBits
         use Davidson, only: Comp_NonDir_Davidson
+        use fitting, only: Fit_SE
         use zminresqlpModule, only: MinresQLP  
         use DetToolsData
         implicit none
@@ -110,15 +112,15 @@ module LinearResponse
         complex(dp), allocatable :: Gc_a_F_ax_Bra(:,:),Gc_a_F_ax_Ket(:,:),Gc_b_F_ab(:,:),GSHam(:,:)
         complex(dp), allocatable :: ResponseFn_Mat(:,:),Ga_i_F_xi_Ket(:,:)
         complex(dp), allocatable :: Psi1_p(:),Psi1_h(:),Ga_i_F_xi_Bra(:,:),Ga_i_F_ij(:,:),ni_lr_Mat(:,:)
-        complex(dp), allocatable :: temp_vecc(:),Work(:),Psi_0(:),RHS(:)
+        complex(dp), allocatable :: temp_vecc(:),Work(:),Psi_0(:),RHS(:),SE_Change(:,:)
         complex(dp), allocatable :: NI_LRMat_Cre(:,:),NI_LRMat_Ann(:,:)
         integer, allocatable :: Coup_Ann_alpha(:,:,:),Coup_Create_alpha(:,:,:)
         integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,umatind,ierr,info,iunit,nCore
         integer :: nLinearSystem,nOrbs,nVirt,OrbPairs,tempK,UMatSize,VIndex,VirtStart,VirtEnd
         integer :: orbdum(1),gtid,nLinearSystem_h,nGSSpace,Np1GSInd,Nm1GSInd,lWork,minres_unit
-        integer :: maxminres_iter,nImp_GF,pertsite
+        integer :: maxminres_iter,nImp_GF,pertsite,SE_Fit_Iter,nNR_Iters
         integer(ip) :: nLinearSystem_ip,minres_unit_ip,info_ip,maxminres_iter_ip,iters_p,iters_h
-        real(dp) :: Omega,GFChemPot,mu,SpectralWeight,Prev_Spec,AvdNorm_p,AvdNorm_h
+        real(dp) :: Omega,GFChemPot,mu,SpectralWeight,Prev_Spec,AvdNorm_p,AvdNorm_h,Var_SE,Error_GF
         complex(dp) :: ResponseFn,tempel,Diff_GF,ni_lr,ni_lr_p,ni_lr_h,AvResFn_p,AvResFn_h
         complex(dp) :: zdotc,VNorm,CNorm
         logical :: tParity,tFirst,tSCFConverged
@@ -356,10 +358,14 @@ module LinearResponse
         else
             allocate(SelfEnergy_Imp(nImp,nImp)) !The self-consistently determined self-energy correction to match the interacting and non-interacting greens functions
             SelfEnergy_Imp(:,:) = zzero
+            !SelfEnergy_Imp(1,1) = dcmplx(0.0_dp,0.1_dp)
+            allocate(SE_Change(nImp,nImp))  !The change in self energy each iteration
+            SE_Change(:,:) = zzero
             allocate(Emb_h0v_SE(EmbSize,EmbSize))   !The 1-electron hamiltonian (with self-energy correction) over the embedded basis
             if(allocated(h0v_se)) deallocate(h0v_se)
             allocate(h0v_se(nSites,nSites))     !1 electron hamiltonian with self-energy and correlation potential striped through space
-            h0v_se(:,:) = h0v(:,:)              !Initially set it so h0v
+            h0v_se(:,:) = dcmplx(h0v(:,:))              !Initially set it so h0v
+            call add_localpot_comp_inplace(h0v_se,SelfEnergy_Imp,.false.)
         endif
         
         !Space for useful intermediates
@@ -461,6 +467,12 @@ module LinearResponse
             if(tMinRes_NonDir) write(minres_unit,*) "Iteratively solving for frequency: ",Omega
 
             tSCFConverged = .false.
+            if(tSC_LR) then
+                SE_Fit_Iter = 0
+                SelfEnergy_Imp(:,:) = zzero     !Set self-energy to zero again
+                h0v_se(:,:) = dcmplx(h0v(:,:))       
+                call add_localpot_comp_inplace(h0v_se,SelfEnergy_Imp,.false.)
+            endif
             do while(.not.tSCFConverged)
                 !Self consistently calculate a self-energy function over the impurity sites to match the 
                 !mean-field and HL GF calculations.
@@ -807,23 +819,6 @@ module LinearResponse
 
                 enddo   !End do over pertsite. We now have all the greens funtions 
 
-!                !Now, want to calculate V^T|1>  
-!                !This will apply an alpha annihilation operator at site pertsite to the first order interacting wavefunction
-!                call ApplyAnn_FirstOrder_EC(Psi1_p,nLinearSystem,Psi_p,nGSSpace)
-!                !This will apply an alpha creation operator at site pertsite to the first order interacting wavefunction
-!                call ApplyCre_FirstOrder_EC(Psi1_h,nLinearSystem,Psi_h,nGSSpace)
-!                !call writevectorcomp(Psi_h,'Psi_h')
-
-!                !Now find the overlap with the original wavefunction
-!                ResponseFn_p = dcmplx(0.0_dp,0.0_dp)
-!                ResponseFn_h = dcmplx(0.0_dp,0.0_dp)
-!                do j = 1,nGSSpace
-!                    ResponseFn_p = ResponseFn_p + Psi_p(j)*conjg(Psi_0(j))
-!                    ResponseFn_h = ResponseFn_h + Psi_h(j)*conjg(Psi_0(j))
-!                enddo
-!                ResponseFn = ResponseFn_p + ResponseFn_h    !Full response is sum of particle and hole response
-!                ni_lr = ni_lr_Cre + ni_lr_Ann
-
                 !Now, calculate NI and interacting response function as trace over diagonal parts of the local greens functions
                 ni_lr = zzero
                 ResponseFn = zzero
@@ -857,7 +852,21 @@ module LinearResponse
                 if(tSC_LR) then
                     !Do the fitting of the self energy and iterate.
                     !Update SelfEnergy_Imp and h0v_se
-                    tSCFConverged = .true.
+                    SE_Fit_Iter = SE_Fit_Iter + 1
+                    call Fit_SE(SE_Change,Var_SE,Error_GF,nNR_Iters,ResponseFn_Mat,Omega)
+
+                    !Write out
+                    write(6,*) SE_Fit_Iter,nNR_Iters,Var_SE,Error_GF,ni_lr,ResponseFn
+                    !call writematrixcomp(SE_Change,'SE_Change',.true.)
+
+                    !Update self-energy (does this want to be added or subtracted?!)
+                    !Emb_h0v_SE and all fock matrices are updated in FindNI_Charged routine 
+                    call add_localpot_comp_inplace(h0v_se,SE_Change,.false.)
+                    SelfEnergy_Imp = SelfEnergy_Imp + SE_Change
+                    if(Var_SE.lt.1.0e-8_dp) then
+                        !Yay - converged
+                        tSCFConverged = .true.
+                    endif
                 else
                     tSCFConverged = .true.  !We only do one cycle, and do not try to match the greens functions.
                 endif
@@ -891,7 +900,7 @@ module LinearResponse
         deallocate(NI_LRMat_Cre,NI_LRMat_Ann,ResponseFn_p,ResponseFn_h,ResponseFn_Mat)
         deallocate(ni_lr_Mat,SchmidtPertGF_Cre_Bra,SchmidtPertGF_Ann_Bra)
         if(tSC_LR) then
-            deallocate(SelfEnergy_Imp,Emb_h0v_SE)
+            deallocate(SelfEnergy_Imp,Emb_h0v_SE,SE_Change)
         endif
         close(iunit)
         if(tMinRes_NonDir) then
@@ -5076,7 +5085,7 @@ module LinearResponse
         integer :: lwork,info,i,a,pertBra,j,pertsite,nVirt,CoreEnd,VirtStart,ActiveStart,ActiveEnd,nCore
         complex(dp) :: zdotc,test
         character(len=*), parameter :: t_r='FindNI_Charged'
-        logical, parameter :: tCheck = .true.
+        logical, parameter :: tCheck = .true. 
 
         if(.not.tAllImp_LR) then
             call stop_all(t_r,"Should not be in this routine if you don't want to calc all greens functions")
@@ -5153,17 +5162,18 @@ module LinearResponse
     !
     !        write(6,*) "Right eigenvectors computed correctly..."
     !
-            
+            !Test normalization and biorthogonality of eigenstate pairs 
             do i = 1,nSites
                 do j = 1,nSites
                     test = zdotc(nSites,LVec(:,i),1,RVec(:,j),1)
                     !write(6,*) "LVec: ",i,"RVec: ",j,test
-                    if((i.eq.j).and.(abs(test-zone).gt.1.0e-8_dp)) then
+                    if((i.eq.j).and.(abs(test-zone).gt.5.0e-7_dp)) then
                         write(6,*) "Normalization not maintained"
                         write(6,*) "LVec: ",i,"RVec: ",j,test
                         call stop_all(t_r,'Normalization error')
-                    elseif((i.ne.j).and.(abs(test).gt.1.0e-8_dp)) then
+                    elseif((i.ne.j).and.(abs(test).gt.5.0e-7_dp)) then
                         write(6,*) "Orthogonality not maintained"
+                        write(6,*) "Overlap: ",abs(test)
                         write(6,*) "LVec: ",i,"RVec: ",j,test
                         call stop_all(t_r,'Orthogonality error')
                     endif
@@ -5188,7 +5198,7 @@ module LinearResponse
                 enddo
             enddo
             deallocate(temp,temp2)
-
+            
         endif !Endif tCheck
 
         NI_LRMat_Cre(:,:) = zzero
@@ -5343,6 +5353,12 @@ module LinearResponse
             do j=1,EmbSize
                 !The bath orbitals, and coupling to the impurity site blocks of the one-electron hamiltonain should now agree between FockSchmidt_SE and Emb_h0v_SE surely?
                 if(abs(Emb_h0v_SE(j,i)-FockSchmidt_SE(nOcc-nImp+j,nOcc-nImp+i)).gt.1.0e-8_dp) then
+                    call writematrixcomp(Emb_h0v_SE,'Emb_h0v_SE',.true.)
+                    call writematrixcomp(FockSchmidt_SE(nOcc-nImp+1:nOcc+nImp,nOcc-nImp+1:nOcc+nImp),   &
+                        'Fock_SE Embedded system',.true.)
+                    write(6,*) "The above should be the same in the bath and coupling blocks"
+                    write(6,*) "j,i: ",j,i,Emb_h0v_SE(j,i),FockSchmidt_SE(nOcc-nImp+j,nOcc-nImp+i), &
+                        abs(Emb_h0v_SE(j,i)-FockSchmidt_SE(nOcc-nImp+j,nOcc-nImp+i))
                     call stop_all(t_r,'One electron hamiltonians with self energy not consistent')
                 endif
             enddo
