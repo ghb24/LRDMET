@@ -216,7 +216,7 @@ module mat_tools
     !If tAdd, then the correlation potential is added to the core potential, otherwise it is subtracted
     subroutine add_localpot_comp(core,core_v,CorrPot,tAdd)
         implicit none
-        real(dp) , intent(in) :: core(nSites,nSites)
+        complex(dp) , intent(in) :: core(nSites,nSites)
         complex(dp) , intent(out) :: core_v(nSites,nSites)
         complex(dp) , intent(in) :: CorrPot(nImp,nImp)
         logical , intent(in), optional :: tAdd
@@ -737,15 +737,16 @@ module mat_tools
     !IN: SE is the guess for the self-energy *correction* over the impurity sites (packed form)
     !    HL_GF is the set of greens functions for the DMET calculation
     !OUT: GF_Diff is the difference between the High-level greens functions, and the NI GF with the self-energy correction added (In packed form)
-    subroutine GFErr(se,GF_Diff,HL_GF)
+    subroutine GFErr(se,GF_Diff,HL_GF,Omega)
         implicit none
         complex(dp), intent(in) :: se(nImpCombs)    !The guess for the self-energy *correction* 
         complex(dp), intent(in) :: HL_GF(nImp,nImp) !The DMET calculated greens functions over all impurity sites
+        real(dp), intent(in) :: Omega
         complex(dp), intent(out) :: GF_Diff(nImpCombs) 
         complex(dp) :: ni_GFs(nImp,nImp),GF_Diff_unpacked(nImp,nImp)
 
         !Add se to h0v_SE, diagonalize and construct the non-interacting solutions for all impurity sites
-        call mkgf(se,ni_GFs)
+        call mkgf(se,ni_GFs,Omega)
         GF_Diff_unpacked(:,:) = ni_GFs(:,:) - HL_GF(:,:)
         call ToTriangularPacked_comp(nImp,GF_Diff_unpacked,GF_Diff)
 

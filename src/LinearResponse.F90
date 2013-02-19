@@ -357,6 +357,9 @@ module LinearResponse
             allocate(SelfEnergy_Imp(nImp,nImp)) !The self-consistently determined self-energy correction to match the interacting and non-interacting greens functions
             SelfEnergy_Imp(:,:) = zzero
             allocate(Emb_h0v_SE(EmbSize,EmbSize))   !The 1-electron hamiltonian (with self-energy correction) over the embedded basis
+            if(allocated(h0v_se)) deallocate(h0v_se)
+            allocate(h0v_se(nSites,nSites))     !1 electron hamiltonian with self-energy and correlation potential striped through space
+            h0v_se(:,:) = h0v(:,:)              !Initially set it so h0v
         endif
         
         !Space for useful intermediates
@@ -5079,9 +5082,10 @@ module LinearResponse
         endif
 
         allocate(AO_OneE_Ham(nSites,nSites))
-        AO_OneE_Ham(:,:) = zzero
+        AO_OneE_Ham(:,:) = h0v_SE(:,:)
+!        AO_OneE_Ham(:,:) = zzero
         !Stripe the complex (-)self-energy through the AO one-electron hamiltonian
-        call add_localpot_comp(h0v,AO_OneE_Ham,SelfEnergy_Imp,tAdd=.false.)
+!        call add_localpot_comp(h0v,AO_OneE_Ham,SelfEnergy_Imp,tAdd=.false.)
 
         !Now, diagonalize the resultant non-hermitian one-electron hamiltonian
         allocate(W_Vals(nSites))
@@ -5116,8 +5120,9 @@ module LinearResponse
             allocate(temp2(nSites,nSites))
             !call writematrixcomp(SelfEnergy_Imp,'SelfEnergy',.true.)
             !call writevectorcomp(W_Vals,'Eigenvalues')
-            AO_OneE_Ham(:,:) = zzero
-            call add_localpot_comp(h0v,AO_OneE_Ham,SelfEnergy_Imp,tAdd=.false.)
+!            AO_OneE_Ham(:,:) = zzero
+!            call add_localpot_comp(h0v,AO_OneE_Ham,SelfEnergy_Imp,tAdd=.false.)
+            AO_OneE_Ham(:,:) = h0v_SE(:,:)
     
             call ZGEMM('C','N',nSites,nSites,nSites,zone,LVec,nSites,AO_OneE_Ham,nSites,zzero,temp,nSites)
             do j = 1,nSites
@@ -5323,11 +5328,11 @@ module LinearResponse
         !First, deal with the embedded basis
         !Stripe the self energy through the space
         allocate(temp(nSites,nSites))
-        allocate(temp_real(nSites,nSites))
-        temp_real(:,:) = zero
+        allocate(temp2(nSites,nSites))
+        temp2(:,:) = zzero
         temp(:,:) = zzero
-        call add_localpot_comp(temp_real,temp,SelfEnergy_Imp,tAdd=.true.)
-        deallocate(temp_real)
+        call add_localpot_comp(temp2,temp,SelfEnergy_Imp,tAdd=.true.)
+        deallocate(temp2)
         !temp is now just the self-energy striped through the space, in the AO basis
         !Rotate this into the embedding basis
         allocate(temp2(EmbSize,nSites))
@@ -5349,7 +5354,8 @@ module LinearResponse
         !Calculate the new 1-electron hamiltonian
 
         !This now gives the one-electron hamiltonian in the AO basis, with the self-energy subtracted.
-        call add_localpot_comp(h0v,AO_OneE_Ham,SelfEnergy_Imp,tAdd=.false.)
+        !call add_localpot_comp(h0v,AO_OneE_Ham,SelfEnergy_Imp,tAdd=.false.)
+        AO_OneE_Ham(:,:) = h0v_SE(:,:)
         !Rotate from the AO basis, to the Schmidt basis
         call ZGEMM('T','N',nSites,nSites,nSites,zone,FullSchmidtTrans_C,nSites,AO_OneE_Ham,nSites,zzero,temp,nSites)
         call ZGEMM('N','N',nSites,nSites,nSites,zone,temp,nSites,FullSchmidtTrans_C,nSites,zzero,FockSchmidt_SE,nSites)

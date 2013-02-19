@@ -303,9 +303,12 @@ module fitting
     !which we want to reduce so that their summed squares is zero.
     !nx = number of variables to optimize ( = nImpCombs)
     !nr = number of residuals in the functions to match ( = EmbCombs)
-    subroutine NR_opt_comp(x0,nx,nr)
+    !Omega needs to be passed through
+    subroutine NR_opt_comp(x0,nx,nr,HL_GF,Omega)
         implicit none
         integer, intent(in) :: nx,nr
+        real(dp), intent(in) :: Omega
+        complex(dp), intent(in) :: HL_GF(nImp,nImp)
         complex(dp), intent(inout) :: x0(nx)    !Initial guess for potential 
         complex(dp) :: x(nx), r(nr)
         real(dp) :: g(nr,nx)
@@ -328,14 +331,14 @@ module fitting
         do it=1,100     !NR iterations
 
 !            call writevector(x,'inputvars')
-            call RDMErr(x,r) !Update residuals (r)
-            err = sum(r(:)**2)  !Error metric
+            call GFErr(x,r,HL_GF,Omega) !Update residuals (r)
+            err = real(zdotc(mr,r,1,r,1))  !Error metric
 
 !            call writevector(r,'residuals')
 !            write(6,*) "Fitting iteration: ",it,err
 
-            if(err.lt.1.0e-15_dp) exit  !Convergence satisfied
-            call MakeGradMatrix(x,g,nr,nx)    !Returns the numerically calculated gradient matrix in g from the potential x
+            if(err.lt.1.0e-11_dp) exit  !Convergence satisfied
+            call MakeGradMatrix_GF(x,g,nr,nx)    !Returns the numerically calculated gradient matrix in g from the potential x
             !g is now the jacobian
 
             !Now get the appropriate direction to move x in
@@ -389,7 +392,7 @@ module fitting
                 !Calculate over relatively coarse grid
                 !Calculate error function
                 x_temp(:) = x(:) - (step * dx(:))   
-                call RDMErr(x_temp,r_temp) !Update residuals (r)
+                call GFErr(x_temp,r_temp,HL_GF,Omega)  !Update residuals (r)
                 err_temp = sum(r_temp(:)**2)  !Error metric
                 if(i.eq.1) then
                     NoMoveVal = err_temp
@@ -466,5 +469,35 @@ module fitting
         x0(:) = x(:)  !Return the optimal vloc.
 
     end subroutine NR_opt_comp
+
+    !Numerically construct the Jacobian matrix, which is nr by nx
+    !nr is number of residuals, nx is number of dimensions in variable
+    subroutine MakeGradMatrix_comp(x,g,nr,nx,Omega)
+        implicit none
+        complex(dp), intent(in) :: x(nx)
+        complex(dp), intent(out) :: g(nr,nx)  !Jacobian
+        integer, intent(in) :: nr,nx
+        real(dp), intent(in) :: Omega
+        real(dp) :: step
+        complex(dp) :: r_1(nr),r_2(nr),x_1(nx),x_2(nx)
+        integer :: i
+
+        g(:,:) = zzero
+        step = 1.0e-5_dp
+        do i=1,nx
+            !x with x_i increase by differential
+            x_1(:) = x(:)
+            x_1(i) = x(i) + step
+            call RDMErr(x_1,r_1)
+
+            !x with x_i decreased by differential
+            x_2(:) = x(:)
+            x_2(i) = x(i) - step
+            call RDMErr(x_2,r_2)
+
+            g(:,i) = (r_1(:)-r_2(:))/(2.0_dp*step)
+        enddo
+
+    end subroutine MakeGradMatrix_comp
 
 end module fitting
