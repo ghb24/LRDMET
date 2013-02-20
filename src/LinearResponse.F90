@@ -5167,11 +5167,11 @@ module LinearResponse
                 do j = 1,nSites
                     test = zdotc(nSites,LVec(:,i),1,RVec(:,j),1)
                     !write(6,*) "LVec: ",i,"RVec: ",j,test
-                    if((i.eq.j).and.(abs(test-zone).gt.5.0e-7_dp)) then
+                    if((i.eq.j).and.(abs(test-zone).gt.1.0e-8_dp)) then
                         write(6,*) "Normalization not maintained"
                         write(6,*) "LVec: ",i,"RVec: ",j,test
                         call stop_all(t_r,'Normalization error')
-                    elseif((i.ne.j).and.(abs(test).gt.5.0e-7_dp)) then
+                    elseif((i.ne.j).and.(abs(test).gt.1.0e-8_dp)) then
                         write(6,*) "Orthogonality not maintained"
                         write(6,*) "Overlap: ",abs(test)
                         write(6,*) "LVec: ",i,"RVec: ",j,test

@@ -1299,12 +1299,14 @@ end subroutine sort_real2
 !LVec vectors need to be complex conjugated.
 !This will involve gram-schmidt rotation of the vectors in degenerate sets
 subroutine Orthonorm_zgeev_vecs(N,W,LVec,RVec)
+    use errors, only: stop_all 
+    use mat_tools, only: writematrixcomp
     use const
     implicit none
     integer, intent(in) :: N
     complex(dp), intent(in) :: W(N)
     complex(dp), intent(inout) :: LVec(N,N),RVec(N,N)
-    integer :: i,StartingInd,R,L
+    integer :: i,StartingInd,R,j,k
     complex(dp) :: zdotc,norm,overlap
 
     i = 1
@@ -1319,35 +1321,62 @@ subroutine Orthonorm_zgeev_vecs(N,W,LVec,RVec)
                 if(i.eq.N) exit !We have found the last degenerate block
             enddo
         endif
-        !write(6,*) "Degenerate block from ",StartingInd,' to ',i
-        !call flush(6)
-
-!        do R = StartingInd,i
-!            !Now, normalize the vectors
-!            !Remember that the square root of a complex number will have two roots, given by +- w
-!            norm = zdotc(N,LVec(:,R),1,RVec(:,R),1)
-!            norm = sqrt(norm)
-!            RVec(:,R) = RVec(:,R) / norm
-!            LVec(:,R) = LVec(:,R) / dconjg(norm)
-!        enddo
-
-        !The degenerate set goes from StartingInd to i
-        !Orthogonalize the R vectors against the L vectors
-        do R = StartingInd,i    !Run through the R vectors
-            do L = StartingInd,i    !Run through the L vectors
-                if(R.eq.L) cycle    !We want to maintain overlap with the corresponding vector
-
-                !Gram-Schmidt
-                overlap = zdotc(N,LVec(:,L),1,RVec(:,R),1)
-                RVec(:,R) = RVec(:,R) - overlap * dconjg(LVec(:,L))
-            enddo
-        enddo
-            
+!        write(6,*) "Degenerate block from ",StartingInd,' to ',i
+!        call flush(6)
+        
         do R = StartingInd,i
             !Now, normalize the vectors
             !Remember that the square root of a complex number will have two roots, given by +- w
             norm = zdotc(N,LVec(:,R),1,RVec(:,R),1)
             norm = sqrt(norm)
+            !write(6,*) "Norm: ",R,norm
+            RVec(:,R) = RVec(:,R) / norm
+            LVec(:,R) = LVec(:,R) / dconjg(norm)
+        enddo
+
+        !call writematrixcomp(LVec(:,StartingInd:i),'LVecs',.true.)
+        !call writematrixcomp(RVec(:,StartingInd:i),'RVecs',.true.)
+
+!        !The degenerate set goes from StartingInd to i
+!        !Orthogonalize the R vectors against the L vectors
+!        do R = StartingInd,i    !Run through the R vectors
+!            do L = StartingInd,i    !Run through the L vectors
+!                if(R.eq.L) cycle    !We want to maintain overlap with the corresponding vector
+!
+!                !Gram-Schmidt
+!                overlap = zdotc(N,LVec(:,L),1,RVec(:,R),1)
+!                RVec(:,R) = RVec(:,R) - overlap * dconjg(LVec(:,L))
+!                write(6,*) "Overlap: ",L,R,overlap
+!            enddo
+!        enddo
+
+!Perform two-sided modified gram-schmidt to bi-orthogonalize the degenerate vectors
+        do j = StartingInd,i
+            do k = StartingInd,j-1    !Bi-orthogonalize against the previous vectors
+                overlap = zdotc(N,LVec(:,k),1,RVec(:,j),1)
+                RVec(:,j) = RVec(:,j) - RVec(:,k)*overlap
+                overlap = zdotc(N,RVec(:,k),1,LVec(:,j),1)
+                LVec(:,j) = LVec(:,j) - LVec(:,k)*overlap
+            enddo
+        enddo
+
+!        do j = StartingInd,i
+!            do k = StartingInd,i
+!                if(j.eq.k) cycle
+!                overlap = zdotc(N,LVec(:,j),1,RVec(:,k),1) 
+!                if(abs(overlap).gt.1.0e-8_dp) then
+!                    write(6,*) "i,j: ",j,k,Overlap
+!                    call stop_all('Orthonorm_zgeev_vecs','non-zero overlap')
+!                endif
+!            enddo
+!        enddo
+!            
+        do R = StartingInd,i
+            !Now, normalize the vectors
+            !Remember that the square root of a complex number will have two roots, given by +- w
+            norm = zdotc(N,LVec(:,R),1,RVec(:,R),1)
+            norm = sqrt(norm)
+            !write(6,*) "Norm: ",R,norm
             RVec(:,R) = RVec(:,R) / norm
             LVec(:,R) = LVec(:,R) / dconjg(norm)
         enddo
