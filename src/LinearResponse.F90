@@ -5097,7 +5097,6 @@ module LinearResponse
         integer :: lwork,info,i,a,pertBra,j,pertsite,nVirt,CoreEnd,VirtStart,ActiveStart,ActiveEnd,nCore
         complex(dp) :: zdotc,test
         character(len=*), parameter :: t_r='FindNI_Charged'
-        logical, parameter :: tCheck = .true. 
 
         if(.not.tAllImp_LR) then
             call stop_all(t_r,"Should not be in this routine if you don't want to calc all greens functions")

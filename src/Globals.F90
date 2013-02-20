@@ -18,6 +18,7 @@ module Globals
     integer :: iMaxIterDMET !Maximum iterations for DMET self-consistency
     logical :: tSCFHF   !Perform full scf hartree--fock calculation
     logical :: tWriteOut    !Write out additional info
+    logical :: tCheck   !Perform extra checks in various subroutines to ensure correct working
     real(dp) :: ChemPot !The chemical potential of the system
     real(dp) :: HLGap   !The Homo-lumo gap of the system
     integer :: NEl      !The number of electrons in the entire system
@@ -137,8 +138,6 @@ module Globals
     complex(dp), allocatable :: FockSchmidt_SE_CX(:,:) !The one-electron hamiltonian over the core:active block
     complex(dp), allocatable :: FockSchmidt_SE_XV(:,:) !The one-electron hamiltonian over the active:virtual block
     complex(dp), allocatable :: FockSchmidt_SE_XC(:,:) !The one-electron hamiltonian over the active:core block
-
-
 
     !timers
     type(timer) :: Full_timer   !All routines 

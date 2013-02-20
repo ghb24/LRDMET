@@ -45,6 +45,8 @@ MODEL
     FCIDUMP
 (Debugging output)
     DEBUGOUTPUT
+(Perform run-time sanity checks in various routines)
+    CHECK_SANITY
 END
 
 LINEAR_RESPONSE

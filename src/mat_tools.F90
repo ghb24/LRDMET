@@ -651,7 +651,6 @@ module mat_tools
         real(dp), allocatable :: K_Vals(:),Orbs(:,:),W(:),Work(:),Vals(:),KPnts(:)
         complex(dp), allocatable :: cWork(:)
         integer :: lWork,info
-        logical, parameter :: tCheck = .false.
         character(len=*), parameter :: t_r='Convert1DtoKSpace'
 
         if(tWriteOut) then

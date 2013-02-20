@@ -48,6 +48,7 @@ Program RealHub
         tReadInCorrPot = .false.
         CorrPot_file = 'CorrPots'
         tNonDirDavidson = .false.
+        tCheck = .false.
 
         !General LR options
         Start_Omega = 0.0_dp
@@ -352,6 +353,8 @@ Program RealHub
                 tDumpFCIDUMP = .true.
             case("DEBUGOUTPUT")
                 tWriteOut = .true.
+            case("CHECK_SANITY")
+                tCheck = .true.
             case("END")
                 exit
             case default
@@ -377,6 +380,7 @@ Program RealHub
                 write(6,"(A)") "INCREASE_OCC"
                 write(6,"(A)") "FCIDUMP"
                 write(6,"(A)") "DEBUGOUTPUT"
+                write(6,"(A)") "CHECK_SANITY"
                 call stop_all(t_r,'Keyword '//trim(w)//' not recognized')
             end select
         enddo Model
