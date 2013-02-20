@@ -79,8 +79,10 @@ Program RealHub
         tPreCond_MinRes = .false.
         rtol_LR = 1.0e-8_dp
         tSC_LR = .false.
+        tNoHL_SE = .false.
         tReuse_SE = .false.
         tAllImp_LR = .false.
+        iGF_Fit = 0
 
     end subroutine set_defaults
 
@@ -439,8 +441,13 @@ Program RealHub
                 call readf(dDelta)
             case("SELF-CONSISTENCY")
                 tSC_LR = .true.
+                if(item.lt.nitems) then
+                    call readi(iGF_Fit)
+                endif
             case("REUSE_SELFENERGY")
                 tReuse_SE = .true.
+            case("NO_MANYBODY_SELFENERGY")
+                tNoHL_SE = .true.
             case("RESPONSE_ALLIMP")
                 tAllImp_LR = .true.
             case("NON_NULL")
@@ -472,6 +479,7 @@ Program RealHub
                 write(6,"(A)") "FREQ"
                 write(6,"(A)") "BROADENING"
                 write(6,"(A)") "SELF-CONSISTENCY"
+                write(6,"(A)") "NO_MANYBODY_SELFENERGY"
                 write(6,"(A)") "REUSE_SELFENERGY"
                 write(6,"(A)") "RESPONSE_ALLIMP"
                 write(6,"(A)") "NON_NULL"
@@ -559,6 +567,15 @@ Program RealHub
         if(tReuse_SE.and.(.not.tSC_LR)) then
             call stop_all(t_r,'Cannot reuse self energy if there is no self-consistency in reponse')
         endif
+        if((iGF_Fit.ne.0).and.(.not.tSC_LR)) then
+            call stop_all(t_r,'How was iGF_Fit set without SC_LR!')
+        endif
+        if(iGF_Fit.gt.3) then
+            call stop_all(t_r,'iGF_Fit set to illegal value')
+        endif
+        if(tNoHL_SE.and.(.not.tSC_LR)) then
+            call stop_all(t_r,'Can only specify no self-energy in many-body hamiltonian if we are doing self-consistency')
+        endif
 
     end subroutine check_input
 
@@ -594,6 +611,7 @@ Program RealHub
         LR_EC_GF_HBuild%timer_name='GF_EC_HBuild'
         LR_EC_GF_OptGS%timer_name='GF_EC_OptGS'
         LR_EC_GF_SolveLR%timer_name='GF_EC_SolveLR'
+        LR_EC_GF_FitGF%timer_name='GF_EC_FitGF'
 
     end subroutine name_timers
 

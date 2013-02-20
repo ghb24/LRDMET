@@ -178,7 +178,9 @@ module LinearResponse
         !Surely if we are doing self-consistent LR, we can only have the GS in the n-electron space, since the others
         !aren't consistent across the different greens functions.
         !Would be ok with nImp = 1 I guess, since there is still then a unique GS.
-        if(tSC_LR.and.tLR_ReoptGS) call stop_all(t_r,"Reoptimizing GS not sorted yet - probably shouldn't happen")
+        if(tSC_LR.and.tLR_ReoptGS) then
+            call stop_all(t_r,"Reoptimizing GS with self-consistency not sorted yet - probably shouldn't happen")
+        endif
 
         !umat and tmat for the active space
         OrbPairs = (EmbSize*(EmbSize+1))/2
@@ -343,20 +345,21 @@ module LinearResponse
         !Set the impurity parts to the correct values (even though we don't access them from FockSchmidt)
         !They are different since the correlation potential is not defined over the impurity sites.
         FockSchmidt(nOcc-nImp+1:nOcc+nImp,nOcc-nImp+1:nOcc+nImp) = Emb_h0v(:,:)
-        if(.not.tSC_LR) then
-            !If we are doing self-consistent linear response, with a self-energy, then this is calculated later, since it is now omega and iteration dependent
-            do i = 1,nSites
-                do j = 1,nSites
-                    FockSchmidt_SE(j,i) = dcmplx(FockSchmidt(j,i),0.0_dp)
-                enddo
+        !If we are doing self-consistent linear response, with a self-energy in the HL part, 
+        !then this is calculated later, since it is now omega and iteration dependent
+        do i = 1,nSites
+            do j = 1,nSites
+                FockSchmidt_SE(j,i) = dcmplx(FockSchmidt(j,i),0.0_dp)
             enddo
-            FockSchmidt_SE_CC(1:CoreEnd,1:CoreEnd) = FockSchmidt_SE(1:CoreEnd,1:CoreEnd)
-            FockSchmidt_SE_VV(VirtStart:nSites,VirtStart:nSites) = FockSchmidt_SE(VirtStart:nSites,VirtStart:nSites)
-            FockSchmidt_SE_VX(VirtStart:VirtEnd,ActiveStart:ActiveEnd) = FockSchmidt_SE(VirtStart:VirtEnd,ActiveStart:ActiveEnd)
-            FockSchmidt_SE_CX(1:CoreEnd,ActiveStart:ActiveEnd) = FockSchmidt_SE(1:CoreEnd,ActiveStart:ActiveEnd)
-            FockSchmidt_SE_XV(ActiveStart:ActiveEnd,VirtStart:VirtEnd) = FockSchmidt_SE(ActiveStart:ActiveEnd,VirtStart:VirtEnd)
-            FockSchmidt_SE_XC(ActiveStart:ActiveEnd,1:CoreEnd) = FockSchmidt_SE(ActiveStart:ActiveEnd,1:CoreEnd)
-        else
+        enddo
+        FockSchmidt_SE_CC(1:CoreEnd,1:CoreEnd) = FockSchmidt_SE(1:CoreEnd,1:CoreEnd)
+        FockSchmidt_SE_VV(VirtStart:nSites,VirtStart:nSites) = FockSchmidt_SE(VirtStart:nSites,VirtStart:nSites)
+        FockSchmidt_SE_VX(VirtStart:VirtEnd,ActiveStart:ActiveEnd) = FockSchmidt_SE(VirtStart:VirtEnd,ActiveStart:ActiveEnd)
+        FockSchmidt_SE_CX(1:CoreEnd,ActiveStart:ActiveEnd) = FockSchmidt_SE(1:CoreEnd,ActiveStart:ActiveEnd)
+        FockSchmidt_SE_XV(ActiveStart:ActiveEnd,VirtStart:VirtEnd) = FockSchmidt_SE(ActiveStart:ActiveEnd,VirtStart:VirtEnd)
+        FockSchmidt_SE_XC(ActiveStart:ActiveEnd,1:CoreEnd) = FockSchmidt_SE(ActiveStart:ActiveEnd,1:CoreEnd)
+
+        if(tSC_LR) then
             allocate(SelfEnergy_Imp(nImp,nImp)) !The self-consistently determined self-energy correction to match the interacting and non-interacting greens functions
             SelfEnergy_Imp(:,:) = zzero
             !SelfEnergy_Imp(1,1) = dcmplx(0.0_dp,0.1_dp)
@@ -849,6 +852,9 @@ module LinearResponse
                 AvdNorm_h = AvdNorm_h/real(nImp_GF,dp)
 
                 Diff_GF = real(abs(ResponseFn - ni_lr))
+            
+                call halt_timer(LR_EC_GF_SolveLR)
+                call set_timer(LR_EC_GF_FitGF)
                 
                 if(tSC_LR) then
                     !Do the fitting of the self energy and iterate.
@@ -876,6 +882,8 @@ module LinearResponse
                     tSCFConverged = .true.  !We only do one cycle, and do not try to match the greens functions.
                 endif
 
+                call halt_timer(LR_EC_GF_FitGF)
+
             enddo   !Finish the self consistency
 
             if(.not.tFirst) then
@@ -892,7 +900,6 @@ module LinearResponse
             if(tFirst) tFirst = .false.
 
             Omega = Omega + Omega_Step
-            call halt_timer(LR_EC_GF_SolveLR)
         enddo   !End loop over omega
 
         write(6,"(A,G22.10)") "Total integrated spectral weight: ",SpectralWeight
@@ -5311,75 +5318,89 @@ module LinearResponse
         
         !TODO: Check that in the absence of a self-energy, the Bra and Ket are complex conjugates of each other.
 
-        !Now, we need to find the new 1 electron hamiltonian for the interacting problem.
-        !This wants to have the self-energy projected into the schmidt basis, but only over the bath and
-        !core sites, not the impurity.
+        if(.not.tNoHL_SE) then
+            !Now, we need to find the new 1 electron hamiltonian for the interacting problem.
+            !This wants to have the self-energy projected into the schmidt basis, but only over the bath and
+            !core sites, not the impurity.
 
-        !First, deal with the embedded basis
-        !Stripe the self energy through the space
-        allocate(temp(nSites,nSites))
-        temp(:,:) = zzero
-        call add_localpot_comp_inplace(temp,SelfEnergy_Imp,tAdd=.true.)
-        !temp is now just the self-energy striped through the space, in the AO basis
-        !Rotate this into the embedding basis
-        allocate(temp2(EmbSize,nSites))
-        allocate(EmbeddedBasis_C(nSites,EmbSize))
-        do i = 1,EmbSize
-            do j = 1,nSites
-                EmbeddedBasis_C(j,i) = dcmplx(EmbeddedBasis(j,i),0.0_dp)
+            !First, deal with the embedded basis
+            !Stripe the self energy through the space
+            allocate(temp(nSites,nSites))
+            temp(:,:) = zzero
+            call add_localpot_comp_inplace(temp,SelfEnergy_Imp,tAdd=.true.)
+            !temp is now just the self-energy striped through the space, in the AO basis
+            !Rotate this into the embedding basis
+            allocate(temp2(EmbSize,nSites))
+            allocate(EmbeddedBasis_C(nSites,EmbSize))
+            do i = 1,EmbSize
+                do j = 1,nSites
+                    EmbeddedBasis_C(j,i) = dcmplx(EmbeddedBasis(j,i),0.0_dp)
+                enddo
             enddo
-        enddo
-        call ZGEMM('T','N',EmbSize,nSites,nSites,zone,EmbeddedBasis_C,nSites,temp,nSites,zzero,temp2,EmbSize)
-        call ZGEMM('N','N',EmbSize,EmbSize,nSites,zone,temp2,EmbSize,EmbeddedBasis_C,nSites,zzero,Emb_h0v_SE,EmbSize)
-        deallocate(temp2,EmbeddedBasis_C)
-        
-        !Now, zero out the self-energy contribution over the impurity site
-        Emb_h0v_SE(1:nImp,1:nImp) = zzero
-        !Now subtract this self-energy correction from the normal one-electron hamiltonian in the embedded space (with corr pot)
-        !The resulting one-electron embedding potential is neither real, nor hermitian
-        Emb_h0v_SE(:,:) = Emb_h0v(:,:) - Emb_h0v_SE(:,:)
+            call ZGEMM('T','N',EmbSize,nSites,nSites,zone,EmbeddedBasis_C,nSites,temp,nSites,zzero,temp2,EmbSize)
+            call ZGEMM('N','N',EmbSize,EmbSize,nSites,zone,temp2,EmbSize,EmbeddedBasis_C,nSites,zzero,Emb_h0v_SE,EmbSize)
+            deallocate(temp2,EmbeddedBasis_C)
+            
+            !Now, zero out the self-energy contribution over the impurity site
+            Emb_h0v_SE(1:nImp,1:nImp) = zzero
+            !Now subtract this self-energy correction from the normal one-electron hamiltonian in the embedded space (with corr pot)
+            !The resulting one-electron embedding potential is neither real, nor hermitian
+            Emb_h0v_SE(:,:) = Emb_h0v(:,:) - Emb_h0v_SE(:,:)
 
-        !But what about the core hamiltonian?
-        !Here, we do need to include
-        !the effect of the self-energy on the core orbitals, since it is explicitly a coupling between the
-        !(non-bath) environment and the embedded basis which we want to consider, and we are not changing
-        !the bath orbital to account for it as we do in the ground state problem.
-        !Calculate the new 1-electron hamiltonian
+            !But what about the core hamiltonian?
+            !Here, we do need to include
+            !the effect of the self-energy on the core orbitals, since it is explicitly a coupling between the
+            !(non-bath) environment and the embedded basis which we want to consider, and we are not changing
+            !the bath orbital to account for it as we do in the ground state problem.
+            !Calculate the new 1-electron hamiltonian
 
-        !This now gives the one-electron hamiltonian in the AO basis, with the self-energy subtracted.
-        !Rotate from the AO basis, to the Schmidt basis
-        call ZGEMM('T','N',nSites,nSites,nSites,zone,FullSchmidtTrans_C,nSites,h0v_SE,nSites,zzero,temp,nSites)
-        call ZGEMM('N','N',nSites,nSites,nSites,zone,temp,nSites,FullSchmidtTrans_C,nSites,zzero,FockSchmidt_SE,nSites)
+            !This now gives the one-electron hamiltonian in the AO basis, with the self-energy subtracted.
+            !Rotate from the AO basis, to the Schmidt basis
+            call ZGEMM('T','N',nSites,nSites,nSites,zone,FullSchmidtTrans_C,nSites,h0v_SE,nSites,zzero,temp,nSites)
+            call ZGEMM('N','N',nSites,nSites,nSites,zone,temp,nSites,FullSchmidtTrans_C,nSites,zzero,FockSchmidt_SE,nSites)
 
-        do i=nImp+1,EmbSize
-            do j=1,EmbSize
-                !The bath orbitals, and coupling to the impurity site blocks of the one-electron hamiltonain should now agree between FockSchmidt_SE and Emb_h0v_SE surely?
-                if(abs(Emb_h0v_SE(j,i)-FockSchmidt_SE(nOcc-nImp+j,nOcc-nImp+i)).gt.1.0e-8_dp) then
-                    call writematrixcomp(Emb_h0v_SE,'Emb_h0v_SE',.true.)
-                    call writematrixcomp(FockSchmidt_SE(nOcc-nImp+1:nOcc+nImp,nOcc-nImp+1:nOcc+nImp),   &
-                        'Fock_SE Embedded system',.true.)
-                    write(6,*) "The above should be the same in the bath and coupling blocks"
-                    write(6,*) "j,i: ",j,i,Emb_h0v_SE(j,i),FockSchmidt_SE(nOcc-nImp+j,nOcc-nImp+i), &
-                        abs(Emb_h0v_SE(j,i)-FockSchmidt_SE(nOcc-nImp+j,nOcc-nImp+i))
-                    call stop_all(t_r,'One electron hamiltonians with self energy not consistent')
-                endif
+            do i=nImp+1,EmbSize
+                do j=1,EmbSize
+                    !The bath orbitals, and coupling to the impurity site blocks of the one-electron hamiltonain should now agree between FockSchmidt_SE and Emb_h0v_SE surely?
+                    if(abs(Emb_h0v_SE(j,i)-FockSchmidt_SE(nOcc-nImp+j,nOcc-nImp+i)).gt.1.0e-8_dp) then
+                        call writematrixcomp(Emb_h0v_SE,'Emb_h0v_SE',.true.)
+                        call writematrixcomp(FockSchmidt_SE(nOcc-nImp+1:nOcc+nImp,nOcc-nImp+1:nOcc+nImp),   &
+                            'Fock_SE Embedded system',.true.)
+                        write(6,*) "The above should be the same in the bath and coupling blocks"
+                        write(6,*) "j,i: ",j,i,Emb_h0v_SE(j,i),FockSchmidt_SE(nOcc-nImp+j,nOcc-nImp+i), &
+                            abs(Emb_h0v_SE(j,i)-FockSchmidt_SE(nOcc-nImp+j,nOcc-nImp+i))
+                        call stop_all(t_r,'One electron hamiltonians with self energy not consistent')
+                    endif
+                enddo
             enddo
-        enddo
 
-        !Now, convert this into a complex number (for easy ZGEMM'ing), and store it in the global array
-        FockSchmidt_SE_CC(1:CoreEnd,1:CoreEnd) = FockSchmidt_SE(1:CoreEnd,1:CoreEnd)
-        FockSchmidt_SE_VV(VirtStart:nSites,VirtStart:nSites) = FockSchmidt_SE(VirtStart:nSites,VirtStart:nSites)
-        FockSchmidt_SE_CX(1:CoreEnd,ActiveStart:ActiveEnd) = FockSchmidt_SE(1:CoreEnd,ActiveStart:ActiveEnd)
-        FockSchmidt_SE_XC(ActiveStart:ActiveEnd,1:CoreEnd) = FockSchmidt_SE(ActiveStart:ActiveEnd,1:CoreEnd)
-        FockSchmidt_SE_VX(VirtStart:nSites,ActiveStart:ActiveEnd) = FockSchmidt_SE(VirtStart:nSites,ActiveStart:ActiveEnd)
-        FockSchmidt_SE_XV(ActiveStart:ActiveEnd,VirtStart:nSites) = FockSchmidt_SE(ActiveStart:ActiveEnd,VirtStart:nSites)
+            !Now, convert this into a complex number (for easy ZGEMM'ing), and store it in the global array
+            FockSchmidt_SE_CC(1:CoreEnd,1:CoreEnd) = FockSchmidt_SE(1:CoreEnd,1:CoreEnd)
+            FockSchmidt_SE_VV(VirtStart:nSites,VirtStart:nSites) = FockSchmidt_SE(VirtStart:nSites,VirtStart:nSites)
+            FockSchmidt_SE_CX(1:CoreEnd,ActiveStart:ActiveEnd) = FockSchmidt_SE(1:CoreEnd,ActiveStart:ActiveEnd)
+            FockSchmidt_SE_XC(ActiveStart:ActiveEnd,1:CoreEnd) = FockSchmidt_SE(ActiveStart:ActiveEnd,1:CoreEnd)
+            FockSchmidt_SE_VX(VirtStart:nSites,ActiveStart:ActiveEnd) = FockSchmidt_SE(VirtStart:nSites,ActiveStart:ActiveEnd)
+            FockSchmidt_SE_XV(ActiveStart:ActiveEnd,VirtStart:nSites) = FockSchmidt_SE(ActiveStart:ActiveEnd,VirtStart:nSites)
+            
+            !Set the impurity:impurity parts to the correct values (even though we don't access them from FockSchmidt)
+            !They are different since the correlation potential is not defined over the impurity sites.
+            FockSchmidt_SE(nOcc-nImp+1:nOcc+nImp,nOcc-nImp+1:nOcc+nImp) = Emb_h0v_SE(:,:)
+
+            deallocate(temp)
+
+        else
+            !The hamiltonians use for the interacting problem remain the same.
+            !That is: FockSchmidt_SE = dcmplx(FockSchmidt)  (this should have been done at initialization, and remain the same)
+            ! and     Emb_h0v_SE = Emb_h0v
+            do i = 1,EmbSize
+                do j = 1,EmbSize
+                    Emb_h0v_SE(j,i) = dcmplx(Emb_h0v(j,i),0.0_dp)
+                enddo
+            enddo
+        endif
         
-        !Set the impurity:impurity parts to the correct values (even though we don't access them from FockSchmidt)
-        !They are different since the correlation potential is not defined over the impurity sites.
-        FockSchmidt_SE(nOcc-nImp+1:nOcc+nImp,nOcc-nImp+1:nOcc+nImp) = Emb_h0v_SE(:,:)
-        
-        deallocate(FullSchmidtTrans_C,AO_OneE_Ham,W_Vals,temp,HFPertBasis_Ann_Bra,HFPertBasis_Cre_Bra,    &
-            HFPertBasis_Ann_Ket,HFPertBasis_Cre_Ket,LVec,RVec)
+        deallocate(FullSchmidtTrans_C,AO_OneE_Ham,W_Vals,HFPertBasis_Ann_Bra,HFPertBasis_Cre_Bra)
+        deallocate(HFPertBasis_Ann_Ket,HFPertBasis_Cre_Ket,LVec,RVec)
 
         !call writevectorcomp(SchmidtPertGF_Cre_Ket(:,1),'SchmidtPertGF_Cre')
         !call writevectorcomp(SchmidtPertGF_Ann_Ket(:,1),'SchmidtPertGF_Ann')

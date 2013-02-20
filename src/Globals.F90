@@ -115,6 +115,8 @@ module Globals
     logical :: tAllImp_LR       ! Whether to calculate all nImp*nImp greens functions
     logical :: tSC_LR           ! Whether to self-consistently optimize the self-energy part of the LR h.
     logical :: tReuse_SE        ! Reuse the self-energy from the previous value of omega in the SC calculation
+    logical :: tNoHL_SE         ! Do not include the self-energy contribution in the construction of the hamiltonian used for the HL calculation (i.e. SE only enters through the NI contraction coefficients)
+    integer :: iGF_Fit          ! Type of fitting in SC_LR: 0 - normal, 1 - DampedNR, 2 - Linesearch, 3 - Damped & linesearch
     
     !DMET_LR global data
     !When a non-hermitian self-energy is added, we need to seperately calculate the non-interacting wavefunctions expressed in the right-eigenvector space
@@ -164,9 +166,6 @@ module Globals
     type(timer) :: LR_EC_GF_HBuild
     type(timer) :: LR_EC_GF_OptGS
     type(timer) :: LR_EC_GF_SolveLR
-
-
-
-
+    type(timer) :: LR_EC_GF_FitGF
 
 end module Globals

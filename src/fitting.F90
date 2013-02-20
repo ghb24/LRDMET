@@ -2,7 +2,7 @@ module fitting
     use const
     use errors, only: stop_all, warning
     use globals
-    use mat_tools, only: GFErr,RDMErr,FromTriangularPacked,ToTriangularPacked,FromCompPacked,ToCompPacked
+    use mat_tools, only: GFErr,RDMErr,FromTriangularPacked,ToTriangularPacked,FromCompPacked,ToCompPacked,znrm2
     implicit none
 
     contains
@@ -62,17 +62,41 @@ module fitting
         complex(dp), intent(inout) :: x0(nx)    !Initial guess for potential 
         real(dp), intent(out) :: err
         integer, intent(out) :: nNR_Iters
-        complex(dp) :: x(nx), r(nr)
-        complex(dp) :: g(nr,nx)
+        complex(dp) :: x(nx), r(nr),r2(nr+nx),x_temp(nx),r_temp(nr)
+        complex(dp) :: g(nr,nx),g2(nr+nx,nx)
         complex(dp) :: dx(nx)
+        real(dp) :: Sing(nx),rWork(5*nx)
+        complex(dp) :: U(nr+nx,nx),VT(nx,nx),InvDiag(nx,nx),temp(nx,nx),temp2(nx,nr+nx) !SVD data
+        complex(dp), allocatable :: Work(:) !SVD workspace
         integer, allocatable :: Pivots(:)
-        integer :: info,it
+        integer :: info,it,i,lWork
         real(dp) :: step
         complex(dp) :: zdotc
+        !For linesearch
+        real(dp) :: Searchstep,Min_val,LargestDiff,Opt_Step,err_temp,NoMoveVal
+        real(dp) :: s1,s2,f1,f2,s3,f3,dStep,norm
+        logical :: tLineSearch 
+        logical :: tDampedNR 
         character(len=*), parameter :: t_r='NR_opt_comp'
 
         x(:) = x0(:)    !Starting guess for potential
-        Step = 1.0_dp
+
+        if(iGF_Fit.eq.0) then
+            tLineSearch = .false.
+            tDampedNR = .false.
+        elseif(iGF_Fit.eq.1) then
+            tLineSearch = .false.
+            tDampedNR = .true.
+        elseif(iGF_Fit.eq.2) then
+            tLineSearch = .true.
+            tDampedNR = .false.
+        elseif(iGF_Fit.eq.3) then
+            tLineSearch = .true.
+            tDampedNR = .true.
+        else
+            call stop_all(t_r,'Cannot determine type of NR')
+        endif
+        if(tDampedNR) call stop_all(t_r,'Do not use damped NR')
 
         do it=1,100     !NR iterations
 
@@ -81,22 +105,151 @@ module fitting
             err = real(zdotc(nr,r,1,r,1))  !Error metric
 
 !            call writevector(r,'residuals')
-!            write(6,*) "Fitting iteration: ",it,err
+            !write(6,*) "Fitting iteration: ",it,err
 
             if(err.lt.1.0e-11_dp) exit  !Convergence satisfied
             call MakeGradMatrix_comp(x,g,nr,nx,HL_GF,Omega)    !Returns the numerically calculated gradient matrix in g from the potential x
             !g is now the jacobian
+            
+            if(tDampedNR) then
+                !However, we have some extra padding here, with a error-dependent damping for the step length.
+                !I.e. the smaller the error, the more the damping to restrict step length
+                g2(:,:) = zzero 
+                g2(1:nr,1:nx) = g(:,:)
+                !Add diagonal block to bottom of jacobian
+                !Err = 100, Stepsize bias = 1
+                do i=1,nx
+                    g2(nr+i,i) = dcmplx(1.0_dp/(0.1_dp*sqrt(err)),0.0_dp)
+                enddo
+                !Pad the residual with ones
+                r2(:) = zzero
+                r2(1:nr) = r(:)
 
-            !Now get the appropriate direction to move x in
-            !just get the solution to the equation r == g * dx for the update to x
-            if(nx.ne.nr) call stop_all(t_r,'Only set up for equal numbers of residuals as variables')
-            allocate(Pivots(nx))
-            call ZGESV(nx,1,g,nx,Pivots,r,nx,info)
-            deallocate(Pivots)
-            dx(:) = r(:)
+                !Least fitting for overcomplete specification: SVD.
+                !Ax=b where A=g2 and b = r2
+                !A = U D V^T from SVD
+                !x = V (1/D) U^T b
+                allocate(Work(1))
+                lWork=-1
+                info=0
+                call DGESVD('S','S',nr+nx,nx,g2,nr+nx,Sing,U,nr+nx,VT,nx,work,lwork,rWork,info)
+                if(info.ne.0) call stop_all(t_r,'SVD Workspace queiry failed')
+                lwork=int(abs(work(1)))+1
+                deallocate(work)
+                allocate(work(lwork))
+                call DGESVD('S','S',nr+nx,nx,g2,nr+nx,Sing,U,nr+nx,VT,nx,work,lwork,rWork,info)
+                if(info.ne.0) call stop_all(t_r,'SVD failed')
+                deallocate(work)
+
+                !Now calculate x as V (1/D) U^T b
+                !Calculate the matrix representation of 1/D
+                InvDiag(:,:) = zzero
+                do i=1,nx
+                    InvDiag(i,i) = dcmplx(1.0_dp/Sing(i),0.0_dp)
+                enddo
+                call ZGEMM('C','N',nx,nx,nx,zone,VT,nx,InvDiag,nx,zzero,temp,nx)
+                call ZGEMM('N','C',nx,nr+nx,nx,zone,temp,nx,U,nr+nx,zzero,temp2,nx)
+                call ZGEMV('N',nx,nr+nx,zone,temp2,nx,r2,1,zzero,dx,1)
+            else
+                !Now get the appropriate direction to move x in
+                !just get the solution to the equation r == g * dx for the update to x
+                if(nx.ne.nr) call stop_all(t_r,'Only set up for equal numbers of residuals as variables')
+                allocate(Pivots(nx))
+                call ZGESV(nx,1,g,nx,Pivots,r,nx,info)
+                deallocate(Pivots)
+                dx(:) = r(:)
+            endif
             !dx is now the direction to move in
-            !Assume that the correct distance to move is dcmplx(1.0,0.0)
-            !Better would be to do some sort of line search, but to keep it cheap, we'll just assume it is 1
+
+            if(tLineSearch) then
+                !Calculate the optimal step size via a crude line search
+                !We could just set this stepsize to 1, but better (but more expensive) would be to search along its length for the best
+                Searchstep = 0.2_dp
+                step = 0.0_dp           !Initial step attempt
+                Min_val = 1.0e15_dp     !minimum value of error metric
+                LargestDiff = 0.0_dp
+                Opt_step = step       !Optimal step size for x
+                do i=1,11
+                    !Calculate over relatively coarse grid
+                    !Calculate error function
+                    x_temp(:) = x(:) - (step * dx(:))   
+                    call GFErr(x_temp,r_temp,HL_GF,Omega) !Update residuals (r)
+                    err_temp = real(zdotc(nr,r_temp,1,r_temp,1))  !Error metric
+                    if(i.eq.1) then
+                        !What is the error if we don't move at all
+                        NoMoveVal = err_temp
+                    else
+                        if(abs(NoMoveVal-err_temp).gt.abs(LargestDiff)) then
+                            !LargestDiff is the largest change in error compared to not moving at all
+                            LargestDiff = NoMoveVal-err_temp
+                        endif
+                    endif
+                    if(err_temp.lt.Min_val) then
+                        !What is the smallest error? Save in Opt_step and Min_val
+                        !Better value - take it
+                        Opt_step = step
+                        Min_val = err_temp
+                    endif
+                    step = step + Searchstep
+                enddo
+    !            write(6,*) "OptStep, MinVal: ",Opt_Step,Min_Val
+                if(abs(LargestDiff).lt.1.0e-15) then
+                    !V Shallow basin. We're not moving. 
+                    exit
+                endif
+                if(Opt_step.lt.0.1) then
+                    !Smallest error was not moving at all
+                    !i.e. the optimal stepsize is between 0 and 0.2.
+                    !Now do a finer bisection to nail it down completely
+                    !Assume that we are bracketed by 0.0 and 0.2
+                    !write(6,*) "Entering bisection..."
+                    s1 = 0.0_dp
+                    s2 = 0.2_dp
+                    f1 = Min_val
+                    x_temp(:) = x(:) - (s2 * dx(:))   
+                    call GFErr(x_temp,r_temp,HL_GF,Omega) !Update residuals (r)
+                    f2 = real(zdotc(nr,r_temp,1,r_temp,1))  !Error metric
+                    dstep = 0.2 
+                    do while(dstep.gt.1.0e-10)
+                        s3 = (s1 + s2)/2.0_dp
+                        x_temp(:) = x(:) - (s3 * dx(:))   
+                        call GFErr(x_temp,r_temp,HL_GF,Omega) !Update residuals (r)
+                        f3 = real(zdotc(nr,r_temp,1,r_temp,1))  !Error metric
+                        if(f3.gt.max(f1,f2)) then
+                            write(6,"(A)") "WARNING: Bisection not bracketed..."
+                            Opt_step = 0.2_dp
+                            exit
+                        endif
+
+                        !Replace the largest f with one from s3
+                        if(f1.gt.f2) then
+                            !Replace f1
+                            f1 = f3
+                            s1 = s3
+                        else
+                            !Replace f2
+                            f2 = f3
+                            s2 = s3
+                        endif
+                        dstep = s1-s2
+                        if(s2.lt.s1) call stop_all(t_r,'s1 and s2 have swapped sides?!')
+                    enddo
+                    Opt_step = s3
+                    if(Opt_step.lt.0.0_dp) call stop_all(t_r,'Optimal step size is negative?!')
+                endif
+
+                !We now have the optimal step size as Opt_step :)
+                norm = znrm2(nx,dx,1)
+                if(abs(Opt_step)*norm.lt.1.0e-10_dp) then
+                    !I think we've probably got it  - we're not moving any more
+                    exit
+                endif
+                Step = Opt_Step
+            else
+                !Assume that the correct distance to move is dcmplx(1.0,0.0)
+                !Better would be to do some sort of line search, but to keep it cheap, we'll just assume it is 1
+                Step = 1.0_dp
+            endif
             x(:) = x(:) - step*dx(:)    !Move x
 
         enddo
@@ -414,7 +567,7 @@ module fitting
                 norm = norm + dx(i)**2
             enddo
             norm = sqrt(norm)
-            if(abs(step)*norm.lt.1.0e-10_dp) then
+            if(abs(Opt_step)*norm.lt.1.0e-10_dp) then
                 !I think we've probably got it  - we're not moving any more
                 exit
             endif
