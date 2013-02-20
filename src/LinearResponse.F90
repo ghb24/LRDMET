@@ -856,7 +856,11 @@ module LinearResponse
                     call Fit_SE(SE_Change,Var_SE,Error_GF,nNR_Iters,ResponseFn_Mat,Omega)
 
                     !Write out
-                    write(6,*) SE_Fit_Iter,nNR_Iters,Var_SE,Error_GF,ni_lr,ResponseFn
+                    if(SE_Fit_Iter.eq.1) then
+                        write(6,"(A)") "    Iter  NI_Iters   Delta_SE         Diff_GFs           Orig_NI_GF  "  &
+     &                      //"                         HL_GF"
+                    endif
+                    write(6,"(2I7,6G20.10)") SE_Fit_Iter,nNR_Iters,Var_SE,Error_GF,ni_lr,ResponseFn
                     !call writematrixcomp(SE_Change,'SE_Change',.true.)
 
                     !Update self-energy (does this want to be added or subtracted?!)
