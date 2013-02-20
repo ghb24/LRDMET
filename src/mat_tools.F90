@@ -821,8 +821,10 @@ module mat_tools
         real(dp), intent(in) :: Omega
         complex(dp), intent(out) :: ni_GFs(nImp,nImp)
         complex(dp) :: se_unpacked(nImp,nImp)
-        integer :: lWork,info,i,pertsite,pertBra
+        integer :: lWork,info,i,pertsite,pertBra,a
         complex(dp), allocatable :: AO_Ham(:,:),W_Vals(:),RVec(:,:),LVec(:,:),cWork(:)
+        !complex(dp) :: NI_Cre(nImp,nImp),NI_Ann(nImp,nImp),NI_GF_Check(nImp,nImp)
+        !complex(dp), allocatable :: HF_Ann_Ket(:,:),HF_Cre_Ket(:,:)
         real(dp), allocatable :: Work(:)
         character(len=*), parameter :: t_r='mkgf'
 
@@ -869,6 +871,44 @@ module mat_tools
                 enddo
             enddo
         enddo
+
+!        allocate(HF_Ann_Ket(nOcc,nImp))
+!        allocate(HF_Cre_Ket(nOcc+1:nSites,nImp))
+!        HF_Ann_Ket(:,:) = zzero
+!        HF_Cre_Ket(:,:) = zzero
+!        NI_Ann(:,:) = zzero
+!        NI_Cre(:,:) = zzero
+!        do pertsite = 1,nImp
+!            do i = 1,nOcc
+!                HF_Ann_Ket(i,pertsite) = dconjg(LVec(pertsite,i))/(dcmplx(Omega,dDelta)-W_Vals(i))
+!            enddo
+!            do a = nOcc+1,nSites
+!                HF_Cre_Ket(a,pertsite) = dconjg(LVec(pertsite,a))/(dcmplx(Omega,dDelta)-W_Vals(a))
+!            enddo
+!            do pertBra = 1,nImp
+!                do i = 1,nOcc
+!                    NI_Ann(pertsite,pertBra) = NI_Ann(pertsite,pertBra) + RVec(pertBra,i)*HF_Ann_Ket(i,pertsite)
+!                    !write(6,*) "mkgf: ",i,NI_Ann(pertsite,pertBra),RVec(pertBra,i),HF_Ann_Ket(i,pertsite)
+!                enddo
+!                do a = nOcc+1,nSites
+!                    NI_Cre(pertsite,pertBra) = NI_Cre(pertsite,pertBra) + RVec(pertBra,a)*HF_Cre_Ket(a,pertsite)
+!                enddo
+!            enddo
+!        enddo
+!        NI_GF_Check(:,:) = NI_Cre(:,:) + NI_Ann(:,:)
+!
+!        do pertsite = 1,nImp
+!            do pertBra = 1,nImp
+!                if(abs(NI_GF_Check(pertBra,pertsite)-ni_GFs(pertBra,pertsite)).gt.1.0e-8_dp) then
+!                    call stop_all(t_r,'NI GFs not consistent')
+!                endif
+!            enddo
+!        enddo
+!        deallocate(HF_Ann_Ket,HF_Cre_Ket)
+!
+!        call writematrixcomp(se_unpacked,'Delta SE',.true.)
+!        write(6,*) "Full NI GF: ",NI_GF_Check(:,:)
+!        write(6,*) "mkgf NI GF: ",ni_GFs(:,:)
 
         deallocate(W_Vals,RVec,LVec)
     end subroutine mkgf

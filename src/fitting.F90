@@ -27,6 +27,7 @@ module fitting
         !will give the same non-interacting GF as the high-level calculation 
         !Initial guess of vloc over impurity sites
         se_change(:) = zzero  !Is this a good choice?? Often analytic functions are conditionally convergent!
+
         !Newton-raphson fit.
         !GF_Err is the difference between the new converged NI solution and the HL calculation
         call NR_opt_comp(se_change,nImp*nImp,nImp*nImp,Error_GF,nNR_Iters,HL_GF,Omega)

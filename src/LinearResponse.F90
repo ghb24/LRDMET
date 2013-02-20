@@ -121,7 +121,8 @@ module LinearResponse
         integer :: maxminres_iter,nImp_GF,pertsite,SE_Fit_Iter,nNR_Iters
         integer(ip) :: nLinearSystem_ip,minres_unit_ip,info_ip,maxminres_iter_ip,iters_p,iters_h
         real(dp) :: Omega,GFChemPot,mu,SpectralWeight,Prev_Spec,AvdNorm_p,AvdNorm_h,Var_SE,Error_GF
-        complex(dp) :: ResponseFn,tempel,Diff_GF,ni_lr,ni_lr_p,ni_lr_h,AvResFn_p,AvResFn_h
+        real(dp) :: Diff_GF
+        complex(dp) :: ResponseFn,tempel,ni_lr,ni_lr_p,ni_lr_h,AvResFn_p,AvResFn_h
         complex(dp) :: zdotc,VNorm,CNorm
         logical :: tParity,tFirst,tSCFConverged
         character(64) :: filename,filename2
@@ -847,26 +848,26 @@ module LinearResponse
                 AvdNorm_p = AvdNorm_p/real(nImp_GF,dp)
                 AvdNorm_h = AvdNorm_h/real(nImp_GF,dp)
 
-                Diff_GF = abs(ResponseFn - ni_lr)
+                Diff_GF = real(abs(ResponseFn - ni_lr))
                 
                 if(tSC_LR) then
                     !Do the fitting of the self energy and iterate.
                     !Update SelfEnergy_Imp and h0v_se
                     SE_Fit_Iter = SE_Fit_Iter + 1
-                    call Fit_SE(SE_Change,Var_SE,Error_GF,nNR_Iters,ResponseFn_Mat,Omega)
+                    call Fit_SE(SE_Change,Var_SE,Error_GF,nNR_Iters,ResponseFn_Mat,Omega+mu)
 
                     !Write out
                     if(SE_Fit_Iter.eq.1) then
-                        write(6,"(A)") "    Iter  NI_Iters   Delta_SE         Diff_GFs           Orig_NI_GF  "  &
-     &                      //"                         HL_GF"
+                        write(6,"(A)") "    Iter  NI_Iters   Delta_SE         Diff_GFs            Start_Diff_GFs      Orig_NI_GF"&
+     &                      //"                               HL_GF"
                     endif
-                    write(6,"(2I7,6G20.10)") SE_Fit_Iter,nNR_Iters,Var_SE,Error_GF,ni_lr,ResponseFn
+                    write(6,"(2I7,7G20.10)") SE_Fit_Iter,nNR_Iters,Var_SE,Error_GF,Diff_GF,ni_lr,ResponseFn
                     !call writematrixcomp(SE_Change,'SE_Change',.true.)
 
-                    !Update self-energy (does this want to be added or subtracted?!)
+                    !Update self-energy
                     !Emb_h0v_SE and all fock matrices are updated in FindNI_Charged routine 
-                    call add_localpot_comp_inplace(h0v_se,SE_Change,.true.)
-                    SelfEnergy_Imp = SelfEnergy_Imp + SE_Change
+                    call add_localpot_comp_inplace(h0v_se,SE_Change,.false.)
+                    SelfEnergy_Imp(:,:) = SelfEnergy_Imp(:,:) + SE_Change(:,:)
                     if(Var_SE.lt.1.0e-8_dp) then
                         !Yay - converged
                         tSCFConverged = .true.
@@ -5229,7 +5230,8 @@ module LinearResponse
         HFPertBasis_Cre_Bra(:,:) = zzero
         HFPertBasis_Ann_Ket(:,:) = zzero
         HFPertBasis_Cre_Ket(:,:) = zzero
-
+            
+        !call writematrixcomp(RVec(1:nImp,1:nSites),'RVec(1:nImp,1:nOcc) - LR',.true.)
         !Now, form the non-interacting greens functions (but with u *and* self-energy)
         do pertsite = 1,nImp
             !Form the set of non-interacting first order wavefunctions from the new one-electron h for both Bra and Ket versions
