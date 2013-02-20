@@ -114,6 +114,7 @@ module Globals
                                 ! 4   Complete diagonalization
     logical :: tAllImp_LR       ! Whether to calculate all nImp*nImp greens functions
     logical :: tSC_LR           ! Whether to self-consistently optimize the self-energy part of the LR h.
+    logical :: tReuse_SE        ! Reuse the self-energy from the previous value of omega in the SC calculation
     
     !DMET_LR global data
     !When a non-hermitian self-energy is added, we need to seperately calculate the non-interacting wavefunctions expressed in the right-eigenvector space

@@ -469,7 +469,7 @@ module LinearResponse
             tSCFConverged = .false.
             if(tSC_LR) then
                 SE_Fit_Iter = 0
-                SelfEnergy_Imp(:,:) = zzero     !Set self-energy to zero again
+                if(.not.tReuse_SE) SelfEnergy_Imp(:,:) = zzero     !Set self-energy to zero again
                 h0v_se(:,:) = dcmplx(h0v(:,:))       
                 call add_localpot_comp_inplace(h0v_se,SelfEnergy_Imp,.false.)
             endif
@@ -865,7 +865,7 @@ module LinearResponse
 
                     !Update self-energy (does this want to be added or subtracted?!)
                     !Emb_h0v_SE and all fock matrices are updated in FindNI_Charged routine 
-                    call add_localpot_comp_inplace(h0v_se,SE_Change,.false.)
+                    call add_localpot_comp_inplace(h0v_se,SE_Change,.true.)
                     SelfEnergy_Imp = SelfEnergy_Imp + SE_Change
                     if(Var_SE.lt.1.0e-8_dp) then
                         !Yay - converged
@@ -5077,7 +5077,7 @@ module LinearResponse
     !The global matrices SchmidtPertGF_Cre and SchmidtPertGF_Ann are filled, as well as the
     !new one-electron hamiltonians for the interacting problem: Emb_h0v_SE and FockSchmidt_SE
     subroutine FindNI_Charged(Omega,NI_LRMat_Cre,NI_LRMat_Ann)
-        use mat_tools, only: add_localpot_comp
+        use mat_tools, only: add_localpot_comp_inplace
         use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
         implicit none
         real(dp), intent(in) :: Omega
@@ -5316,12 +5316,8 @@ module LinearResponse
         !First, deal with the embedded basis
         !Stripe the self energy through the space
         allocate(temp(nSites,nSites))
-        allocate(temp2(nSites,nSites))
-        temp2(:,:) = zzero
         temp(:,:) = zzero
-        call add_localpot_comp(temp2,temp,SelfEnergy_Imp,tAdd=.true.)
-
-        deallocate(temp2)
+        call add_localpot_comp_inplace(temp,SelfEnergy_Imp,tAdd=.true.)
         !temp is now just the self-energy striped through the space, in the AO basis
         !Rotate this into the embedding basis
         allocate(temp2(EmbSize,nSites))

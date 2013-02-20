@@ -79,6 +79,7 @@ Program RealHub
         tPreCond_MinRes = .false.
         rtol_LR = 1.0e-8_dp
         tSC_LR = .false.
+        tReuse_SE = .false.
         tAllImp_LR = .false.
 
     end subroutine set_defaults
@@ -438,6 +439,8 @@ Program RealHub
                 call readf(dDelta)
             case("SELF-CONSISTENCY")
                 tSC_LR = .true.
+            case("REUSE_SELFENERGY")
+                tReuse_SE = .true.
             case("RESPONSE_ALLIMP")
                 tAllImp_LR = .true.
             case("NON_NULL")
@@ -469,6 +472,7 @@ Program RealHub
                 write(6,"(A)") "FREQ"
                 write(6,"(A)") "BROADENING"
                 write(6,"(A)") "SELF-CONSISTENCY"
+                write(6,"(A)") "REUSE_SELFENERGY"
                 write(6,"(A)") "RESPONSE_ALLIMP"
                 write(6,"(A)") "NON_NULL"
                 write(6,"(A)") "REOPT_GS"
@@ -551,6 +555,9 @@ Program RealHub
         if(tSC_LR.and.tLR_ReoptGS.and.tLR_DMET) then
             call stop_all(t_r,"Reoptimizing ground state not sorted yet for self-consistent response "  &
      &          //"calculations - probably shouldn't happen")
+        endif
+        if(tReuse_SE.and.(.not.tSC_LR)) then
+            call stop_all(t_r,'Cannot reuse self energy if there is no self-consistency in reponse')
         endif
 
     end subroutine check_input

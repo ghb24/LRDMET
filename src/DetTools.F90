@@ -1300,7 +1300,6 @@ end subroutine sort_real2
 !This will involve gram-schmidt rotation of the vectors in degenerate sets
 subroutine Orthonorm_zgeev_vecs(N,W,LVec,RVec)
     use errors, only: stop_all 
-    use mat_tools, only: writematrixcomp
     use const
     implicit none
     integer, intent(in) :: N
@@ -1327,7 +1326,11 @@ subroutine Orthonorm_zgeev_vecs(N,W,LVec,RVec)
         do R = StartingInd,i
             !Now, normalize the vectors
             !Remember that the square root of a complex number will have two roots, given by +- w
-            norm = zdotc(N,LVec(:,R),1,RVec(:,R),1)
+            norm = zzero
+            do j = 1,N
+                norm = dconjg(LVec(j,R)) * RVec(j,R)
+            enddo
+            !norm = zdotc(N,LVec(:,R),1,RVec(:,R),1)
             norm = sqrt(norm)
             !write(6,*) "Norm: ",R,norm
             RVec(:,R) = RVec(:,R) / norm
