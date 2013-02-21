@@ -78,6 +78,8 @@ LINEAR_RESPONSE
     NO_MANYBODY_SELFENERGY
 (Option to use the converged self-energy from previous frequency calculation at start of next one)
     REUSE_SELFENERGY
+(Option to only do a few fits of the self-energy. Do not fit until self-consistency.)
+    ONE_SELFENERGY_FIT 2
 (Option to calculate local response functions over all impurity sites)
     RESPONSE_ALLIMP
 (Option to reoptimize ground state in space of V**H |1> for each response function)

@@ -269,10 +269,18 @@ module LinearResponse
             filename2 = filename
         endif
         open(unit=iunit,file=filename2,status='unknown')
-        write(iunit,"(A)") "# 1.Frequency     2.GF_LinearResponse(Re)    3.GF_LinearResponse(Im)    " &
-            & //"4.ParticleGF(Re)   5.ParticleGF(Im)   6.HoleGF(Re)   7.HoleGF(Im)    8.Old_GS    9.New_GS   " &
-            & //"10.Particle_Norm  11.Hole_Norm   12.NI_GF(Re)   13.NI_GF(Im)  14.NI_GF_Part(Re)   15.NI_GF_Part(Im)   " &
-            & //"16.NI_GF_Hole(Re)   17.NI_GF_Hole(Im)  18.Iters_p   19.Iters_h"
+        if(tSC_LR) then
+            write(iunit,"(A)") "# 1.Frequency     2.GF_LinearResponse(Re)    3.GF_LinearResponse(Im)    " &
+                & //"4.ParticleGF(Re)   5.ParticleGF(Im)   6.HoleGF(Re)   7.HoleGF(Im)    8.Old_GS    9.New_GS   " &
+                & //"10.Particle_Norm  11.Hole_Norm   12.NI_GF(Re)   13.NI_GF(Im)  14.NI_GF_Part(Re)   15.NI_GF_Part(Im)   " &
+                & //"16.NI_GF_Hole(Re)   17.NI_GF_Hole(Im)  18.SpectralWeight  19.Iters_p   20.Iters_h    " &
+                & //"21.SE(1,1)(Re)  22.SE(1,1)(Im) "
+        else
+            write(iunit,"(A)") "# 1.Frequency     2.GF_LinearResponse(Re)    3.GF_LinearResponse(Im)    " &
+                & //"4.ParticleGF(Re)   5.ParticleGF(Im)   6.HoleGF(Re)   7.HoleGF(Im)    8.Old_GS    9.New_GS   " &
+                & //"10.Particle_Norm  11.Hole_Norm   12.NI_GF(Re)   13.NI_GF(Im)  14.NI_GF_Part(Re)   15.NI_GF_Part(Im)   " &
+                & //"16.NI_GF_Hole(Re)   17.NI_GF_Hole(Im)  18.SpectralWeight  19.Iters_p   20.Iters_h    " 
+        endif
                 
         if(tMinRes_NonDir) then
             minres_unit = get_free_unit()
@@ -860,20 +868,27 @@ module LinearResponse
                     !Do the fitting of the self energy and iterate.
                     !Update SelfEnergy_Imp and h0v_se
                     SE_Fit_Iter = SE_Fit_Iter + 1
-                    call Fit_SE(SE_Change,Var_SE,Error_GF,nNR_Iters,ResponseFn_Mat,Omega+mu)
-
-                    !Write out
+                    
                     if(SE_Fit_Iter.eq.1) then
-                        write(6,"(A)") "    Iter  NI_Iters   Delta_SE         Diff_GFs            Start_Diff_GFs      Orig_NI_GF"&
+                        write(6,"(A)") "    Iter  NR_Iters   Delta_SE         Diff_GFs            Start_Diff_GFs      Orig_NI_GF"&
      &                      //"                               HL_GF"
                     endif
-                    write(6,"(2I7,7G20.10)") SE_Fit_Iter,nNR_Iters,Var_SE,Error_GF,Diff_GF,ni_lr,ResponseFn
-                    !call writematrixcomp(SE_Change,'SE_Change',.true.)
+                    if((tPartialSE_Fit.and.(SE_Fit_Iter.le.iPartialSE_Fit)).or.(.not.tPartialSE_Fit)) then
+                        call Fit_SE(SE_Change,Var_SE,Error_GF,nNR_Iters,ResponseFn_Mat,Omega+mu)
+                        !Write out
+                        write(6,"(2I7,7G20.10)") SE_Fit_Iter,nNR_Iters,Var_SE,Error_GF,Diff_GF,ni_lr,ResponseFn
+                        !call writematrixcomp(SE_Change,'SE_Change',.true.)
 
-                    !Update self-energy
-                    !Emb_h0v_SE and all fock matrices are updated in FindNI_Charged routine 
-                    call add_localpot_comp_inplace(h0v_se,SE_Change,.false.)
-                    SelfEnergy_Imp(:,:) = SelfEnergy_Imp(:,:) + SE_Change(:,:)
+                        !Update self-energy
+                        !Emb_h0v_SE and all fock matrices are updated in FindNI_Charged routine 
+                        call add_localpot_comp_inplace(h0v_se,SE_Change,.false.)
+                        SelfEnergy_Imp(:,:) = SelfEnergy_Imp(:,:) + SE_Change(:,:)
+                    else
+                        !Write out just to show the difference in the GFs
+                        write(6,"(2I7,7G20.10)") SE_Fit_Iter,0,zero,Diff_GF,Diff_GF,ni_lr,ResponseFn
+                        tSCFConverged = .true.
+                    endif
+
                     if(Var_SE.lt.1.0e-8_dp) then
                         !Yay - converged
                         tSCFConverged = .true.
@@ -891,10 +906,18 @@ module LinearResponse
                 Prev_Spec = -aimag(ResponseFn)
             endif
 
-            write(iunit,"(18G22.10,2I7)") Omega,real(ResponseFn),-aimag(ResponseFn), &
-                real(AvResFn_p),-aimag(AvResFn_p),real(AvResFn_h),-aimag(AvResFn_h),    &
-                HL_Energy,GFChemPot,abs(AvdNorm_p),abs(AvdNorm_h),real(ni_lr),-aimag(ni_lr),real(ni_lr_p),    &
-                -aimag(ni_lr_p),real(ni_lr_h),-aimag(ni_lr_h),SpectralWeight,iters_p,iters_h
+            if(tSC_LR) then
+                write(iunit,"(18G22.10,2I7,2G22.10)") Omega,real(ResponseFn),-aimag(ResponseFn), &
+                    real(AvResFn_p),-aimag(AvResFn_p),real(AvResFn_h),-aimag(AvResFn_h),    &
+                    HL_Energy,GFChemPot,abs(AvdNorm_p),abs(AvdNorm_h),real(ni_lr),-aimag(ni_lr),real(ni_lr_p),    &
+                    -aimag(ni_lr_p),real(ni_lr_h),-aimag(ni_lr_h),SpectralWeight,iters_p,iters_h,   &
+                    real(SelfEnergy_Imp(1,1)),aimag(SelfEnergy_Imp(1,1))
+            else
+                write(iunit,"(18G22.10,2I7)") Omega,real(ResponseFn),-aimag(ResponseFn), &
+                    real(AvResFn_p),-aimag(AvResFn_p),real(AvResFn_h),-aimag(AvResFn_h),    &
+                    HL_Energy,GFChemPot,abs(AvdNorm_p),abs(AvdNorm_h),real(ni_lr),-aimag(ni_lr),real(ni_lr_p),    &
+                    -aimag(ni_lr_p),real(ni_lr_h),-aimag(ni_lr_h),SpectralWeight,iters_p,iters_h
+            endif
 
 
             if(tFirst) tFirst = .false.

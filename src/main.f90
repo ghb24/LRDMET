@@ -84,6 +84,8 @@ Program RealHub
         tReuse_SE = .false.
         tAllImp_LR = .false.
         iGF_Fit = 0
+        tPartialSE_Fit = .false.
+        iPartialSE_Fit = 0
 
     end subroutine set_defaults
 
@@ -450,6 +452,11 @@ Program RealHub
                 endif
             case("REUSE_SELFENERGY")
                 tReuse_SE = .true.
+            case("PARTIAL_SELFENERGY_FIT")
+                tPartialSE_Fit = .true.
+                if(item.le.nitems) then
+                    call readi(iPartialSE_Fit)
+                endif
             case("NO_MANYBODY_SELFENERGY")
                 tNoHL_SE = .true.
             case("RESPONSE_ALLIMP")
@@ -485,6 +492,7 @@ Program RealHub
                 write(6,"(A)") "SELF-CONSISTENCY"
                 write(6,"(A)") "NO_MANYBODY_SELFENERGY"
                 write(6,"(A)") "REUSE_SELFENERGY"
+                write(6,"(A)") "PARTIAL_SELFENERGY_FIT"
                 write(6,"(A)") "RESPONSE_ALLIMP"
                 write(6,"(A)") "NON_NULL"
                 write(6,"(A)") "REOPT_GS"
@@ -579,6 +587,12 @@ Program RealHub
         endif
         if(tNoHL_SE.and.(.not.tSC_LR)) then
             call stop_all(t_r,'Can only specify no self-energy in many-body hamiltonian if we are doing self-consistency')
+        endif
+        if(tPartialSE_Fit.and.(.not.tSC_LR)) then
+            call stop_all(t_r,'Need to specify self-consistency to use option PartialSE_Fit. I know this makes no sense')
+        endif
+        if(tPartialSE_Fit.and.(iPartialSE_Fit.le.0)) then
+            call stop_all(t_r,'Partial self-energy fitting specified, but not the number of fits (should be argument)')
         endif
 
     end subroutine check_input
