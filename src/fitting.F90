@@ -175,6 +175,7 @@ module fitting
                     x_temp(:) = x(:) - (step * dx(:))   
                     call GFErr(x_temp,r_temp,HL_GF,Omega) !Update residuals (r)
                     err_temp = real(zdotc(nr,r_temp,1,r_temp,1))  !Error metric
+                    !write(6,*) "Linesearch: ",i,step,err_temp
                     if(i.eq.1) then
                         !What is the error if we don't move at all
                         NoMoveVal = err_temp
@@ -192,17 +193,17 @@ module fitting
                     endif
                     step = step + Searchstep
                 enddo
-    !            write(6,*) "OptStep, MinVal: ",Opt_Step,Min_Val
+                !write(6,*) "OptStep, MinVal, LargestDiff: ",Opt_Step,Min_Val,LargestDiff
                 if(abs(LargestDiff).lt.1.0e-15) then
                     !V Shallow basin. We're not moving. 
                     exit
                 endif
                 if(Opt_step.lt.0.1) then
+                    write(6,*) "Warning: small optimal stepsize - entering bisection..."
                     !Smallest error was not moving at all
                     !i.e. the optimal stepsize is between 0 and 0.2.
                     !Now do a finer bisection to nail it down completely
                     !Assume that we are bracketed by 0.0 and 0.2
-                    !write(6,*) "Entering bisection..."
                     s1 = 0.0_dp
                     s2 = 0.2_dp
                     f1 = Min_val
@@ -210,14 +211,15 @@ module fitting
                     call GFErr(x_temp,r_temp,HL_GF,Omega) !Update residuals (r)
                     f2 = real(zdotc(nr,r_temp,1,r_temp,1))  !Error metric
                     dstep = 0.2 
-                    do while(dstep.gt.1.0e-10)
+                    do while(abs(dstep).gt.1.0e-10)
+                        !write(6,*) "Bracketed: ",s1,s2,f1,f2
                         s3 = (s1 + s2)/2.0_dp
                         x_temp(:) = x(:) - (s3 * dx(:))   
                         call GFErr(x_temp,r_temp,HL_GF,Omega) !Update residuals (r)
                         f3 = real(zdotc(nr,r_temp,1,r_temp,1))  !Error metric
+                        !write(6,*) "Error at ",s3,f3
                         if(f3.gt.max(f1,f2)) then
                             write(6,"(A)") "WARNING: Bisection not bracketed..."
-                            Opt_step = 0.2_dp
                             exit
                         endif
 
@@ -232,16 +234,18 @@ module fitting
                             s2 = s3
                         endif
                         dstep = s1-s2
+                        !write(6,*) 'dstep: ',dstep
                         if(s2.lt.s1) call stop_all(t_r,'s1 and s2 have swapped sides?!')
                     enddo
                     Opt_step = s3
+                    write(6,*) "Optimal step size found from bisection: ",Opt_step
                     if(Opt_step.lt.0.0_dp) call stop_all(t_r,'Optimal step size is negative?!')
                 endif
 
                 !We now have the optimal step size as Opt_step :)
                 norm = znrm2(nx,dx,1)
                 if(abs(Opt_step)*norm.lt.1.0e-10_dp) then
-                    !I think we've probably got it  - we're not moving any more
+                    !I think we've probably got it  - we're not moving any more. However, this could be numerical errors or divergences
                     exit
                 endif
                 Step = Opt_Step
@@ -533,7 +537,7 @@ module fitting
                 call RDMErr(x_temp,r_temp) !Update residuals (r)
                 f2 = sum(r_temp(:)**2)  !Error metric
                 dstep = 0.2 
-                do while(dstep.gt.1.0e-10)
+                do while(abs(dstep).gt.1.0e-10)
                     s3 = (s1 + s2)/2.0_dp
                     x_temp(:) = x(:) - (s3 * dx(:))   
                     call RDMErr(x_temp,r_temp) !Update residuals (r)
