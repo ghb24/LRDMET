@@ -115,7 +115,7 @@ module Globals
                                 ! 4   Complete diagonalization
     logical :: tAllImp_LR       ! Whether to calculate all nImp*nImp greens functions
     logical :: tSC_LR           ! Whether to self-consistently optimize the self-energy part of the LR h.
-    logical :: tReuse_SE        ! Reuse the self-energy from the previous value of omega in the SC calculation
+    integer :: iReuse_SE        ! =0: no memory of SE from previous frequencies, =1: Start macroiterations with previous converged SE, =2: Start NR microiterations with previous converged SE
     logical :: tNoHL_SE         ! Do not include the self-energy contribution in the construction of the hamiltonian used for the HL calculation (i.e. SE only enters through the NI contraction coefficients)
     integer :: iGF_Fit          ! Type of fitting in SC_LR: 0 - normal, 1 - DampedNR, 2 - Linesearch, 3 - Damped & linesearch
     logical :: tPartialSE_Fit   ! Do iPartialSE_Fit fits of the self-energy. Do not fit until self consistency between HL and NI GFs

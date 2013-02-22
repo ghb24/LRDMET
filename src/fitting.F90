@@ -8,11 +8,12 @@ module fitting
     contains
 
     !Fit the self-energy, st. the non-interacting and interacting greens functions match
+    !On entry, SE_Change_unpacked is the starting guess for the NR
     subroutine Fit_SE(SE_Change_unpacked,Var_SE,Error_GF,nNR_Iters,HL_GF,Omega)
         implicit none
         complex(dp), intent(in) :: HL_GF(nImp,nImp)
         real(dp), intent(in) :: Omega
-        complex(dp), intent(out) :: se_change_unpacked(nImp,nImp)   !The correction to the self-energy
+        complex(dp), intent(inout) :: se_change_unpacked(nImp,nImp)   !The correction to the self-energy
         real(dp), intent(out) :: Error_GF   !The sum squared difference between the NI and HL GFs
         real(dp), intent(out) :: Var_SE     !The sum squared magnitude of the change in self-energy contribution
         integer, intent(out) :: nNR_Iters   !The number of iterations the NR required
@@ -26,7 +27,8 @@ module fitting
         !The aim now, is to find a Self-energy (over the impurity sites) which when added to the fock matrix
         !will give the same non-interacting GF as the high-level calculation 
         !Initial guess of vloc over impurity sites
-        se_change(:) = zzero  !Is this a good choice?? Often analytic functions are conditionally convergent!
+        call ToCompPacked(nImp,se_change_unpacked,se_change)
+        !se_change(:) = zzero  !Is this a good choice?? Often analytic functions are conditionally convergent!
 
         !Newton-raphson fit.
         !GF_Err is the difference between the new converged NI solution and the HL calculation
@@ -316,6 +318,18 @@ module fitting
 
                 !If Cauchy-reimann holds, dubdxi = dvbdyi and dvbdxi = - dubdyi
                 g(j,i) = 0.5_dp*dcmplx(dubdxi(j) + dvbdyi(j), dvbdxi(j) - dubdyi(j))
+
+                if(abs((dubdxi(j) - dvbdyi(j))/dubdxi(j)).gt.1.0e-5_dp) then
+                    write(6,*) "Warning: Cauchy-Reimann conditions not satisfied for real part of jacobian: ",  &
+                        i,j,abs((dubdxi(j) - dvbdyi(j))/dubdxi(j))
+                endif
+                if(abs((dvbdxi(j) + dubdyi(j))/dvbdxi(j)).gt.1.0e-5_dp) then
+                    write(6,*) "Warning: Cauchy-Reimann conditions not satisfied for imaginary part of jacobian: ", &
+                        i,j,abs((dvbdxi(j) + dubdyi(j))/dvbdxi(j))
+                endif
+                !write(6,*) "CS real part: ",abs((dubdxi(j) - dvbdyi(j))/dubdxi(j))*100.0
+                !write(6,*) "CS im part: ",abs((dvbdxi(j) + dubdyi(j))/dvbdxi(j))*100.0
+
             enddo
         enddo
 

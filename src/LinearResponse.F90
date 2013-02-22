@@ -123,8 +123,8 @@ module LinearResponse
         real(dp) :: Omega,GFChemPot,mu,SpectralWeight,Prev_Spec,AvdNorm_p,AvdNorm_h,Var_SE,Error_GF
         real(dp) :: Diff_GF
         complex(dp) :: ResponseFn,tempel,ni_lr,ni_lr_p,ni_lr_h,AvResFn_p,AvResFn_h
-        complex(dp) :: zdotc,VNorm,CNorm
-        logical :: tParity,tFirst,tSCFConverged
+        complex(dp) :: zdotc,VNorm,CNorm,Prev_SE_Saved(nImp,nImp)
+        logical :: tParity,tFirst,tSCFConverged,tSCFFailed
         character(64) :: filename,filename2
         character(len=*), parameter :: t_r='NonIntExCont_TDA_MCLR_Charged'
 
@@ -370,6 +370,7 @@ module LinearResponse
         if(tSC_LR) then
             allocate(SelfEnergy_Imp(nImp,nImp)) !The self-consistently determined self-energy correction to match the interacting and non-interacting greens functions
             SelfEnergy_Imp(:,:) = zzero
+            Prev_SE_Saved(:,:) = zzero
             !SelfEnergy_Imp(1,1) = dcmplx(0.0_dp,0.1_dp)
             allocate(SE_Change(nImp,nImp))  !The change in self energy each iteration
             SE_Change(:,:) = zzero
@@ -481,14 +482,19 @@ module LinearResponse
             tSCFConverged = .false.
             if(tSC_LR) then
                 SE_Fit_Iter = 0
-                if(.not.tReuse_SE) SelfEnergy_Imp(:,:) = zzero     !Set self-energy to zero again
+                tSCFFailed = .false.
+                if(iReuse_SE.eq.1) then
+                    !Start from previous converged self-energy
+                    SelfEnergy_Imp(:,:) = Prev_SE_Saved(:,:)
+                else
+                    SelfEnergy_Imp(:,:) = zzero     !Set self-energy to zero again
+                endif
                 h0v_se(:,:) = dcmplx(h0v(:,:))       
                 call add_localpot_comp_inplace(h0v_se,SelfEnergy_Imp,.false.)
             endif
             do while(.not.tSCFConverged)
                 !Self consistently calculate a self-energy function over the impurity sites to match the 
                 !mean-field and HL GF calculations.
-
                 if(tSC_LR) then
                     !Find the mean-field solution with an added self-energy. This will also return the
                     !non-interacting greens functions over the requested impurity sites
@@ -874,10 +880,27 @@ module LinearResponse
      &                      //"                               HL_GF"
                     endif
                     if((tPartialSE_Fit.and.(SE_Fit_Iter.le.iPartialSE_Fit)).or.(.not.tPartialSE_Fit)) then
+                        if((iReuse_SE.eq.2).and.(SE_Fit_Iter.eq.1)) then
+                            !Before first fitting, send in the previous converged self-energy to start from
+                            SE_Change(:,:) = Prev_SE_Saved(:,:) 
+                        else
+                            SE_Change(:,:) = zzero
+                        endif
                         call Fit_SE(SE_Change,Var_SE,Error_GF,nNR_Iters,ResponseFn_Mat,Omega+mu)
                         !Write out
                         write(6,"(2I7,7G20.10)") SE_Fit_Iter,nNR_Iters,Var_SE,Error_GF,Diff_GF,ni_lr,ResponseFn
                         !call writematrixcomp(SE_Change,'SE_Change',.true.)
+                        if(Var_SE.gt.1.0e4_dp) then
+                            !The self-energy has diverged
+                            write(6,*) "DIVERGENT SELF-ENERGY TERM. Skipping frequency."
+                            tSCFConverged = .true.
+                            SE_Change(:,:) = zzero
+                            tSCFFailed = .true.
+                        elseif(SE_Fit_Iter.gt.750) then
+                            write(6,*) "SELF-ENERGY TERM NOT CONVERGED. Skipping frequency."
+                            tSCFConverged = .true.
+                            tSCFFailed = .true.
+                        endif
 
                         !Update self-energy
                         !Emb_h0v_SE and all fock matrices are updated in FindNI_Charged routine 
@@ -912,6 +935,12 @@ module LinearResponse
                     HL_Energy,GFChemPot,abs(AvdNorm_p),abs(AvdNorm_h),real(ni_lr),-aimag(ni_lr),real(ni_lr_p),    &
                     -aimag(ni_lr_p),real(ni_lr_h),-aimag(ni_lr_h),SpectralWeight,iters_p,iters_h,   &
                     real(SelfEnergy_Imp(1,1)),aimag(SelfEnergy_Imp(1,1))
+
+                if(.not.tSCFFailed) then
+                    Prev_SE_Saved(:,:) = SelfEnergy_Imp(:,:)    !Save the self-energy contribution from the previous iteration
+                else
+                    Prev_SE_Saved(:,:) = zzero
+                endif
             else
                 write(iunit,"(18G22.10,2I7)") Omega,real(ResponseFn),-aimag(ResponseFn), &
                     real(AvResFn_p),-aimag(AvResFn_p),real(AvResFn_h),-aimag(AvResFn_h),    &

@@ -76,8 +76,8 @@ LINEAR_RESPONSE
     SELF-CONSISTENCY 0
 (Option to only include self-energy term in the non-interacting hamiltonian)
     NO_MANYBODY_SELFENERGY
-(Option to use the converged self-energy from previous frequency calculation at start of next one)
-    REUSE_SELFENERGY
+(Option to use the converged self-energy from previous frequency calculation at start of next one. Argument =0: no memory of SE from previous frequencies, =1: Start macroiterations with previous converged SE, =2: Start NR microiterations with previous converged SE )
+    REUSE_SELFENERGY 1
 (Option to only do a few fits of the self-energy. Do not fit until self-consistency.)
     ONE_SELFENERGY_FIT 2
 (Option to calculate local response functions over all impurity sites)

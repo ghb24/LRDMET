@@ -81,7 +81,7 @@ Program RealHub
         rtol_LR = 1.0e-8_dp
         tSC_LR = .false.
         tNoHL_SE = .false.
-        tReuse_SE = .false.
+        iReuse_SE = 0
         tAllImp_LR = .false.
         iGF_Fit = 0
         tPartialSE_Fit = .false.
@@ -451,7 +451,7 @@ Program RealHub
                     call readi(iGF_Fit)
                 endif
             case("REUSE_SELFENERGY")
-                tReuse_SE = .true.
+                call readi(iReuse_SE)
             case("PARTIAL_SELFENERGY_FIT")
                 tPartialSE_Fit = .true.
                 if(item.le.nitems) then
@@ -576,7 +576,7 @@ Program RealHub
             call stop_all(t_r,"Reoptimizing ground state not sorted yet for self-consistent response "  &
      &          //"calculations - probably shouldn't happen")
         endif
-        if(tReuse_SE.and.(.not.tSC_LR)) then
+        if((iReuse_SE.ne.0).and.(.not.tSC_LR)) then
             call stop_all(t_r,'Cannot reuse self energy if there is no self-consistency in reponse')
         endif
         if((iGF_Fit.ne.0).and.(.not.tSC_LR)) then
