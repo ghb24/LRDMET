@@ -798,10 +798,10 @@ module mat_tools
     !OUT: GF_Diff is the difference between the High-level greens functions, and the NI GF with the self-energy correction added (In packed form)
     subroutine GFErr(se,GF_Diff,HL_GF,Omega)
         implicit none
-        complex(dp), intent(in) :: se(nImp*nImp)    !The guess for the self-energy *correction* (packed)
+        complex(dp), intent(in) :: se(nVarSE)    !The guess for the self-energy *correction* (packed)
         complex(dp), intent(in) :: HL_GF(nImp,nImp) !The DMET calculated greens functions over all impurity sites
         real(dp), intent(in) :: Omega
-        complex(dp), intent(out) :: GF_Diff(nImp*nImp) 
+        complex(dp), intent(out) :: GF_Diff(nVarSE) 
         complex(dp) :: ni_GFs(nImp,nImp),GF_Diff_unpacked(nImp,nImp)
 
         !Add se to h0v_SE, diagonalize and construct the non-interacting solutions for all impurity sites
@@ -816,7 +816,7 @@ module mat_tools
     subroutine mkgf(se,ni_GFs,Omega)
         use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
         implicit none
-        complex(dp), intent(in) :: se(nImp*nImp)
+        complex(dp), intent(in) :: se(nVarSE)
         real(dp), intent(in) :: Omega
         complex(dp), intent(out) :: ni_GFs(nImp,nImp)
         complex(dp) :: se_unpacked(nImp,nImp)
@@ -995,38 +995,68 @@ module mat_tools
 
     !Pack a 2D complex matrix to a 1D array.
     !To start, assume nothing about the array
-    pure subroutine ToCompPacked(n,unpacked,packed)
+    subroutine ToCompPacked(n,unpacked,packed)
         implicit none
         integer, intent(in) :: n
         complex(dp), intent(in) :: unpacked(n,n)
-        complex(dp), intent(out) :: packed(n*n)
+        complex(dp), intent(out) :: packed(nVarSE)
         integer :: i,j,k
+        character(len=*), parameter :: t_r='ToCompPacked'
 
         packed(:) = zzero
-        k = 1
-        do i = 1,n
-            do j = 1,n
-                packed(k) = unpacked(j,i)
-                k = k + 1
+        if(iSE_Constraints.eq.1) then
+            k = 1
+            do i = 1,n
+                do j = 1,n
+                    packed(k) = unpacked(j,i)
+                    k = k + 1
+                enddo
             enddo
-        enddo
+        else
+            k = 1
+            do i = 1,n
+                do j = 1,i
+                    packed(k) = unpacked(j,i)
+                    if((i.ne.j).and.(abs(unpacked(j,i)-dconjg(unpacked(i,j))).gt.1.0e-8_dp)) then
+                        write(6,*) "i,j ", i,j, unpacked(j,i),unpacked(i,j)
+                        call stop_all(t_r,'Off-diagonal hermiticity in self-energy lost.')
+                    endif
+                    k = k + 1
+                enddo
+            enddo
+        endif
+
     end subroutine ToCompPacked
 
-    pure subroutine FromCompPacked(n,packed,unpacked)
+    subroutine FromCompPacked(n,packed,unpacked)
         implicit none
         integer, intent(in) :: n
-        complex(dp), intent(in) :: packed(n*n)
+        complex(dp), intent(in) :: packed(nVarSE)
         complex(dp), intent(out) :: unpacked(n,n)
         integer :: i,j,k
 
         unpacked(:,:) = zzero
-        k = 1
-        do i = 1,n
-            do j = 1,n
-                unpacked(j,i) = packed(k)
-                k = k + 1
+        if(iSE_Constraints.eq.1) then
+            k = 1
+            do i = 1,n
+                do j = 1,n
+                    unpacked(j,i) = packed(k)
+                    k = k + 1
+                enddo
             enddo
-        enddo
+        else
+            !Store upper triangle of packed hermitian matrix
+            k = 1
+            do i = 1,n
+                do j = 1,i
+                    unpacked(j,i) = packed(k)
+                    if(i.ne.j) then
+                        unpacked(i,j) = dconjg(packed(k))
+                    endif
+                    k = k + 1
+                enddo
+            enddo
+        endif
 
     end subroutine FromCompPacked
 

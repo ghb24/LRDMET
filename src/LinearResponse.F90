@@ -371,7 +371,13 @@ module LinearResponse
             allocate(SelfEnergy_Imp(nImp,nImp)) !The self-consistently determined self-energy correction to match the interacting and non-interacting greens functions
             SelfEnergy_Imp(:,:) = zzero
             Prev_SE_Saved(:,:) = zzero
-            !SelfEnergy_Imp(1,1) = dcmplx(0.0_dp,0.1_dp)
+            if(iSE_Constraints.eq.1) then
+                nVarSE = nImp*nImp     !All elements of self energy are independent
+                write(6,"(A,I5)") "Complete flexibility in self-energy fitting. Number of independent variables: ",nVarSE
+            else
+                nVarSE = (nImp*(nImp+1))/2
+                write(6,"(A,I5)") "Self-energy constrained to be off-diagonal hermitian. Number of independent variables: ",nVarSE
+            endif
             allocate(SE_Change(nImp,nImp))  !The change in self energy each iteration
             SE_Change(:,:) = zzero
             allocate(Emb_h0v_SE(EmbSize,EmbSize))   !The 1-electron hamiltonian (with self-energy correction) over the embedded basis
@@ -478,6 +484,7 @@ module LinearResponse
         
             write(6,*) "Calculating linear response for frequency: ",Omega
             if(tMinRes_NonDir) write(minres_unit,*) "Iteratively solving for frequency: ",Omega
+!            call flush(6)
 
             tSCFConverged = .false.
             if(tSC_LR) then
@@ -902,10 +909,16 @@ module LinearResponse
                             tSCFFailed = .true.
                         endif
 
-                        !Update self-energy
-                        !Emb_h0v_SE and all fock matrices are updated in FindNI_Charged routine 
-                        call add_localpot_comp_inplace(h0v_se,SE_Change,.false.)
-                        SelfEnergy_Imp(:,:) = SelfEnergy_Imp(:,:) + SE_Change(:,:)
+                        if(iGF_Fit.eq.4) then
+                            !If directly calculating self energy from the inverses, only add it to the impurity block
+                            !Do not update self energy as we don't want it striped through the space, or added to the high-level calculation
+                            h0v_SE(1:nImp,1:nImp) = h0v_SE(1:nImp,1:nImp) - SE_Change(:,:) 
+                        else
+                            !Update self-energy
+                            !Emb_h0v_SE and all fock matrices are updated in FindNI_Charged routine 
+                            call add_localpot_comp_inplace(h0v_se,SE_Change,.false.)
+                            SelfEnergy_Imp(:,:) = SelfEnergy_Imp(:,:) + SE_Change(:,:)
+                        endif
                     else
                         !Write out just to show the difference in the GFs
                         write(6,"(2I7,7G20.10)") SE_Fit_Iter,0,zero,Diff_GF,Diff_GF,ni_lr,ResponseFn
@@ -918,6 +931,11 @@ module LinearResponse
                     endif
                 else
                     tSCFConverged = .true.  !We only do one cycle, and do not try to match the greens functions.
+                endif
+
+                if(tSCFConverged.and.tSC_LR) then
+                    write(6,*) "Converged self-energy contribution: "
+                    call writematrixcomp(SelfEnergy_Imp,'Self Energy',.true.)
                 endif
 
                 call halt_timer(LR_EC_GF_FitGF)
@@ -5154,6 +5172,17 @@ module LinearResponse
             call stop_all(t_r,"Should not be in this routine if you don't want to calc all greens functions")
         endif
 
+!        !Check hermiticity
+!        do i = 1,nImp
+!            do j = 1,nImp
+!                if(i.eq.j) cycle
+!                if(abs(dconjg(SelfEnergy_Imp(i,j))-SelfEnergy_Imp(j,i)).gt.1.0e-6_dp) then
+!                    write(6,*) "Losing off-diagonal hermiticity of the self-energy"
+!                    call writematrixcomp(SelfEnergy_Imp,'Self Energy',.true.)
+!                endif
+!            enddo
+!        enddo
+
         allocate(AO_OneE_Ham(nSites,nSites))
         AO_OneE_Ham(:,:) = h0v_SE(:,:)
 !        AO_OneE_Ham(:,:) = zzero
@@ -5317,6 +5346,14 @@ module LinearResponse
             enddo
         enddo
 
+!        write(6,*) "1,1 :",NI_LRMat_Ann(1,1)+NI_LRMat_Cre(1,1)
+!        write(6,*) "Ann 1,2: ",NI_LRMat_Ann(1,2)
+!        write(6,*) "Ann 2,1: ",NI_LRMat_Ann(2,1)
+!        write(6,*) "Cre 1,2: ",NI_LRMat_Cre(1,2)
+!        write(6,*) "Cre 2,1: ",NI_LRMat_Cre(2,1)
+!        write(6,*) "Sum 1,2: ",NI_LRMat_Ann(1,2) + NI_LRMat_Cre(1,2)
+!        write(6,*) "Sum 2,1: ",NI_LRMat_Ann(2,1) + NI_LRMat_Cre(2,1)
+!
         !Now, we need to project these NI wavefunctions into the schmidt basis
         !We want to rotate the vectors, expressed in the 'right' basis, back into that AO basis.
         !If we can do that, we can easily rotate into the Schmidt basis.

@@ -120,6 +120,8 @@ module Globals
     integer :: iGF_Fit          ! Type of fitting in SC_LR: 0 - normal, 1 - DampedNR, 2 - Linesearch, 3 - Damped & linesearch
     logical :: tPartialSE_Fit   ! Do iPartialSE_Fit fits of the self-energy. Do not fit until self consistency between HL and NI GFs
     integer :: iPartialSE_Fit   ! Max number of fits to do of the self energy
+    integer :: nVarSE           ! Number of independent variables in the packed self-energy matrix
+    integer :: iSE_Constraints  ! Input constraints on flexibility of the self-energy matrix
     
     !DMET_LR global data
     !When a non-hermitian self-energy is added, we need to seperately calculate the non-interacting wavefunctions expressed in the right-eigenvector space

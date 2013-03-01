@@ -86,6 +86,7 @@ Program RealHub
         iGF_Fit = 0
         tPartialSE_Fit = .false.
         iPartialSE_Fit = 0
+        iSE_Constraints = 1
 
     end subroutine set_defaults
 
@@ -457,6 +458,8 @@ Program RealHub
                 if(item.le.nitems) then
                     call readi(iPartialSE_Fit)
                 endif
+            case("SELF_ENERGY_CONSTRAINTS")
+                call readi(iSE_Constraints)
             case("NO_MANYBODY_SELFENERGY")
                 tNoHL_SE = .true.
             case("RESPONSE_ALLIMP")
@@ -493,6 +496,7 @@ Program RealHub
                 write(6,"(A)") "NO_MANYBODY_SELFENERGY"
                 write(6,"(A)") "REUSE_SELFENERGY"
                 write(6,"(A)") "PARTIAL_SELFENERGY_FIT"
+                write(6,"(A)") "SELF_ENERGY_CONSTRAINTS"
                 write(6,"(A)") "RESPONSE_ALLIMP"
                 write(6,"(A)") "NON_NULL"
                 write(6,"(A)") "REOPT_GS"
@@ -582,7 +586,7 @@ Program RealHub
         if((iGF_Fit.ne.0).and.(.not.tSC_LR)) then
             call stop_all(t_r,'How was iGF_Fit set without SC_LR!')
         endif
-        if(iGF_Fit.gt.3) then
+        if(iGF_Fit.gt.4) then
             call stop_all(t_r,'iGF_Fit set to illegal value')
         endif
         if(tNoHL_SE.and.(.not.tSC_LR)) then

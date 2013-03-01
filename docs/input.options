@@ -72,10 +72,12 @@ LINEAR_RESPONSE
     FREQ 0.0 8.0 0.01
 (Spectral broadening)
     BROADENING 0.01
-(Option for self-consistency for optimization of linear response functions. Optional argument for type of fitting: 0 - normal, 1 - damped NR, 2 - Linesearch NR, 3 - Damped & linesearch NR)
+(Option for self-consistency for optimization of linear response functions. Optional argument for type of fitting: 0 - normal, 1 - damped NR, 2 - Linesearch NR, 3 - Damped & linesearch NR, 4 - No fit: Direct inversion)
     SELF-CONSISTENCY 0
 (Option to only include self-energy term in the non-interacting hamiltonian)
     NO_MANYBODY_SELFENERGY
+(Constrain optimization of self energy. 1 - no constraint, 2 - off-diagonal hermitian)
+    SELF_ENERGY_CONSTRAINTS 2
 (Option to use the converged self-energy from previous frequency calculation at start of next one. Argument =0: no memory of SE from previous frequencies, =1: Start macroiterations with previous converged SE, =2: Start NR microiterations with previous converged SE )
     REUSE_SELFENERGY 1
 (Option to only do a few fits of the self-energy. Do not fit until self-consistency.)
