@@ -11,16 +11,17 @@ module fitting
 
     !Fit the self-energy, st. the non-interacting and interacting greens functions match
     !On entry, SE_Change_unpacked is the starting guess for the NR
-    subroutine Fit_SE(SE_Change_unpacked,Var_SE,Error_GF,nNR_Iters,HL_GF,Omega)
+    subroutine Fit_SE(SE_Change_unpacked,Var_SE,Error_GF,nNR_Iters,HL_GF,Omega,NI_GF)
         implicit none
         complex(dp), intent(in) :: HL_GF(nImp,nImp)
         real(dp), intent(in) :: Omega
         complex(dp), intent(inout) :: se_change_unpacked(nImp,nImp)   !The correction to the self-energy
         real(dp), intent(out) :: Error_GF   !The sum squared difference between the NI and HL GFs
         real(dp), intent(out) :: Var_SE     !The sum squared magnitude of the change in self-energy contribution
+        complex(dp), intent(in) :: NI_GF(nImp,nImp)
         integer, intent(out) :: nNR_Iters   !The number of iterations the NR required
         complex(dp), allocatable :: se_change(:)    !The packed change in SE which is calculated
-        complex(dp), allocatable :: HL_GF_Inv(:,:),NI_GF_Inv(:,:),NI_GF(:,:)
+        complex(dp), allocatable :: HL_GF_Inv(:,:),NI_GF_Inv(:,:)
         complex(dp) :: GF_Diff(nImp,nImp)
         integer :: i,j
             
@@ -28,7 +29,39 @@ module fitting
         !This means that se_change is 1D, of size nImp^2
         allocate(se_change(nVarSE))
     
-        if(iGF_Fit.eq.4) then
+        if(iGF_Fit.ge.5) then
+            !Calculate original error
+            GF_Diff(:,:) = NI_GF(:,:) - HL_GF(:,:)
+            Error_GF = zero
+            do i = 1,nImp
+                do j = 1,nImp
+                    Error_GF = Error_GF + real(GF_Diff(j,i)*dconjg(GF_Diff(j,i)))
+                enddo
+            enddo
+            write(6,*) "Original error: ",Error_GF
+            
+            !Find inverse of HF GF
+            allocate(HL_GF_Inv(nImp,nImp))
+            HL_GF_Inv(:,:) = zzero
+            call z_inv(HL_GF,HL_GF_Inv)
+
+            !Find inverse of NI GF
+            allocate(NI_GF_Inv(nImp,nImp))
+            NI_GF_Inv(:,:) = zzero
+            call z_inv(NI_GF,NI_GF_Inv)
+
+            !Find self-energy
+            !Calculate difference of inverses
+            SE_Change_unpacked(:,:) = zzero
+            SE_Change_unpacked(:,:) = NI_GF_Inv(:,:) - HL_GF_Inv(:,:)
+
+            !Calculate hybridization
+            Hybrid(:,:) = - Emb_h0v(1:nImp,1:nImp) - SE_Change_unpacked(:,:) - NI_GF_Inv(:,:)
+            do i=1,nImp
+                Hybrid(i,i) = Hybrid(i,i) + dcmplx(Omega,dDelta)
+            enddo
+
+        elseif(iGF_Fit.eq.4) then
             !Directly take the difference of the inverses of the greens functions
             !Self energy = NI_GF^-1 - HL_GF^-1
             allocate(HL_GF_Inv(nImp,nImp))
@@ -41,7 +74,6 @@ module fitting
             allocate(NI_GF_Inv(nImp,nImp))
             NI_GF_Inv(:,:) = zzero
 
-            allocate(NI_GF(nImp,nImp))
             SE_Change(:) = zzero
             NI_GF(:,:) = zzero
             !Create non-interacting GFs
@@ -80,7 +112,7 @@ module fitting
             write(6,*) "Final error: ",Error_GF
             nNR_Iters = 0
 
-            deallocate(HL_GF_Inv,NI_GF_Inv,NI_GF)
+            deallocate(HL_GF_Inv,NI_GF_Inv)
 
         else
             
