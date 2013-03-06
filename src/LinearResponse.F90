@@ -196,6 +196,14 @@ module LinearResponse
                 umat(umatind(i,i,i,i)) = U
             enddo
         endif
+        if(allocated(tmat_comp)) deallocate(tmat_comp)
+        allocate(tmat_comp(EmbSize,EmbSize))
+        do i = 1,EmbSize
+            do j = 1,EmbSize
+                tmat_comp(j,i) = dcmplx(Emb_h0v(j,i),0.0_dp)
+            enddo
+        enddo
+        if(tChemPot) tmat_comp(1,1) = tmat_comp(1,1) - dcmplx(U/2.0_dp,0.0_dp)
         
         !Enumerate excitations for fully coupled space
         !Seperate the lists into different Ms sectors in the N+- lists
@@ -213,6 +221,7 @@ module LinearResponse
         allocate(NFCIHam(nFCIDet,nFCIDet))
         allocate(Np1FCIHam_alpha(nNp1FCIDet,nNp1FCIDet))
         allocate(Nm1FCIHam_beta(nNm1bFCIDet,nNm1bFCIDet))
+        call Fill_N_Np1_Nm1b_FCIHam(Elec,NFCIHam,Np1FCIHam_alpha,Nm1FCIHam_beta)
 
         nLinearSystem = nNp1FCIDet + nFCIDet
         nLinearSystem_h = nNm1bFCIDet + nFCIDet
@@ -362,23 +371,12 @@ module LinearResponse
             allocate(SelfEnergy_Imp(nImp,nImp)) !The self-consistently determined self-energy correction to match the interacting and non-interacting greens functions
             SelfEnergy_Imp(:,:) = zzero
             Prev_SE_Saved(:,:) = zzero
-            !We are numerically fitting
             if(iSE_Constraints.eq.1) then
                 nVarSE = nImp*nImp     !All elements of self energy are independent
                 write(6,"(A,I5)") "Complete flexibility in self-energy fitting. Number of independent variables: ",nVarSE
             else
                 nVarSE = (nImp*(nImp+1))/2
                 write(6,"(A,I5)") "Self-energy constrained to be off-diagonal hermitian. Number of independent variables: ",nVarSE
-            endif
-            if(iGF_Fit.ge.5) then
-                !We need a hybridization potential to define the bath and potentially couple to it
-                allocate(Hybrid(nImp,nImp))
-                Hybrid(:,:) = zzero
-                if((iGF_Fit.eq.6).or.(iGF_Fit.eq.8)) then
-                    tNoHL_SE = .false.   !Hybridization defined in the hamiltonian, but only in bath parts.
-                else
-                    tNoHL_SE = .true.    !No hybridization OR self-energy in bath
-                endif
             endif
             allocate(SE_Change(nImp,nImp))  !The change in self energy each iteration
             SE_Change(:,:) = zzero
@@ -388,8 +386,6 @@ module LinearResponse
             h0v_se(:,:) = dcmplx(h0v(:,:))              !Initially set it so h0v
             call add_localpot_comp_inplace(h0v_se,SelfEnergy_Imp,.false.)
         endif
-        
-        call Fill_N_Np1_Nm1b_FCIHam(Elec,NFCIHam,Np1FCIHam_alpha,Nm1FCIHam_beta)
         
         !Space for useful intermediates
         !For particle addition
@@ -516,6 +512,8 @@ module LinearResponse
                     !If we have a self-consistent self-energy contribution, we also need to update
                     !the hamiltonians which have been stored.
                     !Update tmat with the new one-electron hamiltonian, with self-energy contribution
+                    tmat_comp(:,:) = Emb_h0v_SE(:,:)
+                    if(tChemPot) tmat_comp(1,1) = tmat_comp(1,1) - dcmplx(U/2.0_dp,0.0_dp)
                     call Fill_N_Np1_Nm1b_FCIHam(Elec,NFCIHam,Np1FCIHam_alpha,Nm1FCIHam_beta)
                 else
                     !First, find the non-interacting solution expressed in the schmidt basis
@@ -566,15 +564,6 @@ module LinearResponse
                         !Block 4 (diagonal part to come)
                         GSHam(Nm1GSInd:nGSSpace,Nm1GSInd:nGSSpace) = Nm1FCIHam_beta(:,:)
                     endif
-                    if(iGF_Fit.ge.5) then
-                        !Include core contribution
-                        do i = 1,nNp1FCIDet
-                            LinearSystem_p(i,i) = LinearSystem_p(i,i) + dcmplx(CoreEnergy,0.0_dp)
-                        enddo
-                        do i = 1,nNm1bFCIDet
-                            LinearSystem_h(i,i) = LinearSystem_h(i,i) + dcmplx(CoreEnergy,0.0_dp)
-                        enddo
-                    endif
 
                     !Block 2 for particle hamiltonian
                     !Copy the N electron FCI hamiltonian to this diagonal block
@@ -601,17 +590,6 @@ module LinearResponse
                             GSHam(i,i) = GSHam(i,i) + tempel
                         enddo
                     endif
-                    if(iGF_Fit.ge.5) then
-                        !Include core contribution. This will be different if the hybridization is included in the 1e hamiltonian
-                        CoreContrib = zzero
-                        do i = 1,CoreEnd
-                            CoreContrib = CoreContrib + FockSchmidt_SE(i,i)
-                        enddo
-                        CoreContrib = CoreContrib * 2.0_dp
-                        do i = VIndex,nLinearSystem
-                            LinearSystem_p(i,i) = LinearSystem_p(i,i) + CoreContrib
-                        enddo
-                    endif
 
                     !Block 2 for the hole hamiltonian
                     !Copy the N electron FCI hamiltonian to this diagonal blockk
@@ -635,17 +613,6 @@ module LinearResponse
                         !Diagonal part of block 2
                         do i = Np1GSInd,Nm1GSInd-1
                             GSHam(i,i) = GSHam(i,i) + tempel
-                        enddo
-                    endif
-                    if(iGF_Fit.ge.5) then
-                        !Include core contribution. This will be different if the hybridization is included in the 1e hamiltonian
-                        CoreContrib = zzero
-                        do i = 1,CoreEnd
-                            CoreContrib = CoreContrib + FockSchmidt_SE(i,i)
-                        enddo
-                        CoreContrib = CoreContrib * 2.0_dp
-                        do i = VIndex,nLinearSystem
-                            LinearSystem_h(i,i) = LinearSystem_h(i,i) + CoreContrib
                         enddo
                     endif
                 
@@ -926,7 +893,7 @@ module LinearResponse
                         else
                             SE_Change(:,:) = zzero
                         endif
-                        call Fit_SE(SE_Change,Var_SE,Error_GF,nNR_Iters,ResponseFn_Mat,Omega+mu,ni_lr_Mat)
+                        call Fit_SE(SE_Change,Var_SE,Error_GF,nNR_Iters,ResponseFn_Mat,Omega+mu)
                         !Write out
                         write(6,"(2I7,7G20.10)") SE_Fit_Iter,nNR_Iters,Var_SE,Error_GF,Diff_GF,ni_lr,ResponseFn
                         !call writematrixcomp(SE_Change,'SE_Change',.true.)
@@ -2384,21 +2351,6 @@ module LinearResponse
         complex(dp), intent(out) :: Np1Ham(nNp1FCIDet,nNp1FCIDet)
         complex(dp), intent(out) :: Nm1bHam(nNm1bFCIDet,nNm1bFCIDet)
         integer :: i,j
-        
-        if(allocated(tmat_comp)) deallocate(tmat_comp)
-        allocate(tmat_comp(EmbSize,EmbSize))
-        if(.not.tSC_LR) then
-            do i = 1,EmbSize
-                do j = 1,EmbSize
-                    tmat_comp(j,i) = dcmplx(Emb_h0v(j,i),0.0_dp)
-                enddo
-            enddo
-            if(tChemPot) tmat_comp(1,1) = tmat_comp(1,1) - dcmplx(U/2.0_dp,0.0_dp)
-        else
-            tmat_comp(:,:) = Emb_h0v_SE(:,:)
-            if(tChemPot) tmat_comp(1,1) = tmat_comp(1,1) - dcmplx(U/2.0_dp,0.0_dp)
-        endif
-
 
         NHam(:,:) = zzero
         Np1Ham(:,:) = zzero
@@ -2410,16 +2362,6 @@ module LinearResponse
                 call GetHElement_comp(FCIDetList(:,i),FCIDetList(:,j),nElec,NHam(i,j))
             enddo
         enddo
-        if(iGF_Fit.ge.5) then
-            !We want the n +- 1 hamiltonians to use the integrals without hybridization
-            !Recalculate bare 1 electron integrals
-            do i = 1,EmbSize
-                do j = 1,EmbSize
-                    tmat_comp(j,i) = dcmplx(Emb_h0v(j,i),0.0_dp)
-                enddo
-            enddo
-            if(tChemPot) tmat_comp(1,1) = tmat_comp(1,1) - dcmplx(U/2.0_dp,0.0_dp)
-        endif
         do i = 1,nNp1FCIDet
             do j = 1,nNp1FCIDet
                 call GetHElement_comp(Np1FCIDetList(:,i),Np1FCIDetList(:,j),nElec+1,Np1Ham(i,j))
@@ -5404,52 +5346,6 @@ module LinearResponse
             enddo
         enddo
 
-        if((iGF_Fit.eq.5).or.(iGF_Fit.eq.6)) then
-            !We are happy with the non-interacting hamiltonian being defined with the self-energy contribution
-            !However, the bath basis wants to be creating with the hybridization contribution
-            !Recalculate them with this contribution
-            AO_OneE_Ham(:,:) = h0v_SE(:,:)
-            !Stripe the complex (-)hybridization through the AO one-electron hamiltonian (with SE already defined)
-            call add_localpot_comp_inplace(AO_OneE_Ham,Hybrid,tAdd=.false.)
-            !Now, diagonalize the resultant non-hermitian one-electron hamiltonian
-            RVec = zzero
-            LVec = zzero
-            W_Vals = zzero
-            allocate(Work(max(1,2*nSites)))
-            allocate(cWork(1))
-            lwork = -1
-            info = 0
-            call zgeev('V','V',nSites,AO_OneE_Ham,nSites,W_Vals,LVec,nSites,RVec,nSites,cWork,lWork,Work,info)
-            if(info.ne.0) call stop_all(t_r,'Workspace query failed')
-            lwork = int(abs(cWork(1)))+1
-            deallocate(cWork)
-            allocate(cWork(lWork))
-            call zgeev('V','V',nSites,AO_OneE_Ham,nSites,W_Vals,LVec,nSites,RVec,nSites,cWork,lWork,Work,info)
-            if(info.ne.0) call stop_all(t_r,'Diag of H - SE failed')
-            deallocate(work,cWork)
-            !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
-            !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
-            call Order_zgeev_vecs(W_Vals,LVec,RVec)
-            !call writevectorcomp(W_Vals,'Eigenvalues ordered')
-            !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
-            call Orthonorm_zgeev_vecs(nSites,W_Vals,LVec,RVec)
-            HFPertBasis_Ann_Bra(:,:) = zzero
-            HFPertBasis_Cre_Bra(:,:) = zzero
-            HFPertBasis_Ann_Ket(:,:) = zzero
-            HFPertBasis_Cre_Ket(:,:) = zzero
-            do pertsite = 1,nImp
-                do i = 1,nOcc
-                    HFPertBasis_Ann_Ket(i,pertsite) = dconjg(LVec(pertsite,i))/(dcmplx(Omega,dDelta)-W_Vals(i))
-                    HFPertBasis_Ann_Bra(i,pertsite) = RVec(pertsite,i)/(dcmplx(Omega,-dDelta)-W_Vals(i))
-                enddo
-                do a = nOcc+1,nSites
-                    HFPertBasis_Cre_Ket(a,pertsite) = dconjg(LVec(pertsite,a))/(dcmplx(Omega,dDelta)-W_Vals(a))
-                    HFPertBasis_Cre_Bra(a,pertsite) = RVec(pertsite,a)/(dcmplx(Omega,-dDelta)-W_Vals(a))
-                enddo
-            enddo
-        endif
-
-
 !        write(6,*) "1,1 :",NI_LRMat_Ann(1,1)+NI_LRMat_Cre(1,1)
 !        write(6,*) "Ann 1,2: ",NI_LRMat_Ann(1,2)
 !        write(6,*) "Ann 2,1: ",NI_LRMat_Ann(2,1)
@@ -5508,6 +5404,8 @@ module LinearResponse
             SchmidtPertGF_Cre_Bra(VirtStart:nSites,:),nVirt)
         deallocate(temp,temp2)
         
+        !TODO: Check that in the absence of a self-energy, the Bra and Ket are complex conjugates of each other.
+
         if(.not.tNoHL_SE) then
             !Now, we need to find the new 1 electron hamiltonian for the interacting problem.
             !This wants to have the self-energy projected into the schmidt basis, but only over the bath and
@@ -5517,11 +5415,7 @@ module LinearResponse
             !Stripe the self energy through the space
             allocate(temp(nSites,nSites))
             temp(:,:) = zzero
-            if(iGF_Fit.ge.5) then
-                call add_localpot_comp_inplace(temp,Hybrid,tAdd=.true.)
-            else
-                call add_localpot_comp_inplace(temp,SelfEnergy_Imp,tAdd=.true.)
-            endif
+            call add_localpot_comp_inplace(temp,SelfEnergy_Imp,tAdd=.true.)
             !temp is now just the self-energy striped through the space, in the AO basis
             !Rotate this into the embedding basis
             allocate(temp2(EmbSize,nSites))
@@ -5535,11 +5429,8 @@ module LinearResponse
             call ZGEMM('N','N',EmbSize,EmbSize,nSites,zone,temp2,EmbSize,EmbeddedBasis_C,nSites,zzero,Emb_h0v_SE,EmbSize)
             deallocate(temp2,EmbeddedBasis_C)
             
-            if(iGF_Fit.lt.5) then
-                !Now, zero out the self-energy contribution over the impurity site
-                !TODO: Test whether we should do this for hybridization!
-                Emb_h0v_SE(1:nImp,1:nImp) = zzero
-            endif
+            !Now, zero out the self-energy contribution over the impurity site
+            Emb_h0v_SE(1:nImp,1:nImp) = zzero
             !Now subtract this self-energy correction from the normal one-electron hamiltonian in the embedded space (with corr pot)
             !The resulting one-electron embedding potential is neither real, nor hermitian
             Emb_h0v_SE(:,:) = Emb_h0v(:,:) - Emb_h0v_SE(:,:)
@@ -5553,16 +5444,7 @@ module LinearResponse
 
             !This now gives the one-electron hamiltonian in the AO basis, with the self-energy subtracted.
             !Rotate from the AO basis, to the Schmidt basis
-            allocate(temp2(nSites,nSites))
-            if(iGF_Fit.ge.5) then
-                !hamiltonian should have hybridization subtracted from it
-                temp2(:,:) = h0v
-                call add_localpot_comp_inplace(temp2,Hybrid,tAdd=.false.)   !Subtract hybridization
-            else
-                !We want the 1e hamiltnoian to include SE contribution
-                temp2(:,:) = h0v_SE(:,:)
-            endif
-            call ZGEMM('T','N',nSites,nSites,nSites,zone,FullSchmidtTrans_C,nSites,temp2,nSites,zzero,temp,nSites)
+            call ZGEMM('T','N',nSites,nSites,nSites,zone,FullSchmidtTrans_C,nSites,h0v_SE,nSites,zzero,temp,nSites)
             call ZGEMM('N','N',nSites,nSites,nSites,zone,temp,nSites,FullSchmidtTrans_C,nSites,zzero,FockSchmidt_SE,nSites)
 
             do i=nImp+1,EmbSize
