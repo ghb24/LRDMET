@@ -3,7 +3,7 @@ module fitting
     use errors, only: stop_all, warning
     use globals
     use mat_tools, only: GFErr,RDMErr,FromTriangularPacked,ToTriangularPacked,FromCompPacked,ToCompPacked,znrm2,mkgf
-    use mat_tools, only: WriteMatrixcomp
+    use mat_tools, only: WriteMatrixcomp,add_localpot_comp_inplace
     use matrixops, only: z_inv
     implicit none
 
@@ -11,64 +11,113 @@ module fitting
 
     !Fit the self-energy, st. the non-interacting and interacting greens functions match
     !On entry, SE_Change_unpacked is the starting guess for the NR
-    subroutine Fit_SE(SE_Change_unpacked,Var_SE,Error_GF,nNR_Iters,HL_GF,Omega)
+    subroutine Fit_SE(SE_Change_unpacked,Var_SE,Error_GF,nNR_Iters,HL_GF,Omega,nFitCycle,NIGF_Readin)
         implicit none
         complex(dp), intent(in) :: HL_GF(nImp,nImp)
         real(dp), intent(in) :: Omega
+        integer, intent(in) :: nFitCycle    !The number of fitting cycles
         complex(dp), intent(inout) :: se_change_unpacked(nImp,nImp)   !The correction to the self-energy
+        complex(dp), intent(in) :: NIGF_Readin(nImp,nImp)   !The non-interacting GF calculated previously
         real(dp), intent(out) :: Error_GF   !The sum squared difference between the NI and HL GFs
         real(dp), intent(out) :: Var_SE     !The sum squared magnitude of the change in self-energy contribution
         integer, intent(out) :: nNR_Iters   !The number of iterations the NR required
         complex(dp), allocatable :: se_change(:)    !The packed change in SE which is calculated
         complex(dp), allocatable :: HL_GF_Inv(:,:),NI_GF_Inv(:,:),NI_GF(:,:)
         complex(dp) :: GF_Diff(nImp,nImp)
-        integer :: i,j
+        integer :: i,j,it
+        real(dp) :: dDamping    !The damping in the change of the selfenergy
+        character(len=*), parameter :: t_r='Fit_SE'
             
-        !Initially, assume that there are no constraints on the form of the self-energy
-        !This means that se_change is 1D, of size nImp^2
-        allocate(se_change(nVarSE))
-    
+        Var_SE = zero
+            
         if(iGF_Fit.eq.4) then
             !Directly take the difference of the inverses of the greens functions
             !Self energy = NI_GF^-1 - HL_GF^-1
+            allocate(NI_GF_Inv(nImp,nImp))
+            allocate(NI_GF(nImp,nImp))
             allocate(HL_GF_Inv(nImp,nImp))
             HL_GF_Inv(:,:) = zzero
-
             call z_inv(HL_GF,HL_GF_Inv)
+            !call writematrixcomp(HL_GF_Inv,'Inverse of high-level GF',.true.)
 
-            call writematrixcomp(HL_GF_Inv,'Inverse of high-level GF',.true.)
+            it=0
+            do while(.true.) 
+                it=it+1
+                if((.not.tConvergeMicroSE).and.it.gt.1) exit    !Do not iterate
 
-            allocate(NI_GF_Inv(nImp,nImp))
-            NI_GF_Inv(:,:) = zzero
+                NI_GF_Inv(:,:) = zzero
+                NI_GF(:,:) = zzero
+                !Create non-interacting GFs
+                !write(6,*) "Adding in selfenergy term: ",SelfEnergy_Imp
+                if(it.eq.1) then
+                    NI_GF(:,:) = NIGF_Readin(:,:)
+                else
+                    call CreateNIGF(SelfEnergy_Imp,NI_GF,Omega)
+                endif
 
-            allocate(NI_GF(nImp,nImp))
-            SE_Change(:) = zzero
-            NI_GF(:,:) = zzero
-            !Create non-interacting GFs
-            call mkgf(SE_Change,NI_GF,Omega)
-            !Calculate original error
-            GF_Diff(:,:) = NI_GF(:,:) - HL_GF(:,:)
-            Error_GF = zero
-            do i = 1,nImp
-                do j = 1,nImp
-                    Error_GF = Error_GF + real(GF_Diff(j,i)*dconjg(GF_Diff(j,i)))
+                !Calculate original error
+                GF_Diff(:,:) = NI_GF(:,:) - HL_GF(:,:)
+                Error_GF = zero
+                do i = 1,nImp
+                    do j = 1,nImp
+                        Error_GF = Error_GF + real(GF_Diff(j,i)*dconjg(GF_Diff(j,i)))
+                    enddo
                 enddo
+                !write(6,*) "error it : ",it-1,Error_GF,NI_GF(:,:)
+    !            do i=1,nImp
+    !                do j=1,nImp
+    !                    if(abs(NIGF_Readin(j,i)-NI_GF(j,i)).gt.1.0e-8_dp) then
+    !                        call stop_all(t_r,'read in NI GF does not match calculated value')
+    !                    endif
+    !                enddo
+    !            enddo
+                if(abs(Error_GF).lt.1.0e-7_dp) exit
+                if(it.gt.20) then
+                    call warning(t_r,'More than 20 iterations needed it attempted convergence of self-energy iteration')
+                    write(6,*) "Remaining discrepancy between greens functions: ",abs(Error_GF)
+                    exit
+                endif
+
+                !Invert non-interacting greens functions
+                call z_inv(NI_GF,NI_GF_Inv)
+                !call writematrixcomp(NI_GF_Inv,'Inverse of NI GF',.true.)
+
+                !Calculate difference of inverses
+                SE_Change_unpacked(:,:) = zzero
+                !SE_Change_unpacked(:,:) = NI_GF_Inv(:,:) - HL_GF_Inv(:,:)
+                SE_Change_unpacked(:,:) = HL_GF_Inv(:,:) - NI_GF_Inv(:,:)
+                !write(6,*) "SE_Change: ",SE_Change_unpacked(:,:)
+                !write(6,*) "HL_Inv: ",HL_GF_Inv(:,:)
+                !write(6,*) "NI_Inv: ",NI_GF_Inv(:,:)
+
+                dDamping = exp(-(1.0_dp/DampingExponent)*nFitCycle)
+                if(mod(nFitCycle,10).eq.0) write(6,*) "Damping value: ",dDamping
+                !write(6,*) "Damping: ",dDamping
+                SE_Change_unpacked(:,:) = dDamping*SE_Change_unpacked(:,:)
+            
+                !Change in self-energy: Our convergence metric 
+                !Just sum of squared elements
+                do i = 1,nImp
+                    do j = 1,nImp
+                        Var_SE = Var_SE + real(se_change_unpacked(j,i)*dconjg(se_change_unpacked(j,i)))
+                    enddo
+                enddo
+
+                !Now, update the global variables of h0v_se and SelfEnergy_Imp
+                !The change is additive? These two changes should certainly be oppositely signed
+!                do i=1,nImp
+!                    if(aimag(SelfEnergy_Imp(i,i)).lt.0.0_dp) SelfEnergy_Imp(i,i) = dconjg(SelfEnergy_Imp(i,i))
+!                enddo
+                call add_localpot_comp_inplace(h0v_se,SE_Change_unpacked,.false.)
+                SelfEnergy_Imp(:,:) = SelfEnergy_Imp(:,:) + SE_Change_unpacked(:,:)
+                !write(6,*) "Self Energy: ",SelfEnergy_Imp(:,:)
             enddo
-            write(6,*) "Original error: ",Error_GF
-
-            !Invert non-interacting greens functions
-            call z_inv(NI_GF,NI_GF_Inv)
-            call writematrixcomp(NI_GF_Inv,'Inverse of NI GF',.true.)
-
-            !Calculate difference of inverses
-            SE_Change_unpacked(:,:) = zzero
-            SE_Change_unpacked(:,:) = NI_GF_Inv(:,:) - HL_GF_Inv(:,:)
 
             !Final error
             !Recalculate non-interacting GF, with new self-energy
-            call ToCompPacked(nImp,SE_Change_unpacked,SE_Change)
             NI_GF(:,:) = zzero
-            call mkgf(SE_Change,NI_GF,Omega)
+            call CreateNIGF(SelfEnergy_Imp,NI_GF,Omega)
+!            call mkgf(SE_Change,NI_GF,Omega)
             !Calculate new error
             GF_Diff(:,:) = NI_GF(:,:) - HL_GF(:,:)
             Error_GF = zero
@@ -77,13 +126,14 @@ module fitting
                     Error_GF = Error_GF + real(GF_Diff(j,i)*dconjg(GF_Diff(j,i)))
                 enddo
             enddo
-            write(6,*) "Final error: ",Error_GF
-            nNR_Iters = 0
+            !write(6,*) "Final error: ",Error_GF,NI_GF(:,:)
+            nNR_Iters = it-1
 
             deallocate(HL_GF_Inv,NI_GF_Inv,NI_GF)
 
         else
             
+            allocate(se_change(nVarSE))
             !The aim now, is to find a Self-energy (over the impurity sites) which when added to the fock matrix
             !will give the same non-interacting GF as the high-level calculation 
             !Initial guess of vloc over impurity sites
@@ -97,20 +147,119 @@ module fitting
             !se_change should now be the new correction to the self-energy
             call FromCompPacked(nImp,se_change,se_change_unpacked) !unpack
 
+            deallocate(se_change)
+
+            !Change in self-energy: Our convergence metric 
+            !Just sum of squared elements
+            do i = 1,nImp
+                do j = 1,nImp
+                    Var_SE = Var_SE + real(se_change_unpacked(j,i)*dconjg(se_change_unpacked(j,i)))
+                enddo
+            enddo
+
         endif
 
-        !Change in self-energy: Our convergence metric 
-        !Just sum of squared elements
-        Var_SE = zero
-        do i = 1,nImp
-            do j = 1,nImp
-                Var_SE = Var_SE + real(se_change_unpacked(j,i)*dconjg(se_change_unpacked(j,i)))
+
+    end subroutine Fit_SE
+            
+    subroutine CreateNIGF(SE,NI_GF,Omega)
+        use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
+        implicit none
+        real(dp), intent(in) :: Omega
+        complex(dp), intent(out) :: NI_GF(nImp,nImp)
+        complex(dp), intent(in) :: SE(nImp,nImp)
+        complex(dp), allocatable :: AO_OneE_Ham(:,:),W_Vals(:),RVec(:,:),LVec(:,:),cWork(:)
+        complex(dp) :: NI_Ann(nImp,nImp),NI_Cre(nImp,nImp)
+        complex(dp), allocatable :: HF_Ann_Ket(:,:),HF_Cre_Ket(:,:)
+        real(dp), allocatable :: Work(:)
+        integer :: i,j,a,lWork,info,pertBra,pertsite
+        character(len=*), parameter :: t_r='CreateNIGF'
+
+        allocate(AO_OneE_Ham(nSites,nSites))
+        AO_OneE_Ham(:,:) = zzero
+        do i=1,nSites
+            do j=1,nSites
+                AO_OneE_Ham(j,i) = dcmplx(h0v(j,i),0.0_dp)
+            enddo
+        enddo
+        call add_localpot_comp_inplace(AO_OneE_Ham,SE,.false.)
+!        write(6,*) "Added in self energy to hamiltonian: ",AO_OneE_Ham(1,1),SE
+
+        !Now, diagonalize the resultant non-hermitian one-electron hamiltonian
+        allocate(W_Vals(nSites))
+        allocate(RVec(nSites,nSites))
+        allocate(LVec(nSites,nSites))
+        RVec = zzero
+        LVec = zzero
+        W_Vals = zzero
+        allocate(Work(max(1,2*nSites)))
+        allocate(cWork(1))
+        lwork = -1
+        info = 0
+        call zgeev('V','V',nSites,AO_OneE_Ham,nSites,W_Vals,LVec,nSites,RVec,nSites,cWork,lWork,Work,info)
+        if(info.ne.0) call stop_all(t_r,'Workspace query failed')
+        lwork = int(abs(cWork(1)))+1
+        deallocate(cWork)
+        allocate(cWork(lWork))
+        call zgeev('V','V',nSites,AO_OneE_Ham,nSites,W_Vals,LVec,nSites,RVec,nSites,cWork,lWork,Work,info)
+        if(info.ne.0) call stop_all(t_r,'Diag of H - SE failed')
+        deallocate(work,cWork)
+
+        !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
+        !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
+        call Order_zgeev_vecs(W_Vals,LVec,RVec)
+        !call writevectorcomp(W_Vals,'Eigenvalues ordered')
+        !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
+        call Orthonorm_zgeev_vecs(nSites,W_Vals,LVec,RVec)
+
+        NI_GF(:,:) = zzero
+        NI_Cre(:,:) = zzero
+        NI_Ann(:,:) = zzero 
+
+        !Memory to temperarily store the first order wavefunctions of each impurity site, in the right MO basis (For the Kets)
+        !and the left MO space (for the Bras)
+        allocate(HF_Ann_Ket(1:nOcc,nImp))
+        allocate(HF_Cre_Ket(nOcc+1:nSites,nImp))
+        HF_Ann_Ket(:,:) = zzero
+        HF_Cre_Ket(:,:) = zzero
+
+        !write(6,*) "Spectrum: ",W_Vals(nOcc-1),W_Vals(nOcc)
+            
+        !call writematrixcomp(RVec(1:nImp,1:nSites),'RVec(1:nImp,1:nOcc) - LR',.true.)
+        !Now, form the non-interacting greens functions (but with u *and* self-energy)
+        do pertsite = 1,nImp
+            !Form the set of non-interacting first order wavefunctions from the new one-electron h for both Bra and Ket versions
+            do i = 1,nOcc
+                HF_Ann_Ket(i,pertsite) = dconjg(LVec(pertsite,i))/(dcmplx(Omega,dDelta)-W_Vals(i))
+            enddo
+            do a = nOcc+1,nSites
+                HF_Cre_Ket(a,pertsite) = dconjg(LVec(pertsite,a))/(dcmplx(Omega,dDelta)-W_Vals(a))
+            enddo
+
+            !Run over operators acting of the Bra in the impurity space
+            do pertBra = 1,nImp
+                !Now perform the set of dot products of <0|V* with |1> for all combinations of sites
+                do i = 1,nOcc
+                    NI_Ann(pertsite,pertBra) = NI_Ann(pertsite,pertBra) +   &
+                        RVec(pertBra,i)*HF_Ann_Ket(i,pertsite)
+                enddo
+                do a = nOcc+1,nSites
+                    NI_Cre(pertsite,pertBra) = NI_Cre(pertsite,pertBra) +   &
+                        RVec(pertBra,a)*HF_Cre_Ket(a,pertsite)
+                enddo
             enddo
         enddo
 
-        deallocate(se_change)
+        do i=1,nImp
+            do j=1,nImp
+                NI_GF(j,i) = NI_Cre(j,i) + NI_Ann(j,i)
+            enddo
+        enddo
 
-    end subroutine Fit_SE
+        deallocate(HF_Ann_Ket,HF_Cre_Ket,RVec,LVec,W_Vals,AO_OneE_Ham)
+
+    end subroutine CreateNIGF
+
     
     !For optimization of the self-energy st. triangular-packed greens functions match
     !We have a function of the nx variables, which returns a residual over nr parameters, 

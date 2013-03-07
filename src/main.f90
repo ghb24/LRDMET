@@ -87,6 +87,8 @@ Program RealHub
         tPartialSE_Fit = .false.
         iPartialSE_Fit = 0
         iSE_Constraints = 1
+        DampingExponent = huge(0.0_dp)
+        tConvergeMicroSE = .false.
 
     end subroutine set_defaults
 
@@ -464,6 +466,10 @@ Program RealHub
                 tNoHL_SE = .true.
             case("RESPONSE_ALLIMP")
                 tAllImp_LR = .true.
+            case("SELFENERGY_DAMPING")
+                call readf(DampingExponent)
+            case("CONVERGE_MICROITER_SE")
+                tConvergeMicroSE = .true.
             case("NON_NULL")
                 tProjectOutNull = .true.
                 if(item.lt.nitems) then
@@ -498,6 +504,8 @@ Program RealHub
                 write(6,"(A)") "PARTIAL_SELFENERGY_FIT"
                 write(6,"(A)") "SELF_ENERGY_CONSTRAINTS"
                 write(6,"(A)") "RESPONSE_ALLIMP"
+                write(6,"(A)") "SELFENERGY_DAMPING"
+                write(6,"(A)") "CONVERGE_MICROITER_SE"
                 write(6,"(A)") "NON_NULL"
                 write(6,"(A)") "REOPT_GS"
                 write(6,"(A)") "EXPLICIT_ORTHOG"

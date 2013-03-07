@@ -81,9 +81,13 @@ LINEAR_RESPONSE
 (Option to use the converged self-energy from previous frequency calculation at start of next one. Argument =0: no memory of SE from previous frequencies, =1: Start macroiterations with previous converged SE, =2: Start NR microiterations with previous converged SE )
     REUSE_SELFENERGY 1
 (Option to only do a few fits of the self-energy. Do not fit until self-consistency.)
-    ONE_SELFENERGY_FIT 2
+    PARTIAL_SELFENERGY_FIT 2
 (Option to calculate local response functions over all impurity sites)
     RESPONSE_ALLIMP
+(The damping exponent for the self energy update (inf = no damping, Reasonable value is 100? ))
+    SELFENERGY_DAMPING 100.0
+(Option to completely converge the self-energy for each high-level calculation)
+    CONVERGE_MICROITER_SE
 (Option to reoptimize ground state in space of V**H |1> for each response function)
     REOPT_GS
 (Option for the density response: remove the non-null vectors of the overlap in the first-order space (argument gives threshold for non-null overlap eigenvalues))

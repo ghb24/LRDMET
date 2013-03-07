@@ -122,6 +122,8 @@ module Globals
     integer :: iPartialSE_Fit   ! Max number of fits to do of the self energy
     integer :: nVarSE           ! Number of independent variables in the packed self-energy matrix
     integer :: iSE_Constraints  ! Input constraints on flexibility of the self-energy matrix
+    real(dp) :: DampingExponent ! Damping of self energy update
+    logical :: tConvergeMicroSE ! Whether to converge the self-energy completely for each high-level calculation
     
     !DMET_LR global data
     !When a non-hermitian self-energy is added, we need to seperately calculate the non-interacting wavefunctions expressed in the right-eigenvector space
