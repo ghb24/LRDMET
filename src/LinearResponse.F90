@@ -983,7 +983,8 @@ module LinearResponse
                     HL_Energy,GFChemPot,abs(AvdNorm_p),abs(AvdNorm_h),real(ni_lr),-aimag(ni_lr),real(ni_lr_p),    &
                     -aimag(ni_lr_p),real(ni_lr_h),-aimag(ni_lr_h),SpectralWeight,iters_p,iters_h
             endif
-
+            call flush(iunit)
+            call flush(6)
 
             if(tFirst) tFirst = .false.
 
