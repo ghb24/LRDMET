@@ -23,12 +23,15 @@ module fitting
         integer, intent(out) :: nNR_Iters   !The number of iterations the NR required
         complex(dp), allocatable :: se_change(:)    !The packed change in SE which is calculated
         complex(dp), allocatable :: HL_GF_Inv(:,:),NI_GF_Inv(:,:),NI_GF(:,:)
-        complex(dp) :: GF_Diff(nImp,nImp)
-        integer :: i,j,it
+        complex(dp) :: GF_Diff(nImp,nImp),SelfEnergy_Imp_tmp(nImp,nImp),Change(nImp,nImp)
+        complex(dp) :: SelfEnergy_Imp_Saved(nImp,nImp)
+        integer :: i,j,it,a,b
         real(dp) :: dDamping    !The damping in the change of the selfenergy
+        real(dp) :: Error_GF_New
         character(len=*), parameter :: t_r='Fit_SE'
             
         Var_SE = zero
+        SelfEnergy_Imp_Saved(:,:) = SelfEnergy_Imp(:,:)
             
         if(iGF_Fit.eq.4) then
             !Directly take the difference of the inverses of the greens functions
@@ -38,6 +41,7 @@ module fitting
             allocate(HL_GF_Inv(nImp,nImp))
             HL_GF_Inv(:,:) = zzero
             call z_inv(HL_GF,HL_GF_Inv)
+!            HL_GF_Inv(:,:) = 1.0_dp/HL_GF(:,:)
             !call writematrixcomp(HL_GF_Inv,'Inverse of high-level GF',.true.)
 
             it=0
@@ -52,7 +56,8 @@ module fitting
                 if(it.eq.1) then
                     NI_GF(:,:) = NIGF_Readin(:,:)
                 else
-                    call CreateNIGF(SelfEnergy_Imp,NI_GF,Omega)
+                !    SelfEnergy_Imp_tmp(:,:) = zzero
+                    call CreateNIGF(SelfEnergy_Imp_tmp,NI_GF,Omega)
                 endif
 
                 !Calculate original error
@@ -80,6 +85,7 @@ module fitting
 
                 !Invert non-interacting greens functions
                 call z_inv(NI_GF,NI_GF_Inv)
+!                NI_GF_Inv(:,:) = 1.0_dp/NI_GF(:,:)
                 !call writematrixcomp(NI_GF_Inv,'Inverse of NI GF',.true.)
 
                 !Calculate difference of inverses
@@ -97,19 +103,25 @@ module fitting
             
                 !Change in self-energy: Our convergence metric 
                 !Just sum of squared elements
+                !Change(:,:) = SelfEnergy_Imp(:,:) - SE_Change_unpacked(:,:)
+                Change(:,:) = SE_Change_unpacked(:,:)
                 do i = 1,nImp
                     do j = 1,nImp
-                        Var_SE = Var_SE + real(se_change_unpacked(j,i)*dconjg(se_change_unpacked(j,i)))
+                        Var_SE = Var_SE + real(change(j,i)*dconjg(change(j,i)))
                     enddo
                 enddo
 
                 !Now, update the global variables of h0v_se and SelfEnergy_Imp
                 !The change is additive? These two changes should certainly be oppositely signed
-!                do i=1,nImp
-!                    if(aimag(SelfEnergy_Imp(i,i)).lt.0.0_dp) SelfEnergy_Imp(i,i) = dconjg(SelfEnergy_Imp(i,i))
+!                h0v_se(:,:) = zzero
+!                do i=1,nSites
+!                    do j=1,nSites
+!                        h0v_se(j,i) = dcmplx(h0v(j,i),0.0_dp)
+!                    enddo
 !                enddo
                 call add_localpot_comp_inplace(h0v_se,SE_Change_unpacked,.false.)
                 SelfEnergy_Imp(:,:) = SelfEnergy_Imp(:,:) + SE_Change_unpacked(:,:)
+!                SelfEnergy_Imp(:,:) = SE_Change_unpacked(:,:)
                 !write(6,*) "Self Energy: ",SelfEnergy_Imp(:,:)
             enddo
 
@@ -117,15 +129,68 @@ module fitting
             !Recalculate non-interacting GF, with new self-energy
             NI_GF(:,:) = zzero
             call CreateNIGF(SelfEnergy_Imp,NI_GF,Omega)
+
+            if(.true.) then
+                loop: do i=1,nImp
+                    do j=1,nImp
+                        if(aimag(NI_GF(j,i)).gt.0.0_dp) then
+                            write(6,*) "Flipping entire self-energy"
+                            SelfEnergy_Imp(:,:) = dconjg(SelfEnergy_Imp(:,:))
+                            NI_GF(:,:) = zzero
+                            call CreateNIGF(SelfEnergy_Imp,NI_GF,Omega)
+                            h0v_se(:,:) = zzero
+                            do a = 1,nSites
+                                do b = 1,nSites
+                                    h0v_se(b,a) = dcmplx(h0v(b,a),0.0_dp)
+                                enddo
+                            enddo
+                            call add_localpot_comp_inplace(h0v_se,SelfEnergy_Imp,.false.)
+                            Change(:,:) = SelfEnergy_Imp(:,:) - SelfEnergy_Imp_Saved(:,:)
+                            Var_SE = 0.0_dp
+                            do a = 1,nImp
+                                do b = 1,nImp
+                                    Var_SE = Var_SE + real(change(b,a)*dconjg(change(b,a)))
+                                enddo
+                            enddo
+                            exit loop
+                        endif
+                    enddo
+                enddo loop
+
+            elseif(.false..and.aimag(SelfEnergy_Imp(1,1)).lt.0.0_dp) then
+                write(6,*) "Setting self-energy component to zero",SelfEnergy_Imp(1,1)
+                do i=1,nImp
+                    SelfEnergy_Imp(i,i) = zzero !dcmplx(real(SelfEnergy_Imp(i,i)),0.0_dp)
+                enddo
+                NI_GF(:,:) = zzero
+                call CreateNIGF(SelfEnergy_Imp,NI_GF,Omega)
+                h0v_se(:,:) = zzero
+                do i = 1,nSites
+                    do j = 1,nSites
+                        h0v_se(j,i) = dcmplx(h0v(j,i),0.0_dp)
+                    enddo
+                enddo
+                call add_localpot_comp_inplace(h0v_se,SelfEnergy_Imp,.false.)
+                Change(:,:) = SelfEnergy_Imp(:,:) - SelfEnergy_Imp_Saved(:,:)
+                Var_SE = 0.0_dp
+                do i = 1,nImp
+                    do j = 1,nImp
+                        Var_SE = Var_SE + real(change(j,i)*dconjg(change(j,i)))
+                    enddo
+                enddo
+
+            endif
+
 !            call mkgf(SE_Change,NI_GF,Omega)
             !Calculate new error
             GF_Diff(:,:) = NI_GF(:,:) - HL_GF(:,:)
-            Error_GF = zero
+            Error_GF_New = zero
             do i = 1,nImp
                 do j = 1,nImp
-                    Error_GF = Error_GF + real(GF_Diff(j,i)*dconjg(GF_Diff(j,i)))
+                    Error_GF_New = Error_GF_New + real(GF_Diff(j,i)*dconjg(GF_Diff(j,i)))
                 enddo
             enddo
+            Error_GF = Error_GF_New
             !write(6,*) "Final error: ",Error_GF,NI_GF(:,:)
             nNR_Iters = it-1
 

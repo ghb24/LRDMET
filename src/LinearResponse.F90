@@ -938,9 +938,9 @@ module LinearResponse
                     endif
 
                     if(Var_SE.lt.1.0e-8_dp) then
-                        if(Error_GF.gt.1.0e-4) then
-                            call stop_all(t_r,"Greens functions not consistent, but self-energy no longer changing due to damping")
-                        endif
+                        !if(Error_GF.gt.1.0e-4) then
+                        !    call stop_all(t_r,"Greens functions not consistent, but self-energy no longer changing due to damping")
+                        !endif
                         !Yay - converged
                         tSCFConverged = .true.
                     endif
