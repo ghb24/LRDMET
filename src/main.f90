@@ -78,7 +78,9 @@ Program RealHub
         tRemoveGSFromH = .false.
         tMinRes_NonDir = .false.
         tPreCond_MinRes = .false.
+        tStoreHermit_Hamil = .false.
         rtol_LR = 1.0e-8_dp
+        tReuse_LS = .false.
         tSC_LR = .false.
         tNoHL_SE = .false.
         iReuse_SE = 0
@@ -95,9 +97,11 @@ Program RealHub
     subroutine init_calc()
         use report, only: environment_report
         use timing, only: init_timing
+        use utils, only: get_free_unit
         implicit none
         real(dp) :: U_tmp
-        integer :: i
+        integer :: i,minres_unit
+        logical :: exists
         character(len=*), parameter :: t_r='init_calc'
 
         write(6,"(A)") "***  Starting real-space hubbard/anderson calculation  ***"
@@ -113,6 +117,14 @@ Program RealHub
         call read_input()
 
         call check_input()
+
+        inquire(file='zMinResQLP.txt',exist=exists)
+        if(exists) then
+            minres_unit = get_free_unit()
+            open(minres_unit,file='zMinResQLP.txt',status='old')
+            close(minres_unit,status='delete')
+        endif
+
 
         if(tAnderson) then
             write(6,"(A)") "Running:    o Anderson Model (single site)"
@@ -440,6 +452,11 @@ Program RealHub
                 if(item.lt.nitems) then
                     call readf(rtol_LR)
                 endif
+            case("REUSE_FIRSTORDER_PSI")
+                tReuse_LS = .true.
+                call stop_all(t_r,'The REUSE_FIRSTORDER_PSI does not currently work. Debug this option if you want to use it')
+            case("STORE_HERMIT_HAMIL")
+                tStoreHermit_Hamil = .true.
             case("PRECONDITION_LR")
                 tPreCond_MinRes = .true.
             case("FREQ")
@@ -491,6 +508,8 @@ Program RealHub
                 write(6,"(A)") "GF_RESPONSE"
                 write(6,"(A)") "NONDIR_MINRES"
                 write(6,"(A)") "PRECONDITION_LR"
+                write(6,"(A)") "REUSE_FIRSTORDER_PSI"
+                write(6,"(A)") "STORE_HERMIT_HAMIL"
                 write(6,"(A)") "NONINT"
                 write(6,"(A)") "TDA"
                 write(6,"(A)") "RPA"
@@ -605,6 +624,9 @@ Program RealHub
         endif
         if(tPartialSE_Fit.and.(iPartialSE_Fit.le.0)) then
             call stop_all(t_r,'Partial self-energy fitting specified, but not the number of fits (should be argument)')
+        endif
+        if(tReuse_LS.and.(.not.tMinRes_NonDir)) then
+            call stop_all(t_r,'Cannot reuse first-order wavefunctions if not using iterative solver')
         endif
 
     end subroutine check_input
