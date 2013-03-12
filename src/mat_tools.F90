@@ -6,33 +6,121 @@ module mat_tools
     implicit none
 
     contains
+
+    !Find the indices for any diagonal operator, and the matrices for ...
+    subroutine MakeVLocIndices()
+        implicit none
+
+        if(LatticeDim.ne.2) call stop_all(t_r,'Should only be in here with 2D lattice')
+
+        do site = 0,nSites-1
+
+            call ij2xy(mod(site,TDLat_Ni),site/TDLat_Ni,xb,yb)
+            !Wrap around
+            xb = xb - mod(xb,nImp_x)
+            yb = yb - mod(yb,nImp_y)
+            vphase = 1.0_dp
+
+
+
+
+
+    end subroutine MakeVLocIndices
     
     !Make mean-field real-space hubbard matrix
     subroutine make_hop_mat()
         implicit none
-        integer :: i
+        integer :: i,j,k,x,y,li,lj,ij_link,site,dx,dy
+        real(dp) :: phase,t
         character(len=*), parameter :: t_r='make_hop_mat'
 
         h0(:,:) = 0.0_dp
+        t = -1.0_dp
         if(LatticeDim.eq.1) then
             !Tridiagonal matrix
             do i=1,nSites-1
-                h0(i,i+1) = -1.0_dp
-                h0(i+1,i) = -1.0_dp
+                h0(i,i+1) = t
+                h0(i+1,i) = t
             enddo
 
             if(tPeriodic) then
-                h0(1,nSites) = -1.0_dp
-                h0(nSites,1) = -1.0_dp
+                h0(1,nSites) = t
+                h0(nSites,1) = t
             elseif(tAntiPeriodic) then
-                h0(1,nSites) = 1.0_dp
-                h0(nSites,1) = 1.0_dp
+                h0(1,nSites) = -t
+                h0(nSites,1) = -t
             endif
+        elseif(LatticeDim.eq.2) then
+            do site = 0,nSites-1
+                i = mod(site,TDLat_Ni)    !The i coordinate (the y-axix of the lattice)
+                j = site/TDLat_Ni
+                !Now for coordinates on the original tilted lattice. This is the one where distances are not distorted
+                call ij2xy(i,j,x,y)
+                !write(6,*) "site: ",site," i,j: ",i,j,"x,y: ",x,y
+
+                do k = 1,4
+                    !Move in all four possible directions
+                    if(k.eq.1) then
+                        dx = 1
+                        dy = 0
+                    elseif(k.eq.2) then
+                        dx = 0
+                        dy = 1
+                    elseif(k.eq.3) then
+                        dx = 0
+                        dy = -1
+                    elseif(k.eq.4) then
+                        dx = -1
+                        dy = 0
+                    endif
+                    !Move in the appropriate direction, and see where we wrap around to, by transforming into the i,j representation, where boundary conditions are easier
+                    call xy2ij(x+dx,y+dy,li,lj)
+                    phase = 1.0_dp
+                    if(tAntiPeriodic) then
+                        !We have to multiply the phase by a factor of -1 for every boundary condition we wrap around
+                        if((li.lt.0).or.(li.ge.TDLat_Ni)) phase = -phase
+                        if((lj.lt.0).or.(lj.ge.TDLat_Nj)) phase = -phase
+                    endif
+
+                    !Take our position modulo the axes
+                    li = mod(li,TDLat_Ni)
+                    lj = mod(lj,TDLat_Nj)
+                    ij_link = li + TDLat_Ni*lj  !Now find the site number of the connecing lattice
+                    h0(site+1,ij_link+1) = t * phase
+                    h0(ij_link+1,site+1) = t * phase
+                enddo
+            enddo
+!            do i = 1,nSites
+!                do j = 1,nSites
+!                    write(6,"(F7.3)",advance='no') h0(j,i)
+!                enddo
+!                write(6,*) ""
+!            enddo
         else
             call stop_all(t_r,'Higher dimensional models not coded up')
         endif
 
     end subroutine make_hop_mat
+
+    pure subroutine xy2ij(x,y,i,j)
+        implicit none
+        integer, intent(in) :: x,y
+        integer, intent(out) :: i,j
+
+        i = (x-y)/2
+        j = x+y
+
+    end subroutine xy2ij
+                
+    pure subroutine ij2xy(i,j,x,y)
+        implicit none
+        integer, intent(in) :: i,j
+        integer, intent(out) :: x,y
+
+        x = i + (j/2) + mod(j,2)
+        y = (j/2) - i
+
+    end subroutine ij2xy
     
     !Diagonalizes the core hamiltonian, and stores the allowed CS occupations in terms of
     !number of fully occupied sites.

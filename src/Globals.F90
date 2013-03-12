@@ -10,6 +10,7 @@ module Globals
     integer :: nSites_x   !The number of sites in the x direction
     integer :: nSites_y   !The number of sites in the y direction
     integer :: nImp     !The number of impurity sites
+    integer :: nImp_x,nImp_y    !Number of impurities in each direction for the 2D system
     integer :: nSys     !The number of bath sites
     real(dp) :: U       !Hubbard U
     integer :: nU_Vals  !Number of explicitly specified U values to loop over
@@ -126,6 +127,7 @@ module Globals
     integer :: iSE_Constraints  ! Input constraints on flexibility of the self-energy matrix
     real(dp) :: DampingExponent ! Damping of self energy update
     logical :: tConvergeMicroSE ! Whether to converge the self-energy completely for each high-level calculation
+    integer :: TDLat_Ni,TDLat_Nj
     
     !DMET_LR global data
     !When a non-hermitian self-energy is added, we need to seperately calculate the non-interacting wavefunctions expressed in the right-eigenvector space

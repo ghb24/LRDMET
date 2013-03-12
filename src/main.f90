@@ -28,7 +28,6 @@ Program RealHub
         tChemPot = .false.
         tHalfFill = .true. 
         nSites = 24  
-        nSites_y = 0
         LatticeDim = 1
         nImp = 1
         StartU = 0.0_dp
@@ -117,7 +116,7 @@ Program RealHub
         call read_input()
 
         call check_input()
-
+        
         inquire(file='zMinResQLP.txt',exist=exists)
         if(exists) then
             minres_unit = get_free_unit()
@@ -125,6 +124,9 @@ Program RealHub
             close(minres_unit,status='delete')
         endif
 
+        if(LatticeDim.eq.2) then
+            call Setup2DLattice()
+        endif
 
         if(tAnderson) then
             write(6,"(A)") "Running:    o Anderson Model (single site)"
@@ -145,7 +147,7 @@ Program RealHub
         endif
         if(LatticeDim.eq.2) then
             write(6,"(A)") "            o 2-dimensional model" 
-            write(6,"(A,I7,A,I7)") "            o Size of lattice: ",nSites_x,' x ',nSites_y 
+            write(6,"(A,I7,A,I7,A)") "            o Size of lattice: ",nSites_x,' x ',nSites_y,' at 45 degrees' 
             write(6,"(A,I7)") "            o Total lattice sites: ",nSites
         elseif(LatticeDim.eq.1) then
             write(6,"(A)") "            o 1-dimensional model" 
@@ -291,7 +293,6 @@ Program RealHub
 
         tSpecifiedHub = .false.
         tSpecifiedAnd = .false.
-        LatticeDim = 1
         tMultipleOccs = .false.
 
         i = 0
@@ -313,10 +314,10 @@ Program RealHub
             case("SITES")
                 call readi(nSites)
                 if(item.lt.nitems) then
-                    call readi(nSites_y)
-                    LatticeDim = 2
-                    nSites_x = nSites
-                    nSites = nSites_x * nSites_y
+                    call readi(LatticeDim)
+                    if(LatticeDim.gt.2) then
+                        call stop_all(t_r,'Can only deal with lattice dimensions =< 2')
+                    endif
                 endif
             case("U_VALS")
                 do while(item.lt.nitems) 
@@ -559,6 +560,9 @@ Program RealHub
         endif
 
         !Now check for sanity and implementation of specified options
+        if((mod(nSites,2).ne.0).and.(LatticeDim.eq.1)) then
+            call stop_all(t_r,'Can currently only deal with closed shell systems')
+        endif
         if(tOrthogBasis.and.(.not.tProjectOutNull)) then
             call stop_all(t_r,'Need to project out null space of S in order to work in the resulting basis')
         endif
@@ -684,6 +688,63 @@ Program RealHub
         if(allocated(U_Vals)) deallocate(U_Vals)
 
     end subroutine deallocate_mem
+
+    subroutine Setup2DLattice()
+        implicit none
+        real(dp) :: dWidth
+        integer :: TDLat_Width,Ni,Nj
+
+        !Work out an appropriate width, and an actual nSites
+        dWidth = sqrt(nSites*2.0_dp)
+        TDLat_Width = 2 * nint(dWidth/2.0_dp)
+
+        !There are two lattices, an x, y lattice, and an i, j lattice. These have had their axes rotated by 45 degrees.
+        !2DLat_Ni is the width of each lattice (there are two interlocking in the (i,j) representation
+        TDLat_Ni = TDLat_Width / 2
+        !2DLat_Nj is the width of the lattice in the (x,y) representation
+        TDLat_Nj = TDLat_Width
+
+        !Actual nSites. 
+        nSites = TDLat_Ni * TDLat_Nj
+
+        write(6,*) "Updated number of sites in the 2D hubbard model will be: ",nSites
+        
+        if(mod(TDLat_Width/2,2).eq.0) then
+            !Use anti-periodic boundary conditions
+            !HF ground state only unique if Width=2*odd_number (direct PBC)
+            !or if Width=2*even_number (anti-PBC)
+            tAntiperiodic = .true.
+            tPeriodic = .false.
+        else
+            tAntiperiodic = .false.
+            tPeriodic = .true.
+        endif
+        if(tPeriodic) then
+            write(6,*) "Periodic boundary conditions now in use"
+        else
+            write(6,*) "Anti-Periodic boundary conditions now in use"
+        endif
+
+        !Now to set up the impurity
+        if(nImp.eq.1) then
+            nImp_x = 1
+            nImp_y = 1
+        elseif(nImp.eq.2) then
+            nImp_x = 1
+            nImp_y = 2
+        elseif(nImp.eq.4) then
+            nImp_x = 2
+            nImp_y = 2
+        else
+            call stop_all(t_r,'Cannot deal with impurities > 4')
+        endif
+
+        !Find the x,y coordinates for the middle of the array
+        call ij2xy(TDLat_Ni/2,TDLat_Nj/2,x,y)
+
+        call MakeVLocIndices()
+
+    end subroutine Setup2DLattice
 
     subroutine run_DMETcalc()
         implicit none
