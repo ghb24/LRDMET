@@ -58,8 +58,6 @@ LINEAR_RESPONSE
     NONDIR_MINRES
 (Reuse the previous frequency solution as a starting vector for the next one)
     REUSE_FIRSTORDER_PSI
-(Store the hermitian H^+ H matrix for a 2x speedup in the minres solver)
-    STORE_HERMIT_HAMIL
 (Use preconditioning with iterative linear system solver)
     PRECONDITION_LR
 (Calculate non-interacting response functions with HF orbitals)
