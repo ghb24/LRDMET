@@ -7,6 +7,7 @@ module DetToolsData
     integer :: nFCIDet  !Number of determinants in active space
     real(dp), allocatable :: UMat(:)
     real(dp), allocatable :: TMat(:,:)
+    complex(dp), allocatable :: TMat_Comp(:,:)  !Used when asking for complex matrix elements
 
     !Data for the coupling of the different electron number active spaces
     integer, allocatable :: Nm1FCIDetList(:,:)  !N-1 electron determinant list

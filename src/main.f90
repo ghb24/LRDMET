@@ -28,7 +28,6 @@ Program RealHub
         tChemPot = .false.
         tHalfFill = .true. 
         nSites = 24  
-        nSites_y = 0
         LatticeDim = 1
         nImp = 1
         StartU = 0.0_dp
@@ -48,6 +47,7 @@ Program RealHub
         tReadInCorrPot = .false.
         CorrPot_file = 'CorrPots'
         tNonDirDavidson = .false.
+        tCheck = .false.
 
         !General LR options
         Start_Omega = 0.0_dp
@@ -77,16 +77,30 @@ Program RealHub
         tRemoveGSFromH = .false.
         tMinRes_NonDir = .false.
         tPreCond_MinRes = .false.
+        tStoreHermit_Hamil = .false.
         rtol_LR = 1.0e-8_dp
+        tReuse_LS = .false.
+        tSC_LR = .false.
+        tNoHL_SE = .false.
+        iReuse_SE = 0
+        tAllImp_LR = .false.
+        iGF_Fit = 0
+        tPartialSE_Fit = .false.
+        iPartialSE_Fit = 0
+        iSE_Constraints = 1
+        DampingExponent = huge(0.0_dp)
+        tConvergeMicroSE = .false.
 
     end subroutine set_defaults
 
     subroutine init_calc()
         use report, only: environment_report
         use timing, only: init_timing
+        use utils, only: get_free_unit
         implicit none
         real(dp) :: U_tmp
-        integer :: i
+        integer :: i,minres_unit
+        logical :: exists
         character(len=*), parameter :: t_r='init_calc'
 
         write(6,"(A)") "***  Starting real-space hubbard/anderson calculation  ***"
@@ -102,6 +116,17 @@ Program RealHub
         call read_input()
 
         call check_input()
+        
+        inquire(file='zMinResQLP.txt',exist=exists)
+        if(exists) then
+            minres_unit = get_free_unit()
+            open(minres_unit,file='zMinResQLP.txt',status='old')
+            close(minres_unit,status='delete')
+        endif
+
+        if(LatticeDim.eq.2) then
+            call Setup2DLattice()
+        endif
 
         if(tAnderson) then
             write(6,"(A)") "Running:    o Anderson Model (single site)"
@@ -122,7 +147,7 @@ Program RealHub
         endif
         if(LatticeDim.eq.2) then
             write(6,"(A)") "            o 2-dimensional model" 
-            write(6,"(A,I7,A,I7)") "            o Size of lattice: ",nSites_x,' x ',nSites_y 
+            write(6,"(A,I7,A,I7,A)") "            o Size of lattice: ",TDLat_Ni,' x ',TDLat_Nj,' at 45 degrees' 
             write(6,"(A,I7)") "            o Total lattice sites: ",nSites
         elseif(LatticeDim.eq.1) then
             write(6,"(A)") "            o 1-dimensional model" 
@@ -268,7 +293,6 @@ Program RealHub
 
         tSpecifiedHub = .false.
         tSpecifiedAnd = .false.
-        LatticeDim = 1
         tMultipleOccs = .false.
 
         i = 0
@@ -290,10 +314,10 @@ Program RealHub
             case("SITES")
                 call readi(nSites)
                 if(item.lt.nitems) then
-                    call readi(nSites_y)
-                    LatticeDim = 2
-                    nSites_x = nSites
-                    nSites = nSites_x * nSites_y
+                    call readi(LatticeDim)
+                    if(LatticeDim.gt.2) then
+                        call stop_all(t_r,'Can only deal with lattice dimensions =< 2')
+                    endif
                 endif
             case("U_VALS")
                 do while(item.lt.nitems) 
@@ -330,11 +354,11 @@ Program RealHub
                 tCompleteDiag = .true.
             case("DAVIDSON")
                 tCompleteDiag = .false.
-            case("DIAG_SYSTEM")
-                tDiagFullSystem = .true.
             case("NONDIR_DAVIDSON") 
                 tNonDirDavidson = .true.
                 tCompleteDiag = .false.
+            case("DIAG_SYSTEM")
+                tDiagFullSystem = .true.
             case("REDUCE_OCC")
                 tMultipleOccs = .true.
                 tRampDownOcc = .true.
@@ -347,6 +371,8 @@ Program RealHub
                 tDumpFCIDUMP = .true.
             case("DEBUGOUTPUT")
                 tWriteOut = .true.
+            case("CHECK_SANITY")
+                tCheck = .true.
             case("END")
                 exit
             case default
@@ -372,6 +398,7 @@ Program RealHub
                 write(6,"(A)") "INCREASE_OCC"
                 write(6,"(A)") "FCIDUMP"
                 write(6,"(A)") "DEBUGOUTPUT"
+                write(6,"(A)") "CHECK_SANITY"
                 call stop_all(t_r,'Keyword '//trim(w)//' not recognized')
             end select
         enddo Model
@@ -426,6 +453,11 @@ Program RealHub
                 if(item.lt.nitems) then
                     call readf(rtol_LR)
                 endif
+            case("REUSE_FIRSTORDER_PSI")
+                tReuse_LS = .true.
+                call stop_all(t_r,'The REUSE_FIRSTORDER_PSI does not currently work. Debug this option if you want to use it')
+            case("STORE_HERMIT_HAMIL")
+                tStoreHermit_Hamil = .true.
             case("PRECONDITION_LR")
                 tPreCond_MinRes = .true.
             case("FREQ")
@@ -434,6 +466,28 @@ Program RealHub
                 call readf(Omega_Step)
             case("BROADENING")
                 call readf(dDelta)
+            case("SELF-CONSISTENCY")
+                tSC_LR = .true.
+                if(item.lt.nitems) then
+                    call readi(iGF_Fit)
+                endif
+            case("REUSE_SELFENERGY")
+                call readi(iReuse_SE)
+            case("PARTIAL_SELFENERGY_FIT")
+                tPartialSE_Fit = .true.
+                if(item.le.nitems) then
+                    call readi(iPartialSE_Fit)
+                endif
+            case("SELF_ENERGY_CONSTRAINTS")
+                call readi(iSE_Constraints)
+            case("NO_MANYBODY_SELFENERGY")
+                tNoHL_SE = .true.
+            case("RESPONSE_ALLIMP")
+                tAllImp_LR = .true.
+            case("SELFENERGY_DAMPING")
+                call readf(DampingExponent)
+            case("CONVERGE_MICROITER_SE")
+                tConvergeMicroSE = .true.
             case("NON_NULL")
                 tProjectOutNull = .true.
                 if(item.lt.nitems) then
@@ -455,6 +509,8 @@ Program RealHub
                 write(6,"(A)") "GF_RESPONSE"
                 write(6,"(A)") "NONDIR_MINRES"
                 write(6,"(A)") "PRECONDITION_LR"
+                write(6,"(A)") "REUSE_FIRSTORDER_PSI"
+                write(6,"(A)") "STORE_HERMIT_HAMIL"
                 write(6,"(A)") "NONINT"
                 write(6,"(A)") "TDA"
                 write(6,"(A)") "RPA"
@@ -462,6 +518,14 @@ Program RealHub
                 write(6,"(A)") "IC_TDA"
                 write(6,"(A)") "FREQ"
                 write(6,"(A)") "BROADENING"
+                write(6,"(A)") "SELF-CONSISTENCY"
+                write(6,"(A)") "NO_MANYBODY_SELFENERGY"
+                write(6,"(A)") "REUSE_SELFENERGY"
+                write(6,"(A)") "PARTIAL_SELFENERGY_FIT"
+                write(6,"(A)") "SELF_ENERGY_CONSTRAINTS"
+                write(6,"(A)") "RESPONSE_ALLIMP"
+                write(6,"(A)") "SELFENERGY_DAMPING"
+                write(6,"(A)") "CONVERGE_MICROITER_SE"
                 write(6,"(A)") "NON_NULL"
                 write(6,"(A)") "REOPT_GS"
                 write(6,"(A)") "EXPLICIT_ORTHOG"
@@ -496,6 +560,9 @@ Program RealHub
         endif
 
         !Now check for sanity and implementation of specified options
+        if((mod(nSites,2).ne.0).and.(LatticeDim.eq.1)) then
+            call stop_all(t_r,'Can currently only deal with closed shell systems')
+        endif
         if(tOrthogBasis.and.(.not.tProjectOutNull)) then
             call stop_all(t_r,'Need to project out null space of S in order to work in the resulting basis')
         endif
@@ -518,13 +585,52 @@ Program RealHub
             call warning(t_r,'DMET internally-contracted density response broken. Please fix me.')
         endif
         if(tMFResponse.and.(.not.tDDResponse)) then
-            call stop_all(t_r,'Single-reference response function asked for, but only coded up for Density response')
+            call stop_all(t_r,  &
+                'A single-reference particle + hole response function asked for, but SR only coded up for Density response')
         endif
         if(tPrecond_MinRes.and.(.not.tMinRes_NonDir)) then
             call stop_all(t_r,'Cannot precondition linear response matrix if not solving iteratively!')
         endif
         if(tDDResponse.and.tLR_DMET.and.tMinRes_NonDir) then
             call stop_all(t_r,'Iterative solution to density response equations not plumbed in yet')
+        endif
+        if(tDDResponse.and.tSC_LR) then
+            call stop_all(t_r,'Self-consistency not yet implemented for density response')
+        endif
+        if(tSC_LR.and.(.not.tAllImp_LR)) then
+            call stop_all(t_r,'Self-consistency not yet implemented without considering all impurity response functions')
+        endif
+        if(tAllImp_LR.and.(.not.tSC_LR)) then
+            call stop_all(t_r,'Cannot yet calculate all impurity response functions, without including self-consistency loops')
+        endif
+        if((.not.tCompleteDiag).and.(.not.tNonDirDavidson).and.tLR_DMET) then
+            call stop_all(t_r,'To solve DMET_LR, must perform complete diag or non-direct davidson, '   &
+     &          //'rather than direct davidson solver')
+        endif
+        if(tSC_LR.and.tLR_ReoptGS.and.tLR_DMET) then
+            call stop_all(t_r,"Reoptimizing ground state not sorted yet for self-consistent response "  &
+     &          //"calculations - probably shouldn't happen")
+        endif
+        if((iReuse_SE.ne.0).and.(.not.tSC_LR)) then
+            call stop_all(t_r,'Cannot reuse self energy if there is no self-consistency in reponse')
+        endif
+        if((iGF_Fit.ne.0).and.(.not.tSC_LR)) then
+            call stop_all(t_r,'How was iGF_Fit set without SC_LR!')
+        endif
+        if(iGF_Fit.gt.4) then
+            call stop_all(t_r,'iGF_Fit set to illegal value')
+        endif
+        if(tNoHL_SE.and.(.not.tSC_LR)) then
+            call stop_all(t_r,'Can only specify no self-energy in many-body hamiltonian if we are doing self-consistency')
+        endif
+        if(tPartialSE_Fit.and.(.not.tSC_LR)) then
+            call stop_all(t_r,'Need to specify self-consistency to use option PartialSE_Fit. I know this makes no sense')
+        endif
+        if(tPartialSE_Fit.and.(iPartialSE_Fit.le.0)) then
+            call stop_all(t_r,'Partial self-energy fitting specified, but not the number of fits (should be argument)')
+        endif
+        if(tReuse_LS.and.(.not.tMinRes_NonDir)) then
+            call stop_all(t_r,'Cannot reuse first-order wavefunctions if not using iterative solver')
         endif
 
     end subroutine check_input
@@ -561,6 +667,7 @@ Program RealHub
         LR_EC_GF_HBuild%timer_name='GF_EC_HBuild'
         LR_EC_GF_OptGS%timer_name='GF_EC_OptGS'
         LR_EC_GF_SolveLR%timer_name='GF_EC_SolveLR'
+        LR_EC_GF_FitGF%timer_name='GF_EC_FitGF'
 
     end subroutine name_timers
 
@@ -579,8 +686,122 @@ Program RealHub
         implicit none
 
         if(allocated(U_Vals)) deallocate(U_Vals)
+        if(allocated(TD_Imp_Lat)) deallocate(TD_Imp_Lat,TD_Imp_Phase)
 
     end subroutine deallocate_mem
+
+    subroutine Setup2DLattice()
+        implicit none
+        real(dp) :: dWidth
+        integer :: TDLat_Width,Ni,Nj,x,y,dx,dy,ci,cj,site_imp
+        integer :: i,j,k
+        character(len=*), parameter :: t_r='Setup2DLattice'
+
+        !Work out an appropriate width, and an actual nSites
+        dWidth = sqrt(nSites*2.0_dp)
+        TDLat_Width = 2 * nint(dWidth/2.0_dp)
+
+        !There are two lattices, an x, y lattice, and an i, j lattice. These have had their axes rotated by 45 degrees.
+        !2DLat_Ni is the width of each lattice (there are two interlocking in the (i,j) representation
+        TDLat_Ni = TDLat_Width / 2
+        !2DLat_Nj is the width of the lattice in the (x,y) representation
+        TDLat_Nj = TDLat_Width
+
+        !Actual nSites. 
+        nSites = TDLat_Ni * TDLat_Nj
+
+        write(6,*) "Updated number of sites in the 2D hubbard model will be: ",nSites
+        
+        if(mod(TDLat_Width/2,2).eq.0) then
+            !Use anti-periodic boundary conditions
+            !HF ground state only unique if Width=2*odd_number (direct PBC)
+            !or if Width=2*even_number (anti-PBC)
+            tAntiperiodic = .true.
+            tPeriodic = .false.
+        else
+            tAntiperiodic = .false.
+            tPeriodic = .true.
+        endif
+        if(tPeriodic) then
+            write(6,*) "Periodic boundary conditions now in use"
+        else
+            write(6,*) "Anti-Periodic boundary conditions now in use"
+        endif
+
+        !Now to set up the impurity
+        if(nImp.eq.1) then
+            nImp_x = 1
+            nImp_y = 1
+        elseif(nImp.eq.2) then
+            nImp_x = 1
+            nImp_y = 2
+        elseif(nImp.eq.4) then
+            nImp_x = 2
+            nImp_y = 2
+        else
+            call stop_all(t_r,'Cannot deal with impurities > 4')
+        endif
+
+        !Find the x,y coordinates for the middle of the array. This will be used to
+        !define the corner site of the impurity
+        call ij2xy(TDLat_Ni/2,TDLat_Nj/2,x,y)
+
+        !Setup the impurity space, and how to tile the impurity through the space.
+        !This creates the matrices TD_Imp_Lat and TD_Imp_Phase
+        !If the correlation potential is a matrix of nImp x nImp, then TD_Imp_Lat
+        !gives the index of that correlation potential which corresponds to the tiled
+        !correlation potential through the space.
+        !(TD_Imp_Lat(site,site)-1)/nImp + 1 gives the impurity index of that site. 
+
+        call MakeVLocIndices()
+
+        !Create the impurity cluster
+        allocate(ImpSites(nImp))
+        ImpSites = 0
+        do dx = 0,nImp_x-1
+            do dy = 0,nImp_y-1
+                call xy2ij(x+dx,y+dy,ci,cj)
+                !Remember - our sites are 1 indexed
+                site_imp = ci + TDLat_Ni*cj + 1     !No need to take mods. We certainly shouldn't exceed the bounds of the ij lattice
+                !write(6,*) "***",dx,dy,site_imp,(TD_Imp_Lat(site_imp,site_imp)),((TD_Imp_Lat(site_imp,site_imp)-1)/nImp) + 1
+                ImpSites(((TD_Imp_Lat(site_imp,site_imp)-1)/nImp) + 1) = site_imp
+            enddo
+        enddo
+
+        write(6,*) "Impurity sites defined as: ",ImpSites(:)
+
+        !We now want to define a mapping, from the standard site indexing to an impurity ordering of the sites, such that
+        ! Perm_indir(site) = Imp_site_index
+        ! Perm_dir(Imp_site_index) = site       The first index maps you onto the original impurity sites
+        ! Therefore, Perm_indir(site)%nImp = impurity site it maps to which repeat of the impurity you are on
+
+        !In the impurity ordering (indirect), the impurity sites are first, followed by the repetitions of the striped
+        !impurity space.
+        !The direct space is the normal lattice ordering
+        allocate(Perm_indir(nSites))
+        allocate(Perm_dir(nSites))
+        Perm_indir(:) = 0
+        Perm_dir(:) = 0
+        Perm_dir(1:nImp) = ImpSites(:)
+        k = nImp+1
+        loop: do i = 1,nSites
+            do j = 1,nImp 
+                if(i.eq.ImpSites(j)) then
+                    cycle loop
+                endif
+            enddo
+            Perm_dir(k) = i
+            k = k + 1
+        enddo loop
+        if(k.ne.nSites+1) call stop_all(t_r,"Error here")
+
+        do i=1,nSites
+            Perm_indir(Perm_dir(i)) = i
+        enddo
+!        write(6,*) "Pd: ",Perm_dir(:)
+!        write(6,*) "Pi: ",Perm_indir(:)
+
+    end subroutine Setup2DLattice
 
     subroutine run_DMETcalc()
         implicit none
@@ -1244,7 +1465,7 @@ Program RealHub
     !Calculate the embedded basis, and transform the 1e operators into this new basis
     subroutine CalcEmbedding()
         implicit none
-        real(dp) :: ImpurityOverlap(nImp,nImp),OverlapEVs(nImp),DDOT
+        real(dp) :: ImpurityOverlap(nImp,nImp),OverlapEVs(nImp)
         real(dp), allocatable :: RDMonImp(:,:),Work(:),SminHalf(:,:),temp(:,:)
         integer :: info,lWork,i,j,nDelete
         character(len=*), parameter :: t_r="CalcEmbedding"
@@ -1256,10 +1477,6 @@ Program RealHub
                 RDMonImp(i-nImp,j) = MeanFieldDM(i,j)
             enddo
         enddo
-
-        !For response normalizationi
-        ZerothBathNorm = 0.0_dp
-        ZerothBathNorm = DDOT(nSites-nImp,RDMonImp(1:nSites-nImp,1),1,RDMonImp(1:nSites-nImp,1),1)
 
 !        call writematrix(RDMonImp,'RDMonImp',.true.)
 

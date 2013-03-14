@@ -38,17 +38,18 @@ contains
 
   subroutine MINRESQLP( n, Aprod, b, shift, Msolve, disable, nout,        &
                         itnlim, rtol, maxxnorm, trancond, Acondlim,       & 
-                        x, istop, itn, rnorm, Arnorm, xnorm, Anorm, Acond )   
+                        x, istop, itn, rnorm, Arnorm, xnorm, Anorm, Acond, &
+                        startguess)   
     ! Inputs
     integer(ip), intent(in)            :: n
     complex(dp), intent(in)            :: b(n)  
     integer(ip), intent(in), optional  :: itnlim, nout
-    logical,     intent(in), optional  :: disable
+    logical,     intent(in), optional  :: disable, startguess
     complex(dp), intent(in), optional  :: shift
     real(dp),    intent(in), optional  :: rtol, maxxnorm, trancond, Acondlim
     
     ! Outputs
-    complex(dp), intent(out)           :: x(n)
+    complex(dp), intent(inout)         :: x(n)
     integer(ip), intent(out), optional :: istop, itn
     real(dp),    intent(out), optional :: rnorm, Arnorm, xnorm, Anorm, Acond 
 
@@ -437,7 +438,7 @@ contains
     complex(dp)  :: shift_
     real(dp)     :: rtol_, maxxnorm_, trancond_, Acondlim_
     real(dp)     :: rnorm_, Arnorm_, xnorm_, Anorm_, Acond_
-    logical      :: checkA_, precon_, disable_
+    logical      :: checkA_, precon_, disable_, startguess_
     integer(ip)  :: itnlim_, nout_, istop_, itn_
     
     complex(dp)  :: r1(n), r2(n), v(n), w(n), wl(n), wl2(n),& 
@@ -587,6 +588,12 @@ contains
     else
        precon_ = .false.
     end if 
+
+    if (present(startguess)) then
+        startguess_ = startguess
+    else
+        startguess_ = .false.
+    end if
     
     !------------------------------------------------------------------
     ! Print heading and initialize.
@@ -606,13 +613,13 @@ contains
     Anorm_   = zero
     Acond_   = one
     pnorm    = zero
-    x        = zzero
     xl2      = zzero
     x1last   = x(1)
-    
+
     if (nout_ > 0) then
        write(nout_, headerStr) enter, n, beta1, precon_, itnlim_, rtol_, & 
        shift_, maxxnorm_, Acondlim_, trancond_
+       !write(nout_,*) "b: ",b(1:(min(n,10))) 
     end if   
  
     !------------------------------------------------------------------
@@ -620,13 +627,33 @@ contains
     ! y  =  beta1 P'v1,  where  P = C**(-1).
     ! v is really P'v1.
     !------------------------------------------------------------------
-    y  = b
-    r1 = b
-    if ( precon_ ) then
-       call Msolve( n, b, y )
-    end if
+    if ( startguess_ ) then
+        if(znrm2(n, x, 1) < eps) then
+            x  = zzero
+            y  = b
+            r1 = b
 
-    beta1  = real(zdotc( n, b, 1, y, 1 ), dp)
+            if ( precon_ ) then
+               call Msolve( n, b, y )
+            end if
+            beta1  = real(zdotc( n, b, 1, y, 1 ), dp)
+        else
+            !Start with y as input previous guess
+            y = x
+            x = zzero
+            beta1  = real(zdotc( n, y, 1, y, 1 ), dp)
+        endif
+    else
+        x  = zzero
+        y  = b
+        r1 = b
+
+        if ( precon_ ) then
+           call Msolve( n, b, y )
+        end if
+
+        beta1  = real(zdotc( n, b, 1, y, 1 ), dp)
+    endif
 
     if (beta1 < zero .and. znrm2(n, y, 1) > eps) then     ! M must be indefinite.
        istop_ = 11
