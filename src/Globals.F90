@@ -66,6 +66,9 @@ module Globals
 
     real(dp) :: HFEnergy    !Calculated HF energy
 
+    integer , allocatable :: TD_Imp_Lat(:,:),TD_Imp_Phase(:,:)  !Parameterization of the orbital space for 2D hubbard
+    integer , allocatable :: ImpSites(:)    !The list of site indices for the impurity sites
+    integer , allocatable :: Perm_dir(:),Perm_indir(:)  !Mappings between the two indexing orders
     real(dp), allocatable :: U_Vals(:)      !The list of U_Values to loop over
     integer , allocatable :: allowed_occs(:)   !The list of CS occupations for the mean-field solution
     real(dp) , allocatable :: v_loc(:,:)    !The local correlation potential over the impurity sites

@@ -147,7 +147,7 @@ Program RealHub
         endif
         if(LatticeDim.eq.2) then
             write(6,"(A)") "            o 2-dimensional model" 
-            write(6,"(A,I7,A,I7,A)") "            o Size of lattice: ",nSites_x,' x ',nSites_y,' at 45 degrees' 
+            write(6,"(A,I7,A,I7,A)") "            o Size of lattice: ",TDLat_Ni,' x ',TDLat_Nj,' at 45 degrees' 
             write(6,"(A,I7)") "            o Total lattice sites: ",nSites
         elseif(LatticeDim.eq.1) then
             write(6,"(A)") "            o 1-dimensional model" 
@@ -686,13 +686,16 @@ Program RealHub
         implicit none
 
         if(allocated(U_Vals)) deallocate(U_Vals)
+        if(allocated(TD_Imp_Lat)) deallocate(TD_Imp_Lat,TD_Imp_Phase)
 
     end subroutine deallocate_mem
 
     subroutine Setup2DLattice()
         implicit none
         real(dp) :: dWidth
-        integer :: TDLat_Width,Ni,Nj
+        integer :: TDLat_Width,Ni,Nj,x,y,dx,dy,ci,cj,site_imp
+        integer :: i,j,k
+        character(len=*), parameter :: t_r='Setup2DLattice'
 
         !Work out an appropriate width, and an actual nSites
         dWidth = sqrt(nSites*2.0_dp)
@@ -739,10 +742,64 @@ Program RealHub
             call stop_all(t_r,'Cannot deal with impurities > 4')
         endif
 
-        !Find the x,y coordinates for the middle of the array
+        !Find the x,y coordinates for the middle of the array. This will be used to
+        !define the corner site of the impurity
         call ij2xy(TDLat_Ni/2,TDLat_Nj/2,x,y)
 
+        !Setup the impurity space, and how to tile the impurity through the space.
+        !This creates the matrices TD_Imp_Lat and TD_Imp_Phase
+        !If the correlation potential is a matrix of nImp x nImp, then TD_Imp_Lat
+        !gives the index of that correlation potential which corresponds to the tiled
+        !correlation potential through the space.
+        !(TD_Imp_Lat(site,site)-1)/nImp + 1 gives the impurity index of that site. 
+
         call MakeVLocIndices()
+
+        !Create the impurity cluster
+        allocate(ImpSites(nImp))
+        ImpSites = 0
+        do dx = 0,nImp_x-1
+            do dy = 0,nImp_y-1
+                call xy2ij(x+dx,y+dy,ci,cj)
+                !Remember - our sites are 1 indexed
+                site_imp = ci + TDLat_Ni*cj + 1     !No need to take mods. We certainly shouldn't exceed the bounds of the ij lattice
+                !write(6,*) "***",dx,dy,site_imp,(TD_Imp_Lat(site_imp,site_imp)),((TD_Imp_Lat(site_imp,site_imp)-1)/nImp) + 1
+                ImpSites(((TD_Imp_Lat(site_imp,site_imp)-1)/nImp) + 1) = site_imp
+            enddo
+        enddo
+
+        write(6,*) "Impurity sites defined as: ",ImpSites(:)
+
+        !We now want to define a mapping, from the standard site indexing to an impurity ordering of the sites, such that
+        ! Perm_indir(site) = Imp_site_index
+        ! Perm_dir(Imp_site_index) = site       The first index maps you onto the original impurity sites
+        ! Therefore, Perm_indir(site)%nImp = impurity site it maps to which repeat of the impurity you are on
+
+        !In the impurity ordering (indirect), the impurity sites are first, followed by the repetitions of the striped
+        !impurity space.
+        !The direct space is the normal lattice ordering
+        allocate(Perm_indir(nSites))
+        allocate(Perm_dir(nSites))
+        Perm_indir(:) = 0
+        Perm_dir(:) = 0
+        Perm_dir(1:nImp) = ImpSites(:)
+        k = nImp+1
+        loop: do i = 1,nSites
+            do j = 1,nImp 
+                if(i.eq.ImpSites(j)) then
+                    cycle loop
+                endif
+            enddo
+            Perm_dir(k) = i
+            k = k + 1
+        enddo loop
+        if(k.ne.nSites+1) call stop_all(t_r,"Error here")
+
+        do i=1,nSites
+            Perm_indir(Perm_dir(i)) = i
+        enddo
+!        write(6,*) "Pd: ",Perm_dir(:)
+!        write(6,*) "Pi: ",Perm_indir(:)
 
     end subroutine Setup2DLattice
 
