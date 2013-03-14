@@ -167,6 +167,7 @@ module mat_tools
                 !Now for coordinates on the original tilted lattice. This is the one where distances are not distorted
                 call ij2xy(i,j,x,y)
                 !write(6,*) "site: ",site," i,j: ",i,j,"x,y: ",x,y
+                !call flush(6)
 
                 do k = 1,4
                     !Move in all four possible directions
@@ -221,31 +222,34 @@ module mat_tools
     subroutine Mat_to_imp_order(h)
         implicit none
         real(dp) , intent(inout) :: h(nSites,nSites)
-        real(dp) :: temp(nSites,nSites)
+        real(dp) , allocatable :: temp(:,:)
         integer :: i
         
-        temp(:,:) = 0.0_dp
+        allocate(temp(nSites,nSites))
+        temp(:,:) = zero
 
         !Permute the columns
         do i = 1,nSites
             temp(:,i) = h(:,Perm_dir(i))
         enddo
 
-        h(:,:) = 0.0_dp
+        h(:,:) = zero
         !Permute the rows, and overwrite original matrix
         do i = 1,nSites
             h(i,:) = temp(Perm_dir(i),:)
         enddo
+        deallocate(temp)
 
     end subroutine Mat_to_imp_order
 
     subroutine Mat_to_lattice_order(h)
         implicit none
         real(dp), intent(inout) :: h(nSites,nSites)
-        real(dp) :: temp(nSites,nSites)
+        real(dp) , allocatable :: temp(:,:)
         integer :: i
 
-        temp(:,:) = 0.0_dp
+        allocate(temp(nSites,nSites))
+        temp(:,:) = zero
         do i = 1,nSites
             temp(:,i) = h(:,Perm_indir(i))
         enddo
@@ -253,15 +257,17 @@ module mat_tools
         do i = 1,nSites
             h(i,:) = temp(Perm_indir(i),:)
         enddo
+        deallocate(temp)
 
     end subroutine Mat_to_lattice_order
     
     subroutine Mat_to_imp_order_comp(h)
         implicit none
         complex(dp) , intent(inout) :: h(nSites,nSites)
-        complex(dp) :: temp(nSites,nSites)
+        complex(dp) , allocatable :: temp(:,:)
         integer :: i
         
+        allocate(temp(nSites,nSites))
         temp(:,:) = zzero
         !Permute the columns
         do i = 1,nSites
@@ -273,15 +279,17 @@ module mat_tools
         do i = 1,nSites
             h(i,:) = temp(Perm_dir(i),:)
         enddo
+        deallocate(temp)
 
     end subroutine Mat_to_imp_order_comp
 
     subroutine Mat_to_lattice_order_comp(h)
         implicit none
         complex(dp), intent(inout) :: h(nSites,nSites)
-        complex(dp) :: temp(nSites,nSites)
+        complex(dp) , allocatable :: temp(:,:)
         integer :: i
 
+        allocate(temp(nSites,nSites))
         temp(:,:) = zzero
         do i = 1,nSites
             temp(:,i) = h(:,Perm_indir(i))
@@ -290,6 +298,7 @@ module mat_tools
         do i = 1,nSites
             h(i,:) = temp(Perm_indir(i),:)
         enddo
+        deallocate(temp)
 
     end subroutine Mat_to_lattice_order_comp
 
@@ -484,7 +493,7 @@ module mat_tools
         real(dp) , intent(out) :: core_v(nSites,nSites)
         real(dp) , intent(in) :: CorrPot(nImp,nImp)
         logical , intent(in), optional :: tAdd
-        real(dp) :: temp(nSites,nSites)
+        real(dp), allocatable :: temp(:,:)
         real(dp) :: CorrPot_Flip(nImp,nImp)
         integer :: i,j,k,i_ind,j_ind,a,b
         logical :: tAdd_
@@ -546,6 +555,7 @@ module mat_tools
             !2D lattices.
             if(tFlipUTiling) call stop_all(t_r,'Cannot flip tiling of correlation potential in 2D')
 
+            allocate(temp(nSites,nSites))
             temp(:,:) = core(:,:)
             call Mat_to_lattice_order(temp)
             
@@ -577,6 +587,7 @@ module mat_tools
 
             !Transform both core_v and core back to the impurity ordering
             call Mat_to_imp_order(Core_v)
+            deallocate(temp)
         endif
 
     end subroutine add_localpot
@@ -676,7 +687,8 @@ module mat_tools
         complex(dp) , intent(out) :: core_v(nSites,nSites)
         complex(dp) , intent(in) :: CorrPot(nImp,nImp)
         logical , intent(in), optional :: tAdd
-        complex(dp) :: CorrPot_Flip(nImp,nImp),temp(nSites,nSites)
+        complex(dp) :: CorrPot_Flip(nImp,nImp)
+        complex(dp), allocatable :: temp(:,:)
         integer :: i,j,k,i_ind,j_ind,a,b
         logical :: tAdd_
 
@@ -733,6 +745,7 @@ module mat_tools
             enddo
         elseif(LatticeDim.eq.2) then
 
+            allocate(temp(nSites,nSites))
             temp(:,:) = core(:,:)
             call Mat_to_lattice_order_comp(temp)
 
@@ -762,6 +775,7 @@ module mat_tools
 
             !Transform both core_v and core back to the impurity ordering
             call Mat_to_imp_order_comp(Core_v)
+            deallocate(temp)
         endif
 
     end subroutine add_localpot_comp
