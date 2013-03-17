@@ -5561,12 +5561,15 @@ module LinearResponse
     ! G_0^+
     ! This is ONLY done for the local greens functions at site 1
     subroutine FindSchmidtPert_Charged(Omega,NI_LRMat_Cre,NI_LRMat_Ann)
+        use mat_tools, only: add_localpot
         implicit none
         real(dp), intent(in) :: Omega
         complex(dp), intent(out) :: NI_LRMat_Cre(1,1),NI_LRMat_Ann(1,1)
         complex(dp), allocatable :: HFPertBasis_Cre(:),HFPertBasis_Ann(:)
         integer :: i,j,a,b,pertsite
         character(len=*), parameter :: t_r='FindSchmidtPert_Charged'
+        real(dp), allocatable :: Temph0v(:,:),Temph0(:,:),Work(:)
+        integer :: info,lwork
 
         if(tAllImp_LR) then
             call stop_all(t_r,'Should not be in this routine if you need to calculate all nImp GFs')
@@ -5578,6 +5581,32 @@ module LinearResponse
         HFPertBasis_Ann(:) = zzero 
         NI_LRMat_Cre(1,1) = zzero 
         NI_LRMat_Ann(1,1) = zzero 
+
+        if(.false.) then
+            !Rediagonalise the NI hamiltonian, with an increased t value
+            allocate(Temph0v(nSites,nSites))
+            allocate(Temph0(nSites,nSites))
+            Temph0(:,:) = 2.0_dp*h0(:,:)
+            call add_localpot(Temph0,Temph0v,v_loc,.true.)
+            deallocate(Temph0)
+            !Diagonalize
+            HFOrbs(:,:) = Temph0v(:,:)
+            HFEnergies(:) = zero
+            allocate(Work(1))
+            lWork=-1
+            info=0
+            call dsyev('V','U',nSites,HFOrbs,nSites,HFEnergies,Work,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'Workspace queiry failed')
+            lwork=int(work(1))+1
+            deallocate(work)
+            allocate(work(lwork))
+            call dsyev('V','U',nSites,HFOrbs,nSites,HFEnergies,Work,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'Diag failed')
+            deallocate(work,Temph0v)
+
+            !Also need to create a new HFtoSchmidtTransform
+            call DGEMM('T','N',nSites,nSites,nSites,1.0_dp,HFOrbs,nSites,FullSchmidtBasis,nSites,0.0_dp,HFtoSchmidtTransform,nSites)
+        endif
 
         !Assume perturbation is local to the first impurity site (pertsite = 1).
         pertsite = 1
