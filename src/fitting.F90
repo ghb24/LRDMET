@@ -732,7 +732,6 @@ module fitting
 !        nx = nImpCombs  !Number of variables = number of triangular packed impurity sites
         x(:) = x0(:)    !Starting guess for potential
 
-        step = 3.0e-3_dp    !Step size
         do it=1,100     !NR iterations
 
 !            call writevector(x,'inputvars')
@@ -887,7 +886,8 @@ module fitting
         integer :: i
 
         g(:,:) = 0.0_dp
-        step = 1.0e-5_dp
+!        step = 1.0e-5_dp
+        step = GS_Fit_Step
         do i=1,nx
             !x with x_i increase by differential
             x_1(:) = x(:)

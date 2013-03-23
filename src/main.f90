@@ -36,6 +36,7 @@ Program RealHub
         tPeriodic = .false.
         tAntiPeriodic = .false. 
         iMaxIterDMET = 150
+        GS_Fit_Step = 1.0e-5_dp
         tRampDownOcc = .true.
         tCompleteDiag = .true. 
         tSaveCorrPot = .false.
@@ -337,6 +338,8 @@ Program RealHub
                     CorrPot_file = ''
                     call readu(CorrPot_file)
                 endif
+            case("FITTING_STEPSIZE")
+                call readf(GS_Fit_Step)
             case("PBC")
                 tPeriodic = .true.
             case("APBC")
@@ -384,6 +387,7 @@ Program RealHub
                 write(6,"(A)") "U_VALS"
                 write(6,"(A)") "REUSE_CORRPOT"
                 write(6,"(A)") "FLIP_CORRPOT_TILING"
+                write(6,"(A)") "FITTING_STEPSIZE"
                 write(6,"(A)") "SCF_HF"
                 write(6,"(A)") "PBC"
                 write(6,"(A)") "APBC"
