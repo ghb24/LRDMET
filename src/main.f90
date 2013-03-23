@@ -77,7 +77,6 @@ Program RealHub
         tRemoveGSFromH = .false.
         tMinRes_NonDir = .false.
         tPreCond_MinRes = .false.
-        tStoreHermit_Hamil = .false.
         rtol_LR = 1.0e-8_dp
         tReuse_LS = .false.
         tSC_LR = .false.
@@ -457,7 +456,6 @@ Program RealHub
                 tReuse_LS = .true.
                 call stop_all(t_r,'The REUSE_FIRSTORDER_PSI does not currently work. Debug this option if you want to use it')
             case("STORE_HERMIT_HAMIL")
-                tStoreHermit_Hamil = .true.
                 call stop_all(t_r,'The STORE_HERMIT_HAMIL option has been depreciated since it will not improve efficiency')
             case("PRECONDITION_LR")
                 tPreCond_MinRes = .true.

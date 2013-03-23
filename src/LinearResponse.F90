@@ -10,9 +10,7 @@ module LinearResponse
     
     !Parameters for matrix-vector multiplications within iterative solvers
     complex(dp), pointer, private :: zDirMV_Mat(:,:)
-    complex(dp), pointer, private :: zDirMV_Mat_Herm(:,:)
     real(dp), allocatable, private :: Precond_Diag(:)
-    complex(dp), allocatable, target :: Hermit_Hamil(:,:)
 
     contains
     
@@ -232,11 +230,7 @@ module LinearResponse
             call stop_all(t_r,'Should change restriction on the Linear system size being the same for particle/hole addition')
         endif
         
-        if(tStoreHermit_Hamil) then
-            write(6,"(A,F14.6,A)") "Memory required for the LR system: ",3*(real(nLinearSystem,dp)**2)*16/1048576.0_dp," Mb"
-        else
-            write(6,"(A,F14.6,A)") "Memory required for the LR system: ",2*(real(nLinearSystem,dp)**2)*16/1048576.0_dp," Mb"
-        endif
+        write(6,"(A,F14.6,A)") "Memory required for the LR system: ",2*(real(nLinearSystem,dp)**2)*16/1048576.0_dp," Mb"
 
         !If doing full optimization of the GS problem
         nGSSpace = nFCIDet + nNp1FCIDet + nNm1bFCIDet
@@ -294,9 +288,6 @@ module LinearResponse
             allocate(RHS(nLinearSystem))
             if(tPrecond_MinRes) then
                 allocate(Precond_Diag(nLinearSystem))
-            endif
-            if(tStoreHermit_Hamil) then
-                allocate(Hermit_Hamil(nLinearSystem,nLinearSystem))
             endif
         endif
         
@@ -768,13 +759,6 @@ module LinearResponse
                     if(tMinRes_NonDir) then
 !                        zShift = dcmplx(-Omega-mu-GFChemPot,-dDelta)
                         zDirMV_Mat => LinearSystem_p
-                        if(tStoreHermit_Hamil) then
-                            call ZGEMM('C','N',nLinearSystem,nLinearSystem,nLinearSystem,zone,LinearSystem_p,nLinearSystem, &
-                                LinearSystem_p,nLinearSystem,zzero,Hermit_Hamil,nLinearSystem)
-                            zDirMV_Mat_Herm => Hermit_Hamil
-                        else
-                            zDirMV_Mat_Herm => null()
-                        endif
                         call setup_RHS(nLinearSystem,Cre_0(:,pertsite),RHS)
                         maxminres_iter_ip = int(maxminres_iter,ip)
                         minres_unit_ip = int(minres_unit,ip)
@@ -790,7 +774,6 @@ module LinearResponse
                         endif
                         info = info_ip
                         zDirMV_Mat => null()
-                        zDirMV_Mat_Herm => null()
                         if(info.gt.7) write(6,*) "info: ",info
                         if(info.eq.8) call stop_all(t_r,'Linear equation solver hit maximum iterations')
                         if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) then
@@ -819,13 +802,6 @@ module LinearResponse
                     if(tMinRes_NonDir) then
                         !zShift = dcmplx(-Omega-mu+GFChemPot,-dDelta)
                         zDirMV_Mat => LinearSystem_h
-                        if(tStoreHermit_Hamil) then
-                            call ZGEMM('C','N',nLinearSystem,nLinearSystem,nLinearSystem,zone,LinearSystem_h,nLinearSystem, &
-                                LinearSystem_h,nLinearSystem,zzero,Hermit_Hamil,nLinearSystem)
-                            zDirMV_Mat_Herm => Hermit_Hamil
-                        else
-                            zDirMV_Mat_Herm => null()
-                        endif
                         call setup_RHS(nLinearSystem,Ann_0(:,pertsite),RHS)
                         maxminres_iter_ip = int(maxminres_iter,ip)
                         minres_unit_ip = int(minres_unit,ip)
@@ -1036,7 +1012,6 @@ module LinearResponse
             close(minres_unit)
             deallocate(RHS)
             if(tPrecond_MinRes) deallocate(Precond_Diag)
-            if(tStoreHermit_Hamil) deallocate(Hermit_Hamil) 
         endif
 
         !Deallocate determinant lists
@@ -5108,28 +5083,21 @@ module LinearResponse
         complex(dp) :: zdotc
         
         Precond_Diag(:) = 0.0_dp
-        
-        if(tStoreHermit_Hamil) then
-            if(.not.associated(zDirMV_Mat_Herm)) call stop_all('FormPreCond','Hermitian Matrix not associated!')
-            do i = 1,n
-                Precond_diag(i) = zDirMV_Mat_Herm(i,i)
-            enddo
-        else
-            if(.not.associated(zDirMV_Mat)) call stop_all('FormPreCond','Matrix not associated!')
+    
+        if(.not.associated(zDirMV_Mat)) call stop_all('FormPreCond','Matrix not associated!')
 
-    !        Scal = real(zShift*dconjg(zShift))
-    !The matrix diagonals are not long necessarily real
-            do i = 1,n
-                Precond_diag(i) = real(zdotc(n,zDirMV_Mat(:,i),1,zDirMV_Mat(:,i),1),dp)
-    !
-    !            tmp = zzero
-    !            do j = 1,n
-    !                tmp = tmp + zDirMV_Mat(j,i)
-    !            enddo
-    !            tmp = tmp * dconjg(zShift)
-    !            Precond_diag(i) = Precond_diag(i) - 2.0_dp*real(tmp,dp) + Scal
-            enddo
-        endif
+!        Scal = real(zShift*dconjg(zShift))
+!The matrix diagonals are not long necessarily real
+        do i = 1,n
+            Precond_diag(i) = real(zdotc(n,zDirMV_Mat(:,i),1,zDirMV_Mat(:,i),1),dp)
+!
+!            tmp = zzero
+!            do j = 1,n
+!                tmp = tmp + zDirMV_Mat(j,i)
+!            enddo
+!            tmp = tmp * dconjg(zShift)
+!            Precond_diag(i) = Precond_diag(i) - 2.0_dp*real(tmp,dp) + Scal
+        enddo
         !call writevector(Precond_diag,'Precond')
     end subroutine FormPrecond
 
@@ -5189,15 +5157,10 @@ module LinearResponse
         complex(dp), intent(out) :: y(n)
         complex(dp) :: temp(n)
 
-        if(tStoreHermit_Hamil) then
-            if(.not.associated(zDirMV_Mat_Herm)) call stop_all('zDirMV','Hermitian matrix not associated!')
-            call ZGEMV('N',n,n,zone,zDirMV_Mat_Herm,n,x,1,zzero,y,1)
-        else
-            if(.not.associated(zDirMV_Mat)) call stop_all('zDirMV','Matrix not associated!')
+        if(.not.associated(zDirMV_Mat)) call stop_all('zDirMV','Matrix not associated!')
 
-            call ZGEMV('N',n,n,zone,zDirMV_Mat,n,x,1,zzero,temp,1)
-            call ZGEMV('C',n,n,zone,zDirMV_Mat,n,temp,1,zzero,y,1)
-        endif
+        call ZGEMV('N',n,n,zone,zDirMV_Mat,n,x,1,zzero,temp,1)
+        call ZGEMV('C',n,n,zone,zDirMV_Mat,n,temp,1,zzero,y,1)
 
 !        temp(:) = x(:)
 !        call ZGEMV('N',n,n,zone,zDirMV_Mat,n,x,1,-zShift,temp,1)
