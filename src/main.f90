@@ -30,6 +30,7 @@ Program RealHub
         nSites = 24  
         LatticeDim = 1
         nImp = 1
+        dTolDMET = 1.0e-8_dp
         StartU = 0.0_dp
         EndU = 4.1_dp
         UStep = 1.0_dp
@@ -346,6 +347,9 @@ Program RealHub
                 tAntiPeriodic = .true.
             case("MAXITER_DMET")
                 call readi(iMaxIterDMET)
+                if(item.lt.nitems) then
+                    call readf(dTolDMET)
+                endif
             case("SCF_HF")
                 tSCFHF = .true.
             case("IMPSITES")
@@ -963,7 +967,7 @@ Program RealHub
                         !Update vloc
                         v_loc(:,:) = v_loc(:,:) + vloc_change(:,:)
 
-                        if(VarVloc.lt.1.0e-8) then
+                        if(VarVloc.lt.dTolDMET) then
                             write(6,"(A)") "...correlation potential converged" 
                             exit
                         endif
