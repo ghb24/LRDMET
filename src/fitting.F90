@@ -613,6 +613,18 @@ module fitting
 
     end subroutine MakeGradMatrix_comp
 
+    !Use a first order perturbative scheme to fit the ground state correlation potential
+    !Damping of the fit update can be used: dDampedFit
+    !Also, can do complete fit each iteration, or just a first-order stationary condition: tGS_globalfit
+    subroutine Fit_vloc_pert(VarVloc,ErrRDM)
+        implicit none
+        real(dp), intent(out) :: VarVloc,ErrRDM
+        character(len=*), parameter :: t_r='Fit_vloc_pert'
+
+        call stop_all(t_r,'Still to code this up!')
+
+    end subroutine Fit_vloc_pert
+
     !Fit the correlation potential so that the RDMs match. This is returned in the global vloc_change, as well as a
     !measure of the change in the potential (VarVloc) and the initial error in the RDMs (ErrRDM)
     !The two RDMs that want to match are the FCI RDM over the embedded systems (HL_1RDM), and an RDM
@@ -627,6 +639,11 @@ module fitting
         real(dp) , allocatable :: vloc_change_packed(:)
         integer :: lWork,info,i
         character(len=*), parameter :: t_r='Fit_vloc'
+
+!        if(tPerturbative_GS_Fit) then
+!            call Fit_vloc_pert(VarVloc,ErrRDM)
+!            return
+!        endif
 
         if(allocated(vloc_change)) deallocate(vloc_change)
         allocate(vloc_change(nImp,nImp))
