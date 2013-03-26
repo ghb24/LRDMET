@@ -37,6 +37,7 @@ Program RealHub
         tPeriodic = .false.
         tAntiPeriodic = .false. 
         iMaxIterDMET = 150
+        tDiag_kspace = .false.
         GS_Fit_Step = 1.0e-5_dp
         tRampDownOcc = .true.
         tCompleteDiag = .true. 
@@ -352,6 +353,8 @@ Program RealHub
                 endif
             case("SCF_HF")
                 tSCFHF = .true.
+            case("KSPACE_DIAG")
+                tDiag_kspace = .true.
             case("IMPSITES")
                 call readi(nImp)
             case("HALF_FILL")

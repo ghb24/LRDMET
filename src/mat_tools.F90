@@ -1005,17 +1005,22 @@ module mat_tools
         !First, diagonalize one-body hamiltonian
         HFOrbs(:,:) = Fock(:,:)
         HFEnergies(:) = 0.0_dp
-        allocate(Work(1))
-        lWork=-1
-        info=0
-        call dsyev('V','U',nSites,HFOrbs,nSites,HFEnergies,Work,lWork,info)
-        if(info.ne.0) call stop_all(t_r,'Workspace queiry failed')
-        lwork=int(work(1))+1
-        deallocate(work)
-        allocate(work(lwork))
-        call dsyev('V','U',nSites,HFOrbs,nSites,HFEnergies,Work,lWork,info)
-        if(info.ne.0) call stop_all(t_r,'Diag failed')
-        deallocate(work)
+        if(tDiag_kspace.and.it.gt.4) then
+            call DiagOneEOp(HFOrbs,HFEnergies,nImp,nSites,tDiag_kspace)
+        else
+            call DiagOneEOp(HFOrbs,HFEnergies,nImp,nSites,.false.)
+        endif
+!        allocate(Work(1))
+!        lWork=-1
+!        info=0
+!        call dsyev('V','U',nSites,HFOrbs,nSites,HFEnergies,Work,lWork,info)
+!        if(info.ne.0) call stop_all(t_r,'Workspace queiry failed')
+!        lwork=int(work(1))+1
+!        deallocate(work)
+!        allocate(work(lwork))
+!        call dsyev('V','U',nSites,HFOrbs,nSites,HFEnergies,Work,lWork,info)
+!        if(info.ne.0) call stop_all(t_r,'Diag failed')
+!        deallocate(work)
             
         write(6,*) "nOCC", nOcc
         write(6,*) "Fock eigenvalues around fermi level: "
@@ -1074,6 +1079,207 @@ module mat_tools
         deallocate(Fock,OccOrbs)
 
     end subroutine run_hf
+
+    !Routine to diagonalize a 1-electron, real operator, with the lattice periodicity.
+    !the SS_Period is the size of the supercell repeating unit (e.g. the coupling correlation potential)
+    !Ham returns the eigenvectors (in real space)
+    subroutine DiagOneEOp(Ham,Vals,SS_Period,nLat,tKSpace_Diag)
+        implicit none
+        integer, intent(in) :: nLat
+        logical, intent(in) :: tKSpace_Diag
+        integer, intent(in) :: SS_Period
+        real(dp), intent(inout) :: Ham(nLat,nLat)
+        real(dp), intent(out) :: Vals(nLat)
+
+        real(dp), allocatable :: Work(:)
+        real(dp), allocatable :: KPnts(:,:)
+        real(dp) :: TransVec(LatticeDim),Expo,DDOT,phase
+        complex(dp), allocatable :: RotMat(:,:),temp(:,:),CompHam(:,:),RotHam(:,:),cWork(:)
+        integer :: lWork,info,nKPnts,i,j,k,kSpace_ind,ki,kj,bandi,bandj,Ind_i,Ind_j
+        character(len=*), parameter :: t_r='DiagOneEOp'
+
+        if(tKSpace_Diag) then
+            !Create k-space mesh
+            if(mod(nLat,SS_Period).ne.0) call stop_all(t_r,'Lattice dimensions not consistent')
+            nKPnts = nLat/SS_Period
+            allocate(KPnts(LatticeDim,nKPnts))
+
+            if(LatticeDim.ne.1) then
+                call stop_all(t_r,'Not yet implemented for 2D diagonalizations')
+            else
+                !Just use equally spaced mesh starting at -pi/SS_Period, and working our way across
+                do k = 1,nKPnts
+                    KPnts(1,k) = -pi/real(SS_Period,dp) + (k-1)*(2.0_dp*pi/nKpnts)/real(SS_Period,dp)
+                    write(6,*) "KPnt ",k,KPnts(:,k)
+                enddo
+            endif
+
+            !Do incredibly naievly to start with by creating the entire rotation matrix and rotating
+            !First index in k-space, second in r-space
+            allocate(RotMat(nLat,nLat))
+            RotMat(:,:) = zzero
+
+            do i = 1,nLat
+                if(LatticeDim.eq.1) then
+                    TransVec(1) = real(i-1,dp)
+                endif
+                do k = 1,nKPnts
+                    do j = 1,SS_Period  !Bands per kpoint
+
+                        kSpace_ind = SS_Period*(k-1) + j
+
+                        Expo = ddot(LatticeDim,KPnts(:,k),1,TransVec(:),1)
+                        RotMat(kSpace_ind,i) = (1.0_dp/sqrt(real(nLat,dp))) * exp(dcmplx(0.0_dp,Expo))
+                    enddo
+                enddo
+            enddo
+
+            !call writematrixcomp(RotMat,'Rotation Matrix',.true.)
+            allocate(temp(nLat,nLat))
+            !Check unitarity of matrix
+            call ZGEMM('C','N',nLat,nLat,nLat,zone,RotMat,nLat,RotMat,nLat,zzero,temp,nLat) 
+            do i = 1,nLat
+                do j = 1,nLat
+                    if((i.eq.j).and.(abs(temp(i,j)-zone).gt.1.0e-7_dp)) then
+                        write(6,*) "i,j: ",i,j
+                        call writematrixcomp(temp,'Identity?',.true.)
+                        call stop_all(t_r,'Rotation matrix not unitary')
+                    elseif((i.ne.j).and.(abs(temp(j,i)).gt.1.0e-7_dp)) then
+                        call stop_all(t_r,'Rotation matrix not unitary 2')
+                    endif
+                enddo
+            enddo
+            !Try other way...
+            call ZGEMM('N','C',nLat,nLat,nLat,zone,RotMat,nLat,RotMat,nLat,zzero,temp,nLat) 
+            do i = 1,nLat
+                do j = 1,nLat
+                    if((i.eq.j).and.(abs(temp(i,j)-zone).gt.1.0e-7_dp)) then
+                        call stop_all(t_r,'Rotation matrix not unitary')
+                    elseif((i.ne.j).and.(abs(temp(j,i)).gt.1.0e-7_dp)) then
+                        call stop_all(t_r,'Rotation matrix not unitary 2')
+                    endif
+                enddo
+            enddo
+
+            allocate(CompHam(nLat,nLat))
+            allocate(RotHam(nLat,nLat))
+            !Store the hamiltonian in complex form, so we can act on it
+            do i = 1,nLat
+                do j = 1,nLat
+                    CompHam(j,i) = dcmplx(Ham(j,i),0.0_dp)
+                enddo
+            enddo
+
+            !Now, simply transform the hamiltonian to k-space brute force
+            call ZGEMM('N','N',nLat,nLat,nLat,zone,RotMat,nLat,CompHam,nLat,zzero,temp,nLat)
+            call ZGEMM('N','C',nLat,nLat,nLat,zone,temp,nLat,RotMat,nLat,zzero,RotHam,nLat)
+            
+            !Is this now block diagonal?
+            do ki = 1,nKPnts
+                do bandi = 1,SS_Period
+                    Ind_i = SS_Period*(ki-1) + bandi
+                    do kj = 1,nKpnts
+                        do bandj = 1,SS_Period
+                            Ind_j = SS_Period*(kj-1) + bandj
+
+                            if((ki.ne.kj).and.(abs(RotHam(Ind_j,Ind_i)).gt.1.0e-7_dp)) then
+                                call stop_all(t_r,'Translational symmetry not conserved')
+                            endif
+                            if((Ind_j.eq.Ind_i).and.(aimag(RotHam(Ind_j,Ind_i)).gt.1.0e-7_dp)) then
+                                call stop_all(t_r,'k-space hamiltonian not hermitian')
+                            elseif((Ind_j.ne.Ind_i).and.(abs(RotHam(Ind_j,Ind_i)-dconjg(RotHam(Ind_i,Ind_j))).gt.1.0e-7_dp)) then
+                                call stop_all(t_r,'k-space hamiltonian not hermitian')
+                            endif
+                        enddo
+                    enddo
+                enddo
+            enddo
+
+            !Now, bizarrely, just diagonalize the whole thing!
+            CompHam(:,:) = RotHam(:,:)
+            lWork = max(1,2*nLat-1)
+            allocate(cWork(lWork))
+            allocate(Work(max(1,3*nLat-2)))
+            call ZHEEV('V','U',nLat,RotHam,nLat,Vals,cWork,lWork,Work,info)
+            if(info.ne.0) call stop_all(t_r,'Diag failed')
+            deallocate(cWork,Work)
+
+            !Are the eigenvectors meaningful?
+            allocate(cWork(nLat))
+            do i = 1,nLat
+                call ZGEMV('N',nLat,nLat,zone,CompHam,nLat,RotHam(:,i),1,zzero,cWork,1)
+                do j = 1,nLat
+                    if(abs(cWork(j)-(Vals(i)*RotHam(j,i))).gt.1.0e-8_dp) then
+                        call stop_all(t_r,'Eigensystem not computed correctly')
+                    endif
+                enddo
+            enddo
+            deallocate(cWork)
+    
+            !Now, rotate eigenvectors back into real-space basis
+            call ZGEMM('C','N',nLat,nLat,nLat,zone,RotMat,nLat,RotHam,nLat,zzero,temp,nLat)
+            call ZGEMM('N','N',nLat,nLat,nLat,zone,temp,nLat,RotMat,nLat,zzero,RotHam,nLat)
+
+            call writevector(Vals,'Eigenvalues')
+            do i = 1,nLat
+                do j = 1,nLat
+                    !Find the phase factor for each eigenvector
+                    phase = atan(aimag(RotHam(j,i))/real(RotHam(j,i)))
+                    write(6,*) "Eigenvector: ",i,j,phase,RotHam(j,i) * exp(dcmplx(0.0_dp,-phase))
+!                    RotHam(j,i) = RotHam(j,i) * exp(dcmplx(0.0_dp,-phase))
+                enddo
+            enddo
+            
+            !Are the eigenvectors still meaningful?
+            allocate(cWork(nLat))
+            do i = 1,nLat
+                do j = 1,nLat
+                    CompHam(j,i) = dcmplx(Ham(j,i),0.0_dp)
+                enddo
+            enddo
+            do i = 1,nLat
+                call ZGEMV('N',nLat,nLat,zone,CompHam,nLat,RotHam(:,i),1,zzero,cWork,1)
+                do j = 1,nLat
+                    if(abs(cWork(j)-(Vals(i)*RotHam(j,i))).gt.1.0e-8_dp) then
+                        call writevectorcomp(cWork,'H x vec')
+                        call writevectorcomp(Vals(i)*RotHam(:,i),'RHS')
+                        call stop_all(t_r,'Eigensystem not computed correctly 2')
+                    endif
+                enddo
+            enddo
+            deallocate(cWork)
+
+            !Are the eigenvectors real now?
+            Ham(:,:) = zero
+            do i = 1,nLat
+                do j = 1,nLat
+                    if(aimag(CompHam(j,i)).gt.1.0e-8_dp) then
+                        call writematrixcomp(CompHam,'Eigenvectors',.true.)
+                        call stop_all(t_r,'Eigenvectors complex...')
+                    endif
+                    Ham(j,i) = real(CompHam(j,i),dp)
+                enddo
+            enddo
+
+            deallocate(CompHam,temp,RotMat,RotHam)
+        else
+            !Normal real space diagonalization
+            Vals(:) = 0.0_dp
+            allocate(Work(1))
+            lWork=-1
+            info=0
+            call dsyev('V','L',nLat,Ham,nLat,Vals,Work,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'Workspace queiry failed')
+            lwork=int(work(1))+1
+            deallocate(work)
+            allocate(work(lwork))
+            call dsyev('V','L',nLat,Ham,nLat,Vals,Work,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'Diag failed')
+            deallocate(work)
+            call writevector(Vals,'Eigenvalues')
+        endif
+
+    end subroutine DiagOneEOp
 
     !Convert a real-space symmetric operator into a k-space operator.
     !In: The operator in real space. Size = nSuperCell x nSupercell

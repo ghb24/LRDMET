@@ -34,6 +34,7 @@ module Globals
     logical :: tReadInCorrPot   !Read in the correlation potential to use. No DMET SCF
     character(len=64) :: CorrPot_file   !File name with the correlation potentials in it 
     logical :: tConstructFullSchmidtBasis   !Whether to construct the full Schmidt basis or just the embedding basis
+    logical :: tDiag_kspace !Wheter to perform diagonalizations in k-space or not
     real(dp) :: GS_Fit_Step !The step size for the finite difference gradient approximation in fitting the correlation potential
     real(dp) :: HL_Energy   !The energy of the embedded system from the solver
     real(dp) :: One_ElecE,Two_ElecE !The one and two-body contributions to the embedded system total energy from contractions with the HL 1RDM
