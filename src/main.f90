@@ -48,7 +48,8 @@ Program RealHub
         tWriteout = .false.
         tFlipUTiling = .false.
         tReadInCorrPot = .false.
-        CorrPot_file = 'CorrPots'
+        CorrPot_file = 'CORRPOTS'
+        tContinueConvergence = .true.
         tNonDirDavidson = .false.
         tCheck = .false.
 
@@ -287,7 +288,7 @@ Program RealHub
     subroutine ModelReadInput()
         implicit none
         logical :: teof
-        character(len=100) :: w
+        character(len=100) :: w,w2
         logical :: tSpecifiedHub,tSpecifiedAnd,tMultipleOccs
         real(dp) :: UVals(100)
         integer :: i
@@ -336,9 +337,19 @@ Program RealHub
                 tFlipUTiling = .true.
             case("READ_CORRPOT")
                 tReadInCorrPot = .true.
+                tContinueConvergence = .false.
                 if(item.lt.nitems) then
                     CorrPot_file = ''
                     call readu(CorrPot_file)
+                endif
+                if(item.lt.nitems) then
+                    call readu(w2)
+                    select case(w2)
+                    case("CONT_CONV")
+                        tContinueConvergence = .true.
+                    case default
+                        call stop_all(t_r,'Keyword after "READ_CORRPOT" not recognised')
+                    end select
                 endif
             case("FITTING_STEPSIZE")
                 call readf(GS_Fit_Step)
@@ -808,8 +819,8 @@ Program RealHub
         do i=1,nSites
             Perm_indir(Perm_dir(i)) = i
         enddo
-        write(6,*) "Perm_dir: ",Perm_dir(:)
-        write(6,*) "Perm_indir: ",Perm_indir(:)
+        !write(6,*) "Perm_dir: ",Perm_dir(:)
+        !write(6,*) "Perm_indir: ",Perm_indir(:)
 
     end subroutine Setup2DLattice
 
@@ -942,7 +953,7 @@ Program RealHub
                     call SolveSystem(.true.)
                     call halt_timer(HL_Time)
 
-                    if((.not.tAnderson).and.(.not.tReadInCorrPot)) then
+                    if((.not.tAnderson).and.tContinueConvergence) then
                         !Fit new potential
                         !vloc_change (global) is updated in here to reflect the optimal change
                         !VarVloc is a meansure of the change in the potential
@@ -998,14 +1009,19 @@ Program RealHub
                 !Potentially run FCI again now to get correlation functions from 2RDMs?
 
                 write(6,"(A,F10.4,A,G20.10)") "FINAL energy per site for U=",U,' is: ',TotalE_Imp
+                
+                if(.not.tAnderson) then
+                    close(DMETfile)
+                    if(tHalfFill) then
+                        call WriteCorrPot()
+                    endif
+                endif
 
                 !Set potential for the next occupation number, or wipe it?
                 if(.not.tSaveCorrPot) then
                     v_loc(:,:) = 0.0_dp
                 endif
 
-                if(.not.tAnderson) close(DMETfile)
-                
             enddo   !Loop over occupations
 
             if(.not.tHalfFill) then
@@ -1057,6 +1073,24 @@ Program RealHub
         endif
 
     end subroutine GetNextUVal
+
+    subroutine WriteCorrPot()
+        use utils, only: get_free_unit,append_ext_real
+        implicit none
+        integer :: iunit
+        character(64) :: filename
+        character(len=*), parameter :: t_r='WriteCorrPot'
+
+        write(6,*) "Writing out converged correlation potential..."
+
+        call append_ext_real("CORRPOTS",U,filename)
+        iunit = get_free_unit()
+        open(iunit,file=filename,status='unknown')
+
+        write(iunit,*) U,nOcc,v_loc(:,:)
+        close(iunit)
+
+    end subroutine WriteCorrPot
 
     subroutine read_in_corrpot()
         use utils, only: get_free_unit
