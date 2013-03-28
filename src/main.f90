@@ -1123,7 +1123,7 @@ Program RealHub
             endif
         enddo
 
-        if(.not.tFoundCorrPot) then
+        if(.not.tFoundCorrPot.and.(.not.tContinueConvergence)) then
             call stop_all(t_r,'Did not read in correlation potential corresponding to this run')
         else
             k=1
