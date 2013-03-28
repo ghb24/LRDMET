@@ -1005,7 +1005,7 @@ module mat_tools
         !First, diagonalize one-body hamiltonian
         HFOrbs(:,:) = Fock(:,:)
         HFEnergies(:) = 0.0_dp
-        if(tDiag_kspace.and.it.gt.4) then
+        if(tDiag_kspace) then
             call DiagOneEOp(HFOrbs,HFEnergies,nImp,nSites,tDiag_kspace)
         else
             call DiagOneEOp(HFOrbs,HFEnergies,nImp,nSites,.false.)
@@ -1095,8 +1095,11 @@ module mat_tools
         real(dp), allocatable :: Work(:)
         real(dp), allocatable :: KPnts(:,:)
         real(dp) :: PrimLattVec(LatticeDim),SiteVec(LatticeDim),Expo,DDOT,phase
+        real(dp) :: RecipLattVec(LatticeDim,LatticeDim)
         complex(dp), allocatable :: RotMat(:,:),temp(:,:),CompHam(:,:),RotHam(:,:),cWork(:)
-        integer :: lWork,info,nKPnts,i,j,k,kSpace_ind,ki,kj,bandi,bandj,Ind_i,Ind_j,r
+        integer :: lWork,info,nKPnts,i,j,k,kSpace_ind,ki,kj,bandi,bandj,Ind_i,Ind_j,r,kPerDim,kpnt
+        integer :: ii,jj,xb,yb,impy,impx,impsite
+        logical :: tShift
         character(len=*), parameter :: t_r='DiagOneEOp'
 
         if(tKSpace_Diag) then
@@ -1104,13 +1107,69 @@ module mat_tools
             if(mod(nLat,SS_Period).ne.0) call stop_all(t_r,'Lattice dimensions not consistent')
             nKPnts = nLat/SS_Period
             allocate(KPnts(LatticeDim,nKPnts))
+            KPnts(:,:) = 0.0_dp
 
-            if(LatticeDim.ne.1) then
-                call stop_all(t_r,'Not yet implemented for 2D diagonalizations')
+            if(LatticeDim.eq.2) then
+                call stop_all(t_r,'Cannot do k-space diagonalizations - impurity site tiling is not same as direct lattice')
+                if(SS_Period.le.2) then
+                    !1/2 impurity. Tilted lattice with real space lattice vector (1,1) and (1,-1)
+                    !Always have 2 sites per direct unit cell
+                    RecipLattVec(:,1) = pi
+                    RecipLattVec(1,2) = pi
+                    RecipLattVec(2,2) = -pi
+
+                    tShift = .false.
+
+                    !Is it a regular grid?
+                    kPerDim = nint(sqrt(real(nKPnts,dp)))
+                    if(abs(real(kPerDim**2,dp)-real(nKPnts,dp)).gt.1.0e-8_dp) then
+                        write(6,*) "k-points per dimension: ",sqrt(real(nKPnts,dp))
+                        write(6,*) "Bands (needs to be square number for uniform mesh): ",nKPnts
+                        call stop_all(t_r,'Cannot do k-space diagonalization with non-uniform mesh (currently?)')
+                    endif
+
+                    do i = 1,kPerDim
+                        do j = 1,kPerDim
+                            kpnt = (i-1)*kPerDim + j
+
+                            KPnts(1,kpnt) = -pi    !Start at RHS of tilted FBZ
+                            KPnts(:,kpnt) = KPnts(:,kpnt) + (i-1)*RecipLattVec(:,1)/kPerDim + (j-1)*RecipLattVec(:,2)/kPerDim
+                            if(tShift) then
+                                KPnts(:,kpnt) = KPnts(:,kpnt) + RecipLattVec(:,1)/(2.0_dp*real(kPerDim,dp)) + &
+                                    RecipLattVec(:,2)/(2.0_dp*real(kPerDim,dp))
+                            endif
+                            write(6,*) "KPnt ",kpnt,KPnts(:,kpnt)
+                        enddo
+                    enddo
+!                else
+!                    call stop_all(t_r,'Cannot deal with > 2 impurities with k-space diagonalization atm')
+                endif
             else
+                if(mod(nKPnts,2).eq.0) then
+                    if(tPeriodic) then
+                        !We want to use a Gamma centered mesh
+                        tShift = .false.
+                    else
+                        !We want a Monkhort-Pack mesh
+                        tShift = .true.
+                    endif
+                else
+                    if(tPeriodic) then
+                        !We want to use a Gamma centered mesh
+                        tShift = .false.
+                    else
+                        !Monkhorst-Pack mesh
+                        tShift = .true.
+                    endif
+                endif
+
+                RecipLattVec(1,1) = 2.0_dp*pi/real(SS_Period,dp)
                 !Just use equally spaced mesh starting at -pi/SS_Period, and working our way across
                 do k = 1,nKPnts
-                    KPnts(1,k) = -pi/real(SS_Period,dp) + (k-1)*(2.0_dp*pi/nKpnts)/real(SS_Period,dp)
+                    KPnts(1,k) = -RecipLattVec(1,1)/2.0_dp + (k-1)*RecipLattVec(1,1)/nKPnts
+                    if(tShift) then
+                        KPnts(1,k) = KPnts(1,k) + RecipLattVec(1,1)/(2.0_dp*real(nKPnts,dp))
+                    endif
                     write(6,*) "KPnt ",k,KPnts(:,k)
                 enddo
             endif
@@ -1136,10 +1195,10 @@ module mat_tools
 !            enddo
 
 
-            !Do incredibly naievly to start with by creating the entire rotation matrix and rotating
-            !First index in k-space, second in r-space
             call writematrix(Ham,'Real space matrix',.true.)
 
+            !Do incredibly naievly to start with by creating the entire rotation matrix and rotating
+            !First index in k-space, second in r-space
             allocate(RotMat(nLat,nLat))
             RotMat(:,:) = zzero
 
@@ -1148,6 +1207,15 @@ module mat_tools
                     !TransVec(1) = real(i-1,dp)  !/real(SS_Period,dp)
                     PrimLattVec(1) = real((i-1)/SS_Period,dp)*real(SS_Period,dp)  !All sites in the same lattice translation have the same primitive lattice vector
                     SiteVec(1) = real(mod(i-1,SS_Period),dp)    !Vector within the lattice to this basis function
+                    impsite = mod(i,SS_Period)
+                else
+                    !which impurity site do they belong to?
+                    call site2ij(i-1,ii,jj)
+                    call ij2xy(ii,jj,xb,yb)
+                    impx = py_mod(xb,nImp_x)
+                    impy = py_mod(yb,nImp_y)
+                    impsite = impy*nImp_y + impx
+                    write(6,*) "Site located at impurity location: ",i,impx,impy,impsite
                 endif
 !                write(6,*) "Cell Translation: ",PrimLattVec(:)
 !                write(6,*) "Site Vector: ",SiteVec(:)
@@ -1158,7 +1226,8 @@ module mat_tools
 
                         kSpace_ind = SS_Period*(k-1) + j
 
-                        if(mod(kSpace_ind,SS_Period).ne.mod(i,SS_Period)) cycle
+                        !Ensure that we only want to loop over bands corresponding to this lattice repeat, not all sites
+                        if(mod(j,SS_Period).ne.impsite) cycle
 
                         Expo = ddot(LatticeDim,KPnts(:,k),1,PrimLattVec(:),1)
 !                        phase = ddot(LatticeDim,KPnts(:,k),1,SiteVec(:),1)

@@ -808,8 +808,8 @@ Program RealHub
         do i=1,nSites
             Perm_indir(Perm_dir(i)) = i
         enddo
-!        write(6,*) "Pd: ",Perm_dir(:)
-!        write(6,*) "Pi: ",Perm_indir(:)
+        write(6,*) "Perm_dir: ",Perm_dir(:)
+        write(6,*) "Perm_indir: ",Perm_indir(:)
 
     end subroutine Setup2DLattice
 
