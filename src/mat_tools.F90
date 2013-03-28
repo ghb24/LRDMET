@@ -1420,7 +1420,7 @@ module mat_tools
             call dsyev('V','L',nLat,Ham,nLat,Vals,Work,lWork,info)
             if(info.ne.0) call stop_all(t_r,'Diag failed')
             deallocate(work)
-            call writevector(Vals,'Eigenvalues')
+!            call writevector(Vals,'Eigenvalues')
         endif
 
     end subroutine DiagOneEOp
