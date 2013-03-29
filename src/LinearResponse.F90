@@ -2243,7 +2243,31 @@ module LinearResponse
             endif
 
             !Now solve these linear equations
-            call SolveCompLinearSystem(LHS,RHS,nSpan,info)
+            if(tMinRes_NonDir) then
+                zDirMV_Mat => LHS
+                maxminres_iter_ip = int(maxminres_iter,ip)
+                minres_unit_ip = int(minres_unit,ip)
+                nSpan_ip = int(nSpan,ip)
+                allocate(RHS2(nSpan))
+                allocate(Psi1(nSpan))
+                call setup_RHS(nLinearSystem,RHS,RHS2)
+                call MinResQLP(n=nSpan_ip,Aprod=zDirMV,b=RHS2,nout=minres_unit_ip,x=Psi1, &
+                    itnlim=maxminres_iter_ip,istop=info_ip,rtol=rtol_LR,itn=iters,startguess=tReuse_LS)
+                info = info_ip
+                zDirMV_Mat => null()
+                if(info.gt.7) write(6,*) "info: ",info
+                if(info.eq.8) call stop_all(t_r,'Linear equation solver hit maximum iterations')
+                if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) then
+                    call stop_all(t_r,'Input matrices to linear solver incorrect')
+                endif
+                if(info.gt.11) call stop_all(t_r,'Linear equation solver failed')
+                info = 0
+                !Copy solution to RHS
+                RHS(:) = Psi1(:)
+                deallocate(RHS2,Psi1)
+            else
+                call SolveCompLinearSystem(LHS,RHS,nSpan,info)
+            endif
             if(info.ne.0) then 
                 write(6,*) "INFO: ",info
                 !call stop_all(t_r,'Solving Linear system failed') 
