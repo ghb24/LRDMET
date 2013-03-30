@@ -1,0 +1,67 @@
+%\documentclass[aps,prl,twocolumn,nobibnotes]{revtex4}
+\documentclass[aps,showpacs,twocolumn,nobibnotes]{revtex4}
+%\documentclass[aps,preprint,showpacs,nobibnotes]{revtex4}
+%\documentclass[aps,preprint,nobibnotes]{revtex}
+\usepackage{graphics,graphicx,amsfonts,amsmath,amsbsy,amssymb,color}
+\usepackage{bm}
+%\usepackage{epic}
+%\usepackage{mciteplus}
+\usepackage{subfigure}
+\usepackage{vector}  % Allows "\bvec{}" and "\buvec{}" for "blackboard" style bold vectors in maths
+\newcommand{\D}[1] {D_{\bf #1}}
+\def \beq {\begin{eqnarray}}
+\def \eeq {\end{eqnarray}}
+\def \Schrodinger {{Schr\"{o}dinger }}
+\def \Di {{D_{\bfi}}}
+\def \Dj {{D_{\bfj}}}
+\newcommand {\adag}[1] {{a_{#1}^\dagger}}
+\def \bfj {{\bf j}}
+\def \bfi {{\bf i}}
+\def \rone {{\bvec{r}_1}}
+\def \rtwo {{\bvec{r}_2}}
+\def \mEh {{\textrm{mE}_{\textrm{h}}}}
+\def \Eh {{\textrm{E}_{\textrm{h}}}}
+\def \nadd {{n_a}}
+\newcommand{\braket}[3] {{\langle #1 | #2 | #3 \rangle}}
+\newcommand{\brket}[2] {{\langle #1 | #2 \rangle}}
+\newcommand{\bra}{\ensuremath{\langle}}
+\newcommand{\ket}{\ensuremath{\rangle}}
+%\def \ham {{\bf H}}
+\def \ham {{\hat{H}}}
+%\def \Sz {{\hat{\textrm{S}_{\textrm{z}}}}}
+\def \Sz {{\hat{S}_z}}
+\newcommand{\rff}[1]{{Eq.~\eqref{#1}}}
+\def \Pgen {{P_{\textrm{gen}}}}
+\def \Carb {{\textrm{C}_{\textrm{2}}}}
+\def \Hij {{H_{\bvec{i}\bvec{j}}}}
+\def \Kii {{K_{\bvec{i}\bvec{i}}}}
+\def \Kij {{K_{\bvec{i}\bvec{j}}}}
+
+\begin{document}
+\title{Spectral functions of extended systems via quantum embedding}
+\author{George~H.~Booth}
+%\email{ghb24@cam.ac.uk}
+\author{Garnet~Kin-Lic~Chan}  
+\affiliation{Department of Chemistry, Frick Laboratory, Princeton University, Princeton, New Jersey 08544, USA}
+
+\begin{abstract}
+In a previous publication [PRL {\bf 109} 186404 (2012)], the ground-state density matrix embedding theory (DMET) was introduced, where in analogy with the dynamical mean-field method a 
+set of local sites are self-consistently correlated with a bath describing the complete mean-field coupling to the rest of the extended system. Here, we extend the approach to introduce 
+a frequency dependence, and demonstrate accurate spectral functions at a small 
+computational cost. In a similar spirit to the frequency independent DMET method, the impurities are coupled via a small set of algebraically constructed, but now 
+frequency-dependent bath states. The resultant spectral functions are directly obtained on the real-frequency axis, and allow for straightforward generalization both to 
+multiple impurities and arbitrary perturbation operators. This vastly extends the scope and applicability of the DMET method in condensed matter problems as a 
+cheap route to correlated local spectral functions of extended systems.
+\end{abstract}
+\date{\today}
+\maketitle
+
+Dynamic correlation functions are directly probed in spectroscopic techniques, and correspond to many of the important transport and wider electronic structure 
+properties of materials. As such, their accurate theoretical construction is key for materials scientists, but few robust approaches exist for strongly correlated problems.
+The difficulty is in requiring requiring both an accurate treatment of the electron correlations beyond mean-field band theory for the excited state components at each frequency, 
+as well as the coupling of these states to the wider extended system. In dynamical mean-field theory (DMFT), the central quantity is the greens function of the system, which is
+self-consistenty optimized 
+
+%\bibliography{SpectralDMETBib}
+
+\end{document}
