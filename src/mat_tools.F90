@@ -972,10 +972,9 @@ module mat_tools
     subroutine run_hf(it)
         implicit none
         integer, intent(in) :: it
-        real(dp), allocatable :: Work(:)
         real(dp), allocatable :: fock(:,:),OccOrbs(:,:)
         logical :: tRotateOrbs
-        integer :: lWork,info,iFirst,iLast,i
+        integer :: iFirst,iLast,i
         real(dp) :: ThrDeg
         !complex(dp), allocatable :: k_ham(:,:)
         character(len=*), parameter :: t_r="run_hf"
@@ -1097,7 +1096,7 @@ module mat_tools
         real(dp) :: PrimLattVec(LatticeDim),SiteVec(LatticeDim),Expo,DDOT,phase
         real(dp) :: RecipLattVec(LatticeDim,LatticeDim)
         complex(dp), allocatable :: RotMat(:,:),temp(:,:),CompHam(:,:),RotHam(:,:),cWork(:)
-        integer :: lWork,info,nKPnts,i,j,k,kSpace_ind,ki,kj,bandi,bandj,Ind_i,Ind_j,r,kPerDim,kpnt
+        integer :: lWork,info,nKPnts,i,j,k,kSpace_ind,ki,kj,bandi,bandj,Ind_i,Ind_j,kPerDim,kpnt
         integer :: ii,jj,xb,yb,impy,impx,impsite
         logical :: tShift
         character(len=*), parameter :: t_r='DiagOneEOp'
@@ -1611,7 +1610,7 @@ module mat_tools
         real(dp), intent(in) :: Omega
         complex(dp), intent(out) :: ni_GFs(nImp,nImp)
         complex(dp) :: se_unpacked(nImp,nImp)
-        integer :: lWork,info,i,pertsite,pertBra,a
+        integer :: lWork,info,i,pertsite,pertBra
         complex(dp), allocatable :: AO_Ham(:,:),W_Vals(:),RVec(:,:),LVec(:,:),cWork(:)
         !complex(dp) :: NI_Cre(nImp,nImp),NI_Ann(nImp,nImp),NI_GF_Check(nImp,nImp)
         !complex(dp), allocatable :: HF_Ann_Ket(:,:),HF_Cre_Ket(:,:)

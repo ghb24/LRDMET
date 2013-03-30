@@ -33,9 +33,9 @@ module Davidson
         complex(dp), pointer :: SubspaceMat(:,:)
         real(dp), allocatable :: Eigenvals(:)
         complex(dp), allocatable :: Eigenvecs(:,:)
-        integer :: ierr,iter,i,lWork,j
+        integer :: ierr,iter,i
         complex(dp) :: zdotc
-        real(dp) :: dConv,norm
+        real(dp) :: dConv
         real(dp), parameter :: kappa = 0.25     !Tolerance for orthogonalization procedure
         character(len=*), parameter :: t_r='Comp_NonDir_Davidson'
 
@@ -242,8 +242,8 @@ module Davidson
         real(dp), allocatable, target :: SubspaceMat_1(:,:),SubspaceMat_2(:,:)
         real(dp), pointer :: SubspaceMat(:,:)
         real(dp), allocatable :: Eigenvals(:),Eigenvecs(:,:)
-        integer :: ierr,iter,i,lWork,j
-        real(dp) :: ddot,dConv,norm,dnrm2
+        integer :: ierr,iter,i
+        real(dp) :: ddot,dConv,dnrm2
         real(dp), parameter :: kappa = 0.25     !Tolerance for orthogonalization procedure
         character(len=*), parameter :: t_r='Real_NonDir_Davidson'
 
@@ -635,7 +635,7 @@ module Davidson
         complex(dp) :: Overlap,zdotc
         integer :: i
         real(dp) :: Norm_out,Norm_in
-        character(len=*), parameter :: t_r='ModGramSchmidt_comp'
+!        character(len=*), parameter :: t_r='ModGramSchmidt_comp'
 
         !Are there even any vectors to orthogonalize against!
         if(nSubspace.eq.0) then

@@ -612,9 +612,6 @@ Program RealHub
         if(tPrecond_MinRes.and.(.not.tMinRes_NonDir)) then
             call stop_all(t_r,'Cannot precondition linear response matrix if not solving iteratively!')
         endif
-        if(tDDResponse.and.tLR_DMET.and.tMinRes_NonDir) then
-            call stop_all(t_r,'Iterative solution to density response equations not plumbed in yet')
-        endif
         if(tDDResponse.and.tSC_LR) then
             call stop_all(t_r,'Self-consistency not yet implemented for density response')
         endif
@@ -714,7 +711,7 @@ Program RealHub
     subroutine Setup2DLattice()
         implicit none
         real(dp) :: dWidth
-        integer :: TDLat_Width,Ni,Nj,x,y,dx,dy,ci,cj,site_imp
+        integer :: TDLat_Width,x,y,dx,dy,ci,cj,site_imp
         integer :: i,j,k
         character(len=*), parameter :: t_r='Setup2DLattice'
 
@@ -1079,7 +1076,7 @@ Program RealHub
         implicit none
         integer :: iunit
         character(64) :: filename
-        character(len=*), parameter :: t_r='WriteCorrPot'
+!        character(len=*), parameter :: t_r='WriteCorrPot'
 
         write(6,*) "Writing out converged correlation potential..."
 

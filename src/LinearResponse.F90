@@ -1040,23 +1040,26 @@ module LinearResponse
     subroutine NonIntExContracted_TDA_MCLR()
         use utils, only: get_free_unit,append_ext_real,append_ext
         use DetBitOps, only: DecodeBitDet,SQOperator,CountBits
+        use zminresqlpModule, only: MinresQLP  
         use DetToolsData
         implicit none
         integer :: a,i,j,k,OrbPairs,UMatSize,UMatInd,AVInd_tmp,b,beta
         integer :: CoreEnd,VirtStart,VirtEnd,CVInd_tmp,iunit,iunit2
         integer :: DiffOrb,nOrbs,gam,gam1,gam1_ind,gam1_spat,gam2,gam2_ind,gam2_spat,ierr
         integer :: gam_spat,nLinearSystem,tempK,gtid,nSpan,ActiveEnd,ActiveStart
-        integer :: orbdum(1),CAInd_tmp,lwork,info,nSize,nCore,nVirt,nFullNm1,nFullNp1
+        integer :: orbdum(1),CAInd_tmp,lwork,info,nSize,nCore,nVirt,nFullNm1,nFullNp1,iters
+        integer :: maxminres_iter,minres_unit,InterMem,HamMem,CoupMem
         logical :: tParity,tCalcResponse,tTransformSpace
         real(dp) :: Omega,CVNorm,GSEnergy
         complex(dp) :: tempel,ResponseFn,dOrthog,dNorm,testc,ni_lr
         complex(dp) , allocatable :: LinearSystem(:,:),Overlap(:,:),Projector(:,:),VGS(:),CanTrans(:,:)
-        complex(dp) , allocatable :: temp_vecc(:),tempc(:,:),LHS(:,:),RHS(:),Transform(:,:),OrthogHam(:,:)
+        complex(dp) , allocatable :: temp_vecc(:),tempc(:,:),RHS(:),Transform(:,:),OrthogHam(:,:)
         complex(dp) , allocatable :: Psi_0(:),S_EigVec(:,:),G_ai_G_aj(:,:),G_ai_G_bi(:,:),G_xa_G_ya(:,:)
         complex(dp) , allocatable :: G_xa_F_ab(:,:),G_xa_G_yb_F_ab(:,:),FockSchmidtComp(:,:),G_ia_G_xa(:,:)
         complex(dp) , allocatable :: F_xi_G_ia_G_ya(:,:),G_xa_F_ya(:,:),G_xi_G_yi(:,:),G_ix_F_ij(:,:)
         complex(dp) , allocatable :: G_ix_G_jy_F_ji(:,:),G_ia_G_ix(:,:),F_ax_G_ia_G_iy(:,:),G_ix_F_iy(:,:)
         complex(dp) , allocatable :: SBlock(:,:),temp_vecc_2(:),S_Diag(:),temp_vecc_3(:)
+        complex(dp) , allocatable , target :: LHS(:,:)
         real(dp), allocatable :: NFCIHam(:,:),Nm1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
         real(dp), allocatable :: Np1FCIHam_alpha(:,:),Np1FCIHam_beta(:,:),SBlock_val(:)
         real(dp), allocatable :: AVNorm(:),CANorm(:),Work(:),H_Vals(:),S_EigVal(:)
@@ -1064,23 +1067,36 @@ module LinearResponse
         integer, allocatable :: Coup_Create_alpha(:,:,:),Coup_Create_beta(:,:,:)
         character(64) :: filename,filename2
         character(len=*), parameter :: t_r='NonIntExContracted_TDA_MCLR'
+        integer(ip) :: maxminres_iter_ip,minres_unit_ip,nSpan_ip,info_ip
+        complex(dp) , allocatable :: RHS2(:),Psi1(:)
         logical, parameter :: tDiagHam = .false.
 
         call set_timer(LR_EC_TDA_Precom)
+        
+        maxminres_iter = 20000
+        iters = 0
 
         write(6,*) "Calculating non-interacting EC MR-TDA LR system..."
         if(.not.tConstructFullSchmidtBasis) call stop_all(t_r,'To solve LR, must construct full schmidt basis')
-        if(.not.tCompleteDiag) call stop_all(t_r,'To solve LR, must perform complete diag')
-        if(iSolveLR.eq.1) then
-            write(6,"(A)") "Solving linear system with standard ZGESV linear solver"
-        elseif(iSolveLR.eq.2) then
-            write(6,"(A)") "Solving linear system with advanced ZGELS linear solver"
-        elseif(iSolveLR.eq.3) then
-            write(6,"(A)") "Solving linear system with direct inversion of hamiltonian"
-        elseif(iSolveLR.eq.4) then
-            write(6,"(A)") "Solving linear system via complete diagonalization of hamiltonian"
+        if(tMinRes_NonDir) then
+            if(tPreCond_MinRes) then
+                write(6,"(A)") "Solving linear system with iterative non-direct preconditioned MinRes-QLP algorithm"
+            else
+                write(6,"(A)") "Solving linear system with iterative non-direct MinRes-QLP algorithm"
+            endif
+            write(6,"(A,G22.10)") "Tolerance for solution of linear system: ",rtol_LR
         else
-            call stop_all(t_r,"Linear equation solver unknown")
+            if(iSolveLR.eq.1) then
+                write(6,"(A)") "Solving linear system with standard ZGESV linear solver"
+            elseif(iSolveLR.eq.2) then
+                write(6,"(A)") "Solving linear system with advanced ZGELS linear solver"
+            elseif(iSolveLR.eq.3) then
+                write(6,"(A)") "Solving linear system with direct inversion of hamiltonian"
+            elseif(iSolveLR.eq.4) then
+                write(6,"(A)") "Solving linear system via complete diagonalization of hamiltonian"
+            else
+                call stop_all(t_r,"Linear equation solver unknown")
+            endif
         endif
         if(tRemoveGSFromH) then
             write(6,"(A)") "Explicitly removing the ground state from the hamiltonian. Hamiltonian will now lose hermiticity"
@@ -1112,6 +1128,10 @@ module LinearResponse
         enddo
         if(tChemPot) then
             tmat(1,1) = tmat(1,1) - U/2.0_dp
+        endif
+        if(tMinRes_NonDir) then
+            minres_unit = get_free_unit()
+            open(minres_unit,file='zMinResQLP.txt',status='unknown',position='append')
         endif
         
         !Enumerate excitations for fully coupled space
@@ -1157,10 +1177,10 @@ module LinearResponse
                 call GetHElement(Np1bFCIDetList(:,i),Np1bFCIDetList(:,j),Elec+1,Np1FCIHam_beta(i,j))
             enddo
         enddo
+        HamMem = nNp1FCIDet**2 + nNm1FCIDet**2 + nFCIDet**2
+        write(6,'(A,F9.3,A)') "Memory required to store hamiltonians: ",real(HamMem,dp)*RealtoMb,' Mb'
 
         nLinearSystem = (2*nFCIDet) + nImp*2*(nNm1FCIDet+nNm1bFCIDet) + nImp*2*(nNp1FCIDet+nNp1bFCIDet) 
-        
-        write(6,"(A,F14.6,A)") "Memory required for the LR hessian: ",real((nLinearSystem**2)*16,dp)/1048576.0_dp," Mb"
         
         iunit = get_free_unit()
         call append_ext_real('EC-TDA_DDResponse',U,filename)
@@ -1171,8 +1191,8 @@ module LinearResponse
             filename2 = filename
         endif
         open(unit=iunit,file=filename2,status='unknown')
-        write(iunit,"(A)") "# Frequency     DD_LinearResponse(Re)    DD_LinearResponse(Im)    " &
-            & //"Orthog    Norm    NewGS   OldGS  OrthogRHS    NI_LR"
+        write(iunit,"(A)") "# 1.Frequency     2.DD_LinearResponse(Re)    3.DD_LinearResponse(Im)    " &
+            & //"4.Orthog    5.Norm    6.NewGS   7.OldGS  8.OrthogRHS    9.NI_LR(Re)   10.NI_LR(Im)   11.Iters"
         
         if(tDiagHam) then
             iunit2 = get_free_unit()
@@ -1188,6 +1208,7 @@ module LinearResponse
         endif
 
         !Allocate memory for hmailtonian in this system:
+        write(6,'(A,F9.3,A)') "Memory required to store overlap & linear system: ",2.0_dp*(real(nLinearSystem,dp)**2)*ComptoMb,' Mb'
         allocate(LinearSystem(nLinearSystem,nLinearSystem),stat=ierr)
         allocate(Overlap(nLinearSystem,nLinearSystem),stat=ierr)
         if(ierr.ne.0) call stop_all(t_r,'Error allocating')
@@ -1223,6 +1244,9 @@ module LinearResponse
 
         !Allocate and precompute 1-operator coupling coefficients between the different sized spaces.
         !First number is the index of operator, and the second is the parity change when applying the operator
+        CoupMem = 2*nFCIDet*nNm1bFCIDet + 2*nFCIDet*nNm1FCIDet + 2*nFCIDet*nNp1FCIDet + 2*nFCIDet*nNp1bFCIDet
+        write(6,'(A,F9.3,A)') "Memory required to store coupling matrices: ",real(CoupMem,dp)*RealtoMb,' Mb'
+
         allocate(Coup_Create_alpha(2,nFCIDet,nNm1bFCIDet))
         allocate(Coup_Create_beta(2,nFCIDet,nNm1FCIDet))
         allocate(Coup_Ann_alpha(2,nFCIDet,nNp1FCIDet))
@@ -1353,6 +1377,8 @@ module LinearResponse
         enddo
             
         !Store the fock matrix in complex form, so that we can ZGEMM easily
+        write(6,'(A,F9.3,A)') "Memory required to store fock matrix: ",real(nSites**2,dp)*ComptoMb,' Mb'
+        write(6,'(A,F9.3,A)') "Memory required to store bath states: ",real(nSites**2,dp)*ComptoMb,' Mb'
         allocate(FockSchmidtComp(nSites,nSites))
         do i = 1,nSites
             do j = 1,nSites
@@ -1361,6 +1387,8 @@ module LinearResponse
         enddo
         !call R_C_Copy_2D(FockSchmidtComp(:,:),FockSchmidt(:,:),nSites,nSites)
 
+        InterMem = nCore**2 + nVirt**2 + 8*(EmbSize**2) + 2*(EmbSize*nVirt) + 2*(nCore*EmbSize)
+        write(6,'(A,F9.3,A)') "Memory required to store contracted intermediates: ",real(InterMem,dp)*ComptoMb,' Mb'
         !Space for useful intermediates
         allocate(G_ai_G_aj(nCore,nCore))    !Core,Core, contracted over virtual space
         allocate(G_ai_G_bi(VirtStart:VirtEnd,VirtStart:VirtEnd))    !Virt,Virt, contracted over core space
@@ -1387,24 +1415,23 @@ module LinearResponse
             LinearSystem(:,:) = dcmplx(0.0_dp,0.0_dp)
             Overlap(:,:) = dcmplx(0.0_dp,0.0_dp)
             write(6,*) "Calculating linear response for frequency: ",Omega
+            call flush(6)
+            if(tMinRes_NonDir) write(minres_unit,*) "Iteratively solving for frequency: ",Omega
 
             !First, find the non-interacting solution expressed in the schmidt basis
             call FindSchmidtPert(.false.,Omega,ni_lr)
 
             !call writematrixcomp(SchmidtPert,'SchmidtPert',.true.)
-!            call writematrix(SchmidtPert,'SchmidtPert',.true.)
-!            call writematrix(FockSchmidt,'FockSchmidt',.true.)
-
             !write(6,"(A)",advance='no') "Constructing hessian matrix..."
 
             !First, construct useful intermediates
-            do i=1,nSites
-                do j=1,nSites
-                    if(abs(SchmidtPert(i,j)-SchmidtPert(j,i)).gt.1.0e-9) then
-                        call stop_all(t_r,'Perturbation not symmetric')
-                    endif
-                enddo
-            enddo
+            !do i=1,nSites
+            !    do j=1,nSites
+            !        if(abs(SchmidtPert(i,j)-SchmidtPert(j,i)).gt.1.0e-9) then
+            !            call stop_all(t_r,'Perturbation not symmetric')
+            !        endif
+            !    enddo
+            !enddo
             !sum_a G_ai^* G_aj
             call ZGEMM('C','N',nCore,nCore,nVirt,dcmplx(1.0_dp,0.0_dp),SchmidtPert(VirtStart:VirtEnd,1:CoreEnd),nVirt, &
                 SchmidtPert(VirtStart:VirtEnd,1:CoreEnd),nVirt,dcmplx(0.0_dp,0.0_dp),G_ai_G_aj,nCore)
@@ -1766,19 +1793,19 @@ module LinearResponse
                 enddo
             enddo
 
-            !Now check that Hessian is hermitian
-            do i=1,nLinearSystem
-                do j=i,nLinearSystem
-                    if(abs(LinearSystem(i,j)-conjg(LinearSystem(j,i))).gt.1.0e-8_dp) then
-                        write(6,*) "i, j: ",i,j
-                        write(6,*) "LinearSystem(i,j): ",LinearSystem(i,j)
-                        write(6,*) "LinearSystem(j,i): ",LinearSystem(j,i)
-                        call stop_all(t_r,'Hessian for EC-LR not hermitian')
-                    endif
-                enddo
-            enddo
+!            !Now check that Hessian is hermitian
+!            do i=1,nLinearSystem
+!                do j=i,nLinearSystem
+!                    if(abs(LinearSystem(i,j)-conjg(LinearSystem(j,i))).gt.1.0e-8_dp) then
+!                        write(6,*) "i, j: ",i,j
+!                        write(6,*) "LinearSystem(i,j): ",LinearSystem(i,j)
+!                        write(6,*) "LinearSystem(j,i): ",LinearSystem(j,i)
+!                        call stop_all(t_r,'Hessian for EC-LR not hermitian')
+!                    endif
+!                enddo
+!            enddo
 
-            write(6,*) "Hessian constructed successfully...",Omega
+            !write(6,*) "Hessian constructed successfully...",Omega
             call halt_timer(LR_EC_TDA_HBuild)
 
             !*********************   Hessian construction finished   **********************
@@ -2250,9 +2277,17 @@ module LinearResponse
                 nSpan_ip = int(nSpan,ip)
                 allocate(RHS2(nSpan))
                 allocate(Psi1(nSpan))
-                call setup_RHS(nLinearSystem,RHS,RHS2)
-                call MinResQLP(n=nSpan_ip,Aprod=zDirMV,b=RHS2,nout=minres_unit_ip,x=Psi1, &
-                    itnlim=maxminres_iter_ip,istop=info_ip,rtol=rtol_LR,itn=iters,startguess=tReuse_LS)
+                call setup_RHS(nSpan,RHS,RHS2)
+                if(tPrecond_MinRes) then
+                    allocate(Precond_Diag(nSpan))
+                    call FormPrecond(nSpan)
+                    call MinResQLP(n=nSpan_ip,Aprod=zDirMV,b=RHS2,nout=minres_unit_ip,x=Psi1, &
+                        itnlim=maxminres_iter_ip,Msolve=zPreCond,istop=info_ip,rtol=rtol_LR,itn=iters, &
+                        startguess=tReuse_LS)
+                else
+                    call MinResQLP(n=nSpan_ip,Aprod=zDirMV,b=RHS2,nout=minres_unit_ip,x=Psi1, &
+                        itnlim=maxminres_iter_ip,istop=info_ip,rtol=rtol_LR,itn=iters,startguess=tReuse_LS)
+                endif
                 info = info_ip
                 zDirMV_Mat => null()
                 if(info.gt.7) write(6,*) "info: ",info
@@ -2265,6 +2300,7 @@ module LinearResponse
                 !Copy solution to RHS
                 RHS(:) = Psi1(:)
                 deallocate(RHS2,Psi1)
+                if(tPrecond_MinRes) deallocate(Precond_Diag)
             else
                 call SolveCompLinearSystem(LHS,RHS,nSpan,info)
             endif
@@ -2313,8 +2349,8 @@ module LinearResponse
                         dOrthog = dOrthog + temp_vecc_2(j)*VGS(j)
                     enddo
                 endif
-                write(6,*) "Normalization of first-order wavefunction: ",dNorm
-                write(6,*) "Orthogonality of first-order wavefunction: ",dOrthog
+!                write(6,*) "Normalization of first-order wavefunction: ",dNorm
+!                write(6,*) "Orthogonality of first-order wavefunction: ",dOrthog
 
                 tCalcResponse = .true.
                 !write(20,*) U,Omega,abs(dOrthog),abs(dNorm),real(dOrthog/dNorm),aimag(dOrthog/dNorm),abs(dOrthog/dNorm)
@@ -2340,8 +2376,9 @@ module LinearResponse
                             ResponseFn = ResponseFn + temp_vecc(j)*temp_vecc_2(j)
                         enddo
                     endif
-                    write(iunit,"(10G22.10)") Omega,real(ResponseFn),-aimag(ResponseFn), &
-                        abs(dOrthog),abs(dNorm),GSEnergy,HL_Energy,abs(testc),real(ni_lr),-aimag(ni_lr)
+                    write(iunit,"(10G22.10,I8)") Omega,real(ResponseFn),-aimag(ResponseFn), &
+                        abs(dOrthog),abs(dNorm),GSEnergy,HL_Energy,abs(testc),real(ni_lr),-aimag(ni_lr),iters
+                    call flush(iunit)
                     deallocate(temp_vecc)
                 endif
 
@@ -2363,6 +2400,9 @@ module LinearResponse
         deallocate(LinearSystem,Overlap)
         close(iunit)
         if(tDiagHam) close(iunit2)
+        if(tMinRes_NonDir) then
+            close(minres_unit)
+        endif
 
         !Deallocate determinant lists
         if(allocated(FCIDetList)) deallocate(FCIDetList)
@@ -5135,7 +5175,7 @@ module LinearResponse
         integer :: i
 !        real(dp) :: di
 !        complex(dp) :: di
-        character(len=*), parameter :: t_r='zPreCond'
+!        character(len=*), parameter :: t_r='zPreCond'
 
 !        if(.not.associated(zDirMV_Mat)) call stop_all(t_r,'Matrix not associated!')
 

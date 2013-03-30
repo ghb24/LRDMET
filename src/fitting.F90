@@ -622,6 +622,8 @@ module fitting
         character(len=*), parameter :: t_r='Fit_vloc_pert'
 
         call stop_all(t_r,'Still to code this up!')
+        ErrRDM = zero
+        VarVloc = zero
 
     end subroutine Fit_vloc_pert
 

@@ -96,8 +96,8 @@ CONTAINS
 
     REAL(KIND=KIND(0.d0)) :: sum2, A(:)
     REAL(KIND=KIND(0.d0)), DIMENSION(SIZE(a(:))) :: Orig
-    INTEGER :: j, N, err, p
-    INTEGER, DIMENSION(SIZE(A(:))) :: indx
+    INTEGER :: N
+!    INTEGER, DIMENSION(SIZE(A(:))) :: indx
     REAL(KIND=KIND(0.d0)) :: dnrm2
 
     N=SIZE(A(:))
@@ -134,11 +134,11 @@ CONTAINS
       p=0
       det=(1.d0,0.d0)
       DO j=1, N
-	det=det*B(j,j)/SQRT(REAL(j,KIND=KIND(1.d0)))
-	IF (indx(j)/=j) THEN
+    det=det*B(j,j)/SQRT(REAL(j,KIND=KIND(1.d0)))
+    IF (indx(j)/=j) THEN
 !	  p=p+1
-	  det=-det
-	END IF
+      det=-det
+    END IF
       END DO
 !      det=det*(-1)**p
     END IF
@@ -158,8 +158,8 @@ CONTAINS
       B=A
       CALL dgetrf(N,N,B,N,indx,err)
       IF (err /= 0) THEN 
-	WRITE(*,*) 'Number ', err
-	STOP 'Error with d_det2'
+    WRITE(*,*) 'Number ', err
+    STOP 'Error with d_det2'
       END IF
 !	  
 !THEN
@@ -170,11 +170,11 @@ CONTAINS
       p=0
       det=1.d0
       DO j=1, N
-	det=det*B(j,j)/SQRT(REAL(j,KIND=KIND(1.d0)))
-	IF (indx(j)/=j) THEN
-	  p=p+1
+    det=det*B(j,j)/SQRT(REAL(j,KIND=KIND(1.d0)))
+    IF (indx(j)/=j) THEN
+      p=p+1
 !	  det=-det
-	END IF
+    END IF
       END DO
       IF (MOD(p,2)==1) det=-det
 !      det=det*(-1)**p
@@ -193,7 +193,7 @@ CONTAINS
     WRITE(to,'(A)',advance='yes') '-------------'
     DO i=1, SIZE(A(:,1))
       DO j=1, N-1
-	WRITE(to,'(ES14.5E3)',advance='no') A(i,j)
+    WRITE(to,'(ES14.5E3)',advance='no') A(i,j)
       END DO
       j=N
       WRITE(to,'(ES14.5E3)',advance='yes')  A(i,j)
@@ -215,7 +215,7 @@ CONTAINS
     !  WRITE(to,'(A)',advance='yes') '-------------'
     DO i=1, SIZE(A(1,:))
       DO j=1, N-1
-	WRITE(to,'(A,ES12.5,ES13.5,A)',advance='no') '(',A(i,j),') '
+    WRITE(to,'(A,ES12.5,ES13.5,A)',advance='no') '(',A(i,j),') '
       END DO
       j=N
       WRITE(to,'(A,ES12.5,ES13.5,A)',advance='yes')  '(',A(i,j),') '
@@ -236,7 +236,7 @@ CONTAINS
     WRITE(to,'(A)',advance='yes') '-------------'
     DO i=1, SIZE(A(1,:))
       DO j=1, N-1
-	WRITE(to,'(i10)',advance='no') A(i,j)
+    WRITE(to,'(i10)',advance='no') A(i,j)
       END DO
       j=N
       WRITE(to,'(i10)',advance='yes') A(i,j)
@@ -257,7 +257,7 @@ CONTAINS
     WRITE(to,'(A)',advance='yes') '-------------'
     DO i=1, SIZE(A(1,:))
       DO j=1, N-1
-	WRITE(to,'(l6)',advance='no') A(i,j)
+    WRITE(to,'(l6)',advance='no') A(i,j)
       END DO
       j=N
       WRITE(to,'(l6)',advance='yes') A(i,j)
@@ -270,7 +270,7 @@ CONTAINS
   SUBROUTINE r_write_mat1(A,to)
     IMPLICIT NONE
     REAL(KIND=KIND(0.d0)) :: A(:)
-    INTEGER :: i, j, N, to
+    INTEGER :: j, N, to
     N=SIZE(A(:))
     DO j=1, N-1
       WRITE(to,'(ES13.5)',advance='no') A(j)
