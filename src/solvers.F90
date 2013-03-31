@@ -732,6 +732,7 @@ module solvers
         if(tNonDirDavidson) then
             write(6,*) "Solving for ground state with non-direct davidson diagonalizer..."
             call Real_NonDir_Davidson(nFCIDet,FullHamil,HL_Energy,HL_Vec,.false.)
+            deallocate(FullHamil)
         else
             allocate(Work(1))
             lWork=-1
