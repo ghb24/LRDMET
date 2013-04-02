@@ -1208,7 +1208,8 @@ module LinearResponse
         endif
 
         !Allocate memory for hmailtonian in this system:
-        write(6,'(A,F13.3,A)') "Memory required to store overlap & linear system: ",2.0_dp*(real(nLinearSystem,dp)**2)*ComptoMb,' Mb'
+        write(6,'(A,F13.3,A)') "Memory required to store overlap & linear system: ",    &
+            2.0_dp*(real(nLinearSystem,dp)**2)*ComptoMb,' Mb'
         allocate(LinearSystem(nLinearSystem,nLinearSystem),stat=ierr)
         allocate(Overlap(nLinearSystem,nLinearSystem),stat=ierr)
         if(ierr.ne.0) call stop_all(t_r,'Error allocating')
