@@ -1379,7 +1379,7 @@ module LinearResponse
             
         !Store the fock matrix in complex form, so that we can ZGEMM easily
         write(6,'(A,F9.3,A)') "Memory required to store fock matrix: ",real(nSites**2,dp)*ComptoMb,' Mb'
-        write(6,'(A,F9.3,A)') "Memory required to store bath states: ",real(nSites**2,dp)*ComptoMb,' Mb'
+        write(6,'(A,F9.3,A)') "Memory required to store bath states: ",4.0_dp*real(nSites**2,dp)*ComptoMb,' Mb'
         allocate(FockSchmidtComp(nSites,nSites))
         do i = 1,nSites
             do j = 1,nSites
