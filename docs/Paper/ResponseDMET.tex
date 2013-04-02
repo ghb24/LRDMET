@@ -45,28 +45,31 @@
 \affiliation{Department of Chemistry, Frick Laboratory, Princeton University, Princeton, New Jersey 08544, USA}
 
 \begin{abstract}
-In a previous publication [PRL {\bf 109} 186404 (2012)], the ground-state density matrix embedding theory (DMET) was introduced, where by analogy with the dynamical mean-field method a 
-set of local sites are self-consistently correlated with a bath describing the complete mean-field coupling to the rest of the extended system. 
-Despite many formal advantages in the analytic embedding, the method was restricted to ground-state properties.
-Here, we extend the approach to introduce 
-a frequency dependence, and demonstrate accurate spectral functions at a small 
-computational cost. In a similar spirit to the frequency independent DMET method, the impurities are coupled via a small set of algebraically constructed, but now 
-frequency-dependent bath states. The resultant spectral functions are directly obtained on the real-frequency axis, and allow for straightforward generalization both to 
-multiple impurities and arbitrary perturbation operators. This vastly extends the scope and applicability of the DMET method in condensed matter problems as a 
-cheap route to correlated local spectral functions of extended systems.
+In a previous publication [PRL {\bf 109} 186404 (2012)], the ground-state density matrix embedding theory (DMET) was introduced. With similarities 
+to the dynamical mean-field method, a set of local sites are self-consistently correlated with a bath describing the complete mean-field 
+coupling to the rest of the extended system. Despite many formal advantages in the analytic embedding, the method was restricted to ground-state properties.
+Here, we extend the approach to introduce a frequency dependence, and demonstrate accurate spectral functions at a small 
+computational cost. In a similar spirit to the frequency independent DMET method, the impurities are coupled via a small set of 
+algebraically constructed, but now frequency-dependent bath states. The resultant spectral functions are directly obtained on the 
+real-frequency axis, and allow for straightforward generalization both to multiple impurities and arbitrary perturbation operators. We demonstrate
+the application of this method on the hubbard model, for both quasiparticle and optical spectra. This vastly extends the scope and applicability 
+of the DMET method in condensed matter problems as a cheap route to correlated local spectral functions of extended systems.
 \end{abstract}
 \date{\today}
 \maketitle
 
-Dynamic correlation functions are directly probed in spectroscopic techniques, and correspond to many of the important transport and wider electronic structure 
-properties of materials. As such, their accurate theoretical construction is key for materials scientists. However, few robust approaches exist for strongly correlated problems.
-The difficulty is in simultaneously requiring both an accurate treatment of the electron correlations beyond mean-field band theory for all excited state components at each frequency, 
-as well as the coupling of these states to the wider extended system. In dynamical mean-field theory (DMFT), the central quantity is the greens function of the system, which is
-self-consistenty optimized 
+Dynamic correlation functions are directly probed in spectroscopic techniques, and correspond to many of the important transport and 
+wider electronic structure properties of materials. As such, their accurate theoretical construction is key for materials scientists. 
+However, few robust approaches exist for strongly correlated problems. The difficulty is in simultaneously requiring both an accurate 
+treatment of the electron correlations beyond mean-field band theory for all excited state components at each frequency, as well as 
+convergence with respect to the finite-size effects in the solid state. In dynamical mean-field theory (DMFT), the central quantity 
+is the greens function of the system, which is self-consistenty optimized 
 
 Size of bath independent of the size of the underlying lattice. Only a function of the impurity cluster size and the perturbation, while still exact in the non-interacting limits.
 
 Schmidt decompose the action of the non-interacting operator, into that acting on the space of the impurity+bath ground state system, and that acting on the rest of the environment orbitals.
+
+Cost of any frequency point not more than a minute on a single processor core.
 
 %\bibliography{SpectralDMETBib}
 
