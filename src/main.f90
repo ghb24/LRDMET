@@ -30,6 +30,7 @@ Program RealHub
         nSites = 24  
         LatticeDim = 1
         nImp = 1
+        nElecFill = 0
         dTolDMET = 1.0e-8_dp
         StartU = 0.0_dp
         EndU = 4.1_dp
@@ -368,8 +369,6 @@ Program RealHub
                 tDiag_kspace = .true.
             case("IMPSITES")
                 call readi(nImp)
-            case("HALF_FILL")
-                tHalfFill = .true.
             case("COMPLETE_DIAG")
                 tCompleteDiag = .true.
             case("DAVIDSON")
@@ -379,6 +378,12 @@ Program RealHub
                 tCompleteDiag = .false.
             case("DIAG_SYSTEM")
                 tDiagFullSystem = .true.
+            case("HALF_FILL")
+                tHalfFill = .true.
+            case("FILLING")
+                tMultipleOccs = .true.
+                call readi(nElecFill)
+                tHalfFill=.false.
             case("REDUCE_OCC")
                 tMultipleOccs = .true.
                 tRampDownOcc = .true.
@@ -412,6 +417,7 @@ Program RealHub
                 write(6,"(A)") "IMPSITES"
                 write(6,"(A)") "MAXITER"
                 write(6,"(A)") "HALF_FILL"
+                write(6,"(A)") "FILLING"
                 write(6,"(A)") "COMPLETE_DIAG"
                 write(6,"(A)") "DAVIDSON"
                 write(6,"(A)") "DIAG_SYSTEM"

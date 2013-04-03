@@ -25,6 +25,7 @@ module Globals
     real(dp) :: HLGap   !The Homo-lumo gap of the system
     integer :: NEl      !The number of electrons in the entire system
     integer :: Elec    !The number of electrons in the embedded system
+    integer :: nElecFill    !The input number of electrons in the entire system
     integer :: nOcc     !The number of CS orbitals in the entire system
     integer :: EmbSize  !The total size of the embedded system
     real(dp) :: StartU,EndU,UStep   !The range and increment of U

@@ -386,32 +386,35 @@ module mat_tools
 
 !        call writematrix(h0,'Core hamil',.false.)
 
-        allocate(h0Eigenvecs(nSites,nSites))
-        allocate(h0Eigenvals(nSites))
-        h0Eigenvecs = 0.0_dp
-        !First, diagonalize one-body hamiltonian
-        h0Eigenvecs(:,:) = h0(:,:)
-        h0Eigenvals(:) = 0.0_dp
-        allocate(Work(1))
-        lWork=-1
-        info=0
-        call dsyev('N','U',nSites,h0Eigenvecs,nSites,h0Eigenvals,Work,lWork,info)
-        if(info.ne.0) call stop_all(t_r,'Workspace queiry failed')
-        lwork=int(work(1))+1
-        deallocate(work)
-        allocate(work(lwork))
-        call dsyev('N','U',nSites,h0Eigenvecs,nSites,h0Eigenvals,Work,lWork,info)
-        if(info.ne.0) call stop_all(t_r,'Diag failed')
-        deallocate(work)
-
-!        call writevector(h0Eigenvals,'Core eigenvals')
-
         if(allocated(allowed_occs)) deallocate(allowed_occs)
         if(tHalfFill) then
             N_occs = 1
             allocate(allowed_occs(N_occs))
             allowed_occs(1) = nSites/2 
+        elseif(nElecFill.ne.0) then
+            !We have a specific inputted filling fraction
+            N_occs = 1
+            allocate(allowed_occs(N_occs))
+            allowed_occs(1) = nElecFill/2
         else
+            allocate(h0Eigenvecs(nSites,nSites))
+            allocate(h0Eigenvals(nSites))
+            h0Eigenvecs = 0.0_dp
+            !First, diagonalize one-body hamiltonian
+            h0Eigenvecs(:,:) = h0(:,:)
+            h0Eigenvals(:) = 0.0_dp
+            allocate(Work(1))
+            lWork=-1
+            info=0
+            call dsyev('N','U',nSites,h0Eigenvecs,nSites,h0Eigenvals,Work,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'Workspace queiry failed')
+            lwork=int(work(1))+1
+            deallocate(work)
+            allocate(work(lwork))
+            call dsyev('N','U',nSites,h0Eigenvecs,nSites,h0Eigenvals,Work,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'Diag failed')
+            deallocate(work)
+!            call writevector(h0Eigenvals,'Core eigenvals')
             !Now count the number of allowed occupations corresponding to degenerate CS mean-field solutions
             !This counts number of totally occupied sites rather than electrons
             N_occs = 0 
@@ -463,8 +466,8 @@ module mat_tools
             write(6,*) "AllowedOccs: ",allowed_occs(:)
 
             if(k.ne.0) call stop_all(t_r,"Error in calculating occupations")
+            deallocate(h0Eigenvecs,h0Eigenvals)
         endif
-        deallocate(h0Eigenvecs,h0Eigenvals)
         if(mod(nSites,nImp).ne.0) call stop_all(t_r,'Number of sites should be factor of impurity size')
 
         !Count the hopping parameters available
