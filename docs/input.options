@@ -7,6 +7,8 @@ MODEL
     CHEMPOT
 (Number of sites in the model. Second argument is the dimensionality of the model)
     SITES   24 1
+(Number of electrons to include in the entire system)
+    FILLING 24
 (List of U values to consider)
     U_VALS 0.0 1.5 4.0 10.0
 (Range of U values to consider (Start End Step) Step can be negative to ramp down in U)
