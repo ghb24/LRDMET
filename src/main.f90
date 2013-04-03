@@ -996,15 +996,7 @@ Program RealHub
 
                 if(it.gt.iMaxIterDMET) call stop_all(t_r,'DMET Convergence failed - try increasing MAXITER_DMET ?')
                     
-                if(tLR_DMET) then
-                    !Perform linear response on the resulting DMET state
-                    call MR_LinearResponse()
-                endif
-                    
-                deallocate(HFOrbs)
-
                 !Potentially run FCI again now to get correlation functions from 2RDMs?
-
                 write(6,"(A,F10.4,A,G20.10)") "FINAL energy per site for U=",U,' is: ',TotalE_Imp
                 
                 if(.not.tAnderson) then
@@ -1013,6 +1005,12 @@ Program RealHub
                         call WriteCorrPot()
                     endif
                 endif
+                
+                if(tLR_DMET) then
+                    !Perform linear response on the resulting DMET state
+                    call MR_LinearResponse()
+                endif
+                deallocate(HFOrbs)
 
                 !Set potential for the next occupation number, or wipe it?
                 if(.not.tSaveCorrPot) then
