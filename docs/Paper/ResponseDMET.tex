@@ -68,6 +68,9 @@ treatment of the electron correlations beyond mean-field band theory for all exc
 convergence with respect to the finite-size effects in the solid state. In dynamical mean-field theory (DMFT), the central quantity 
 is the greens function of the system, which is self-consistenty optimized 
 
+Difficulty with optical spectra - 
+Not constrained by finite size effects which have plagues QMC and ED calculations.
+
 Disadvantages of DMFT:
 
 Size of bath independent of the size of the underlying lattice. Only a function of the impurity cluster size and the perturbation, while still exact in the non-interacting limits.
@@ -85,6 +88,12 @@ DD results using reoptimized ground state.
 
 Within the 1 electron response function bandwidth
 
+Doped Spectral functions in 1D with DMRG: PRL (2004) 256401, 92
+
+ED can only treat small clusters, and therefore the relatively small numbers of poles that are unable to be resolved into the spectral functions of the extended system. Perturbation theory, 
+correlation only treated to low order, and will 
+lose accuracy as you tend towards to opposite coupling limit to the zeroth order solution (PRL 84 522 1999), and QMC is formulated in imaginary time, and therefore the maximum entropy is needed,
+washes out the subtle feature of the spectrum.
 
 
 %\bibliography{SpectralDMETBib}
