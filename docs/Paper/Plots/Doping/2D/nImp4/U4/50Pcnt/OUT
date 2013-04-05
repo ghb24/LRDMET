@@ -1,0 +1,1037 @@
+***  Starting real-space hubbard/anderson calculation  ***
+ ================================================================
+ Compiled on Apr 03 2013 at 20:30:28
+ VCS BASE repository version:
+     8a38900a06da3d8add3e45651dd794cd36d3ec75
+ Working directory: 
+     /scratch/ghb24/LRDMET/2D/Doping/nImp4/U4/50Pcnt
+ Started running on 04/04/2013 at 00:57:36
+ ================================================================
+
+ Reading from file: input.model
+
+****************************************************************
+
+MODEL
+    HUBBARD
+(    ANDERSON)
+(    CHEMPOT)
+    SITES 5000 2
+    FILLING 2500
+    U_VALS 4.0
+    MAXITER_DMET 150
+(    READ_CORRPOT CORRPOTS_8.00)
+(    FITTING_STEPSIZE 1.0D-5)
+    IMPSITES 4
+(    HALF_FILL)
+(    COMPLETE_DIAG)
+    NONDIR_DAVIDSON
+(    DAVIDSON)
+(    DIAG_SYSTEM)
+(    REDUCE_OCC)
+(    INCREASE_OCC)
+(    FCIDUMP)
+(    DEBUGOUTPUT)
+(    CHECK_SANITY)
+END
+
+LINEAR_RESPONSE
+(    DD_RESPONSE)
+    GF_RESPONSE
+    NONDIR_MINRES
+(    REUSE_FIRSTORDER_PSI)
+(    STORE_HERMIT_HAMIL)
+    PRECONDITION_LR
+(    NONINT)
+(    TDA)
+(    RPA)
+    EC_TDA 1
+(    IC_TDA)
+    FREQ -6.0 6.0 0.025
+    BROADENING 0.115
+(    SELF-CONSISTENCY 0)
+(    NO_MANYBODY_SELFENERGY)
+(    REUSE_SELFENERGY 0)
+(    PARTIAL_SELFENERGY_FIT 2)
+(    SELF_ENERGY_CONSTRAINTS 2)
+(    RESPONSE_ALLIMP)
+(    SELFENERGY_DAMPING 100.0)
+(    CONVERGE_MICROITER_SE)
+(    REOPT_GS)
+(    NON_NULL 1.0E-9)
+(    EXPLICIT_ORTHOG)
+(    WORKLINEARSPAN)
+(    REMOVE_GS_FROM_H)
+END
+
+****************************************************************
+
+ Updated number of sites in the 2D hubbard model will be:         5000
+ Anti-Periodic boundary conditions now in use
+ Impurity sites defined as:         2526        2575        2576        2626
+Running:    o Hubbard Model
+            o No chemical potential applied at impurity site
+            o APBCs employed
+            o 2-dimensional model
+            o Size of lattice:      50 x     100 at 45 degrees
+            o Total lattice sites:    5000
+            o Range of U values to consider: 
+            o U =    4.00000
+            o Maximum iterations for DMET self-consistency:      150
+            o Ramping down from half filling occupation of lattice
+            o Number of impurity sites:       4
+            o Calculating externally-contracted MC-TDA DMET linear response function
+                o Local Greens function calculated
+            o Spectral broadening for linear response functions:    0.11500000
+
+
+ Running DMET calculation with U =    4.00000000000000     
+Connections of impurity sites via t:      8 within emp,      8 to env
+ 
+Electrons per site:      0.500 (in  1250 doubly occupied orbitals on  5000 sites)
+Filling Fraction:        0.25000
+Hubbard U:               4.000
+Embedded system size:     4 sites
+ 
+ Iteration:            1
+ nOCC        1250
+ Fock eigenvalues around fermi level: 
+  -1.45793725484282      *
+  -1.45793725484281      *
+  -1.43978654792757      *
+  -1.43978654792757      *
+  -1.43978654792756      *
+  -1.43978654792756      *
+  -1.43978654792756      *
+  -1.43978654792755      *
+  -1.43978654792755     
+  -1.43978654792754     
+  -1.43489147576060     
+  -1.43489147576060     
+  -1.43489147576060     
+  -1.43489147576060     
+  -1.43489147576060     
+Warning. HL gap is:     0.44409E-15 Possible failure in assigning orbitals in degenerate set.
+ Constructing full schmidt basis of HF det, including core + virt spaces
+ All impurity/bath orbitals orthogonal by construction
+ All bath/bath orbitals orthonormal
+ Non-interacting core energy for DMET wavefunction is:   -6545.90665144182     
+Number of electrons in full system:  2500
+Number of electrons in embedded system:  8.0000000    8
+ Allocating memory to store 2 electron integrals:          666
+Calculating FCI space for      8 electrons in      8 orbitals.
+ Total number of determinants is:         4900
+Number of determinants in FCI space:           4900
+Allocating memory for the hamiltonian:     183.181763 Mb
+ Solving for ground state with non-direct davidson diagonalizer...
+ FCI energy:   -18.1407809059411     
+Embedded system energy is:       -18.1407809059
+One electron energy per impurity:      -0.533949
+Two electron energy per impurity:       0.076004
+Coupling energy to bath per impurity:  -0.611230
+Total energy per impurity site:        -1.069175
+Target filling per site:       0.2500000
+Actual filling per site:       0.1987948
+Filling error  per site:      -0.0512052
+Embedded system occupation numbers (CoreH + Corr Pot , High level calc): 
+   0.0000000   1.9991485
+   0.0000000   1.9940826
+   0.0000000   1.9940629
+   0.0000000   1.9710492
+   2.0000000   0.0125601
+   2.0000000   0.0125496
+   2.0000000   0.0083643
+   2.0000000   0.0081828
+           1  -1.06917468213236        1.36534002139636     
+  5.835154266875088E-002 -5.120519023890516E-002  0.000000000000000E+000
+ Iteration:            2
+ nOCC        1250
+ Fock eigenvalues around fermi level: 
+ -0.866152658917047      *
+ -0.866152658917045      *
+ -0.850970517449921      *
+ -0.850970517449916      *
+ -0.850960359856336      *
+ -0.850960359856333      *
+ -0.850916311868010      *
+ -0.850916311868004      *
+ -0.850906154269574     
+ -0.850906154269569     
+ -0.846283407003757     
+ -0.846283407003756     
+ -0.846265768004307     
+ -0.846265768004298     
+ -0.846234910756036     
+ Constructing full schmidt basis of HF det, including core + virt spaces
+ All impurity/bath orbitals orthogonal by construction
+ All bath/bath orbitals orthonormal
+ Non-interacting core energy for DMET wavefunction is:   -5074.61306426454     
+Number of electrons in full system:  2500
+Number of electrons in embedded system:  8.0000000    8
+ Allocating memory to store 2 electron integrals:          666
+Calculating FCI space for      8 electrons in      8 orbitals.
+ Total number of determinants is:         4900
+Number of determinants in FCI space:           4900
+Allocating memory for the hamiltonian:     183.181763 Mb
+ Solving for ground state with non-direct davidson diagonalizer...
+ FCI energy:   -14.4663317686626     
+Embedded system energy is:       -14.4663317687
+One electron energy per impurity:      -0.610840
+Two electron energy per impurity:       0.111290
+Coupling energy to bath per impurity:  -0.637144
+Total energy per impurity site:        -1.136694
+Target filling per site:       0.2500000
+Actual filling per site:       0.2389318
+Filling error  per site:      -0.0110682
+Embedded system occupation numbers (CoreH + Corr Pot , High level calc): 
+   0.0000000   1.9985780
+   0.0000000   1.9900038
+   0.0000000   1.9899265
+   0.0000000   1.9593220
+   2.0000000   0.0193381
+   2.0000000   0.0192771
+   2.0000000   0.0140880
+   2.0000000   0.0094665
+           2  -1.13669423241171       7.153055739191477E-002
+  4.118986866387209E-003 -1.106815745276951E-002  0.584179492419497     
+ Iteration:            3
+ nOCC        1250
+ Fock eigenvalues around fermi level: 
+ -0.728563842053756      *
+ -0.728563842053736      *
+ -0.715146206860454      *
+ -0.715146206860452      *
+ -0.715128030499079      *
+ -0.715128030499077      *
+ -0.714930063035212      *
+ -0.714930063035209      *
+ -0.714911886621939     
+ -0.714911886621933     
+ -0.710535346563736     
+ -0.710535346563735     
+ -0.710503781932950     
+ -0.710503781932946     
+ -0.710342358172797     
+ Constructing full schmidt basis of HF det, including core + virt spaces
+ All impurity/bath orbitals orthogonal by construction
+ All bath/bath orbitals orthonormal
+ Non-interacting core energy for DMET wavefunction is:   -4733.67970690851     
+Number of electrons in full system:  2500
+Number of electrons in embedded system:  8.0000000    8
+ Allocating memory to store 2 electron integrals:          666
+Calculating FCI space for      8 electrons in      8 orbitals.
+ Total number of determinants is:         4900
+Number of determinants in FCI space:           4900
+Allocating memory for the hamiltonian:     183.181763 Mb
+ Solving for ground state with non-direct davidson diagonalizer...
+ FCI energy:   -13.6433843249138     
+Embedded system energy is:       -13.6433843249
+One electron energy per impurity:      -0.625843
+Two electron energy per impurity:       0.120960
+Coupling energy to bath per impurity:  -0.642978
+Total energy per impurity site:        -1.147861
+Target filling per site:       0.2500000
+Actual filling per site:       0.2485507
+Filling error  per site:      -0.0014493
+Embedded system occupation numbers (CoreH + Corr Pot , High level calc): 
+   0.0000000   1.9984009
+   0.0000000   1.9887247
+   0.0000000   1.9886376
+   0.0000000   1.9564937
+   2.0000000   0.0211392
+   2.0000000   0.0210665
+   2.0000000   0.0157829
+   2.0000000   0.0097544
+           3  -1.14786100809134       4.491418317602812E-003
+  1.052469252907880E-003 -1.449260876172226E-003  0.717844862734760     
+ Iteration:            4
+ nOCC        1250
+ Fock eigenvalues around fermi level: 
+ -0.693954237449380      *
+ -0.693954237449372      *
+ -0.681160821816061      *
+ -0.681160821816059      *
+ -0.681141586772827      *
+ -0.681141586772826      *
+ -0.680921230389746      *
+ -0.680921230389744      *
+ -0.680901995275684     
+ -0.680901995275679     
+ -0.676553030427900     
+ -0.676553030427891     
+ -0.676519627537755     
+ -0.676519627537742     
+ -0.676339227340739     
+ Warning: May potentially need to rotate orbitals at the fermi level for maximum
+  overlap
+ Constructing full schmidt basis of HF det, including core + virt spaces
+ All impurity/bath orbitals orthogonal by construction
+ All bath/bath orbitals orthonormal
+ Non-interacting core energy for DMET wavefunction is:   -4648.08473661263     
+Number of electrons in full system:  2500
+Number of electrons in embedded system:  8.0000000    8
+ Allocating memory to store 2 electron integrals:          666
+Calculating FCI space for      8 electrons in      8 orbitals.
+ Total number of determinants is:         4900
+Number of determinants in FCI space:           4900
+Allocating memory for the hamiltonian:     183.181763 Mb
+ Solving for ground state with non-direct davidson diagonalizer...
+ FCI energy:   -13.4390291875145     
+Embedded system energy is:       -13.4390291875
+One electron energy per impurity:      -0.629404
+Two electron energy per impurity:       0.123481
+Coupling energy to bath per impurity:  -0.644457
+Total energy per impurity site:        -1.150380
+Target filling per site:       0.2500000
+Actual filling per site:       0.2509798
+Filling error  per site:       0.0009798
+Embedded system occupation numbers (CoreH + Corr Pot , High level calc): 
+   0.0000000   1.9983532
+   0.0000000   1.9883801
+   0.0000000   1.9882905
+   0.0000000   1.9557849
+   2.0000000   0.0216039
+   2.0000000   0.0215282
+   2.0000000   0.0162315
+   2.0000000   0.0098278
+           4  -1.15038017330965       2.932562588120886E-004
+  8.393843213912813E-004  9.798044946225937E-004  0.751340424787412     
+ Iteration:            5
+ nOCC        1250
+ Fock eigenvalues around fermi level: 
+ -0.685097347854200      *
+ -0.685097347854189      *
+ -0.672481353626947      *
+ -0.672481353626945      *
+ -0.672461851049237      *
+ -0.672461851049236      *
+ -0.672235503896973      *
+ -0.672235503896968      *
+ -0.672216001242481     
+ -0.672216001242475     
+ -0.667872864028001     
+ -0.667872864027999     
+ -0.667838996648646     
+ -0.667838996648643     
+ -0.667653510515555     
+ Warning: May potentially need to rotate orbitals at the fermi level for maximum
+  overlap
+ Constructing full schmidt basis of HF det, including core + virt spaces
+ All impurity/bath orbitals orthogonal by construction
+ All bath/bath orbitals orthonormal
+ Non-interacting core energy for DMET wavefunction is:   -4626.19604646541     
+Number of electrons in full system:  2500
+Number of electrons in embedded system:  8.0000000    8
+ Allocating memory to store 2 electron integrals:          666
+Calculating FCI space for      8 electrons in      8 orbitals.
+ Total number of determinants is:         4900
+Number of determinants in FCI space:           4900
+Allocating memory for the hamiltonian:     183.181763 Mb
+ Solving for ground state with non-direct davidson diagonalizer...
+ FCI energy:   -13.3869325392736     
+Embedded system energy is:       -13.3869325393
+One electron energy per impurity:      -0.630300
+Two electron energy per impurity:       0.124132
+Coupling energy to bath per impurity:  -0.644838
+Total energy per impurity site:        -1.151006
+Target filling per site:       0.2500000
+Actual filling per site:       0.2516018
+Filling error  per site:       0.0016018
+Embedded system occupation numbers (CoreH + Corr Pot , High level calc): 
+   0.0000000   1.9983407
+   0.0000000   1.9882904
+   0.0000000   1.9882001
+   0.0000000   1.9556039
+   2.0000000   0.0217235
+   2.0000000   0.0216470
+   2.0000000   0.0163477
+   2.0000000   0.0098467
+           5  -1.15100608915507       1.934592661987895E-005
+  8.207024337795830E-004  1.601775058090782E-003  0.759899378727115     
+ Iteration:            6
+ nOCC        1250
+ Fock eigenvalues around fermi level: 
+ -0.682821478212263      *
+ -0.682821478212260      *
+ -0.670252359518690      *
+ -0.670252359518684      *
+ -0.670232788986698      *
+ -0.670232788986686      *
+ -0.670004896136814      *
+ -0.670004896136800      *
+ -0.669985325526433     
+ -0.669985325526408     
+ -0.665643586029896     
+ -0.665643586029895     
+ -0.665609600673401     
+ -0.665609600673399     
+ -0.665422801831174     
+ Warning: May potentially need to rotate orbitals at the fermi level for maximum
+  overlap
+ Constructing full schmidt basis of HF det, including core + virt spaces
+ All impurity/bath orbitals orthogonal by construction
+ All bath/bath orbitals orthonormal
+ Non-interacting core energy for DMET wavefunction is:   -4620.57268099301     
+Number of electrons in full system:  2500
+Number of electrons in embedded system:  8.0000000    8
+ Allocating memory to store 2 electron integrals:          666
+Calculating FCI space for      8 electrons in      8 orbitals.
+ Total number of determinants is:         4900
+Number of determinants in FCI space:           4900
+Allocating memory for the hamiltonian:     183.181763 Mb
+ Solving for ground state with non-direct davidson diagonalizer...
+ FCI energy:   -13.3735595788025     
+Embedded system energy is:       -13.3735595788
+One electron energy per impurity:      -0.630529
+Two electron energy per impurity:       0.124299
+Coupling energy to bath per impurity:  -0.644936
+Total energy per impurity site:        -1.151166
+Target filling per site:       0.2500000
+Actual filling per site:       0.2517616
+Filling error  per site:       0.0017616
+Embedded system occupation numbers (CoreH + Corr Pot , High level calc): 
+   0.0000000   1.9983375
+   0.0000000   1.9882673
+   0.0000000   1.9881768
+   0.0000000   1.9555574
+   2.0000000   0.0217543
+   2.0000000   0.0216775
+   2.0000000   0.0163776
+   2.0000000   0.0098516
+           6  -1.15116569186084       1.279681216530249E-006
+  8.182555839924776E-004  1.761613390336592E-003  0.762097701692813     
+ Iteration:            7
+ nOCC        1250
+ Fock eigenvalues around fermi level: 
+ -0.682236072119115      *
+ -0.682236072119113      *
+ -0.669679099945557      *
+ -0.669679099945550      *
+ -0.669659511982259      *
+ -0.669659511982255      *
+ -0.669431221088754      *
+ -0.669431221088750      *
+ -0.669411633046656     
+ -0.669411633046653     
+ -0.665070246322704     
+ -0.665070246322702     
+ -0.665036230703576     
+ -0.665036230703572     
+ -0.664849093788538     
+ Warning: May potentially need to rotate orbitals at the fermi level for maximum
+  overlap
+ Constructing full schmidt basis of HF det, including core + virt spaces
+ All impurity/bath orbitals orthogonal by construction
+ All bath/bath orbitals orthonormal
+ Non-interacting core energy for DMET wavefunction is:   -4619.12630252397     
+Number of electrons in full system:  2500
+Number of electrons in embedded system:  8.0000000    8
+ Allocating memory to store 2 electron integrals:          666
+Calculating FCI space for      8 electrons in      8 orbitals.
+ Total number of determinants is:         4900
+Number of determinants in FCI space:           4900
+Allocating memory for the hamiltonian:     183.181763 Mb
+ Solving for ground state with non-direct davidson diagonalizer...
+ FCI energy:   -13.3701206802566     
+Embedded system energy is:       -13.3701206803
+One electron energy per impurity:      -0.630588
+Two electron energy per impurity:       0.124343
+Coupling energy to bath per impurity:  -0.644961
+Total energy per impurity site:        -1.151207
+Target filling per site:       0.2500000
+Actual filling per site:       0.2518027
+Filling error  per site:       0.0018027
+Embedded system occupation numbers (CoreH + Corr Pot , High level calc): 
+   0.0000000   1.9983367
+   0.0000000   1.9882613
+   0.0000000   1.9881708
+   0.0000000   1.9555455
+   2.0000000   0.0217622
+   2.0000000   0.0216854
+   2.0000000   0.0163853
+   2.0000000   0.0098528
+           7  -1.15120666391218       8.467973669656540E-008
+  8.177816580808761E-004  1.802728362516159E-003  0.762663090866299     
+ Iteration:            8
+ nOCC        1250
+ Fock eigenvalues around fermi level: 
+ -0.682085488654336      *
+ -0.682085488654322      *
+ -0.669531640443979      *
+ -0.669531640443973      *
+ -0.669512048053767      *
+ -0.669512048053765      *
+ -0.669283654712433      *
+ -0.669283654712432      *
+ -0.669264062243313     
+ -0.669264062243310     
+ -0.664922765708180     
+ -0.664922765708168     
+ -0.664888742403481     
+ -0.664888742403476     
+ -0.664701518426077     
+ Warning: May potentially need to rotate orbitals at the fermi level for maximum
+  overlap
+ Constructing full schmidt basis of HF det, including core + virt spaces
+ All impurity/bath orbitals orthogonal by construction
+ All bath/bath orbitals orthonormal
+ Non-interacting core energy for DMET wavefunction is:   -4618.75425060810     
+Number of electrons in full system:  2500
+Number of electrons in embedded system:  8.0000000    8
+ Allocating memory to store 2 electron integrals:          666
+Calculating FCI space for      8 electrons in      8 orbitals.
+ Total number of determinants is:         4900
+Number of determinants in FCI space:           4900
+Allocating memory for the hamiltonian:     183.181763 Mb
+ Solving for ground state with non-direct davidson diagonalizer...
+ FCI energy:   -13.3692361227496     
+Embedded system energy is:       -13.3692361227
+One electron energy per impurity:      -0.630603
+Two electron energy per impurity:       0.124354
+Coupling energy to bath per impurity:  -0.644968
+Total energy per impurity site:        -1.151217
+Target filling per site:       0.2500000
+Actual filling per site:       0.2518133
+Filling error  per site:       0.0018133
+Embedded system occupation numbers (CoreH + Corr Pot , High level calc): 
+   0.0000000   1.9983365
+   0.0000000   1.9882598
+   0.0000000   1.9881692
+   0.0000000   1.9555424
+   2.0000000   0.0217642
+   2.0000000   0.0216874
+   2.0000000   0.0163873
+   2.0000000   0.0098531
+           8  -1.15121719762699       5.611032690497477E-009
+  8.176701493668703E-004  1.813304774090418E-003  0.762808531958223     
+...correlation potential converged
+FINAL energy per site for U=    4.0000 is:     -1.151217198    
+Calculating non-interacting EC MR-TDA LR system for *hole* & *particle* alpha spin-orbital perturbations...
+Solving linear system with iterative non-direct preconditioned MinRes-QLP algorithm
+Tolerance for solution of linear system:       0.1000000000E-07
+Memory required for umat storage:      0.00508 Mb
+Calculating FCI space for      8 electrons in      8 orbitals.
+ Total number of determinants is:         4900
+ Calculating N-1 space
+Calculating FCI space for      7 electrons in      8 orbitals.
+ Total number of determinants in N-1 space is:         7840
+ Calculating N+1 space
+Calculating FCI space for      9 electrons in      8 orbitals.
+ Total number of determinants in N+1 space is:         7840
+ Number of determinants in {N,N+1,N-1} FCI space:        20580
+Memory required for det list storage:      4.10477 Mb
+Memory required for N-electron hamil:    366.36353 Mb
+Memory required for N+1-electron hamil:    234.47266 Mb
+Memory required for N-1-electron hamil:    234.47266 Mb
+Memory required for the LR system:    2374.035645 Mb
+ External indices start from:         3921
+ Total size of linear sys:         8820
+Memory required for wavefunctions:      1.25610 Mb
+Memory required for fock matrix:   1764.29749 Mb
+Memory required for coupling coefficient matrices:    586.18164 Mb
+ Calculating linear response for frequency:   -6.00000000000000     
+ Calculating linear response for frequency:   -5.97500000000000     
+ Calculating linear response for frequency:   -5.95000000000000     
+ Calculating linear response for frequency:   -5.92500000000000     
+ Calculating linear response for frequency:   -5.90000000000000     
+ Calculating linear response for frequency:   -5.87500000000000     
+ Calculating linear response for frequency:   -5.85000000000000     
+ Calculating linear response for frequency:   -5.82500000000000     
+ Calculating linear response for frequency:   -5.80000000000000     
+ Calculating linear response for frequency:   -5.77500000000000     
+ Calculating linear response for frequency:   -5.75000000000000     
+ Calculating linear response for frequency:   -5.72500000000000     
+ Calculating linear response for frequency:   -5.70000000000000     
+ Calculating linear response for frequency:   -5.67500000000000     
+ Calculating linear response for frequency:   -5.65000000000000     
+ Calculating linear response for frequency:   -5.62499999999999     
+ Calculating linear response for frequency:   -5.59999999999999     
+ Calculating linear response for frequency:   -5.57499999999999     
+ Calculating linear response for frequency:   -5.54999999999999     
+ Calculating linear response for frequency:   -5.52499999999999     
+ Calculating linear response for frequency:   -5.49999999999999     
+ Calculating linear response for frequency:   -5.47499999999999     
+ Calculating linear response for frequency:   -5.44999999999999     
+ Calculating linear response for frequency:   -5.42499999999999     
+ Calculating linear response for frequency:   -5.39999999999999     
+ Calculating linear response for frequency:   -5.37499999999999     
+ Calculating linear response for frequency:   -5.34999999999999     
+ Calculating linear response for frequency:   -5.32499999999999     
+ Calculating linear response for frequency:   -5.29999999999999     
+ Calculating linear response for frequency:   -5.27499999999999     
+ Calculating linear response for frequency:   -5.24999999999999     
+ Calculating linear response for frequency:   -5.22499999999999     
+ Calculating linear response for frequency:   -5.19999999999999     
+ Calculating linear response for frequency:   -5.17499999999999     
+ Calculating linear response for frequency:   -5.14999999999999     
+ Calculating linear response for frequency:   -5.12499999999999     
+ Calculating linear response for frequency:   -5.09999999999999     
+ Calculating linear response for frequency:   -5.07499999999999     
+ Calculating linear response for frequency:   -5.04999999999999     
+ Calculating linear response for frequency:   -5.02499999999999     
+ Calculating linear response for frequency:   -4.99999999999999     
+ Calculating linear response for frequency:   -4.97499999999999     
+ Calculating linear response for frequency:   -4.94999999999999     
+ Calculating linear response for frequency:   -4.92499999999998     
+ Calculating linear response for frequency:   -4.89999999999998     
+ Calculating linear response for frequency:   -4.87499999999998     
+ Calculating linear response for frequency:   -4.84999999999998     
+ Calculating linear response for frequency:   -4.82499999999998     
+ Calculating linear response for frequency:   -4.79999999999998     
+ Calculating linear response for frequency:   -4.77499999999998     
+ Calculating linear response for frequency:   -4.74999999999998     
+ Calculating linear response for frequency:   -4.72499999999998     
+ Calculating linear response for frequency:   -4.69999999999998     
+ Calculating linear response for frequency:   -4.67499999999998     
+ Calculating linear response for frequency:   -4.64999999999998     
+ Calculating linear response for frequency:   -4.62499999999998     
+ Calculating linear response for frequency:   -4.59999999999998     
+ Calculating linear response for frequency:   -4.57499999999998     
+ Calculating linear response for frequency:   -4.54999999999998     
+ Calculating linear response for frequency:   -4.52499999999998     
+ Calculating linear response for frequency:   -4.49999999999998     
+ Calculating linear response for frequency:   -4.47499999999998     
+ Calculating linear response for frequency:   -4.44999999999998     
+ Calculating linear response for frequency:   -4.42499999999998     
+ Calculating linear response for frequency:   -4.39999999999998     
+ Calculating linear response for frequency:   -4.37499999999998     
+ Calculating linear response for frequency:   -4.34999999999998     
+ Calculating linear response for frequency:   -4.32499999999998     
+ Calculating linear response for frequency:   -4.29999999999998     
+ Calculating linear response for frequency:   -4.27499999999998     
+ Calculating linear response for frequency:   -4.24999999999998     
+ Calculating linear response for frequency:   -4.22499999999997     
+ Calculating linear response for frequency:   -4.19999999999997     
+ Calculating linear response for frequency:   -4.17499999999997     
+ Calculating linear response for frequency:   -4.14999999999997     
+ Calculating linear response for frequency:   -4.12499999999997     
+ Calculating linear response for frequency:   -4.09999999999997     
+ Calculating linear response for frequency:   -4.07499999999997     
+ Calculating linear response for frequency:   -4.04999999999997     
+ Calculating linear response for frequency:   -4.02499999999997     
+ Calculating linear response for frequency:   -3.99999999999997     
+ Calculating linear response for frequency:   -3.97499999999997     
+ Calculating linear response for frequency:   -3.94999999999997     
+ Calculating linear response for frequency:   -3.92499999999997     
+ Calculating linear response for frequency:   -3.89999999999997     
+ Calculating linear response for frequency:   -3.87499999999997     
+ Calculating linear response for frequency:   -3.84999999999997     
+ Calculating linear response for frequency:   -3.82499999999997     
+ Calculating linear response for frequency:   -3.79999999999997     
+ Calculating linear response for frequency:   -3.77499999999997     
+ Calculating linear response for frequency:   -3.74999999999997     
+ Calculating linear response for frequency:   -3.72499999999997     
+ Calculating linear response for frequency:   -3.69999999999997     
+ Calculating linear response for frequency:   -3.67499999999997     
+ Calculating linear response for frequency:   -3.64999999999997     
+ Calculating linear response for frequency:   -3.62499999999997     
+ Calculating linear response for frequency:   -3.59999999999997     
+ Calculating linear response for frequency:   -3.57499999999997     
+ Calculating linear response for frequency:   -3.54999999999997     
+ Calculating linear response for frequency:   -3.52499999999997     
+ Calculating linear response for frequency:   -3.49999999999997     
+ Calculating linear response for frequency:   -3.47499999999997     
+ Calculating linear response for frequency:   -3.44999999999997     
+ Calculating linear response for frequency:   -3.42499999999997     
+ Calculating linear response for frequency:   -3.39999999999997     
+ Calculating linear response for frequency:   -3.37499999999997     
+ Calculating linear response for frequency:   -3.34999999999997     
+ Calculating linear response for frequency:   -3.32499999999997     
+ Calculating linear response for frequency:   -3.29999999999997     
+ Calculating linear response for frequency:   -3.27499999999997     
+ Calculating linear response for frequency:   -3.24999999999997     
+ Calculating linear response for frequency:   -3.22499999999997     
+ Calculating linear response for frequency:   -3.19999999999997     
+ Calculating linear response for frequency:   -3.17499999999997     
+ Calculating linear response for frequency:   -3.14999999999998     
+ Calculating linear response for frequency:   -3.12499999999998     
+ Calculating linear response for frequency:   -3.09999999999998     
+ Calculating linear response for frequency:   -3.07499999999998     
+ Calculating linear response for frequency:   -3.04999999999998     
+ Calculating linear response for frequency:   -3.02499999999998     
+ Calculating linear response for frequency:   -2.99999999999998     
+ Calculating linear response for frequency:   -2.97499999999998     
+ Calculating linear response for frequency:   -2.94999999999998     
+ Calculating linear response for frequency:   -2.92499999999998     
+ Calculating linear response for frequency:   -2.89999999999998     
+ Calculating linear response for frequency:   -2.87499999999998     
+ Calculating linear response for frequency:   -2.84999999999998     
+ Calculating linear response for frequency:   -2.82499999999998     
+ Calculating linear response for frequency:   -2.79999999999998     
+ Calculating linear response for frequency:   -2.77499999999998     
+ Calculating linear response for frequency:   -2.74999999999998     
+ Calculating linear response for frequency:   -2.72499999999998     
+ Calculating linear response for frequency:   -2.69999999999998     
+ Calculating linear response for frequency:   -2.67499999999998     
+ Calculating linear response for frequency:   -2.64999999999998     
+ Calculating linear response for frequency:   -2.62499999999998     
+ Calculating linear response for frequency:   -2.59999999999998     
+ Calculating linear response for frequency:   -2.57499999999998     
+ Calculating linear response for frequency:   -2.54999999999998     
+ Calculating linear response for frequency:   -2.52499999999998     
+ Calculating linear response for frequency:   -2.49999999999998     
+ Calculating linear response for frequency:   -2.47499999999998     
+ Calculating linear response for frequency:   -2.44999999999998     
+ Calculating linear response for frequency:   -2.42499999999998     
+ Calculating linear response for frequency:   -2.39999999999998     
+ Calculating linear response for frequency:   -2.37499999999998     
+ Calculating linear response for frequency:   -2.34999999999998     
+ Calculating linear response for frequency:   -2.32499999999998     
+ Calculating linear response for frequency:   -2.29999999999998     
+ Calculating linear response for frequency:   -2.27499999999998     
+ Calculating linear response for frequency:   -2.24999999999998     
+ Calculating linear response for frequency:   -2.22499999999998     
+ Calculating linear response for frequency:   -2.19999999999998     
+ Calculating linear response for frequency:   -2.17499999999998     
+ Calculating linear response for frequency:   -2.14999999999998     
+ Calculating linear response for frequency:   -2.12499999999998     
+ Calculating linear response for frequency:   -2.09999999999998     
+ Calculating linear response for frequency:   -2.07499999999998     
+ Calculating linear response for frequency:   -2.04999999999998     
+ Calculating linear response for frequency:   -2.02499999999998     
+ Calculating linear response for frequency:   -1.99999999999998     
+ Calculating linear response for frequency:   -1.97499999999998     
+ Calculating linear response for frequency:   -1.94999999999998     
+ Calculating linear response for frequency:   -1.92499999999998     
+ Calculating linear response for frequency:   -1.89999999999998     
+ Calculating linear response for frequency:   -1.87499999999998     
+ Calculating linear response for frequency:   -1.84999999999998     
+ Calculating linear response for frequency:   -1.82499999999998     
+ Calculating linear response for frequency:   -1.79999999999998     
+ Calculating linear response for frequency:   -1.77499999999998     
+ Calculating linear response for frequency:   -1.74999999999998     
+ Calculating linear response for frequency:   -1.72499999999998     
+ Calculating linear response for frequency:   -1.69999999999998     
+ Calculating linear response for frequency:   -1.67499999999998     
+ Calculating linear response for frequency:   -1.64999999999998     
+ Calculating linear response for frequency:   -1.62499999999998     
+ Calculating linear response for frequency:   -1.59999999999998     
+ Calculating linear response for frequency:   -1.57499999999998     
+ Calculating linear response for frequency:   -1.54999999999998     
+ Calculating linear response for frequency:   -1.52499999999998     
+ Calculating linear response for frequency:   -1.49999999999998     
+ Calculating linear response for frequency:   -1.47499999999998     
+ Calculating linear response for frequency:   -1.44999999999998     
+ Calculating linear response for frequency:   -1.42499999999998     
+ Calculating linear response for frequency:   -1.39999999999998     
+ Calculating linear response for frequency:   -1.37499999999998     
+ Calculating linear response for frequency:   -1.34999999999998     
+ Calculating linear response for frequency:   -1.32499999999998     
+ Calculating linear response for frequency:   -1.29999999999998     
+ Calculating linear response for frequency:   -1.27499999999998     
+ Calculating linear response for frequency:   -1.24999999999998     
+ Calculating linear response for frequency:   -1.22499999999998     
+ Calculating linear response for frequency:   -1.19999999999998     
+ Calculating linear response for frequency:   -1.17499999999998     
+ Calculating linear response for frequency:   -1.14999999999998     
+ Calculating linear response for frequency:   -1.12499999999998     
+ Calculating linear response for frequency:   -1.09999999999998     
+ Calculating linear response for frequency:   -1.07499999999998     
+ Calculating linear response for frequency:   -1.04999999999998     
+ Calculating linear response for frequency:   -1.02499999999998     
+ Calculating linear response for frequency:  -0.999999999999983     
+ Calculating linear response for frequency:  -0.974999999999983     
+ Calculating linear response for frequency:  -0.949999999999983     
+ Calculating linear response for frequency:  -0.924999999999983     
+ Calculating linear response for frequency:  -0.899999999999982     
+ Calculating linear response for frequency:  -0.874999999999982     
+ Calculating linear response for frequency:  -0.849999999999982     
+ Calculating linear response for frequency:  -0.824999999999982     
+ Calculating linear response for frequency:  -0.799999999999982     
+ Calculating linear response for frequency:  -0.774999999999982     
+ Calculating linear response for frequency:  -0.749999999999982     
+ Calculating linear response for frequency:  -0.724999999999982     
+ Calculating linear response for frequency:  -0.699999999999982     
+ Calculating linear response for frequency:  -0.674999999999982     
+ Calculating linear response for frequency:  -0.649999999999982     
+ Calculating linear response for frequency:  -0.624999999999982     
+ Calculating linear response for frequency:  -0.599999999999982     
+ Calculating linear response for frequency:  -0.574999999999982     
+ Calculating linear response for frequency:  -0.549999999999982     
+ Calculating linear response for frequency:  -0.524999999999982     
+ Calculating linear response for frequency:  -0.499999999999982     
+ Calculating linear response for frequency:  -0.474999999999982     
+ Calculating linear response for frequency:  -0.449999999999982     
+ Calculating linear response for frequency:  -0.424999999999982     
+ Calculating linear response for frequency:  -0.399999999999982     
+ Calculating linear response for frequency:  -0.374999999999982     
+ Calculating linear response for frequency:  -0.349999999999982     
+ Calculating linear response for frequency:  -0.324999999999982     
+ Calculating linear response for frequency:  -0.299999999999982     
+ Calculating linear response for frequency:  -0.274999999999982     
+ Calculating linear response for frequency:  -0.249999999999982     
+ Calculating linear response for frequency:  -0.224999999999982     
+ Calculating linear response for frequency:  -0.199999999999982     
+ Calculating linear response for frequency:  -0.174999999999982     
+ Calculating linear response for frequency:  -0.149999999999982     
+ Calculating linear response for frequency:  -0.124999999999982     
+ Calculating linear response for frequency:  -9.999999999998196E-002
+ Calculating linear response for frequency:  -7.499999999998197E-002
+ Calculating linear response for frequency:  -4.999999999998197E-002
+ Calculating linear response for frequency:  -2.499999999998197E-002
+ Calculating linear response for frequency:   1.803418525625489E-014
+ Calculating linear response for frequency:   2.500000000001804E-002
+ Calculating linear response for frequency:   5.000000000001804E-002
+ Calculating linear response for frequency:   7.500000000001804E-002
+ Calculating linear response for frequency:   0.100000000000018     
+ Calculating linear response for frequency:   0.125000000000018     
+ Calculating linear response for frequency:   0.150000000000018     
+ Calculating linear response for frequency:   0.175000000000018     
+ Calculating linear response for frequency:   0.200000000000018     
+ Calculating linear response for frequency:   0.225000000000018     
+ Calculating linear response for frequency:   0.250000000000018     
+ Calculating linear response for frequency:   0.275000000000018     
+ Calculating linear response for frequency:   0.300000000000018     
+ Calculating linear response for frequency:   0.325000000000018     
+ Calculating linear response for frequency:   0.350000000000018     
+ Calculating linear response for frequency:   0.375000000000018     
+ Calculating linear response for frequency:   0.400000000000018     
+ Calculating linear response for frequency:   0.425000000000018     
+ Calculating linear response for frequency:   0.450000000000018     
+ Calculating linear response for frequency:   0.475000000000018     
+ Calculating linear response for frequency:   0.500000000000018     
+ Calculating linear response for frequency:   0.525000000000018     
+ Calculating linear response for frequency:   0.550000000000018     
+ Calculating linear response for frequency:   0.575000000000018     
+ Calculating linear response for frequency:   0.600000000000018     
+ Calculating linear response for frequency:   0.625000000000018     
+ Calculating linear response for frequency:   0.650000000000018     
+ Calculating linear response for frequency:   0.675000000000018     
+ Calculating linear response for frequency:   0.700000000000018     
+ Calculating linear response for frequency:   0.725000000000018     
+ Calculating linear response for frequency:   0.750000000000018     
+ Calculating linear response for frequency:   0.775000000000018     
+ Calculating linear response for frequency:   0.800000000000018     
+ Calculating linear response for frequency:   0.825000000000018     
+ Calculating linear response for frequency:   0.850000000000019     
+ Calculating linear response for frequency:   0.875000000000019     
+ Calculating linear response for frequency:   0.900000000000019     
+ Calculating linear response for frequency:   0.925000000000019     
+ Calculating linear response for frequency:   0.950000000000019     
+ Calculating linear response for frequency:   0.975000000000019     
+ Calculating linear response for frequency:    1.00000000000002     
+ Calculating linear response for frequency:    1.02500000000002     
+ Calculating linear response for frequency:    1.05000000000002     
+ Calculating linear response for frequency:    1.07500000000002     
+ Calculating linear response for frequency:    1.10000000000002     
+ Calculating linear response for frequency:    1.12500000000002     
+ Calculating linear response for frequency:    1.15000000000002     
+ Calculating linear response for frequency:    1.17500000000002     
+ Calculating linear response for frequency:    1.20000000000002     
+ Calculating linear response for frequency:    1.22500000000002     
+ Calculating linear response for frequency:    1.25000000000002     
+ Calculating linear response for frequency:    1.27500000000002     
+ Calculating linear response for frequency:    1.30000000000002     
+ Calculating linear response for frequency:    1.32500000000002     
+ Calculating linear response for frequency:    1.35000000000002     
+ Calculating linear response for frequency:    1.37500000000002     
+ Calculating linear response for frequency:    1.40000000000002     
+ Calculating linear response for frequency:    1.42500000000002     
+ Calculating linear response for frequency:    1.45000000000002     
+ Calculating linear response for frequency:    1.47500000000002     
+ Calculating linear response for frequency:    1.50000000000002     
+ Calculating linear response for frequency:    1.52500000000002     
+ Calculating linear response for frequency:    1.55000000000002     
+ Calculating linear response for frequency:    1.57500000000002     
+ Calculating linear response for frequency:    1.60000000000002     
+ Calculating linear response for frequency:    1.62500000000002     
+ Calculating linear response for frequency:    1.65000000000002     
+ Calculating linear response for frequency:    1.67500000000002     
+ Calculating linear response for frequency:    1.70000000000002     
+ Calculating linear response for frequency:    1.72500000000002     
+ Calculating linear response for frequency:    1.75000000000002     
+ Calculating linear response for frequency:    1.77500000000002     
+ Calculating linear response for frequency:    1.80000000000002     
+ Calculating linear response for frequency:    1.82500000000002     
+ Calculating linear response for frequency:    1.85000000000002     
+ Calculating linear response for frequency:    1.87500000000002     
+ Calculating linear response for frequency:    1.90000000000002     
+ Calculating linear response for frequency:    1.92500000000002     
+ Calculating linear response for frequency:    1.95000000000002     
+ Calculating linear response for frequency:    1.97500000000002     
+ Calculating linear response for frequency:    2.00000000000002     
+ Calculating linear response for frequency:    2.02500000000002     
+ Calculating linear response for frequency:    2.05000000000001     
+ Calculating linear response for frequency:    2.07500000000001     
+ Calculating linear response for frequency:    2.10000000000001     
+ Calculating linear response for frequency:    2.12500000000001     
+ Calculating linear response for frequency:    2.15000000000001     
+ Calculating linear response for frequency:    2.17500000000001     
+ Calculating linear response for frequency:    2.20000000000001     
+ Calculating linear response for frequency:    2.22500000000001     
+ Calculating linear response for frequency:    2.25000000000001     
+ Calculating linear response for frequency:    2.27500000000001     
+ Calculating linear response for frequency:    2.30000000000001     
+ Calculating linear response for frequency:    2.32500000000001     
+ Calculating linear response for frequency:    2.35000000000001     
+ Calculating linear response for frequency:    2.37500000000001     
+ Calculating linear response for frequency:    2.40000000000001     
+ Calculating linear response for frequency:    2.42500000000001     
+ Calculating linear response for frequency:    2.45000000000001     
+ Calculating linear response for frequency:    2.47500000000001     
+ Calculating linear response for frequency:    2.50000000000001     
+ Calculating linear response for frequency:    2.52500000000001     
+ Calculating linear response for frequency:    2.55000000000001     
+ Calculating linear response for frequency:    2.57500000000001     
+ Calculating linear response for frequency:    2.60000000000001     
+ Calculating linear response for frequency:    2.62500000000001     
+ Calculating linear response for frequency:    2.65000000000001     
+ Calculating linear response for frequency:    2.67500000000001     
+ Calculating linear response for frequency:    2.70000000000001     
+ Calculating linear response for frequency:    2.72500000000001     
+ Calculating linear response for frequency:    2.75000000000001     
+ Calculating linear response for frequency:    2.77500000000001     
+ Calculating linear response for frequency:    2.80000000000001     
+ Calculating linear response for frequency:    2.82500000000001     
+ Calculating linear response for frequency:    2.85000000000001     
+ Calculating linear response for frequency:    2.87500000000001     
+ Calculating linear response for frequency:    2.90000000000001     
+ Calculating linear response for frequency:    2.92500000000001     
+ Calculating linear response for frequency:    2.95000000000001     
+ Calculating linear response for frequency:    2.97500000000001     
+ Calculating linear response for frequency:    3.00000000000001     
+ Calculating linear response for frequency:    3.02500000000001     
+ Calculating linear response for frequency:    3.05000000000001     
+ Calculating linear response for frequency:    3.07500000000001     
+ Calculating linear response for frequency:    3.10000000000001     
+ Calculating linear response for frequency:    3.12500000000001     
+ Calculating linear response for frequency:    3.15000000000001     
+ Calculating linear response for frequency:    3.17500000000001     
+ Calculating linear response for frequency:    3.20000000000001     
+ Calculating linear response for frequency:    3.22500000000001     
+ Calculating linear response for frequency:    3.25000000000001     
+ Calculating linear response for frequency:    3.27500000000001     
+ Calculating linear response for frequency:    3.30000000000001     
+ Calculating linear response for frequency:    3.32500000000001     
+ Calculating linear response for frequency:    3.35000000000001     
+ Calculating linear response for frequency:    3.37500000000001     
+ Calculating linear response for frequency:    3.40000000000001     
+ Calculating linear response for frequency:    3.42500000000001     
+ Calculating linear response for frequency:    3.45000000000001     
+ Calculating linear response for frequency:    3.47500000000001     
+ Calculating linear response for frequency:    3.50000000000001     
+ Calculating linear response for frequency:    3.52500000000001     
+ Calculating linear response for frequency:    3.55000000000001     
+ Calculating linear response for frequency:    3.57500000000001     
+ Calculating linear response for frequency:    3.60000000000001     
+ Calculating linear response for frequency:    3.62500000000001     
+ Calculating linear response for frequency:    3.65000000000001     
+ Calculating linear response for frequency:    3.67500000000001     
+ Calculating linear response for frequency:    3.70000000000001     
+ Calculating linear response for frequency:    3.72500000000001     
+ Calculating linear response for frequency:    3.75000000000001     
+ Calculating linear response for frequency:    3.77500000000001     
+ Calculating linear response for frequency:    3.80000000000001     
+ Calculating linear response for frequency:    3.82500000000001     
+ Calculating linear response for frequency:    3.85000000000001     
+ Calculating linear response for frequency:    3.87500000000001     
+ Calculating linear response for frequency:    3.90000000000001     
+ Calculating linear response for frequency:    3.92500000000001     
+ Calculating linear response for frequency:    3.95000000000001     
+ Calculating linear response for frequency:    3.97500000000001     
+ Calculating linear response for frequency:    4.00000000000001     
+ Calculating linear response for frequency:    4.02500000000001     
+ Calculating linear response for frequency:    4.05000000000001     
+ Calculating linear response for frequency:    4.07500000000001     
+ Calculating linear response for frequency:    4.10000000000001     
+ Calculating linear response for frequency:    4.12500000000001     
+ Calculating linear response for frequency:    4.15000000000001     
+ Calculating linear response for frequency:    4.17500000000001     
+ Calculating linear response for frequency:    4.20000000000001     
+ Calculating linear response for frequency:    4.22500000000001     
+ Calculating linear response for frequency:    4.25000000000001     
+ Calculating linear response for frequency:    4.27500000000001     
+ Calculating linear response for frequency:    4.30000000000001     
+ Calculating linear response for frequency:    4.32500000000001     
+ Calculating linear response for frequency:    4.35000000000001     
+ Calculating linear response for frequency:    4.37500000000001     
+ Calculating linear response for frequency:    4.40000000000001     
+ Calculating linear response for frequency:    4.42500000000001     
+ Calculating linear response for frequency:    4.45000000000001     
+ Calculating linear response for frequency:    4.47500000000001     
+ Calculating linear response for frequency:    4.50000000000002     
+ Calculating linear response for frequency:    4.52500000000002     
+ Calculating linear response for frequency:    4.55000000000002     
+ Calculating linear response for frequency:    4.57500000000002     
+ Calculating linear response for frequency:    4.60000000000002     
+ Calculating linear response for frequency:    4.62500000000002     
+ Calculating linear response for frequency:    4.65000000000002     
+ Calculating linear response for frequency:    4.67500000000002     
+ Calculating linear response for frequency:    4.70000000000002     
+ Calculating linear response for frequency:    4.72500000000002     
+ Calculating linear response for frequency:    4.75000000000002     
+ Calculating linear response for frequency:    4.77500000000002     
+ Calculating linear response for frequency:    4.80000000000002     
+ Calculating linear response for frequency:    4.82500000000002     
+ Calculating linear response for frequency:    4.85000000000002     
+ Calculating linear response for frequency:    4.87500000000002     
+ Calculating linear response for frequency:    4.90000000000002     
+ Calculating linear response for frequency:    4.92500000000002     
+ Calculating linear response for frequency:    4.95000000000002     
+ Calculating linear response for frequency:    4.97500000000002     
+ Calculating linear response for frequency:    5.00000000000002     
+ Calculating linear response for frequency:    5.02500000000002     
+ Calculating linear response for frequency:    5.05000000000002     
+ Calculating linear response for frequency:    5.07500000000002     
+ Calculating linear response for frequency:    5.10000000000002     
+ Calculating linear response for frequency:    5.12500000000002     
+ Calculating linear response for frequency:    5.15000000000002     
+ Calculating linear response for frequency:    5.17500000000002     
+ Calculating linear response for frequency:    5.20000000000003     
+ Calculating linear response for frequency:    5.22500000000003     
+ Calculating linear response for frequency:    5.25000000000003     
+ Calculating linear response for frequency:    5.27500000000003     
+ Calculating linear response for frequency:    5.30000000000003     
+ Calculating linear response for frequency:    5.32500000000003     
+ Calculating linear response for frequency:    5.35000000000003     
+ Calculating linear response for frequency:    5.37500000000003     
+ Calculating linear response for frequency:    5.40000000000003     
+ Calculating linear response for frequency:    5.42500000000003     
+ Calculating linear response for frequency:    5.45000000000003     
+ Calculating linear response for frequency:    5.47500000000003     
+ Calculating linear response for frequency:    5.50000000000003     
+ Calculating linear response for frequency:    5.52500000000003     
+ Calculating linear response for frequency:    5.55000000000003     
+ Calculating linear response for frequency:    5.57500000000003     
+ Calculating linear response for frequency:    5.60000000000003     
+ Calculating linear response for frequency:    5.62500000000003     
+ Calculating linear response for frequency:    5.65000000000003     
+ Calculating linear response for frequency:    5.67500000000003     
+ Calculating linear response for frequency:    5.70000000000003     
+ Calculating linear response for frequency:    5.72500000000003     
+ Calculating linear response for frequency:    5.75000000000003     
+ Calculating linear response for frequency:    5.77500000000003     
+ Calculating linear response for frequency:    5.80000000000003     
+ Calculating linear response for frequency:    5.82500000000003     
+ Calculating linear response for frequency:    5.85000000000003     
+ Calculating linear response for frequency:    5.87500000000003     
+ Calculating linear response for frequency:    5.90000000000003     
+ Calculating linear response for frequency:    5.92500000000004     
+ Calculating linear response for frequency:    5.95000000000004     
+ Calculating linear response for frequency:    5.97500000000004     
+ Calculating linear response for frequency:    6.00000000000004     
+Total integrated spectral weight:       0.9501494905    
+
+ ================================================================
+ Timing report.
+
+ Timing of most expensive procedures.
+
+ Procedure                    Calls       CPU    system     total
+ ----------------------------------------------------------------
+ GF_EC_SolveLR                  481 122452.02      0.00 122452.02
+ GF_EC_HBuild                   481   3009.31      0.00   3009.31
+ Const_Emb                        8   2269.95      0.00   2269.95
+ DiagHopping                      8   1913.57      0.00   1913.57
+ HL_Solver                        8     60.71      0.00     60.71
+ Main                             1      8.23      0.00      8.23
+ GF_EC_Precom                     1      6.57      0.00      6.57
+ ----------------------------------------------------------------
+ Total                              129720.36      0.00 129720.36
+
+ Global CPU time     129724.61
+ Global system time       0.00
+ Global total time   129724.61
+ ================================================================
+ Calculation ended 05/04/2013 at 17:10:03
+ ================================================================
