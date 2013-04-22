@@ -255,6 +255,7 @@ module solvers
         do j=nImp+1,EmbSize
             do i=1,nImp
                 CoupE_Imp = CoupE_Imp + (Emb_h0v(i,j) + 0.5_dp*Emb_CorrPot(i,j))*HL_1RDM(i,j)
+!                CoupE_Imp = CoupE_Imp + (Emb_h0v(i,j) + 0.5_dp*v_loc(i,j))*HL_1RDM(i,j)
             enddo
         enddo
         CoupE_Imp = CoupE_Imp / real(nImp)
@@ -422,7 +423,7 @@ module solvers
             if(tChemPot) then
                 tmat(1,1) = tmat(1,1) - U/2.0_dp
             endif
-        
+
             !Now generate all determinants in the active space
             if(allocated(FCIDetList)) deallocate(FCIDetList)
             call GenDets(NEl,nSites,.true.,.true.,.true.)

@@ -71,8 +71,8 @@ xlabel(r'$\omega$ / t')
 
 subplots_adjust(hspace=0.1,wspace=0.01)
 
-show()
-#savefig('2DHub_Spectra.eps')
+#show()
+savefig('2DHub_Doping.eps')
 
 #clf()
 #

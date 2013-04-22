@@ -139,26 +139,35 @@ module mat_tools
     
     !Make mean-field real-space hubbard matrix
     subroutine make_hop_mat()
+        use utils, only: get_free_unit
         implicit none
-        integer :: i,j,k,x,y,li,lj,ij_link,site,dx,dy
+        integer :: i,j,k,x,y,li,lj,ij_link,site,dx,dy,iunit
         real(dp) :: phase,t
+        logical :: exists
         character(len=*), parameter :: t_r='make_hop_mat'
 
         h0(:,:) = 0.0_dp
         t = -1.0_dp
         if(tReadSystem) then
             !Read in the hopping matrix
-            inquire(file='FockMatrix.dat',exist=exists)
-            if(.not.exists) then
-                call stop_all(t_r,'Fock matrix file cannot be found')
-            else
-                iunit = get_free_unit()
-                open(iunit,file='FockMatrix.dat',status='old',action='read')
-                do i=1,nSites
-                    read(iunit,*) h0(:,i)
-                enddo
-                close(iunit)
-            endif
+            inquire(file='CoreHam.dat',exist=exists)
+            if(.not.exists) call stop_all(t_r,'Core Hamiltonian file cannot be found')
+            iunit = get_free_unit()
+            open(iunit,file='CoreHam.dat',status='old',action='read')
+            do i=1,nSites
+                read(iunit,*) h0(:,i)
+            enddo
+            close(iunit)
+            !Also read in lattice matrix with correlation potential
+            inquire(file='FinalFock.dat',exist=exists)
+            if(.not.exists) call stop_all(t_r,'Lattice hamiltonian file cannot be found')
+            iunit = get_free_unit()
+            open(iunit,file='FinalFock.dat',status='old',action='read')
+            do i=1,nSites
+                read(iunit,*) h0v(:,i)
+            enddo
+            close(iunit)
+
         elseif(LatticeDim.eq.1) then
             !Tridiagonal matrix
             do i=1,nSites-1
@@ -516,7 +525,6 @@ module mat_tools
         character(len=*) , parameter :: t_r='add_localpot'
 
         if(tReadSystem) then
-            core_v(:,:) = core(:,:)
             return
         endif
             
@@ -718,7 +726,7 @@ module mat_tools
         logical :: tAdd_
 
         if(tReadSystem) then
-            core_v(:,:) = core_v(:,:)
+!            core_v(:,:) = core_v(:,:)
             return
         endif
 
@@ -1000,24 +1008,33 @@ module mat_tools
 
     !Read orbitals from file
     subroutine read_orbitals()
+        use utils, only: get_free_unit
         implicit none
+        integer :: i,j,iunit
+        real(dp), allocatable :: OccOrbs(:,:),temp(:,:)
+        logical :: exists
         character(len=*), parameter :: t_r="read_orbitals"
 
         write(6,*) "Reading HF orbitals from disk..."
 
-        allocate(HFOrbs(nSites,nSites))
+        if(.not.allocated(HFOrbs)) allocate(HFOrbs(nSites,nSites)) !The orbitals
 
-        inquire(file='FockMatrix.dat',exist=exists)
-        if(.not.exists) then
-            call stop_all(t_r,'Fock matrix file cannot be found')
-        else
-            iunit = get_free_unit()
-            open(iunit,file='FockMatrix.dat',status='old',action='read')
-            do i=1,nSites
-                read(iunit,*) h0(:,i)
-            enddo
-            close(iunit)
-        endif
+        HFOrbs(:,:) = 0.0_dp
+        inquire(file='FinalOrbitals.dat',exist=exists)
+        if(.not.exists) call stop_all(t_r,'Orbital file cannot be found')
+        iunit = get_free_unit()
+        open(iunit,file='FinalOrbitals.dat',status='old',action='read')
+        do i=1,nSites
+            read(iunit,*) HFOrbs(i,:)
+        enddo
+        close(iunit)
+        
+        HFEnergies(:) = 0.0_dp
+        inquire(file='FinalEigenvalue.dat',exist=exists)
+        if(.not.exists) call stop_all(t_r,'Eigenvalue file cannot be found')
+        open(iunit,file='FinalEigenvalue.dat',status='old',action='read')
+        read(iunit,*) HFEnergies(:)
+        close(iunit)
 
         write(6,*) "nOCC", nOcc
         write(6,*) "Fock eigenvalues around fermi level: "
@@ -1027,37 +1044,29 @@ module mat_tools
         do i=nOcc+1,min(nSites,nOcc+7)
             write(6,*) HFEnergies(i)
         enddo
-        
-!        allocate(k_ham(nSites,nSites))
-!        if(it.eq.1) then
-!            !No correlation potential applied - periodicity is just 1
-!            call Convert1DtoKSpace(fock,nSites,1,k_ham) 
-!        else
-!            call Convert1DtoKSpace(fock,nSites,nImp,k_ham) 
-!        endif
-!        deallocate(k_ham)
 
+        if(tCheck) then
+            !Check that these orbitals are correct
+            allocate(temp(nSites,nSites))
+            temp(:,:) = 0.0_dp
+            call DGEMM('n','n',nSites,nSites,nSites,one,h0v,nSites,HFOrbs,nSites,zero,temp,nSites)
 
-        if(tRotateOrbs.and.(it.ge.4)) then
-            !Rotate the orbitals so that we can maximise overlap between these orbitals and the orbitals of the previous iteration
-            !at the Fermi level if not a unique CS solution there.
-
-            iFirst = max(1,nOcc-40)
-            iLast = min(nSites,nOcc+40)
-            ThrDeg = 1.0e-4
-            do while(abs(HFEnergies(iFirst) - HFEnergies(nOcc)) .gt. ThrDeg)
-                iFirst = iFirst + 1
+            do i = 1,nSites
+                !Loop over orbitals
+                do j = 1,nSites
+                    !Loop over components of orbitals
+                    if(abs((temp(j,i)/HFEnergies(i)) - HFOrbs(j,i)).gt.1.0e-8_dp) then
+                        write(6,*) "Orbital: ",i
+                        write(6,*) "Component: ",j
+                        write(6,*) temp(j,i)/HFEnergies(i),HFOrbs(j,i),abs((temp(j,i)/HFEnergies(i)) - HFOrbs(j,i))
+                        call stop_all(t_r,'Error in reading orbitals')
+                    endif
+                enddo
             enddo
-            do while(abs(HFEnergies(iLast) - HFEnergies(nOcc)) .gt.ThrDeg)
-                iLast = iLast - 1
-            enddo
-            if(iLast .lt. iFirst) call stop_all(t_r,'Error in rotating orbitals')
-            if((iLast - iFirst).ge.1) then
-                write(6,*) "Warning: May potentially need to rotate orbitals at the fermi level for maximum overlap"
-!                call stop_all(t_r,'Need to rotate orbitals at Fermi level')
-            endif
+            deallocate(temp)
+            write(6,"(A)") "Orbitals read in correctly"
         endif
-
+        
         !Now calculate the density matrix from the calculation based on double occupancy of the lowest lying nOcc orbitals
         !First, extract the occupied orbitals. Since eigenvalues are ordered in increasing order, these will be the first nOcc
         allocate(OccOrbs(nSites,nOcc))
@@ -1069,12 +1078,12 @@ module mat_tools
         ChemPot = (HFEnergies(nOcc) + HFEnergies(nOcc+1))/2.0_dp  !Chemical potential is half way between HOMO and LUMO
         HLGap = HFEnergies(nOcc+1)-HFEnergies(nOcc)   !one body HOMO-LUMO Gap
 
+        write(6,"(A,F20.10)") "One-electron eigenvalue band-gap: ",HLGap
         if(HLGap.lt.1.0e-6_dp) then
             write(6,"(A,G15.5,A)") "Warning. HL gap is: ",HLGap," Possible failure in assigning orbitals in degenerate set."
         endif
 
-        deallocate(Fock,OccOrbs)
-
+        deallocate(OccOrbs)
 
     end subroutine read_orbitals
 

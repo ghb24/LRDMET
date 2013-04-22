@@ -164,7 +164,7 @@ Program RealHub
                 call stop_all(t_r,"Cannot determine dimensionality of system")
             endif
         else
-            write(6,"(A)") "            o Number of lattice sites: ",nSites
+            write(6,"(A,I9)") "            o Number of lattice sites: ",nSites
         endif
         write(6,"(A)") "            o Range of U values to consider: " 
         if(nU_Vals.eq.0) then
@@ -613,6 +613,10 @@ Program RealHub
         endif
 
         !Now check for sanity and implementation of specified options
+        if(tReadSystem) then
+            !Ensure we don't do fitting
+            tContinueConvergence = .false.
+        endif
         if((mod(nSites,2).ne.0).and.(LatticeDim.eq.1)) then
             call stop_all(t_r,'Can currently only deal with closed shell systems')
         endif
@@ -862,13 +866,13 @@ Program RealHub
 
         !Set up initial conditions, i.e. starting potential
         allocate(v_loc(nImp,nImp))
-        v_loc = 0.0_dp
         allocate(h0(nSites,nSites))     !The core hamiltonian
         allocate(h0v(nSites,nSites))    !The core hamiltonian with the local potential
         allocate(HFEnergies(nSites))    !The fock energies
-        HFEnergies(:,:) = 0.0_dp
+        v_loc = 0.0_dp
         h0(:,:) = 0.0_dp
         h0v(:,:) = 0.0_dp
+        HFEnergies(:) = 0.0_dp
 
         CurrU = 0
         do while(.true.)
@@ -909,14 +913,10 @@ Program RealHub
                 write(6,"(A,F10.5)")          "Filling Fraction:     ",FillingFrac
                 write(6,"(A,F8.3)")           "Hubbard U:            ",U
                 write(6,"(A,I5,A)")           "Embedded system size: ",nImp," sites"
-                if(LatticeDim.eq.1) then
                 if(tAnderson) then
-                write(6,"(A,I5,A)")           "1D Anderson lattice of ",nSites," sites"
-                elseif(tReadSystem) then
-                write(6,"(A,I5,A)")           "Hubbard lattice of ",nSites," sites"
+                    write(6,"(A,I5,A)")           "Anderson lattice of ",nSites," sites"
                 else
-                write(6,"(A,I5,A)")           "1D Hubbard lattice of ",nSites," sites"
-                endif
+                    write(6,"(A,I5,A)")           "1D Hubbard lattice of ",nSites," sites"
                 endif
                 write(6,*) 
                 
@@ -943,7 +943,7 @@ Program RealHub
                     call SR_LinearResponse()
                 endif
 
-                if(tReadInCorrPot) then
+                if(tReadInCorrPot.or.tReadSystem) then
                     !Read in the correlation potential from another source
                     call read_in_corrpot()
                 endif
@@ -952,7 +952,7 @@ Program RealHub
                 do it=1,iMaxIterDMET
 
                     !Write out header file for the convergence
-                    write(6,*) "Iteration: ",it
+                    write(6,"(A,I6)") "Iteration: ",it
 
                     !Do iMaxIterDMET microiterations to converge the DMET for this occupation number
                     call add_localpot(h0,h0v,v_loc)
@@ -967,16 +967,14 @@ Program RealHub
                     endif
                     call halt_timer(DiagT)
 
-                    call set_timer(ConstEmb)
                     !Construct the embedded basis
+                    call set_timer(ConstEmb)
                     if(tConstructFullSchmidtBasis) then
                         call ConstructFullSchmidtBasis()
                     else
                         call CalcEmbedding()
                     endif
-                    if(tWriteOut) then
-                        call writematrix(EmbeddedBasis,'EmbeddedBasis',.true.)
-                    endif
+                    if(tWriteOut) call writematrix(EmbeddedBasis,'EmbeddedBasis',.true.)
                     call halt_timer(ConstEmb)
                     
                     !Now transform the 1 electron quantities into the embedded basis
@@ -1140,40 +1138,52 @@ Program RealHub
 
         write(6,*) "Reading in correlation potential..."
 
-        iunit = get_free_unit()
-        inquire(file=CorrPot_file,exist=texist)
-        if(.not.texist) then
-            write(6,*) "correlation potential filename: ",CorrPot_file
-            call stop_all(t_r,'Expecting to read in a file with a converged '    &
-     &          //'correlation potential, but unable to find appropriate file')
-        endif
+        if(tReadSystem) then
 
-        open(iunit,file=CorrPot_file,status='old')
-
-        tFoundCorrPot = .false.
-        do while(.true.)
-            read(iunit,*,iostat=ios) U_val,Occ_val,CorrPot_tmp(1:nImp*nImp)
-            if(ios.gt.0) call stop_all(t_r,'Error reading in correlation potential')
-            if(ios.lt.0) exit   !EOF
-            if((abs(U_val-U).lt.1.0e-7_dp).and.(Occ_val.eq.nOcc)) then
-                tFoundCorrPot = .true.
-                exit
-            endif
-        enddo
-
-        if(.not.tFoundCorrPot.and.(.not.tContinueConvergence)) then
-            call stop_all(t_r,'Did not read in correlation potential corresponding to this run')
-        else
-            k=1
-            do i=1,nImp
-                do j=1,nImp
-                    v_loc(j,i) = CorrPot_tmp(k)
-                    k = k+1
-                enddo
+            inquire(file='FinalVCorr.dat',exist=texist)
+            if(.not.texist) call stop_all(t_r,'Correlation potential file cannot be found') 
+            iunit = get_free_unit()
+            open(iunit,file='FinalVCorr.dat',status='old',action='read')
+            do i = 1,nImp
+                read(iunit,*) v_loc(i,:)
             enddo
-        endif
+            close(iunit)
+        else
+            iunit = get_free_unit()
+            inquire(file=CorrPot_file,exist=texist)
+            if(.not.texist) then
+                write(6,*) "correlation potential filename: ",CorrPot_file
+                call stop_all(t_r,'Expecting to read in a file with a converged '    &
+     &              //'correlation potential, but unable to find appropriate file')
+            endif
 
-        close(iunit)
+            open(iunit,file=CorrPot_file,status='old')
+
+            tFoundCorrPot = .false.
+            do while(.true.)
+                read(iunit,*,iostat=ios) U_val,Occ_val,CorrPot_tmp(1:nImp*nImp)
+                if(ios.gt.0) call stop_all(t_r,'Error reading in correlation potential')
+                if(ios.lt.0) exit   !EOF
+                if((abs(U_val-U).lt.1.0e-7_dp).and.(Occ_val.eq.nOcc)) then
+                    tFoundCorrPot = .true.
+                    exit
+                endif
+            enddo
+
+            if(.not.tFoundCorrPot.and.(.not.tContinueConvergence)) then
+                call stop_all(t_r,'Did not read in correlation potential corresponding to this run')
+            else
+                k=1
+                do i=1,nImp
+                    do j=1,nImp
+                        v_loc(j,i) = CorrPot_tmp(k)
+                        k = k+1
+                    enddo
+                enddo
+            endif
+
+            close(iunit)
+        endif
 
     end subroutine read_in_corrpot
 
