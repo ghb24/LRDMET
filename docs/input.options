@@ -1,10 +1,6 @@
 MODEL
-(Hubbard model)
-    HUBBARD
-(Anderson model)
-    ANDERSON
-(Add chemical potential to the anderson model at impurity site)
-    CHEMPOT
+(Specify the model: Hubbard, Anderson or read from disk and whether to not include a chemical potential)
+    SYSTEM READ/HUBBARD/ANDERSON NO_CHEMPOT
 (Number of sites in the model. Second argument is the dimensionality of the model)
     SITES   24 1
 (Number of electrons to include in the entire system)

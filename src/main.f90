@@ -26,6 +26,7 @@ Program RealHub
         !Main options
         tAnderson = .false. !Hubbard by default
         tChemPot = .false.
+        tReadSystem = .false.
         tHalfFill = .true. 
         nSites = 24  
         LatticeDim = 1
@@ -134,6 +135,8 @@ Program RealHub
 
         if(tAnderson) then
             write(6,"(A)") "Running:    o Anderson Model (single site)"
+        elseif(tReadSystem) then
+            write(6,"(A)") "Reading unknown system from files..."
         else
             write(6,"(A)") "Running:    o Hubbard Model"
         endif
@@ -142,22 +145,26 @@ Program RealHub
         else
             write(6,"(A)") "            o No chemical potential applied at impurity site"
         endif
-        if(tPeriodic) then
-            write(6,"(A)") "            o PBCs employed"
-        elseif(tAntiPeriodic) then
-            write(6,"(A)") "            o APBCs employed"
-        elseif(.not.(tPeriodic.or.tAntiPeriodic)) then
-            write(6,"(A)") "            o Open boundary conditions employed"
-        endif
-        if(LatticeDim.eq.2) then
-            write(6,"(A)") "            o 2-dimensional model" 
-            write(6,"(A,I7,A,I7,A)") "            o Size of lattice: ",TDLat_Ni,' x ',TDLat_Nj,' at 45 degrees' 
-            write(6,"(A,I7)") "            o Total lattice sites: ",nSites
-        elseif(LatticeDim.eq.1) then
-            write(6,"(A)") "            o 1-dimensional model" 
-            write(6,"(A,I7)") "            o Size of lattice: ",nSites 
+        if(.not.tReadSystem) then
+            if(tPeriodic) then
+                write(6,"(A)") "            o PBCs employed"
+            elseif(tAntiPeriodic) then
+                write(6,"(A)") "            o APBCs employed"
+            elseif(.not.(tPeriodic.or.tAntiPeriodic)) then
+                write(6,"(A)") "            o Open boundary conditions employed"
+            endif
+            if(LatticeDim.eq.2) then
+                write(6,"(A)") "            o 2-dimensional model" 
+                write(6,"(A,I7,A,I7,A)") "            o Size of lattice: ",TDLat_Ni,' x ',TDLat_Nj,' at 45 degrees' 
+                write(6,"(A,I7)") "            o Total lattice sites: ",nSites
+            elseif(LatticeDim.eq.1) then
+                write(6,"(A)") "            o 1-dimensional model" 
+                write(6,"(A,I7)") "            o Size of lattice: ",nSites 
+            else
+                call stop_all(t_r,"Cannot determine dimensionality of system")
+            endif
         else
-            call stop_all(t_r,"Cannot determine dimensionality of system")
+            write(6,"(A)") "            o Number of lattice sites: ",nSites
         endif
         write(6,"(A)") "            o Range of U values to consider: " 
         if(nU_Vals.eq.0) then
@@ -172,25 +179,27 @@ Program RealHub
                 write(6,"(A,F10.5)") "            o U = ",U_Vals(i) 
             enddo
         endif
-        if(tReadInCorrPot) then
-            write(6,"(A,A)") "            o Correlation potentials for system will be read from file: ", trim(CorrPot_file)
-            write(6,"(A)") "            o No DMET self-consistency of correlation potential"
-        else
-            if(.not.tAnderson) then
-                write(6,"(A,I8)") "            o Maximum iterations for DMET self-consistency: ", iMaxIterDMET
-                if(tSaveCorrPot) then
-                    if(tHalfFill) then
-                        write(6,"(A,I8)") "            o The correlation potential from the previous U value will " &
-                            //"be used as a starting point for self-consistency" 
-                    else
-                        write(6,"(A,I8)") "            o The correlation potential from the previous electron number will " &
-                            //"be used as a starting point for self-consistency"
+        if(.not.tReadSystem) then
+            if(tReadInCorrPot) then
+                write(6,"(A,A)") "            o Correlation potentials for system will be read from file: ", trim(CorrPot_file)
+                write(6,"(A)") "            o No DMET self-consistency of correlation potential"
+            else
+                if(.not.tAnderson) then
+                    write(6,"(A,I8)") "            o Maximum iterations for DMET self-consistency: ", iMaxIterDMET
+                    if(tSaveCorrPot) then
+                        if(tHalfFill) then
+                            write(6,"(A,I8)") "            o The correlation potential from the previous U value will " &
+                                //"be used as a starting point for self-consistency" 
+                        else
+                            write(6,"(A,I8)") "            o The correlation potential from the previous electron number will " &
+                                //"be used as a starting point for self-consistency"
+                        endif
                     endif
                 endif
             endif
-        endif
-        if(tFlipUTiling) then
-            write(6,"(A)") "            o Correlation potential flipped in tiling through space"
+            if(tFlipUTiling) then
+                write(6,"(A)") "            o Correlation potential flipped in tiling through space"
+            endif
         endif
         if(tHalfFill) then
             write(6,"(A)") "            o Only half filling to be considered"
@@ -201,7 +210,7 @@ Program RealHub
                 write(6,"(A)") "            o Ramping up to half filling occupation of lattice"
             endif
         endif
-        if(tSCFHF) then
+        if(tSCFHF.and..not.tReadSystem) then
             write(6,"(A)") "            o Full self-consistent Hartree--Fock orbitals will be calculated"
         endif
         write(6,"(A,I7)") "            o Number of impurity sites: ",nImp 
@@ -289,7 +298,7 @@ Program RealHub
     subroutine ModelReadInput()
         implicit none
         logical :: teof
-        character(len=100) :: w,w2
+        character(len=100) :: w,w2,w3
         logical :: tSpecifiedHub,tSpecifiedAnd,tMultipleOccs
         real(dp) :: UVals(100)
         integer :: i
@@ -307,14 +316,33 @@ Program RealHub
             if(teof) exit
             call readu(w)
             select case(w)
-            case("HUBBARD")
-                tAnderson = .false.
-                tSpecifiedHub = .true.
-            case("ANDERSON")
-                tAnderson = .true.
-                tSpecifiedAnd = .true.
-            case("CHEMPOT")
-                tChemPot = .true.
+            case("SYSTEM")
+                if(item.lt.nitems) then
+                    call readu(w2)
+                    select case(w2)
+                    case("HUBBARD")
+                        tAnderson = .false.
+                        tSpecifiedHub = .true.
+                    case("ANDERSON")
+                        tAnderson = .true.
+                        tSpecifiedAnd = .true.
+                        tChemPot = .true.   !By default include chemical potential in the model
+                        if(item.lt.nitems) then
+                            call readu(w3)
+                            select case(w3)
+                            case("NO_CHEMPOT")
+                            case default
+                                call stop_all(t_r,'Keyword after ANDERSON no recognised. Should be "NO_CHEMPOT"')
+                            end select
+                        endif
+                    case("READ")
+                        tReadSystem = .true.    !Read the system from files.
+                    case default
+                        call stop_all(t_r,'Keyword after "SYSTEM" not recognised')
+                    end select
+                else
+                    call stop_all(t_r,'No model specified after "SYSTEM"')
+                endif
             case("SITES")
                 call readi(nSites)
                 if(item.lt.nitems) then
@@ -402,9 +430,7 @@ Program RealHub
                 exit
             case default
                 write(6,"(A)") "ALLOWED KEYWORDS IN MODEL BLOCK: "
-                write(6,"(A)") "HUBBARD"
-                write(6,"(A)") "ANDERSON"
-                write(6,"(A)") "CHEMPOT"
+                write(6,"(A)") "SYSTEM"
                 write(6,"(A)") "SITES"
                 write(6,"(A)") "U"
                 write(6,"(A)") "U_VALS"
@@ -840,10 +866,9 @@ Program RealHub
         allocate(h0(nSites,nSites))     !The core hamiltonian
         allocate(h0v(nSites,nSites))    !The core hamiltonian with the local potential
         allocate(HFEnergies(nSites))    !The fock energies
-        allocate(MeanFieldDM(nSites,nSites))    !DM from mean-field
-        HFEnergies = 0.0_dp
-        h0 = 0.0_dp
-        h0v = 0.0_dp
+        HFEnergies(:,:) = 0.0_dp
+        h0(:,:) = 0.0_dp
+        h0v(:,:) = 0.0_dp
 
         CurrU = 0
         do while(.true.)
@@ -852,8 +877,12 @@ Program RealHub
             call GetNextUVal(CurrU,tFinishedU)
             if(tFinishedU) exit
             write(6,*) "Running DMET calculation with U = ",U
+        
+            allocate(MeanFieldDM(nSites,nSites))    !DM from mean-field
+            MeanFieldDM(:,:) = 0.0_dp
 
             !Calculate the core hamiltonian based on the hopping matrix of the hubbard model in real space
+            !If reading in the hopping matrix, it is done here and stored in h0
             call make_hop_mat()
 
             !Diagonalize the mean-field hamiltonian
@@ -883,6 +912,8 @@ Program RealHub
                 if(LatticeDim.eq.1) then
                 if(tAnderson) then
                 write(6,"(A,I5,A)")           "1D Anderson lattice of ",nSites," sites"
+                elseif(tReadSystem) then
+                write(6,"(A,I5,A)")           "Hubbard lattice of ",nSites," sites"
                 else
                 write(6,"(A,I5,A)")           "1D Hubbard lattice of ",nSites," sites"
                 endif
@@ -929,7 +960,11 @@ Program RealHub
                     !Now run a HF calculation by constructing and diagonalizing the fock matrix
                     !This will also return the RDM in the AO basis
                     call set_timer(DiagT)
-                    call run_hf(it)
+                    if(tReadSystem) then
+                        call read_orbitals()
+                    else
+                        call run_hf(it)
+                    endif
                     call halt_timer(DiagT)
 
                     call set_timer(ConstEmb)
@@ -1011,6 +1046,8 @@ Program RealHub
                         call WriteCorrPot()
                     endif
                 endif
+        
+                deallocate(MeanFieldDM)
                 
                 if(tLR_DMET) then
                     !Perform linear response on the resulting DMET state
