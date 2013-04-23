@@ -147,6 +147,7 @@ module LinearResponse
                 write(6,"(A)") "Solving linear system with iterative non-direct MinRes-QLP algorithm"
             endif
             write(6,"(A,G22.10)") "Tolerance for solution of linear system: ",rtol_LR
+            write(6,"(A,G22.10)") "Maximum iterations for each solution: ",maxminres_iter
         else
             if(iSolveLR.eq.1) then
                 write(6,"(A)") "Solving linear system with standard ZGESV linear solver"
@@ -1085,6 +1086,7 @@ module LinearResponse
                 write(6,"(A)") "Solving linear system with iterative non-direct MinRes-QLP algorithm"
             endif
             write(6,"(A,G22.10)") "Tolerance for solution of linear system: ",rtol_LR
+            write(6,"(A,G22.10)") "Maximum iterations for each solution: ",maxminres_iter
         else
             if(iSolveLR.eq.1) then
                 write(6,"(A)") "Solving linear system with standard ZGESV linear solver"
