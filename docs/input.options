@@ -54,6 +54,8 @@ LINEAR_RESPONSE
     GF_RESPONSE
 (Solve linear system with a non-direct iterative solver)
     NONDIR_MINRES
+(Max number of iterations for each attempt at the linear equation solver)
+    MINRES_MAXITER 20000
 (Reuse the previous frequency solution as a starting vector for the next one)
     REUSE_FIRSTORDER_PSI
 (Use preconditioning with iterative linear system solver)

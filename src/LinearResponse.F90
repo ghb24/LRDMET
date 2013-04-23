@@ -128,7 +128,7 @@ module LinearResponse
         character(64) :: filename,filename2
         character(len=*), parameter :: t_r='NonIntExCont_TDA_MCLR_Charged'
 
-        maxminres_iter = 20000
+        maxminres_iter = iMinRes_MaxIter
         iters_p = 0
         iters_h = 0
 
@@ -775,7 +775,7 @@ module LinearResponse
                         info = info_ip
                         zDirMV_Mat => null()
                         if(info.gt.7) write(6,*) "info: ",info
-                        if(info.eq.8) call stop_all(t_r,'Linear equation solver hit maximum iterations')
+                        if(info.eq.8) write(6,"(A)") "Linear equation solver hit iteration limit: ",iters_p
                         if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) then
                             call stop_all(t_r,'Input matrices to linear solver incorrect')
                         endif
@@ -818,7 +818,7 @@ module LinearResponse
                         info = info_ip
                         zDirMV_Mat => null()
                         if(info.gt.7) write(6,*) "info: ",info
-                        if(info.eq.8) call stop_all(t_r,'Linear equation solver hit maximum iterations')
+                        if(info.eq.8) write(6,"(A)") "Linear equation solver hit iteration limit: ",iters_h
                         if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) then
                             call stop_all(t_r,'Input matrices to linear solver incorrect')
                         endif
@@ -1073,7 +1073,7 @@ module LinearResponse
 
         call set_timer(LR_EC_TDA_Precom)
         
-        maxminres_iter = 20000
+        maxminres_iter = iMinRes_MaxIter
         iters = 0
 
         write(6,*) "Calculating non-interacting EC MR-TDA LR system..."
@@ -2292,7 +2292,7 @@ module LinearResponse
                 info = info_ip
                 zDirMV_Mat => null()
                 if(info.gt.7) write(6,*) "info: ",info
-                if(info.eq.8) call stop_all(t_r,'Linear equation solver hit maximum iterations')
+                if(info.eq.8) write(6,"(A)") "Linear equation solver hit iteration limit: ",iters
                 if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) then
                     call stop_all(t_r,'Input matrices to linear solver incorrect')
                 endif

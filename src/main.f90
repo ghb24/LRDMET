@@ -95,6 +95,7 @@ Program RealHub
         iSE_Constraints = 1
         DampingExponent = huge(0.0_dp)
         tConvergeMicroSE = .false.
+        iMinRes_MaxIter = 20000
 
     end subroutine set_defaults
 
@@ -506,6 +507,8 @@ Program RealHub
                 if(item.lt.nitems) then
                     call readf(rtol_LR)
                 endif
+            case("MINRES_MAXITER")
+                call readi(iMinRes_MaxIter)
             case("REUSE_FIRSTORDER_PSI")
                 tReuse_LS = .true.
                 call stop_all(t_r,'The REUSE_FIRSTORDER_PSI does not currently work. Debug this option if you want to use it')
@@ -561,6 +564,7 @@ Program RealHub
                 write(6,"(A)") "DD_RESPONSE"
                 write(6,"(A)") "GF_RESPONSE"
                 write(6,"(A)") "NONDIR_MINRES"
+                write(6,"(A)") "MINRES_MAXITER"
                 write(6,"(A)") "PRECONDITION_LR"
                 write(6,"(A)") "REUSE_FIRSTORDER_PSI"
                 write(6,"(A)") "STORE_HERMIT_HAMIL"
