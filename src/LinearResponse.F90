@@ -776,7 +776,7 @@ module LinearResponse
                         info = info_ip
                         zDirMV_Mat => null()
                         if(info.gt.7) write(6,*) "info: ",info
-                        if(info.eq.8) write(6,"(A)") "Linear equation solver hit iteration limit: ",iters_p
+                        if(info.eq.8) write(6,"(A,I9)") "Linear equation solver hit iteration limit: ",iters_p
                         if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) then
                             call stop_all(t_r,'Input matrices to linear solver incorrect')
                         endif
@@ -819,7 +819,7 @@ module LinearResponse
                         info = info_ip
                         zDirMV_Mat => null()
                         if(info.gt.7) write(6,*) "info: ",info
-                        if(info.eq.8) write(6,"(A)") "Linear equation solver hit iteration limit: ",iters_h
+                        if(info.eq.8) write(6,"(A,I9)") "Linear equation solver hit iteration limit: ",iters_h
                         if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) then
                             call stop_all(t_r,'Input matrices to linear solver incorrect')
                         endif
@@ -2294,7 +2294,7 @@ module LinearResponse
                 info = info_ip
                 zDirMV_Mat => null()
                 if(info.gt.7) write(6,*) "info: ",info
-                if(info.eq.8) write(6,"(A)") "Linear equation solver hit iteration limit: ",iters
+                if(info.eq.8) write(6,"(A,I9)") "Linear equation solver hit iteration limit: ",iters
                 if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) then
                     call stop_all(t_r,'Input matrices to linear solver incorrect')
                 endif
