@@ -52,10 +52,10 @@ Despite many formal advantages in the analytic embedding, the method was restric
 Here, we extend the approach to introduce a frequency dependence, and demonstrate accurate spectral functions at a small 
 computational cost. In a similar spirit to the frequency independent DMET method, the impurities are coupled via a small set of 
 analytically constructed, but now frequency-dependent bath states. In contrast to dynamical mean-field theory, the resultant 
-spectral functions are directly obtained on the real-frequency axis, with no bath discretization and allow for straightforward generalization both 
+spectral functions are directly obtained on the real-frequency axis, with no bath discretization error and allow for straightforward generalization both 
 to impurity clusters and arbitrary electron perturbation operators. We demonstrate
 the application of this method on the hubbard model, where both the the Kondo resonances and metal-insulator transitions are well reproduced, as well as 
-demonstrating optical spectra. This vastly extends the scope and applicability 
+demonstrating two-electron spectra. This vastly extends the scope and applicability 
 of the DMET method in condensed matter problems as a cheap route to correlated local spectral functions of extended systems.
 \end{abstract}
 \date{\today}
@@ -106,6 +106,70 @@ Continuous Weiss field approximated by a finite number of bath sites - require c
 
 Can be computed via the 1-particle or 2-particle greens function
 
-%\bibliography{SpectralDMETBib}
+Possible to reoptimize the ground state in the space of V*|0>, but this was found not to materially change results, and so is not performed from the results presented here.
+
+%+++++++++++++++++++++++++++++++++++++++++++++++++++++++
+%   1D HUBBARD MODEL PLOTS vs. CDMFT
+%+++++++++++++++++++++++++++++++++++++++++++++++++++++++
+\begin{figure}
+\begin{center}
+\includegraphics[scale=0.475]{Plots/1D_Spectra/1D_Hub_Spectra.eps}
+\end{center}
+\caption{Comparison of the local density of states from a four impurity cluster DMET calculation with a
+(six impurity, six bath) CDMFT calculation for the half-filled 1D Hubbard model.}
+\label{1D_DOS}
+\end{figure}
+
+%+++++++++++++++++++++++++++++++++++++++++++++++++++++++
+%   1D HUBBARD SPECTRAL GAP 
+%+++++++++++++++++++++++++++++++++++++++++++++++++++++++
+\begin{figure}
+\begin{center}
+\includegraphics[scale=0.475]{Plots/1D_Gap/Hubbard_Gap.eps}
+\end{center}
+\caption{Spectral gap from the 1-particle and 2-particle greens functions compared to analytic results
+from the Bethe Ansatze\cite{Ovchinni1970}.}
+\label{1D_GAP}
+\end{figure}
+
+
+%+++++++++++++++++++++++++++++++++++++++++++++++++++++++
+%   2D HUBBARD PLOTS 
+%+++++++++++++++++++++++++++++++++++++++++++++++++++++++
+\begin{figure}
+\begin{center}
+\includegraphics[scale=0.475]{Plots/2D_Spectra/2DHub_Spectra.eps}
+\end{center}
+\caption{Local density of states of the half-filled 2D hubbard model from a four impurity DMET calculation.}
+\label{2D_DOS}
+\end{figure}
+
+
+%+++++++++++++++++++++++++++++++++++++++++++++++++++++++
+%   2D DOPED HUBBARD PLOTS 
+%+++++++++++++++++++++++++++++++++++++++++++++++++++++++
+\begin{figure}
+\begin{center}
+\includegraphics[scale=0.475]{Plots/Doping/2D/nImp4/U8/2DHub_Doping.eps}
+\end{center}
+\caption{Local density of states of the hole doped 2D hubbard model from a four impurity DMET calculation with $U = 8t$.}
+\label{2D_Doped}
+\end{figure}
+
+%+++++++++++++++++++++++++++++++++++++++++++++++++++++++
+%   DD response 
+%+++++++++++++++++++++++++++++++++++++++++++++++++++++++
+\begin{figure}
+\begin{center}
+\includegraphics[scale=0.475]{Plots/1D_DD/1D_Hub_DD.eps}
+\end{center}
+\caption{Two impurity DMET calculation of the local density-density response function for the half-filled 1D hubbard model via construction of the 2-particle greens function.
+The spectral gap is used in the data plotted in Fig.~\ref{1D_GAP}}
+\label{1D_DD}
+\end{figure}
+
+
+
+\bibliography{SpectralDMETBib}
 
 \end{document}
