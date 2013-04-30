@@ -1189,6 +1189,17 @@ Program RealHub
             close(iunit)
         endif
 
+        write(6,"(A)") "Read in correlation potential: "
+        call writematrix(v_loc,"v_loc",.true.)
+
+        do i=1,nImp
+            do j=1,nImp
+                if(abs(v_loc(i,j)-v_loc(j,i)).gt.1.0e-6_dp) then
+                    call stop_all(t_r,'correlation potential not symmetric')
+                endif
+            enddo
+        enddo
+
     end subroutine read_in_corrpot
 
     !Open an output file for the DMET convergence
