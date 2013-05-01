@@ -1,7 +1,6 @@
 #!/usr/bin/python
 
 import os
-#import matplotlib
 from numpy import *
 import sys
 from pylab import *
@@ -35,44 +34,45 @@ fac = 1.91
 #xlim(-7,7)
 
 ax2 = subplot(2,2,1)
-data=mlab.load('nImp4/EC-TDA_GFResponse_4.00',usecols=[0,2],unpack=True)
+data=mlab.load('Undoped/EC-TDA_GFResponse_8.00',usecols=[0,2],unpack=True)
 ax2.plot(data[0],data[1],linewidth=2,color='b')
-ax2.annotate('U = 4',xy=(-5,-10),xycoords='axes points',xytext=None, textcoords='offset points',horizontalalignment='right', verticalalignment='bottom',fontsize='16')
-xlim(-3.587,3.587)
+ax2.axvline(0,linestyle=':')
+ax2.annotate('Half-filling',xy=(-5,-13),xycoords='axes points',xytext=None, textcoords='offset points',horizontalalignment='right', verticalalignment='bottom',fontsize='14')
 #setp(ax2.get_xticklabels(),visible=False)
+xlim(-6,5.99)
 setp(ax2.get_yticklabels(),visible=False)
-#xlim(-7,7)
 ax3 = subplot(2,2,2)
-data=mlab.load('nImp4/EC-TDA_GFResponse_6.00',usecols=[0,2],unpack=True)
+data=mlab.load('10Pcnt/EC-TDA_GFResponse_8.00_2250',usecols=[0,2],unpack=True)
 ax3.plot(data[0],data[1],linewidth=2,color='b')
-ax3.annotate('U = 6',xy=(-5,-10),xycoords='axes points',xytext=None, textcoords='offset points',horizontalalignment='right', verticalalignment='bottom',fontsize='16')
-xlim(-3.457,3.457)
+ax3.annotate(r'10% h$^+$ doped',xy=(-5,-13),xycoords='axes points',xytext=None, textcoords='offset points',horizontalalignment='right', verticalalignment='bottom',fontsize='14')
+ax3.axvline(0,linestyle=':')
 #setp(ax2.get_xticklabels(),visible=False)
 setp(ax3.get_yticklabels(),visible=False)
-#xlim(-7,7)
+xlim(-4,3)
 ax4 = subplot(2,2,3)
-data=mlab.load('nImp4/EC-TDA_GFResponse_8.00',usecols=[0,2],unpack=True)
+data=mlab.load('20Pcnt/EC-TDA_GFResponse_8.00_2000',usecols=[0,2],unpack=True)
 ax4.plot(data[0],data[1],linewidth=2,color='b')
-ax4.annotate('U = 8',xy=(-5,-10),xycoords='axes points',xytext=None, textcoords='offset points',horizontalalignment='right', verticalalignment='bottom',fontsize='16')
-xlim(-6,6)
+ax4.annotate(r'20% h$^+$ doped',xy=(-5,-13),xycoords='axes points',xytext=None, textcoords='offset points',horizontalalignment='right', verticalalignment='bottom',fontsize='14')
+ax4.axvline(0,linestyle=':')
 xlabel(r'$\omega$ / t')
 #setp(ax2.get_xticklabels(),visible=False)
 setp(ax4.get_yticklabels(),visible=False)
-#xlim(-7,7)
+xlim(-5,1.99)
 ax5 = subplot(2,2,4)
-data=mlab.load('nImp4/EC-TDA_GFResponse_10.00',usecols=[0,2],unpack=True)
+data=mlab.load('50Pcnt/EC-TDA_GFResponse_8.00_1250',usecols=[0,2],unpack=True)
 ax5.plot(data[0],data[1],linewidth=2,color='b')
-ax5.annotate('U = 10',xy=(-5,-10),xycoords='axes points',xytext=None, textcoords='offset points',horizontalalignment='right', verticalalignment='bottom',fontsize='16')
+ax5.annotate(r'50% h$^+$ doped',xy=(-5,-13),xycoords='axes points',xytext=None, textcoords='offset points',horizontalalignment='right', verticalalignment='bottom',fontsize='14')
+ax5.axvline(0,linestyle=':')
 #setp(ax2.get_xticklabels(),visible=False)
 setp(ax5.get_yticklabels(),visible=False)
-xlim(-6.853,6.853)
+xlim(-7,1.6)
 xlabel(r'$\omega$ / t')
 
 
-#subplots_adjust(hspace=0.001,wspace=0.001)
+subplots_adjust(hspace=0.1,wspace=0.01)
 
 #show()
-savefig('2DHub_Spectra.eps')
+savefig('2DHub_Doping.eps')
 
 #clf()
 #
