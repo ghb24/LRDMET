@@ -1002,6 +1002,7 @@ module mat_tools
             deallocate(h0HF)
         else
             deallocate(FullHFOrbs,FullHFEnergies)
+            call run_hf(0)
         endif
 
         deallocate(fock)
