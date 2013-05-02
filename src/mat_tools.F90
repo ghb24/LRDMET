@@ -1000,6 +1000,8 @@ module mat_tools
             write(6,*) "HF energy from fock eigenvalues: ",HFEnergy
 
             deallocate(h0HF)
+        else
+            deallocate(FullHFOrbs,FullHFEnergies)
         endif
 
         deallocate(fock)
@@ -1101,7 +1103,11 @@ module mat_tools
         !Construct fock matrix
         !The fock matrix is just the core hamiltonian (with the fitted potential) + diag(1/2 U * rdm(i,i)) on the diagonals
         allocate(fock(nSites,nSites))
-        fock(:,:) = h0v(:,:)
+        if(it.eq.0) then
+            fock(:,:) = h0(:,:)
+        else
+            fock(:,:) = h0v(:,:)
+        endif
                     
 !        call writematrix(h0v,'h0v',.true.)
 
