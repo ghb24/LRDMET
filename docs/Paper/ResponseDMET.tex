@@ -49,28 +49,34 @@ In a previous publication [PRL {\bf 109} 186404 (2012)], the ground-state densit
 to the dynamical mean-field method, a set of local sites are self-consistently correlated, but with an analytically constructable bath describing the
 coupling to the rest of the extended system. 
 Despite many formal advantages in the analytic embedding, the method was restricted to static, ground-state properties.
-Here, we extend the approach to introduce a frequency dependence, and demonstrate accurate spectral functions at a small 
+Here, we introduce a frequency dependence and demonstrate accurate spectral functions at a small 
 computational cost. In a similar spirit to the frequency independent DMET method, the impurities are coupled via a small set of 
 analytically constructed, but now frequency-dependent bath states. In contrast to dynamical mean-field theory, the resultant 
 spectral functions are directly obtained on the real-frequency axis, with no bath discretization error and allow for straightforward generalization both 
 to impurity clusters and arbitrary electron perturbation operators. We demonstrate
 the application of this method on the hubbard model, where both the the Kondo resonances and metal-insulator transitions are well reproduced, as well as 
 demonstrating two-electron spectra. This vastly extends the scope and applicability 
-of the DMET method in condensed matter problems as a cheap route to correlated local spectral functions of extended systems.
+of the DMET method in condensed matter problems as a computationally tractible route to correlated spectral functions of extended systems.
 \end{abstract}
 \date{\today}
 \maketitle
 
-Dynamic correlation functions are directly probed in spectroscopic methods, and correspond to many of the important transport, optical and 
+Dynamic correlation functions are directly probed in most spectroscopic methods, as well as xxx techniques such as scanning tunnelling microscopy, 
+and correspond to many of the important transport, optical and 
 wider electronic structure properties of materials. As such, their accurate theoretical construction is key for materials scientists. 
 However, few robust approaches exist for strongly correlated problems. The difficulty is in simultaneously requiring both an accurate 
-treatment of the electron correlations beyond mean-field band theory for 
-ground states, as well as the excitation spectrum coupled to the infinite bulk
-system.
+treatment of the electron correlations beyond mean-field band theory for the ground state and excitation spectrum, as well as modelling 
+a system of sufficient size to accurately mimic the thermodynamic limit of bulk properties and not suffer spurious finite size effects. 
+However in general, it is only mean-field electronic structure methods which are computationally cheap enough to access the required system
+sizes, and so there is a pressing need for methods with mean-field scaling, which can account for strong correlation and entangled systems.
 
-all excited state components at each frequency, as well as 
-convergence with respect to the finite-size effects in the solid state. In dynamical mean-field theory (DMFT), the central quantity 
-is the greens function of the system, which is self-consistenty optimized 
+One such method which has proven very successful in this regard is the dynamical mean-field theory (DMFT). In DMFT, the central quantity is the
+greens function. 
+    Formal disadvantages which we hope to address
+
+
+
+In dynamical mean-field theory (DMFT), the central quantity is the greens function of the system, which is self-consistenty optimized 
 
 Difficulty with optical spectra - 
 Not constrained by finite size effects which have plagues QMC and ED calculations.
