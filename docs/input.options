@@ -29,11 +29,13 @@ MODEL
     HALF_FILL
 (Impurity solver is complete diagonalization)
     COMPLETE_DIAG
-(Impurity solver is direct davidson diagonalizer)
+(Impurity solver is built-in non-direct davidson diagonalizer)
     NONDIR_DAVIDSON
-(Diagonalize the complete system (and calculate exact response functions if specified))
+(Impurity solver is non-direct davidson diagonalizer via call to 'fci' code)
     DAVIDSON
-(Impurity solver is non-direct davidson diagonalizer)
+(Impurity solver is FCIQMC via call to 'neci' code)
+    FCIQMC NCORES
+(Diagonalize the complete system (and calculate exact response functions if specified))
     DIAG_SYSTEM
 (Perform calculation on all closed shell occupations (Decrease from half filling))
     REDUCE_OCC

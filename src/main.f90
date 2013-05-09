@@ -53,6 +53,8 @@ Program RealHub
         CorrPot_file = 'CORRPOTS'
         tContinueConvergence = .true.
         tNonDirDavidson = .false.
+        tFCIQMC = .false.
+        nNECICores = 0
         tCheck = .false.
 
         !General LR options
@@ -217,6 +219,19 @@ Program RealHub
         write(6,"(A,I7)") "            o Number of impurity sites: ",nImp 
         if(tDumpFCIDump) then
             write(6,"(A)") "            o Creating FCIDUMPs for system" 
+        endif
+        if(tFCIQMC) then
+            if(nNECICores.eq.0) then
+                write(6,"(A)") "            o Impurity solver: FCIQMC via call to serial NECI code"
+            else
+                write(6,"(A,I6)") "            o Impurity solver: FCIQMC via call to parallel NECI code. nCores: ",nNECICores
+            endif
+        elseif(tNonDirDavidson) then
+            write(6,"(A)") "            o Impurity solver: Non-direct iterative Davidson diagonalizer" 
+        elseif(tCompleteDiag) then
+            write(6,"(A)") "            o Impurity solver: Complete diagonalization"
+        else
+            write(6,"(A)") "            o Impurity solver: Direct Davidson diagonalizer via call to FCI code"
         endif
         if(tNIResponse) then
             write(6,"(A)") "            o Calculating non-interacting linear response function" 
@@ -402,6 +417,12 @@ Program RealHub
                 tCompleteDiag = .true.
             case("DAVIDSON")
                 tCompleteDiag = .false.
+            case("FCIQMC")
+                tFCIQMC = .true.
+                tCompleteDiag = .false.
+                if(item.lt.nitems) then
+                    call readi(nNECICores)
+                endif
             case("NONDIR_DAVIDSON") 
                 tNonDirDavidson = .true.
                 tCompleteDiag = .false.
@@ -447,6 +468,7 @@ Program RealHub
                 write(6,"(A)") "FILLING"
                 write(6,"(A)") "COMPLETE_DIAG"
                 write(6,"(A)") "DAVIDSON"
+                write(6,"(A)") "FCIQMC"
                 write(6,"(A)") "DIAG_SYSTEM"
                 write(6,"(A)") "REDUCE_OCC"
                 write(6,"(A)") "INCREASE_OCC"
@@ -865,7 +887,7 @@ Program RealHub
         implicit none
         real(dp) :: ElecPerSite,FillingFrac,VarVloc,ErrRDM,mean_vloc
         integer :: i,it,Occ,CurrU,DMETfile
-        logical :: tFinishedU
+        logical :: tFinishedU,t2RDM
         character(len=*), parameter :: t_r="run_DMETcalc"
 
         !Set up initial conditions, i.e. starting potential
@@ -992,7 +1014,9 @@ Program RealHub
                     
                     call set_timer(HL_Time)
                     !Construct the two electron integrals in the system, and solve embedded system with high-level method
-                    call SolveSystem(.true.)
+                    t2RDM = .true.
+                    if(tFCIQMC) t2RDM = .false.
+                    call SolveSystem(t2RDM)
                     call halt_timer(HL_Time)
 
                     if((.not.tAnderson).and.tContinueConvergence) then
@@ -1012,7 +1036,6 @@ Program RealHub
                         enddo
                         mean_vloc = mean_vloc/real(nImp)
                         call halt_timer(Fit_v_time)
-
 
                         !Write out stats:
                         !   Iter    E/Site  d[V]    Initial_ERR[RDM]    ERR[Filling]    mean[corr_pot]      Some RDM stuff...?

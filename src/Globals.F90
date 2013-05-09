@@ -34,6 +34,8 @@ module Globals
     logical :: tSaveCorrPot     !Use the previous correlation potential in the initialization of the next GS DMET calculation
     logical :: tFlipUTiling     !When constructing the mean-field hamiltonian through the space, flip the tiling of the correlation potential
     logical :: tReadInCorrPot   !Read in the correlation potential to use. No DMET SCF
+    logical :: tFCIQMC          !Run FCIQMC as solver
+    integer :: nNECICores        !Number of cores to run FCIQMC on
     character(len=64) :: CorrPot_file   !File name with the correlation potentials in it 
     logical :: tConstructFullSchmidtBasis   !Whether to construct the full Schmidt basis or just the embedding basis
     logical :: tDiag_kspace !Wheter to perform diagonalizations in k-space or not

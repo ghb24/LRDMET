@@ -14,16 +14,17 @@ module solvers
         use DetToolsData, only: FCIDetList,nFCIDet
         implicit none
         logical, intent(in) :: tCreate2RDM
-        integer :: pSpaceDim,i,iunit,j,k,l!,Pivots(4),info
+        integer :: pSpaceDim,i,iunit,j,k,l,ios,i_spin,j_spin!,Pivots(4),info
         character(len=256) :: cmd
         character(len=128) :: cmd3
         character(len=73) :: cmd2
         character(len=67) :: cmd1
         character(len=6) :: StrPSpace
-        real(dp) :: Emb_nElec!,DD_Response,ZerothH(4,4)
+        real(dp) :: Emb_nElec,Hel!,DD_Response,ZerothH(4,4)
 !        real(dp), allocatable :: FullH1(:,:),LR_State(:)
 !        real(dp) ::DDOT,Overlap
         real(dp) :: Check2eEnergy,trace
+        logical :: exists
         real(dp), allocatable :: HL_2RDM_temp(:,:)
         character(len=*), parameter :: t_r="SolveSystem"
 
@@ -38,7 +39,102 @@ module solvers
 
         if(nSys.gt.EmbSize) call stop_all(t_r,"Error in determining basis")
 
-        if((.not.tCompleteDiag).and.(.not.tNonDirDavidson)) then
+        if(tCompleteDiag.or.tNonDirDavidson) then
+            !Do a complete diagonalization, or solve with in-built non-direct davidson diagonalizer
+            !Do not need to write FCIDUMP, since would only read it back in...
+            call CompleteDiag(tCreate2RDM)
+        elseif(tFCIQMC) then
+            !Solve with FCIQMC
+            call WriteFCIDUMP()
+
+            !Ensure there is a correct input file
+            inquire(file='input.neci',exist=exists)
+            if(.not.exists) call stop_all(t_r,'Cannot find neci input file: input.neci')
+
+            !Change number of electrons in input file
+            cmd1 = "sed -e 's/XXX/'"
+            write(StrPSpace,'(I6)') Elec
+            do i=1,6
+                if(StrPSpace(i:i).ne.' ') exit
+            enddo
+            if(i.eq.7) call stop_all(t_r,'Error constructing input file call to NECI')
+            cmd2 = trim(cmd1)//trim(adjustl(StrPSpace(i:6)))
+            cmd3 = "'/g' input.neci > input.tmp"
+            cmd = adjustl(cmd2)//trim(adjustl(cmd3))
+            call system(cmd)
+            inquire(file='input.tmp',exist=exists)
+            if(.not.exists) call stop_all(t_r,'Intermediate input.tmp file not found')
+            !Overwrite initial input file
+            call rename('input.tmp','input.neci')
+
+            if(nNECICores.eq.0) then
+                !Serial neci run
+                cmd = "neci.x input.neci > neci.out"
+                write(6,"(A,A)") "Calling serial fciqmc code with system call: ",cmd
+            else
+                !Parallel neci run
+                cmd1 = "mpirun -np "
+                write(StrPSpace,'(I6)') nNECICores
+                do i=1,6
+                    if(StrPSpace(i:i).ne.' ') exit
+                enddo
+                if(i.eq.7) call stop_all(t_r,'Error constructing system call to NECI')
+                cmd2 = trim(cmd1)//trim(adjustl(StrPSpace(i:6)))
+                cmd3 = " input.neci > neci.out"
+                cmd = adjustl(cmd2)//trim(adjustl(cmd3))
+                write(6,"(A,A)") "Calling parallel fciqmc code with system call: ",cmd
+            endif
+            call system(cmd)
+
+            !TODO: Check here whether FCIQMC calculation was successful or not
+            !call system("grep 'FCI STATE 1 ENERGY' FCI.out | awk '{print$5}' > FCI.ene")
+
+            !TODO: How to calculate the high-level energy? Projected energy? Shift? Density matrix? input option?
+            !Assume initially that we get it from the density matrix for consistency
+            !Extract energy value to new file and read this is
+            HL_Energy = 0.0_dp
+            iunit=get_free_unit()
+            open(iunit,file='FCI.ene',status='old')
+            read(iunit,*) HL_Energy
+            close(iunit)
+            if(HL_Energy.eq.0.0_dp) call stop_all(t_r,"FCI energy is 0")
+
+            !TODO: Read in 2RDMs, so we can check the energy, and calculate 2-particle stuff
+            !read in the 1 (and 2?) RDMs
+            if(allocated(HL_1RDM)) deallocate(HL_1RDM)
+            allocate(HL_1RDM(EmbSize,EmbSize))
+            HL_1RDM(:,:) = 0.0_dp
+            iunit=get_free_unit()
+            inquire(file='OneRDM',exist=exists)
+            if(.not.exists) call stop_all(t_r,'"OneRDM" file not found after NECI calculation')
+            open(iunit,file='OneRDM',status='old')
+            ios = 0
+            do while(ios.eq.0)
+                read(iunit,*,iostat=ios) i_spin,j_spin,Hel
+                if(ios.eq.0) then
+                    if(mod(i_spin,2).eq.0) then
+                        if(mod(j_spin,2).eq.0) then
+                            HL_1RDM(i_spin/2,j_spin/2) = 2.0_dp*Hel
+                            HL_1RDM(j_spin/2,i_spin/2) = 2.0_dp*Hel
+                        else
+                            HL_1RDM(i_spin/2,(j_spin+1)/2) = 2.0_dp*Hel
+                            HL_1RDM((j_spin+1)/2,i_spin/2) = 2.0_dp*Hel
+                        endif
+                    else
+                        if(mod(j_spin,2).eq.0) then
+                            HL_1RDM((i_spin+1)/2,j_spin/2) = 2.0_dp*Hel
+                            HL_1RDM(j_spin/2,(i_spin+1)/2) = 2.0_dp*Hel
+                        else
+                            HL_1RDM((i_spin+1)/2,(j_spin+1)/2) = 2.0_dp*Hel
+                            HL_1RDM((j_spin+1)/2,(i_spin+1)/2) = 2.0_dp*Hel
+                        endif
+                    endif
+                endif
+            enddo
+            if(ios.gt.0) call stop_all(t_r,'Error reading 1RDM')
+            close(iunit)
+        else
+            !Solve with call to FCI code
             call WriteFCIDUMP()
 
             !Solve with Geralds FCI code
@@ -133,10 +229,6 @@ module solvers
 
             endif
 
-        else
-            !Do a complete diagonalization
-            !Do not need to write FCIDUMP, since would only read it back in...
-            call CompleteDiag(tCreate2RDM)
         endif
             
         write(6,"(A,F20.10)") "Embedded system energy is: ",HL_Energy
