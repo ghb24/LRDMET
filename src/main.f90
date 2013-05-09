@@ -347,6 +347,7 @@ Program RealHub
                             call readu(w3)
                             select case(w3)
                             case("NO_CHEMPOT")
+                                tChemPot = .false.
                             case default
                                 call stop_all(t_r,'Keyword after ANDERSON no recognised. Should be "NO_CHEMPOT"')
                             end select

@@ -942,8 +942,10 @@ module mat_tools
             !Convert core hamiltonian into HF basis
             allocate(temp(nSites,nSites))
             allocate(h0HF(nSites,nSites))
+            if(tChemPot.and.tAnderson) h0(1,1) = h0(1,1) - U/2.0_dp
             call dgemm('t','n',nSites,nSites,nSites,1.0_dp,FullHFOrbs,nSites,h0,nSites,0.0_dp,temp,nSites)
             call dgemm('n','n',nSites,nSites,nSites,1.0_dp,temp,nSites,FullHFOrbs,nSites,0.0_dp,h0HF,nSites)
+            if(tChemPot.and.tAnderson) h0(1,1) = h0(1,1) + U/2.0_dp
             deallocate(temp)
 
             if(.true.) then
