@@ -58,9 +58,10 @@ module solvers
                 if(StrPSpace(i:i).ne.' ') exit
             enddo
             if(i.eq.7) call stop_all(t_r,'Error constructing input file call to NECI')
-            cmd2 = trim(cmd1)//trim(adjustl(StrPSpace(i:6)))
+            cmd2 = trim(adjustr(cmd1))//trim(adjustl(StrPSpace(i:6)))
             cmd3 = "'/g' input.neci > input.tmp"
-            cmd = adjustl(cmd2)//trim(adjustl(cmd3))
+            cmd = trim(adjustl(cmd2))//trim(adjustl(cmd3))
+            !write(6,*) cmd
             call system(cmd)
             inquire(file='input.tmp',exist=exists)
             if(.not.exists) call stop_all(t_r,'Intermediate input.tmp file not found')
@@ -69,7 +70,7 @@ module solvers
 
             if(nNECICores.eq.0) then
                 !Serial neci run
-                cmd = "neci.x input.neci > neci.out"
+                cmd = "./neci.x input.neci > neci.out"
                 write(6,"(A,A)") "Calling serial fciqmc code with system call: ",cmd
             else
                 !Parallel neci run
@@ -87,7 +88,7 @@ module solvers
             call system(cmd)
 
             !TODO: Check here whether FCIQMC calculation was successful or not
-            !call system("grep 'FCI STATE 1 ENERGY' FCI.out | awk '{print$5}' > FCI.ene")
+            call system("grep '*TOTAL ENERGY*' neci.out | awk '{print$9}' > FCI.ene")
 
             !TODO: How to calculate the high-level energy? Projected energy? Shift? Density matrix? input option?
             !Assume initially that we get it from the density matrix for consistency
@@ -1130,7 +1131,7 @@ module solvers
 
         iunit = get_free_unit()
         open(iunit,file='FCIDUMP',status='unknown')
-        write(iunit,*) "&FCI NORB=",EmbSize," ,NELEC=",Elec," ,MS2=0,"
+        write(iunit,*) "&FCI NORB=",EmbSize," , NELEC=",Elec," , MS2=0,"
         write(iunit,"(A)",advance='no') "ORBSYM= 1,"
         do i=2,EmbSize-1
             write(iunit,"(A)",advance='no') "1,"
