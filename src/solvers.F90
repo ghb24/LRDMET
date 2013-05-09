@@ -80,8 +80,8 @@ module solvers
                     if(StrPSpace(i:i).ne.' ') exit
                 enddo
                 if(i.eq.7) call stop_all(t_r,'Error constructing system call to NECI')
-                cmd2 = trim(cmd1)//trim(adjustl(StrPSpace(i:6)))
-                cmd3 = " input.neci > neci.out"
+                cmd2 = cmd1//trim(adjustl(StrPSpace(i:6)))
+                cmd3 = " ./neci.x input.neci > neci.out"
                 cmd = adjustl(cmd2)//trim(adjustl(cmd3))
                 write(6,"(A,A)") "Calling parallel fciqmc code with system call: ",cmd
             endif
