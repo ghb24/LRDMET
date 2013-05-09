@@ -1131,7 +1131,7 @@ module solvers
 
         iunit = get_free_unit()
         open(iunit,file='FCIDUMP',status='unknown')
-        write(iunit,*) "&FCI NORB=",EmbSize," , NELEC=",Elec," , MS2=0,"
+        write(iunit,"(A,I9,A,I9,A)") "&FCI NORB=",EmbSize,", NELEC=",Elec,", MS2=0,"
         write(iunit,"(A)",advance='no') "ORBSYM= 1,"
         do i=2,EmbSize-1
             write(iunit,"(A)",advance='no') "1,"

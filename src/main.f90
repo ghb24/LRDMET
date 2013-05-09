@@ -1063,7 +1063,7 @@ Program RealHub
 
                 enddo   !DMET convergence
 
-                if(it.gt.iMaxIterDMET) call stop_all(t_r,'DMET Convergence failed - try increasing MAXITER_DMET ?')
+                if(it.gt.iMaxIterDMET) call warning(t_r,'DMET Convergence failed - try increasing MAXITER_DMET ?')
                     
                 !Potentially run FCI again now to get correlation functions from 2RDMs?
                 write(6,"(A,F10.4,A,G20.10)") "FINAL energy per site for U=",U,' is: ',TotalE_Imp
