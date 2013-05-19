@@ -36,6 +36,7 @@ module Globals
     logical :: tReadInCorrPot   !Read in the correlation potential to use. No DMET SCF
     logical :: tFCIQMC          !Run FCIQMC as solver
     integer :: nNECICores        !Number of cores to run FCIQMC on
+    logical :: tCoreH_EmbBasis  !Transform into the CoreH basis before writing FCIDUMP
     character(len=64) :: CorrPot_file   !File name with the correlation potentials in it 
     logical :: tConstructFullSchmidtBasis   !Whether to construct the full Schmidt basis or just the embedding basis
     logical :: tDiag_kspace !Wheter to perform diagonalizations in k-space or not

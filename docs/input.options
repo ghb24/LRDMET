@@ -35,6 +35,8 @@ MODEL
     DAVIDSON
 (Impurity solver is FCIQMC via call to 'neci' code)
     FCIQMC NCORES
+(For solvers via FCIDUMP - transform to core hamiltonian basis for solver)
+    COREH_EMBBASIS
 (Diagonalize the complete system (and calculate exact response functions if specified))
     DIAG_SYSTEM
 (Perform calculation on all closed shell occupations (Decrease from half filling))

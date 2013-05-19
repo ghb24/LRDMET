@@ -25,7 +25,9 @@ module solvers
 !        real(dp) ::DDOT,Overlap
         real(dp) :: Check2eEnergy,trace
         logical :: exists
-        real(dp), allocatable :: HL_2RDM_temp(:,:)
+        real(dp), allocatable :: HL_2RDM_temp(:,:),temp2rdm(:,:,:,:)
+        real(dp), allocatable :: CoreH(:,:),W(:),work(:)
+        integer :: lWork,info,a,b,c,d
         character(len=*), parameter :: t_r="SolveSystem"
 
         !Calculate the number of electrons in the embedded system 
@@ -134,6 +136,37 @@ module solvers
             enddo
             if(ios.gt.0) call stop_all(t_r,'Error reading 1RDM')
             close(iunit)
+
+            if(tCoreH_EmbBasis) then
+                !We have read in the 1RDM in the CoreH basis - rotate back to
+                !original basis
+                !Diagonalize this original coreH basis
+                allocate(CoreH(EmbSize,EmbSize))
+                allocate(W(EmbSize))
+                CoreH(:,:) = Emb_h0v(:,:)
+                if(tChemPot) CoreH(1,1) = CoreH(1,1) - (U/2.0_dp)
+                W(:) = 0.0_dp
+
+                !Diagonalize
+                allocate(work(1))
+                lWork=-1
+                info = 0
+                call dsyev('V','U',EmbSize,CoreH,EmbSize,W,Work,lWork,info)
+                if(info.ne.0) call stop_all(t_r,'Workspace query failed')
+                lwork = int(work(1))+1
+                deallocate(work)
+                allocate(work(lwork))
+                call dsyev('V','U',EmbSize,CoreH,EmbSize,W,Work,lWork,info)
+                if(info.ne.0) call stop_all(t_r,'Diag failed')
+                deallocate(work)
+
+                !Now, rotate the RDM
+                allocate(work(EmbSize))
+                call dgemm('n','n',EmbSize,EmbSize,EmbSize,1.0_dp,CoreH,EmbSize,HL_1RDM,EmbSize,0.0_dp,work,EmbSize)
+                call dgemm('n','t',EmbSize,EmbSize,EmbSize,1.0_dp,work,EmbSize,CoreH,EmbSize,0.0_dp,HL_1RDM,EmbSize)
+                deallocate(work,CoreH,W)
+            endif
+
         else
             !Solve with call to FCI code
             call WriteFCIDUMP()
@@ -229,6 +262,67 @@ module solvers
                 deallocate(HL_2RDM_temp)
 
             endif
+
+            if(tCoreH_EmbBasis) then
+                !We have read in the 1RDM in the CoreH basis - rotate back to
+                !original basis
+                !Diagonalize this original coreH basis
+                allocate(CoreH(EmbSize,EmbSize))
+                allocate(W(EmbSize))
+                CoreH(:,:) = Emb_h0v(:,:)
+                if(tChemPot) CoreH(1,1) = CoreH(1,1) - (U/2.0_dp)
+                W(:) = 0.0_dp
+
+                !Diagonalize
+                allocate(work(1))
+                lWork=-1
+                info = 0
+                call dsyev('V','U',EmbSize,CoreH,EmbSize,W,Work,lWork,info)
+                if(info.ne.0) call stop_all(t_r,'Workspace query failed')
+                lwork = int(work(1))+1
+                deallocate(work)
+                allocate(work(lwork))
+                call dsyev('V','U',EmbSize,CoreH,EmbSize,W,Work,lWork,info)
+                if(info.ne.0) call stop_all(t_r,'Diag failed')
+                deallocate(work)
+
+                !Now, rotate the RDM
+                allocate(work(EmbSize))
+                call dgemm('n','n',EmbSize,EmbSize,EmbSize,1.0_dp,CoreH,EmbSize,HL_1RDM,EmbSize,0.0_dp,work,EmbSize)
+                call dgemm('n','t',EmbSize,EmbSize,EmbSize,1.0_dp,work,EmbSize,CoreH,EmbSize,0.0_dp,HL_1RDM,EmbSize)
+                deallocate(work)
+
+                if(tCreate2RDM) then
+                    !Also transform the 2RDM back to the original basis
+                    allocate(temp2rdm(EmbSize,EmbSize,EmbSize,EmbSize))
+                    temp2rdm(:,:,:,:) = 0.0_dp
+
+                    do a = 1,EmbSize
+                        do b = 1,EmbSize
+                            do c = 1,EmbSize
+                                do d = 1,EmbSize
+                                    hel = 0.0_dp
+                                    do i = 1,EmbSize
+                                        do j = 1,EmbSize
+                                            do k = 1,EmbSize
+                                                do l = 1,EmbSize
+                                                    hel = hel + CoreH(a,i)*CoreH(b,j)*CoreH(c,k)*CoreH(d,l)*HL_2RDM(i,j,k,l)
+                                                enddo
+                                            enddo
+                                        enddo
+                                    enddo
+                                    temp2rdm(a,b,c,d) = hel
+                                enddo
+                            enddo
+                        enddo
+                    enddo
+
+                    HL_2RDM(:,:,:,:) = temp2rdm(:,:,:,:)
+                    deallocate(temp2rdm)
+
+                endif
+                deallocate(CoreH,W)
+            endif   !tCoreH_EmbBasis
 
         endif
             
@@ -1127,8 +1221,12 @@ module solvers
     subroutine WriteFCIDUMP()
         use utils, only: get_free_unit
         implicit none
-        integer :: iunit,i,j
+        integer :: iunit,i,j,k,l,alpha,lWork,info,twoESize
+        real(dp) :: hel
+        real(dp), allocatable :: CoreH(:,:),W(:),work(:)
+        character(len=*), parameter :: t_r='WriteFCIDUMP'
 
+        !Open & write header
         iunit = get_free_unit()
         open(iunit,file='FCIDUMP',status='unknown')
         write(iunit,"(A,I9,A,I9,A)") "&FCI NORB=",EmbSize,", NELEC=",Elec,", MS2=0,"
@@ -1140,25 +1238,79 @@ module solvers
         write(iunit,"(A)") "ISYM=1"
         write(iunit,"(A)") "&END"
 
-        !Just define diagonal 2 electron contribution over impurity sites
-        if(tAnderson) then
-            write(iunit,"(F16.12,4I8)") U,1,1,1,1
-        else
-            do i=1,nImp
-                write(iunit,"(F16.12,4I8)") U,i,i,i,i
+        if(.not.tCoreH_EmbBasis) then
+            !Just define diagonal 2 electron contribution over impurity sites
+            if(tAnderson) then
+                write(iunit,"(F16.12,4I8)") U,1,1,1,1
+            else
+                do i=1,nImp
+                    write(iunit,"(F16.12,4I8)") U,i,i,i,i
+                enddo
+            endif
+
+            !Now for 1electron contributions
+            do i=1,EmbSize
+                do j=1,i
+                    if(tChemPot.and.(i.eq.1).and.(j.eq.1)) then
+                        write(iunit,"(F16.12,4I8)") Emb_h0v(i,j)-(U/2.0_dp),i,j,0,0
+                    elseif(abs(Emb_h0v(i,j)).gt.1.0e-10_dp) then
+                        write(iunit,"(F16.12,4I8)") Emb_h0v(i,j),i,j,0,0
+                    endif
+                enddo
             enddo
+        else
+            !Transform to the core hamiltonian basis and write out in this basis
+            write(6,"(A)") "Transforming to core hamiltonian basis before writing out FCIDUMP..."
+            !First, construct the core hamiltonian
+            allocate(CoreH(EmbSize,EmbSize))
+            allocate(W(EmbSize))
+            CoreH(:,:) = Emb_h0v(:,:)
+            if(tChemPot) CoreH(1,1) = CoreH(1,1) - (U/2.0_dp)
+            W(:) = 0.0_dp
+
+            !Diagonalize
+            allocate(work(1))
+            lWork=-1
+            info = 0
+            call dsyev('V','U',EmbSize,CoreH,EmbSize,W,Work,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'Workspace query failed')
+            lwork = int(work(1))+1
+            deallocate(work)
+            allocate(work(lwork))
+            call dsyev('V','U',EmbSize,CoreH,EmbSize,W,Work,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'Diag failed')
+            deallocate(work)
+
+            !Write out 2 electron integrals, transforming them into the coreH basis
+            if(tAnderson) then
+                twoESize = 1
+            else
+                twoESize = nImp
+            endif
+            do i = 1,EmbSize
+                do j = 1,EmbSize
+                    do k = 1,EmbSize
+                        do l = 1,EmbSize
+                            hel = 0.0_dp
+                            do alpha = 1,twoESize
+                                hel = hel + CoreH(alpha,i)*CoreH(alpha,j)*CoreH(alpha,k)*CoreH(alpha,l)
+                            enddo
+                            hel = hel * U
+                            if(abs(hel).gt.1.0e-9_dp) then
+                                write(iunit,"(F16.12,4I8)") hel,i,j,k,l
+                            endif
+                        enddo
+                    enddo
+                enddo
+            enddo
+
+            do i = 1,EmbSize
+                write(iunit,"(F16.12,4I8)") W(i),i,i,0,0
+            enddo
+
+            deallocate(W,CoreH)
         endif
 
-        !Now for 1electron contributions
-        do i=1,EmbSize
-            do j=1,i
-                if(tChemPot.and.(i.eq.1).and.(j.eq.1)) then
-                    write(iunit,"(F16.12,4I8)") Emb_h0v(i,j)-(U/2.0_dp),i,j,0,0
-                elseif(abs(Emb_h0v(i,j)).gt.1.0e-10_dp) then
-                    write(iunit,"(F16.12,4I8)") Emb_h0v(i,j),i,j,0,0
-                endif
-            enddo
-        enddo
         !Core energy is zero
         write(iunit,"(F16.12,4I8)") 0.0_dp,0,0,0,0
         close(iunit)

@@ -55,6 +55,7 @@ Program RealHub
         tNonDirDavidson = .false.
         tFCIQMC = .false.
         nNECICores = 0
+        tCoreH_EmbBasis = .false.
         tCheck = .false.
 
         !General LR options
@@ -424,6 +425,8 @@ Program RealHub
                 if(item.lt.nitems) then
                     call readi(nNECICores)
                 endif
+            case("COREH_EMBBASIS")
+                tCoreH_EmbBasis = .true.
             case("NONDIR_DAVIDSON") 
                 tNonDirDavidson = .true.
                 tCompleteDiag = .false.
@@ -470,6 +473,7 @@ Program RealHub
                 write(6,"(A)") "COMPLETE_DIAG"
                 write(6,"(A)") "DAVIDSON"
                 write(6,"(A)") "FCIQMC"
+                write(6,"(A)") "COREH_EMBBASIS"
                 write(6,"(A)") "DIAG_SYSTEM"
                 write(6,"(A)") "REDUCE_OCC"
                 write(6,"(A)") "INCREASE_OCC"
@@ -712,6 +716,9 @@ Program RealHub
         endif
         if(tReuse_LS.and.(.not.tMinRes_NonDir)) then
             call stop_all(t_r,'Cannot reuse first-order wavefunctions if not using iterative solver')
+        endif
+        if(tCoreH_EmbBasis.and.(tNonDirDavidson.or.tCompleteDiag)) then
+            call stop_all(t_r,'Cannot use CoreH_EmbBasis transform with complete diag or nondir-davidson')
         endif
 
     end subroutine check_input
