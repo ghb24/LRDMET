@@ -323,6 +323,33 @@ module solvers
                 endif
                 deallocate(W,CoreH)
             endif   !tCoreH_EmbBasis
+            
+            iunit=get_free_unit()
+            inquire(file='FCI1RDM',exist=exists)
+            if(exists) then
+                open(unit=iunit,file='FCI1RDM',status='old')
+                close(iunit,status='delete')
+            endif
+            inquire(file='FCI2RDM',exist=exists)
+            if(exists) then
+                open(unit=iunit,file='FCI2RDM',status='old')
+                close(iunit,status='delete')
+            endif
+            inquire(file='FCIVec',exist=exists)
+            if(exists) then
+                open(unit=iunit,file='FCIVec',status='old')
+                close(iunit,status='delete')
+            endif
+            inquire(file='FCI.out',exist=exists)
+            if(exists) then
+                open(unit=iunit,file='FCI.out',status='old')
+                close(iunit,status='delete')
+            endif
+            inquire(file='FCI.ene',exist=exists)
+            if(exists) then
+                open(unit=iunit,file='FCI.ene',status='old')
+                close(iunit,status='delete')
+            endif
 
         endif
             
@@ -1296,7 +1323,7 @@ module solvers
                                 hel = hel + CoreH(alpha,i)*CoreH(alpha,j)*CoreH(alpha,k)*CoreH(alpha,l)
                             enddo
                             hel = hel * U
-                            if(abs(hel).gt.1.0e-9_dp) then
+                            if(abs(hel).gt.1.0e-14_dp) then
                                 write(iunit,"(F16.12,4I8)") hel,i,j,k,l
                             endif
                         enddo
