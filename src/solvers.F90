@@ -287,10 +287,14 @@ module solvers
                 deallocate(work)
 
                 !Now, rotate the RDM
+                write(6,*) "Get here 1"
+                call flush(6)
                 allocate(work(EmbSize))
                 call dgemm('n','n',EmbSize,EmbSize,EmbSize,1.0_dp,CoreH,EmbSize,HL_1RDM,EmbSize,0.0_dp,work,EmbSize)
                 call dgemm('n','t',EmbSize,EmbSize,EmbSize,1.0_dp,work,EmbSize,CoreH,EmbSize,0.0_dp,HL_1RDM,EmbSize)
                 deallocate(work)
+                write(6,*) "Get here 2"
+                call flush(6)
 
                 if(tCreate2RDM) then
                     !Also transform the 2RDM back to the original basis
@@ -316,12 +320,21 @@ module solvers
                             enddo
                         enddo
                     enddo
+                    write(6,*) "Get here 3"
+                    call flush(6)
 
                     HL_2RDM(:,:,:,:) = temp2rdm(:,:,:,:)
                     deallocate(temp2rdm)
+                    write(6,*) "Get here 4"
+                    call flush(6)
 
                 endif
-                deallocate(CoreH,W)
+                deallocate(W)
+                write(6,*) "Get here 5"
+                call flush(6)
+                deallocate(CoreH)
+                write(6,*) "Get here 6"
+                call flush(6)
             endif   !tCoreH_EmbBasis
 
         endif
