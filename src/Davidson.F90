@@ -404,7 +404,6 @@ module Davidson
                     1,0.0_dp,Vec,1)
                 Val = Eigenvals(1)
             else
-                !We are after the lowest value, expand this one
                 call DGEMV('N',nSize,iter,1.0_dp,SubspaceVecs(:,1:iter),nSize,Eigenvecs(:,iter), &
                     1,0.0_dp,Vec,1)
                 Val = Eigenvals(iter)
@@ -419,7 +418,6 @@ module Davidson
                 call DGEMV('N',nSize,iter,1.0_dp,HSubspace(:,1:iter),nSize,Eigenvecs(:,1), &
                     1,0.0_dp,CurrVec,1)
             else
-                !We are after the lowest value, expand this one
                 call DGEMV('N',nSize,iter,1.0_dp,HSubspace(:,1:iter),nSize,Eigenvecs(:,iter), &
                     1,0.0_dp,CurrVec,1)
             endif
