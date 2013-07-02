@@ -46,7 +46,7 @@
 
 \begin{abstract}
 In a previous publication [PRL {\bf 109} 186404 (2012)], the ground-state density matrix embedding theory (DMET) was introduced for the seamless embedding of
-correlated wavefunctions within an extended environment. 
+strongly entangled wavefunctions within an extended environment. 
 %With similarities 
 %to the dynamical mean-field method, a set of local sites are self-consistently correlated, but with an analytically constructable bath describing the
 %coupling to the rest of the extended system. 
@@ -58,8 +58,8 @@ analytically constructed, but now frequency-dependent bath states. In contrast t
 spectral functions are directly obtained on the real-frequency axis, with no bath discretization error, and allow for straightforward generalization both 
 to impurity clusters and arbitrary electron perturbation operators. We demonstrate
 the application of this method to the Hubbard model, where both the the Kondo resonances and metal-insulator transitions are well reproduced, as well as 
-demonstrating two-electron spectra. We believe that for the low-energy excitations, these results represent some of the most accurate zero temperature, thermodynamic 
-limit spectral functions for the Hubbard model to date. This vastly extends the scope and applicability 
+demonstrating two-electron spectra. We believe that for the low-energy excitations, these results represent some of the most accurate 
+zero temperature, thermodynamic limit spectral functions for the Hubbard model to date. This vastly extends the scope and applicability 
 of the DMET method in condensed matter problems as a computationally tractible route to correlated spectral functions of extended systems.
 \end{abstract}
 \date{\today}
@@ -89,7 +89,7 @@ Greens function, a key descriptor in Raman spectroscopy, and in the mechanism of
 One such method which has proven very successful in obtaining strongly correlated spectral functions is the dynamical mean-field theory (DMFT). In DMFT, the central variable is the
 local, one-particle Greens function, which is self-consistently embedded within a non-interacting or mean-field Greens function over the system. This impurity problem is then solved via
 an `impurity solver', such as continuous-time quantum Monte Carlo (CT-QMC). However, there are some formal drawbacks of the DMFT formulation. If CT-QMC is used as an impurity solver, then
-the spectral functions are obtained only on the imaginary frequency axis, requiring unstable analytic continuation onto the real frequency axis. Alternative solvers such as exact diagonalization
+the spectral functions are obtained only on the imaginary frequency axis, requiring unstable analytic continuation onto the real frequency axis, which can wash out the subtle features of the spectra. Alternative solvers such as exact diagonalization
 suffer from bath discretization error in the spectra due to the representation of the coupling to the continuum (at all frequencies) by a finite number of bath sites. In addition, since DMFT
 is formulated around the one-particle Greens function, alternative spectra such as the two-particle Greens function and optical spectra are not straightforward to obtain, formally 
 requiring expensive vertex corrections to compute\cite{Millis2012}.
