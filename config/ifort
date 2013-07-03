@@ -8,9 +8,10 @@ libs = -lacml
 module_flag = -module
 
 [opt]
+#fflags = -O3 -ip -ipo
 fflags = -O3 -ip -ipo
-cxxflags = -O3
+#cxxflags = -O3
 
 [dbg]
-fflags = -g -traceback -CB -CU -fp-stack-check -ftrapuv -check arg_temp_created -check format
+fflags = -g -traceback -CB -CU -fp-stack-check -ftrapuv -check arg_temp_created -check format -O0
 cxxflags = -g -traceback

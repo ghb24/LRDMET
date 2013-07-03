@@ -5,7 +5,7 @@ from numpy import *
 import sys
 from pylab import *
 
-params = {'legend.fontsize': 8}
+params = {'legend.fontsize': 9}
 rcParams.update(params)
 
 fac2 = 1.8 
@@ -20,11 +20,12 @@ ax1.plot(data_DMFT[0],data_DMFT[1]/fac2,linewidth=1,label='CDMFT (6,6)',color='r
 #ax1.plot(data_NoReopt2[0],data_NoReopt2[1],linewidth=1,label='2-site',linestyle='dashed',color='r')
 ax1.plot(data[0],data[1],linewidth=2,label='4-site DMET',color='b')
 #ax1.plot(data_NoReopt3[0],data_NoReopt3[1],linewidth=1,linestyle='dashed',label='3-site',color='g')
-ax1.annotate('U = 2',xy=(-2,-9),xycoords='axes points',xytext=None, textcoords='offset points',horizontalalignment='right', verticalalignment='bottom',fontsize='15')
+ax1.annotate('U = 2t',xy=(-2,-9),xycoords='axes points',xytext=None, textcoords='offset points',horizontalalignment='right', verticalalignment='bottom',fontsize='15')
 ax1.legend(loc=2)
 #setp(ax1.get_xticklabels(),visible=False)
 setp(ax1.get_yticklabels(),visible=False)
 xlim(-3,3)
+ylabel(r'$A(\omega)$')
 
 ax2 = subplot(2,2,2) #,title='1D 624 site Hubbard (APBC) DoS')
 data_DMFT=mlab.load('CDMFT/ldos_u4.00_ep0.05.dat',usecols=[0,1],unpack=True)
@@ -33,7 +34,7 @@ ax2.plot(data_DMFT[0],data_DMFT[1]/fac4,linewidth=1,color='r')
 #ax1.plot(data_NoReopt2[0],data_NoReopt2[1],linewidth=1,label='2-site',linestyle='dashed',color='r')
 ax2.plot(data[0],data[1],linewidth=2,color='b')
 #ax1.plot(data_NoReopt3[0],data_NoReopt3[1],linewidth=1,linestyle='dashed',label='3-site',color='g')
-ax2.annotate('U = 4',xy=(-2,-9),xycoords='axes points',xytext=None, textcoords='offset points',horizontalalignment='right', verticalalignment='bottom',fontsize='15')
+ax2.annotate('U = 4t',xy=(-2,-9),xycoords='axes points',xytext=None, textcoords='offset points',horizontalalignment='right', verticalalignment='bottom',fontsize='15')
 #ax1.legend(loc=2)
 #setp(ax1.get_xticklabels(),visible=False)
 setp(ax2.get_yticklabels(),visible=False)
@@ -47,12 +48,13 @@ ax3.plot(data_DMFT[0],data_DMFT[1]/fac6,linewidth=1,color='r')
 #ax1.plot(data_NoReopt2[0],data_NoReopt2[1],linewidth=1,label='2-site',linestyle='dashed',color='r')
 ax3.plot(data[0],data[1],linewidth=2,color='b')
 #ax1.plot(data_NoReopt3[0],data_NoReopt3[1],linewidth=1,linestyle='dashed',label='3-site',color='g')
-ax3.annotate('U = 6',xy=(-2,-9),xycoords='axes points',xytext=None, textcoords='offset points',horizontalalignment='right', verticalalignment='bottom',fontsize='15')
+ax3.annotate('U = 6t',xy=(-2,-9),xycoords='axes points',xytext=None, textcoords='offset points',horizontalalignment='right', verticalalignment='bottom',fontsize='15')
 #ax1.legend(loc=2)
 #setp(ax1.get_xticklabels(),visible=False)
 setp(ax3.get_yticklabels(),visible=False)
 xlim(-3.52,3.52)
 xlabel(r'$\omega$ / t')
+ylabel(r'$A(\omega)$')
 
 
 ax4 = subplot(2,2,4) #,title='1D 624 site Hubbard (APBC) DoS')
@@ -62,7 +64,7 @@ ax4.plot(data_DMFT[0],data_DMFT[1]/fac8,linewidth=1,color='r')
 #ax1.plot(data_NoReopt2[0],data_NoReopt2[1],linewidth=1,label='2-site',linestyle='dashed',color='r')
 ax4.plot(data[0],data[1],linewidth=2,color='b')
 #ax1.plot(data_NoReopt3[0],data_NoReopt3[1],linewidth=1,linestyle='dashed',label='3-site',color='g')
-ax4.annotate('U = 8',xy=(-2,-9),xycoords='axes points',xytext=None, textcoords='offset points',horizontalalignment='right', verticalalignment='bottom',fontsize='15')
+ax4.annotate('U = 8t',xy=(-2,-9),xycoords='axes points',xytext=None, textcoords='offset points',horizontalalignment='right', verticalalignment='bottom',fontsize='15')
 #ax1.legend(loc=2)
 #setp(ax1.get_xticklabels(),visible=False)
 setp(ax4.get_yticklabels(),visible=False)
