@@ -58,7 +58,7 @@ Program RealHub
         tCoreH_EmbBasis = .false.
         tCheck = .false.
         tCompressedMats = .false.
-        CompressThresh = 0.0_dp !Integral threshold for compressed matrices
+        CompressThresh = 1.0e-10_dp !Integral threshold for compressed matrices
 
         !General LR options
         Start_Omega = 0.0_dp
@@ -419,7 +419,10 @@ Program RealHub
                 call readi(nImp)
             case("COMPRESSMATS")
                 tCompressedMats = .true.
-                call readf(CompressThresh)
+                if(item.lt.nitems) then
+                    !Optional threshold argument
+                    call readf(CompressThresh)
+                endif
             case("COMPLETE_DIAG")
                 tCompleteDiag = .true.
             case("DAVIDSON")

@@ -31,6 +31,8 @@ MODEL
     COMPLETE_DIAG
 (Impurity solver is built-in non-direct davidson diagonalizer)
     NONDIR_DAVIDSON
+(Compress matrices for nondir_davidson solver with optional threshold for matrix elements)
+    COMPRESSMATS <THRESH>
 (Impurity solver is non-direct davidson diagonalizer via call to 'fci' code)
     DAVIDSON
 (Impurity solver is FCIQMC via call to 'neci' code)

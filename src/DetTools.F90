@@ -330,19 +330,25 @@ recursive subroutine GenDets_R(Det,NEl,SpatOrbs,iElec,nDetCurr,tCount,DetList)
 
 end subroutine GenDets_R
 
-subroutine GetHElement(nI,nJ,NEl,HEl)
+subroutine GetHElement(nI,nJ,NEl,HEl,ilutnI,ilutnJ)
     use const
+    use DetBitOps, only: FindBitExcitLevel
     implicit none
     integer, intent(in) :: NEl
     integer, intent(in) :: nI(NEl),nJ(NEl)
+    integer, intent(in), optional :: ilutnI,ilutnJ
     real(dp), intent(out) :: HEl
     real(dp) :: sltcnd_0,sltcnd_1,sltcnd_2
     integer :: Ex(2,2),iGetExcitLevel,IC,DeltaSpin
     logical :: tSign
 
-    IC = IGETEXCITLEVEL(NI,NJ,NEL)
-    Ex(1,1) = IC
-    if(Ex(1,1).le.2) then
+    if(present(ilutnI)) then
+        IC = FindBitExcitLevel(ilutnI,ilutnJ)
+    else
+        IC = IGETEXCITLEVEL(NI,NJ,NEL)
+    endif
+    if(IC.le.2) then
+        Ex(1,1) = IC
         call GetExcitation(nI,nJ,NEl,Ex,tSign)
     else
         HEl = 0.0_dp

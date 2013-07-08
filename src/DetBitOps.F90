@@ -80,6 +80,17 @@ module DetBitOps
 
     end subroutine EncodeBitDet
 
+    function FindBitExcitLevel(ilut1,ilut2) result(IC)
+        implicit none
+        integer, intent(in) :: ilut1,ilut2
+        integer :: IC,tmp
+
+        tmp = ieor(ilut1,ilut2)
+        tmp = iand(ilut1,tmp)
+        IC = CountBits(tmp)
+
+    end function FindBitExcitLevel
+
     function CountBits(ilut) result(nbits)
         integer, intent(in) :: ilut
         integer :: nbits,tmp

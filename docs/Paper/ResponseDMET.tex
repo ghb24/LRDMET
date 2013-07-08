@@ -71,7 +71,7 @@ Dynamic correlation functions are directly probed in most spectroscopic methods,
 and correspond to many of the important transport, optical, magnetic and wider electronic structure properties of materials. 
 As such, their accurate computational prediction is highly sought after within the materials science community. 
 However, few robust approaches exist for strongly correlated problems\cite{Gali2013}. The difficulty is in simultaneously requiring both an accurate 
-treatment of the electron correlations beyond mean-field band theory for the ground state {\em and} excitation spectrum, as well as modeling 
+treatment of the electron correlations beyond mean-field or low-order perturbation theory for the ground state {\em and} excitation spectrum, as well as modeling 
 a system of sufficient size to mimic the thermodynamic limit of bulk properties and not suffer spurious finite size effects. 
 However in general, it is only mean-field electronic structure methods which are computationally cheap enough to access the required system
 sizes, and so there is a pressing need for methods with mean-field scaling, which can account for the excitation spectrum in strongly correlated 
@@ -100,8 +100,8 @@ Alternative solvers such as exact diagonalization suffer from bath discretizatio
 representation of the continuous Weiss field (at all frequencies) by a finite number of bath sites. In addition, since DMFT
 is formulated from the one-particle Greens function, alternative spectra such as the two-particle Greens function and optical spectra are 
 not straightforward to obtain, formally requiring expensive vertex corrections to compute\cite{Millis2012}. Other methods to calculate 
-spectra of correlated extended systems, such as the dynamical density matrix renormalization group\cite{Jeckelmann2004} or cluster perturbation 
-theory\cite{Senechal2000} are restricted to certain correlation strengths or spatial dimensions.
+spectra of correlated extended systems, such as the dynamical density matrix renormalization group\cite{Jeckelmann2004} or perturbative
+methods\cite{Senechal2000} are restricted to certain correlation strengths, system sizes or spatial dimensions.
 
 Here, we aim to circumvent these issues, by generalizing and extending the idea of quantum embedding of {\em states}, as introduced in 
 Ref.~\onlinecite{Chan2012}. This is achieved by embedding a local correlation function defined over a set of `impurity' sites, within an 
