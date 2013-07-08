@@ -57,7 +57,7 @@ Program RealHub
         nNECICores = 0
         tCoreH_EmbBasis = .false.
         tCheck = .false.
-        tCompressMats = .false.
+        tCompressedMats = .false.
         CompressThresh = 0.0_dp !Integral threshold for compressed matrices
 
         !General LR options
@@ -418,7 +418,7 @@ Program RealHub
             case("IMPSITES")
                 call readi(nImp)
             case("COMPRESSMATS")
-                tCompressMats = .true.
+                tCompressedMats = .true.
                 call readf(CompressThresh)
             case("COMPLETE_DIAG")
                 tCompleteDiag = .true.

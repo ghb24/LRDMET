@@ -219,16 +219,16 @@ module Davidson
     !Take a real, symmetric matrix, and find the lowest eigenvalue and eigenvector
     !Via davidson diagonalization
     !If tStartingVec, then Vec(:) contains the initial state to use
-    subroutine Real_NonDir_Davidson(nSize,Val,Vec,tStartingVec,Mat,Nmax,CompressMat,IndexMat,tol,max_iter,tLowestVal,niter)
+    subroutine Real_NonDir_Davidson(nSize,Val,Vec,tStartingVec,Nmax,Mat,CompressMat,IndexMat,tol,max_iter,tLowestVal,niter)
         implicit none
         integer, intent(in) :: nSize
         real(dp), intent(out) :: Val
         real(dp), intent(inout) :: Vec(nSize)
         logical, intent(in) :: tStartingVec
+        integer, intent(in) :: Nmax
         real(dp), intent(in), optional :: Mat(nSize,nSize)
-        integer, intent(in), optional :: Nmax
         real(dp), intent(in), optional :: CompressMat(Nmax)
-        integer, intent(in), optional :: IndexMax(Nmax)
+        integer, intent(in), optional :: IndexMat(Nmax)
         integer, intent(in), optional :: max_iter
         real(dp), intent(in), optional :: tol
         logical, intent(in), optional :: tLowestVal     !Whether to converge to lowest or highest state
@@ -239,6 +239,7 @@ module Davidson
         real(dp) :: tol_
         logical :: tLowestVal_
         integer :: niter_
+        logical :: tCompressedMat
 
         real(dp), allocatable :: SubspaceVecs(:,:),HSubspace(:,:)
         real(dp), allocatable :: CurrVec(:)
@@ -253,19 +254,27 @@ module Davidson
 !        write(6,*) "Entered non-direct davidson routine..."
 !        call flush(6)
 
+        if(present(CompressMat)) then
+            tCompressedMat = .true.
+        else
+            tCompressedMat = .false.
+        endif
+
         if((.not.present(Mat)).and.(.not.present(CompressMat))) then
             call stop_all(t_r,'Neither expanded nor compressed matrix found')
+        elseif(present(Mat).and.present(CompressMat)) then
+            call stop_all(t_r,'Both full and compressed matrices found')
         endif
-        if(tCompressedMats.and.(.not.present(CompressMat))) then
+        if(tCompressedMat.and.(.not.present(CompressMat))) then
             call stop_all(t_r,'Compressed matrix not found')
         endif
-        if(tCompressedMats.and.(.not.present(CompressInd))) then
+        if(tCompressedMat.and.(.not.present(IndexMat))) then
             call stop_all(t_r,'Compressed index vector not found')
         endif
-        if(tCompressedMats.and.(.not.present(Nmax))) then
-            call stop_all(t_r,'Compressed matrix asked for, but Nmax not given')
+        if(tCompressedMat.and.(Nmax.eq.1)) then
+            call stop_all(t_r,'Compressed matrix asked for, but Nmax == 1')
         endif
-        if(tCompressedMats.and.(present(Mat))) then
+        if(tCompressedMat.and.(present(Mat))) then
             call stop_all(t_r,'Compressed matrices asked for, but full matrix found')
         endif
 

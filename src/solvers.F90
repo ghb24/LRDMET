@@ -886,8 +886,9 @@ module solvers
         use Davidson, only: Real_NonDir_Davidson
         implicit none
         logical, intent(in) :: tCreate2RDM
-        integer :: OrbPairs,UMatSize,umatind
-        real(dp), allocatable :: work(:)
+        integer :: OrbPairs,UMatSize,umatind,Nmax,ierr
+        real(dp), allocatable :: work(:),CompressHam(:)
+        integer, allocatable :: IndexHam(:)
         integer :: lwork,info,i,j
         character(len=*), parameter :: t_r='CompleteDiag'
 
@@ -934,6 +935,7 @@ module solvers
             write(6,"(A,F14.6,A)") "Saving in compression of: ",real(nFCIDet**2 - Nmax*2,dp)/1048576.0_dp," Mb"
             allocate(CompressHam(Nmax),stat=ierr)
             allocate(IndexHam(Nmax),stat=ierr)
+            if(ierr.ne.0) call stop_all(t_r,'Allocation failed')
             call StoreCompMat(FCIDetList(:,:),Elec,nFCIDet,Nmax,CompressHam,IndexHam)
         else
             write(6,"(A,F14.6,A)") "Allocating memory for the hamiltonian: ",real((nFCIDet**2)*8,dp)/1048576.0_dp," Mb"
@@ -955,10 +957,10 @@ module solvers
         if(tNonDirDavidson) then
             write(6,*) "Solving for ground state with non-direct davidson diagonalizer..."
             if(tCompressedMats) then
-                call Real_NonDir_Davidson(nFCIDet,HL_Energy,HL_Vec,.false.,Nmax=Nmax,CompressMat=CompressHam,IndexMat=IndexHam)
+                call Real_NonDir_Davidson(nFCIDet,HL_Energy,HL_Vec,.false.,Nmax,CompressMat=CompressHam,IndexMat=IndexHam)
                 deallocate(CompressHam,IndexHam)
             else
-                call Real_NonDir_Davidson(nFCIDet,HL_Energy,HL_Vec,.false.,Mat=FullHamil)
+                call Real_NonDir_Davidson(nFCIDet,HL_Energy,HL_Vec,.false.,1,Mat=FullHamil)
                 deallocate(FullHamil)
             endif
         else
@@ -1364,7 +1366,7 @@ module solvers
         implicit none
         integer, intent(in) :: Elec,nDet
         integer, intent(out) :: Nmax
-        integer, intent(in) :: DetList(Elec,nFCIDet)
+        integer, intent(in) :: DetList(Elec,nDet)
         integer :: i,j
         real(dp) :: Elem
 
@@ -1387,11 +1389,12 @@ module solvers
     subroutine StoreCompMat(DetList,Elec,nDet,Nmax,sa,ija)
         implicit none
         integer, intent(in) :: Elec,nDet,Nmax
-        integer, intent(in) :: DetList(Elec,nFCIDet)
+        integer, intent(in) :: DetList(Elec,nDet)
         real(dp), intent(out) :: sa(Nmax)
         integer, intent(out) :: ija(Nmax)
         integer :: i,j,k
         real(dp) :: Elem
+        character(len=*), parameter :: t_r='StoreCompMat'
 
         sa(:) = 0.0_dp  !Compressed matrix
         ija(:) = 0      !Index to compressed matrix
