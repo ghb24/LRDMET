@@ -57,6 +57,8 @@ Program RealHub
         nNECICores = 0
         tCoreH_EmbBasis = .false.
         tCheck = .false.
+        tCompressMats = .false.
+        CompressThresh = 0.0_dp !Integral threshold for compressed matrices
 
         !General LR options
         Start_Omega = 0.0_dp
@@ -415,6 +417,9 @@ Program RealHub
                 tDiag_kspace = .true.
             case("IMPSITES")
                 call readi(nImp)
+            case("COMPRESSMATS")
+                tCompressMats = .true.
+                call readf(CompressThresh)
             case("COMPLETE_DIAG")
                 tCompleteDiag = .true.
             case("DAVIDSON")
@@ -470,6 +475,7 @@ Program RealHub
                 write(6,"(A)") "MAXITER"
                 write(6,"(A)") "HALF_FILL"
                 write(6,"(A)") "FILLING"
+                write(6,"(A)") "COMPRESSMATS"
                 write(6,"(A)") "COMPLETE_DIAG"
                 write(6,"(A)") "DAVIDSON"
                 write(6,"(A)") "FCIQMC"
@@ -719,6 +725,9 @@ Program RealHub
         endif
         if(tCoreH_EmbBasis.and.(tNonDirDavidson.or.tCompleteDiag)) then
             call stop_all(t_r,'Cannot use CoreH_EmbBasis transform with complete diag or nondir-davidson')
+        endif
+        if(tCompressedMats.and.(.not.tNonDirDavidson)) then
+            call stop_all(t_r,'Can only use compressed matrices option with non-direct davisdon solver')
         endif
 
     end subroutine check_input

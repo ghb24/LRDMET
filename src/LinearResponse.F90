@@ -216,12 +216,15 @@ module LinearResponse
         !Construct FCI hamiltonians for the N, N+1_alpha and N-1_beta spaces
         if(nNp1FCIDet.ne.nNm1FCIDet) call stop_all(t_r,'Active space not half-filled')
         if(nNp1FCIDet.ne.nNp1bFCIDet) call stop_all(t_r,'Cannot deal with open shell systems')
-        write(6,"(A,F12.5,A)") "Memory required for N-electron hamil: ",(real(nFCIDet,dp)**2)*ComptoMb, " Mb"
-        write(6,"(A,F12.5,A)") "Memory required for N+1-electron hamil: ",(real(nNp1FCIDet,dp)**2)*ComptoMb, " Mb"
-        write(6,"(A,F12.5,A)") "Memory required for N-1-electron hamil: ",(real(nNm1bFCIDet,dp)**2)*ComptoMb, " Mb"
-        allocate(NFCIHam(nFCIDet,nFCIDet))
-        allocate(Np1FCIHam_alpha(nNp1FCIDet,nNp1FCIDet))
-        allocate(Nm1FCIHam_beta(nNm1bFCIDet,nNm1bFCIDet))
+        if(tCompressedMats) then
+        else
+            write(6,"(A,F12.5,A)") "Memory required for N-electron hamil: ",(real(nFCIDet,dp)**2)*ComptoMb, " Mb"
+            write(6,"(A,F12.5,A)") "Memory required for N+1-electron hamil: ",(real(nNp1FCIDet,dp)**2)*ComptoMb, " Mb"
+            write(6,"(A,F12.5,A)") "Memory required for N-1-electron hamil: ",(real(nNm1bFCIDet,dp)**2)*ComptoMb, " Mb"
+            allocate(NFCIHam(nFCIDet,nFCIDet))
+            allocate(Np1FCIHam_alpha(nNp1FCIDet,nNp1FCIDet))
+            allocate(Nm1FCIHam_beta(nNm1bFCIDet,nNm1bFCIDet))
+        endif
         call Fill_N_Np1_Nm1b_FCIHam(Elec,NFCIHam,Np1FCIHam_alpha,Nm1FCIHam_beta)
 
         nLinearSystem = nNp1FCIDet + nFCIDet

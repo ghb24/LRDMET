@@ -219,13 +219,16 @@ module Davidson
     !Take a real, symmetric matrix, and find the lowest eigenvalue and eigenvector
     !Via davidson diagonalization
     !If tStartingVec, then Vec(:) contains the initial state to use
-    subroutine Real_NonDir_Davidson(nSize,Mat,Val,Vec,tStartingVec,tol,max_iter,tLowestVal,niter)
+    subroutine Real_NonDir_Davidson(nSize,Val,Vec,tStartingVec,Mat,Nmax,CompressMat,IndexMat,tol,max_iter,tLowestVal,niter)
         implicit none
         integer, intent(in) :: nSize
-        real(dp), intent(in) :: Mat(nSize,nSize)
         real(dp), intent(out) :: Val
         real(dp), intent(inout) :: Vec(nSize)
         logical, intent(in) :: tStartingVec
+        real(dp), intent(in), optional :: Mat(nSize,nSize)
+        integer, intent(in), optional :: Nmax
+        real(dp), intent(in), optional :: CompressMat(Nmax)
+        integer, intent(in), optional :: IndexMax(Nmax)
         integer, intent(in), optional :: max_iter
         real(dp), intent(in), optional :: tol
         logical, intent(in), optional :: tLowestVal     !Whether to converge to lowest or highest state
@@ -249,6 +252,22 @@ module Davidson
 
 !        write(6,*) "Entered non-direct davidson routine..."
 !        call flush(6)
+
+        if((.not.present(Mat)).and.(.not.present(CompressMat))) then
+            call stop_all(t_r,'Neither expanded nor compressed matrix found')
+        endif
+        if(tCompressedMats.and.(.not.present(CompressMat))) then
+            call stop_all(t_r,'Compressed matrix not found')
+        endif
+        if(tCompressedMats.and.(.not.present(CompressInd))) then
+            call stop_all(t_r,'Compressed index vector not found')
+        endif
+        if(tCompressedMats.and.(.not.present(Nmax))) then
+            call stop_all(t_r,'Compressed matrix asked for, but Nmax not given')
+        endif
+        if(tCompressedMats.and.(present(Mat))) then
+            call stop_all(t_r,'Compressed matrices asked for, but full matrix found')
+        endif
 
         if(.not.present(tol)) then
             !Set tol default

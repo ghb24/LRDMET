@@ -927,18 +927,26 @@ module solvers
         call GenDets(Elec,EmbSize,.false.,.false.,.false.)
         !FCIDetList now stores a list of all the determinants
         write(6,"(A,I14)") "Number of determinants in FCI space: ",nFCIDet
-        write(6,"(A,F14.6,A)") "Allocating memory for the hamiltonian: ",real((nFCIDet**2)*8,dp)/1048576.0_dp," Mb"
-        if(allocated(FullHamil)) deallocate(FullHamil)
-        if(allocated(Spectrum)) deallocate(Spectrum)
-        allocate(Spectrum(nFCIDet))
-        allocate(FullHamil(nFCIDet,nFCIDet))
-        FullHamil(:,:) = 0.0_dp
-        !Construct the hamiltonian - slow
-        do i=1,nFCIDet
-            do j=1,nFCIDet
-                call GetHElement(FCIDetList(:,i),FCIDetList(:,j),Elec,FullHamil(i,j))
+        if(tCompressedMats) then
+            write(6,"(A)") "Compressing hamiltonian matrix..."
+            call CountSizeCompMat(FCIDetList(:,:),Elec,nFCIDet,Nmax)
+            write(6,"(A,F14.6,A)") "Allocating memory for compressed hamiltonian: ",real(Nmax*16,dp)/1048576.0_dp," Mb"
+            write(6,"(A,F14.6,A)") "Saving in compression of: ",real(nFCIDet**2 - Nmax*2,dp)/1048576.0_dp," Mb"
+            allocate(CompressHam(Nmax),stat=ierr)
+            allocate(IndexHam(Nmax),stat=ierr)
+            call StoreCompMat(FCIDetList(:,:),Elec,nFCIDet,Nmax,CompressHam,IndexHam)
+        else
+            write(6,"(A,F14.6,A)") "Allocating memory for the hamiltonian: ",real((nFCIDet**2)*8,dp)/1048576.0_dp," Mb"
+            if(allocated(FullHamil)) deallocate(FullHamil)
+            allocate(FullHamil(nFCIDet,nFCIDet))
+            FullHamil(:,:) = 0.0_dp
+            !Construct the hamiltonian - slow
+            do i=1,nFCIDet
+                do j=1,nFCIDet
+                    call GetHElement(FCIDetList(:,i),FCIDetList(:,j),Elec,FullHamil(i,j))
+                enddo
             enddo
-        enddo
+        endif
 !        call writematrix(FullHamil(1:nFCIDet,1:nFCIDet),'FCI hamil',.true.)
 
         !Diagonalize
@@ -946,9 +954,16 @@ module solvers
         allocate(HL_Vec(nFCIDet))
         if(tNonDirDavidson) then
             write(6,*) "Solving for ground state with non-direct davidson diagonalizer..."
-            call Real_NonDir_Davidson(nFCIDet,FullHamil,HL_Energy,HL_Vec,.false.)
-            deallocate(FullHamil)
+            if(tCompressedMats) then
+                call Real_NonDir_Davidson(nFCIDet,HL_Energy,HL_Vec,.false.,Nmax=Nmax,CompressMat=CompressHam,IndexMat=IndexHam)
+                deallocate(CompressHam,IndexHam)
+            else
+                call Real_NonDir_Davidson(nFCIDet,HL_Energy,HL_Vec,.false.,Mat=FullHamil)
+                deallocate(FullHamil)
+            endif
         else
+            if(allocated(Spectrum)) deallocate(Spectrum)
+            allocate(Spectrum(nFCIDet))
             allocate(Work(1))
             lWork=-1
             info=0
@@ -1344,6 +1359,64 @@ module solvers
 
     end subroutine WriteFCIDUMP
 
+    !Find logical size of desired compressed hamiltonian
+    subroutine CountSizeCompMat(DetList,Elec,nDet,Nmax)
+        implicit none
+        integer, intent(in) :: Elec,nDet
+        integer, intent(out) :: Nmax
+        integer, intent(in) :: DetList(Elec,nFCIDet)
+        integer :: i,j
+        real(dp) :: Elem
 
+        Nmax = nDet + 1 !For storage of diagonal elements
+
+        do i = 1,nDet
+            do j = 1,nDet
+                if(i.eq.j) cycle
+                call GetHElement(DetList(:,i),DetList(:,j),Elec,Elem)
+                if(abs(Elem).ge.CompressThresh) then
+                    Nmax = Nmax + 1
+                endif
+            enddo
+        enddo
+
+    end subroutine CountSizeCompMat
+
+    !Create compressed matrix form of hamiltonian from basis elements
+    !DetList
+    subroutine StoreCompMat(DetList,Elec,nDet,Nmax,sa,ija)
+        implicit none
+        integer, intent(in) :: Elec,nDet,Nmax
+        integer, intent(in) :: DetList(Elec,nFCIDet)
+        real(dp), intent(out) :: sa(Nmax)
+        integer, intent(out) :: ija(Nmax)
+        integer :: i,j,k
+        real(dp) :: Elem
+
+        sa(:) = 0.0_dp  !Compressed matrix
+        ija(:) = 0      !Index to compressed matrix
+
+        !Store diagonals
+        do j = 1,nDet
+            call GetHElement(DetList(:,j),DetList(:,j),Elec,sa(j))
+        enddo
+        ija(1) = nDet + 2
+        k = nDet + 1
+
+        do i = 1,nDet
+            do j = 1,nDet
+                if(i.eq.j) cycle
+                call GetHElement(DetList(:,i),DetList(:,j),Elec,Elem)
+                if(abs(Elem).ge.CompressThresh) then
+                    k = k + 1
+                    if(k.gt.Nmax) call stop_all(t_r,'Compressed array sizes too small')
+                    sa(k) = Elem
+                    ija(k) = j
+                endif
+            enddo
+            ija(i+1) = k + 1
+        enddo
+
+    end subroutine StoreCompMat
 
 end module solvers

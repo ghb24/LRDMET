@@ -39,6 +39,8 @@ module Globals
     logical :: tCoreH_EmbBasis  !Transform into the CoreH basis before writing FCIDUMP
     character(len=64) :: CorrPot_file   !File name with the correlation potentials in it 
     logical :: tConstructFullSchmidtBasis   !Whether to construct the full Schmidt basis or just the embedding basis
+    logical :: tCompressedMats  !Whether in the non-direct davidson code to store compressed matrices or not
+    real(dp) :: CompressThresh  !The integral threshold
     logical :: tDiag_kspace !Wheter to perform diagonalizations in k-space or not
     logical :: tContinueConvergence !Whether to continue convergence even if we have read in correlation potential
     real(dp) :: GS_Fit_Step !The step size for the finite difference gradient approximation in fitting the correlation potential
