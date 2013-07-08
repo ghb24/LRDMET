@@ -114,7 +114,7 @@ allows for large impurity clusters to be treated with small numbers of additiona
 to the extended system, and direct evaluation of spectra on the real frequency axis. The approach will be demonstrated for the Hubbard model, 
 defined by the Hamiltonian in the site basis as
 \begin{equation}
-    H = -t \sum_{\langle ij \rangle, \sigma} (a_{i,\sigma}^{\dagger}a_{j,\sigma} + {\textrm h.c.}) + U \sum_i (n_{i,\uparrow} - \frac{1}{2})(n_{i,\downarrow} - \frac{1}{2})  . \label{eqn:hub}
+H = -t \sum_{\langle ij \rangle, \sigma} (a_{i,\sigma}^{\dagger}a_{j,\sigma} + \text{\textnormal {h.c.}}) + U \sum_i (n_{i,\uparrow} - \frac{1}{2})(n_{i,\downarrow} - \frac{1}{2})  . \label{eqn:hub}
 \end{equation}
 This lattice model encapsulates many of the difficulties in the electronic structure of correlated materials, displaying correlation driven 
 phase transitions in the thermodynamic limit, and is closely representative of many transition metal oxides\cite{Limelette2003}, including qualitative aspects 
@@ -128,7 +128,7 @@ the `environment' space external to the impurity. This analytic coupling is repr
 the impurity size, and denoted the ground-state {\em bath}, $\{ |\beta \rangle \}$. This space then spans the exact entanglement of the 
 impurity space to its environment, as defined by the original mean-field function over the entire extended lattice. The interacting Hamiltonian 
 is then projected into this space, which is now independent of the total number of sites in the system, and solved to return a ground-state 
-wavefunction, $|\Psi^{(0)} \rangle$, in the space of $\{ |\alpha \rangle \} \otimes \{ |\beta \rangle \} \otimes {\textrm det} \{ | \mu \rangle \}$, where $\{ | \mu \rangle \}$ 
+wavefunction, $|\Psi^{(0)} \rangle$, in the space of $\{ |\alpha \rangle \} \otimes \{ |\beta \rangle \} \otimes \text{\textnormal {det}} \{ | \mu \rangle \}$, where $\{ | \mu \rangle \}$ 
 represents the space of one-electron functions in $|\phi^{(0)}\rangle$ which are uncoupled to the impurity cluster after its Schmidt decomposition. Along with the 
 bath space, a self-consistency procedure designed to match the elements of the one-body reduced density matrix derived from $|\phi^{(0)}\rangle$ and $|\Psi^{(0)} \rangle$ over the impurity sites,
 returns a one-electron interaction potential, $u$, which describes some of the longer-ranged correlation effects, and controls the effective number of electrons in the impurity cluster.
@@ -147,7 +147,7 @@ Although this is a one-electron Hamiltonian, the inclusion of the interaction po
 For simplicity, we restrict ourselves in this letter to the case of {\em local} spectral functions, where ${\hat V}$ and ${\hat A}$ are both closed operators
 within the impurity space, although extensions to non-local perturbations will be detailed in a forthcoming paper. This means that both the operator 
 ${\hat V}$ and $|\phi^{(0)} \rangle$ are spanned by the original ground-state 
-space of $\{ |\alpha \rangle \} \otimes \{ |\beta \rangle \} \otimes {\textrm det} \{ | \mu \rangle \}$. The frequency-dependent coupling to the environment 
+space of $\{ |\alpha \rangle \} \otimes \{ |\beta \rangle \} \otimes \text{\textnormal {det}} \{ | \mu \rangle \}$. The frequency-dependent coupling to the environment 
 results from the ${\hat G_0}$ operator, and we now Schmidt decompose its action onto ${\hat V} |\phi^{(0)} \rangle$, in order to isolate 
 the coupling at each frequency point between the environment and fully correlated space of impurity sites and ground-state bath (i.e. 
 space of $\{|\alpha \rangle \} \oplus \{|\beta \rangle \} \equiv \{ | \gamma \rangle \}$). The space external to this to which the coupling is defined 
@@ -161,8 +161,8 @@ and rotated such that the operators act solely within the partitioned spaces. Fo
 \end{equation}
 with
 \begin{equation}
-    X_n(\omega) = \sum_{r \in {\textrm occ}} \frac{\langle n|\chi_r \rangle \langle \chi_r | a_{\alpha} | \phi^{(0)} \rangle}{\omega - \epsilon_r + i \eta}   .
-%    X_n(\omega) = \sum_{r \in {\textrm occ}} \frac{|n \rangle \langle n|\chi_r \rangle \langle \chi_r | a_{\alpha} | \phi^{(0)} \rangle}{\omega - \epsilon_r + i \eta}   .
+    X_n(\omega) = \sum_{r \in \text{\textnormal {occ}}} \frac{\langle n|\chi_r \rangle \langle \chi_r | a_{\alpha} | \phi^{(0)} \rangle}{\omega - \epsilon_r + i \eta}   .
+%    X_n(\omega) = \sum_{r \in \text{\textnormal {occ}}} \frac{|n \rangle \langle n|\chi_r \rangle \langle \chi_r | a_{\alpha} | \phi^{(0)} \rangle}{\omega - \epsilon_r + i \eta}   .
 \end{equation}
 For a two-index perturbation such as ${\hat V}=a_{\alpha}^{\dagger}a_{\alpha}$, the action of operator on $|\phi^{(0)} \rangle$ can be similarly decomposed as,
 \begin{align}
@@ -174,17 +174,17 @@ operator defined by Eq.~\ref{eqn:2elpert}, the action over the external space ca
 \begin{equation}
     {\hat B}(\omega) = 1 + \sum_{n \gamma} X_{n \gamma}(\omega) a_n^{\dagger} + \sum_{\gamma n} X_{\gamma n}(\omega) a_{n} + \sum_{n n'} X_{n n'}(\omega) a_n^{\dagger} .   \label{eqn:B}
 \end{equation}
-This operator defines the space, \mbox{$\mathcal{K}(\omega)={\textrm span} \left[ \{|\alpha \rangle \} \otimes \{ |\beta \rangle \} \otimes {\hat B}(\omega) {\textrm det} \{ | \mu \rangle \} \right]$}, into which the fully-interacting 
+This operator defines the space, \mbox{$\mathcal{K}(\omega)=\text{\textnormal {span}} \left[ \{|\alpha \rangle \} \otimes \{ |\beta \rangle \} \otimes {\hat B}(\omega) \text{\textnormal {det}} \{ | \mu \rangle \} \right]$}, into which the fully-interacting 
 response equations are then projected. The original ground-state space is included as the unity part of ${\hat B}(\omega)$, and the other states represent 
 the frequency-dependent, many-electron bath states, which span the $|\phi^{(1)}(\omega) \rangle$ wavefunction defined in Eq.~\ref{nonintGF}.
 The fully interacting response, $|\Psi^{(1)}(\omega) \rangle$, is calculated from
 \begin{equation}
-    P \left[ \omega - (H-E_0) + i \eta \right] P | \Psi^{(1)}(\omega) \rangle = P V P |\Psi^{(0)} \rangle   ,   \label{eqn:ExactResponse}
+    P \left[ \omega - (H-E_0) + i \eta \right] P | \Psi^{(1)}(\omega) \rangle = P {\hat V} P |\Psi^{(0)} \rangle   ,   \label{eqn:ExactResponse}
 \end{equation}
 where $P=|\mathcal{K}(\omega) \rangle \langle \mathcal{K}(\omega) |$ is defined as the projector into the basis $\mathcal{K}(\omega)$. 
 $|\Psi^{(0)} \rangle$ can be reoptimized in this new basis, however this was found empirically not to qualitatively change results, and 
 so $|\Psi^{(0)}\rangle$ and $E_0$ are taken to be the ground-state wavefunction and energy in the 
-original $\{|\alpha \rangle \} \otimes \{ |\beta \rangle \} \otimes {\textrm det} \{ | \mu \rangle \} $ space. 
+original $\{|\alpha \rangle \} \otimes \{ |\beta \rangle \} \otimes \text{\textnormal {det}} \{ | \mu \rangle \} $ space. 
 Since we are currently only considering local perturbations,
 the projectors on the right-hand side of Eq.~\ref{eqn:ExactResponse} are not necessary, but included for completeness.
 This equation is then solved via an exact, iterative procedure to obtain $| \Psi^{(1)}(\omega) \rangle$, and the correlation function desired is obtained from 
@@ -194,7 +194,7 @@ The number of individual operators in ${\hat B}(\omega)$ which define the contra
 of $|\phi^{(1)}(\omega) \rangle$, grow with increasing particle rank of ${\hat V}$. For ${\hat V}=a_{\alpha}$, as required for the single-particle Greens function,
 there is only one additional operator in ${\hat B}(\omega)$, and therefore the resultant dimension of the many-electron space $\mathcal{K}(\omega)$ in 
 which the interacting equations are solved, is only approximately twice as large as the corresponding ground state space. For two-particle functions,
-as shown in Eq.~\ref{eqn:2elpert}, there are $4 {\textrm dim}\{|\gamma \rangle \} + 1$ operators. The actual increase in the size of the Hilbert
+as shown in Eq.~\ref{eqn:2elpert}, there are $4 \times \text{\textnormal {dim}}\{|\gamma \rangle \} + 1$ operators. The actual increase in the size of the Hilbert
 space in practice compared to the ground state is generally much smaller than this after consideration of particle number symmetry and removal of linear
 dependencies (the basis is not generally orthonormal and the overlap matrix is explicitly considered). However, the key point of the 
 approach is that the analytic construction of the bath states is no more costly than the diagonalization of the one-particle Hamiltonian, $h$, and once the
