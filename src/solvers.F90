@@ -962,11 +962,9 @@ module solvers
         if(tNonDirDavidson) then
             write(6,*) "Solving for ground state with non-direct davidson diagonalizer..."
             if(tCompressedMats) then
-                call writevector(CompressHam,'CompressHam')
                 call Real_NonDir_Davidson(nFCIDet,HL_Energy,HL_Vec,.false.,Nmax,CompressMat=CompressHam,IndexMat=IndexHam)
                 deallocate(CompressHam,IndexHam)
             else
-                call writematrix(FullHamil,'FullHamil',.true.)
                 call Real_NonDir_Davidson(nFCIDet,HL_Energy,HL_Vec,.false.,1,Mat=FullHamil)
                 deallocate(FullHamil)
             endif
@@ -1385,7 +1383,6 @@ module solvers
 
         if(present(BitDetList)) then
             do i = 1,nDet
-                write(6,"(A,2I10)") "Counting: ",i,nDet
                 do j = i+1,nDet
                     call GetHElement(DetList(:,i),DetList(:,j),Elec,Elem,ilutnI=BitDetList(i),ilutnJ=BitDetList(j))
                     if(abs(Elem).ge.CompressThresh) then
@@ -1395,7 +1392,6 @@ module solvers
             enddo
         else
             do i = 1,nDet
-                write(6,"(A,2I10)") "Counting: ",i,nDet
                 do j = i+1,nDet
                     call GetHElement(DetList(:,i),DetList(:,j),Elec,Elem)
                     if(abs(Elem).ge.CompressThresh) then
@@ -1425,7 +1421,6 @@ module solvers
 
         !Store diagonals
         do j = 1,nDet
-            write(6,*) "Attempting to store diagonal element",j
             call GetHElement(DetList(:,j),DetList(:,j),Elec,sa(j))
         enddo
         ija(1) = nDet + 2
@@ -1435,7 +1430,6 @@ module solvers
             do j = 1,nDet
                 if(i.eq.j) cycle
                 call GetHElement(DetList(:,i),DetList(:,j),Elec,Elem)
-                write(6,*) "***",i,j,DetList(:,i),DetList(:,j),Elem
                 if(abs(Elem).ge.CompressThresh) then
                     k = k + 1
                     if(k.gt.Nmax) call stop_all(t_r,'Compressed array sizes too small')
@@ -1445,8 +1439,6 @@ module solvers
             enddo
             ija(i+1) = k + 1
         enddo
-
-        call writevector(sa,'CompressHam')
 
     end subroutine StoreCompMat
     

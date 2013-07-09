@@ -345,7 +345,6 @@ module DetTools
         logical :: tSign
 
         if(present(ilutnI)) then
-            write(6,*) "ilutnI is present"
             IC = FindBitExcitLevel(ilutnI,ilutnJ)
         else
             IC = IGETEXCITLEVEL(NI,NJ,NEL)
