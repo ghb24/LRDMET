@@ -111,6 +111,7 @@ module LinearResponse
         use fitting, only: Fit_SE
         use zminresqlpModule, only: MinresQLP  
         use DetToolsData
+        use solvers, only: CountSizeCompMat
         implicit none
         complex(dp), allocatable :: NFCIHam_cmps(:),Np1FCIHam_alpha_cmps(:),Nm1FCIHam_beta_cmps(:)
         integer, allocatable :: NFCIHam_inds(:),Np1FCIHam_alpha_inds(:),Nm1FCIHam_beta_inds(:)
@@ -126,17 +127,17 @@ module LinearResponse
         integer, allocatable :: Coup_Ann_alpha(:,:),Coup_Create_alpha(:,:),Coup_Create_alpha_inds(:)
         integer, allocatable :: Coup_Ann_alpha_inds(:),Coup_Create_alpha_cum(:),Coup_Ann_alpha_cum(:)
         integer, allocatable :: Coup_Create_alpha_T(:,:),Coup_Ann_alpha_T(:,:),Coup_Create_alpha_inds_T(:)
-        integer, allocatable :: Coup_Ann_alpha_T(:),Coup_Create_alpha_cum_T(:),Coup_Ann_alpha_cum_T(:)
+        integer, allocatable :: Coup_Ann_alpha_inds_T(:),Coup_Create_alpha_cum_T(:),Coup_Ann_alpha_cum_T(:)
         integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,umatind,ierr,info,iunit,nCore
         integer :: nLinearSystem,nOrbs,nVirt,OrbPairs,tempK,UMatSize,VIndex,VirtStart,VirtEnd,ind_p,ind_h
         integer :: orbdum(1),gtid,nLinearSystem_h,nGSSpace,Np1GSInd,Nm1GSInd,lWork,minres_unit
         integer :: maxminres_iter,nImp_GF,pertsite,SE_Fit_Iter,nNR_Iters
-        integer :: Nmax_N,Nmax_Nm1b,Nmax_Np1,Nmax_Coup_Create,Nmax_Coup_Ann
+        integer :: Nmax_N,Nmax_Nm1b,Nmax_Np1,Nmax_Coup_Create,Nmax_Coup_Ann,Nmax_Lin_p,Nmax_Lin_h,i_Ann
         integer(ip) :: nLinearSystem_ip,minres_unit_ip,info_ip,maxminres_iter_ip,iters_p,iters_h
         real(dp) :: Omega,GFChemPot,mu,SpectralWeight,Prev_Spec,AvdNorm_p,AvdNorm_h,Var_SE,Error_GF
         real(dp) :: Diff_GF
         complex(dp) :: ResponseFn,tempel,ni_lr,ni_lr_p,ni_lr_h,AvResFn_p,AvResFn_h
-        complex(dp) :: zdotc,VNorm,CNorm,Prev_SE_Saved(nImp,nImp),TR_SE
+        complex(dp) :: zdotc,VNorm,CNorm,Prev_SE_Saved(nImp,nImp),TR_SE,matel
         logical :: tParity,tFirst,tSCFConverged,tSCFFailed
         character(64) :: filename,filename2
         character(len=*), parameter :: t_r='NonIntExCont_TDA_MCLR_Charged_Cmprs'
@@ -226,7 +227,8 @@ module LinearResponse
         allocate(Np1FCIHam_alpha_inds(Nmax_Np1),stat=ierr)
         allocate(Nm1FCIHam_beta_inds(Nmax_Nm1b),stat=ierr)
         if(ierr.ne.0) call stop_all(t_r,'Allocation fail')
-        call Fill_N_Np1_Nm1b_FCIHam(Elec,Nmax_N,Nmax_Np1,Nmax_Nm1b,NHam_cmps=NFCIHam_cmps,Np1Ham_cmps=Np1FCIHam_alpha_cmps,Nm1bHam_cmps=Nm1FCIHam_beta_cmps,NHam_inds=NFCIHam_inds,Np1Ham_inds=Np1FCIHam_alpha_inds,Nm1bHam_inds=Nm1FCIHam_beta_inds)
+        call Fill_N_Np1_Nm1b_FCIHam(Elec,Nmax_N,Nmax_Np1,Nmax_Nm1b,NHam_cmps=NFCIHam_cmps,Np1Ham_cmps=Np1FCIHam_alpha_cmps, &
+            Nm1bHam_cmps=Nm1FCIHam_beta_cmps,NHam_inds=NFCIHam_inds,Np1Ham_inds=Np1FCIHam_alpha_inds,Nm1bHam_inds=Nm1FCIHam_beta_inds)
 
         nLinearSystem = nNp1FCIDet + nFCIDet
         nLinearSystem_h = nNm1bFCIDet + nFCIDet
@@ -397,11 +399,11 @@ module LinearResponse
             enddo
         enddo
 
-        allocate(Coup_Create_alpha(2,Nmax_Coup_Create)
-        allocate(Coup_Ann_alpha(2,Nmax_Coup_Ann)
+        allocate(Coup_Create_alpha(2,Nmax_Coup_Create))
+        allocate(Coup_Ann_alpha(2,Nmax_Coup_Ann))
         !Also indexing arrays
-        allocate(Coup_Create_alpha_inds(Nmax_Coup_Create)
-        allocate(Coup_Ann_alpha_inds(Nmax_Coup_Ann)
+        allocate(Coup_Create_alpha_inds(Nmax_Coup_Create))
+        allocate(Coup_Ann_alpha_inds(Nmax_Coup_Ann))
         !_cum arrays index start of row block
         allocate(Coup_Create_alpha_cum(nFCIDet+1))
         allocate(Coup_Ann_alpha_cum(nFCIDet+1))
@@ -487,18 +489,18 @@ module LinearResponse
         enddo
 
         !Unfortunately, it is not easy to calculate the transpose. Do it explicitly now (matrices are at least of the same size)
-        allocate(Coup_Create_alpha_T(2,Nmax_Coup_Create)
-        allocate(Coup_Ann_alpha_T(2,Nmax_Coup_Ann)
+        allocate(Coup_Create_alpha_T(2,Nmax_Coup_Create))
+        allocate(Coup_Ann_alpha_T(2,Nmax_Coup_Ann))
         !Also indexing arrays
-        allocate(Coup_Create_alpha_inds_T(Nmax_Coup_Create)
-        allocate(Coup_Ann_alpha_T(Nmax_Coup_Ann)
+        allocate(Coup_Create_alpha_inds_T(Nmax_Coup_Create))
+        allocate(Coup_Ann_alpha_inds_T(Nmax_Coup_Ann))
         allocate(Coup_Create_alpha_cum_T(nNm1bFCIDet))
         allocate(Coup_Ann_alpha_cum_T(nNp1FCIDet))
 
         Coup_Create_alpha_T(:,:) = 0
         Coup_Ann_alpha_T(:,:) = 0
         Coup_Create_alpha_inds_T(:) = 0
-        Coup_Ann_alpha_T(:) = 0
+        Coup_Ann_alpha_inds_T(:) = 0
         Coup_Create_alpha_cum_T(:) = 0
         Coup_Ann_alpha_cum_T(:) = 0
         Coup_Create_alpha_cum_T(1) = 1
@@ -677,11 +679,9 @@ module LinearResponse
                     tempel = tempel + SchmidtPertGF_Ann_Bra(i,pertsite)*Ga_i_F_ij(i,pertsite)
                 enddo
                 tempel = -tempel / CNorm
-                !Add diagonal correction
-                do i = VIndex,nLinearSystem
-                    LinearSystem_h(i,i) = LinearSystem_h(i,i) + tempel
-                enddo
-                LinearSystem_h(1:nNm1bFCIDet) = Nm1bFCIHam_alpha_cmps(1:nNm1bFCIDet)
+                
+                !Store diagonals
+                LinearSystem_h(1:nNm1bFCIDet) = Nm1FCIHam_beta_cmps(1:nNm1bFCIDet)
                 j = 0
                 do i = nNm1bFCIDet + 1,nLinearSystem
                     j = j + 1
@@ -711,11 +711,11 @@ module LinearResponse
                     enddo
                     !Now loop through the same row of block 3
                     do k = Coup_Ann_alpha_cum_T(i),Coup_Ann_alpha_cum_T(i+1)-1
-                        if(abs(Coup_Ann_alpha_T(k)).ge.CompressThresh) then
+                        matel = Gc_a_F_ax_Ket(Coup_Ann_alpha_T(1,k),pertsite)*Coup_Ann_alpha_T(2,k)/sqrt(VNorm)
+                        if(abs(matel).ge.CompressThresh) then
                             ind_p = ind_p + 1
                             if(ind_p.gt.Nmax_Lin_p) call stop_all(t_r,'Compressed array p size too small 2')
-                            LinearSystem_p(ind_p) = Gc_a_F_ax_Ket(Coup_Ann_alpha_T(1,k),pertsite)*    &
-                                Coup_Ann_alpha_T(2,k)/sqrt(VNorm)
+                            LinearSystem_p(ind_p) = matel 
                             LinearSystem_p_inds(ind_p) = Coup_Ann_alpha_inds_T(k) + nNp1FCIDet  !Add on cols from block 1
                         endif
                     enddo
@@ -724,11 +724,11 @@ module LinearResponse
                 !Now, the rows from block 3_T and 2
                 do i = 1,nFCIDet
                     do k = Coup_Ann_alpha_cum(i),Coup_Ann_alpha_cum(i+1)-1
-                        if(abs(Coup_Ann_alpha(k)).gt.CompressThresh) then
+                        matel = Gc_a_F_ax_Bra(Coup_Ann_alpha(1,k),pertsite)*Coup_Ann_alpha(2,k)/sqrt(VNorm)
+                        if(abs(matel).gt.CompressThresh) then
                             ind_p = ind_p + 1
                             if(ind_p.gt.Nmax_Lin_p) call stop_all(t_r,'Compressed array p size too small 3')
-                            LinearSystem_p(ind_p) = Gc_a_F_ax_Bra(Coup_Ann_alpha(1,k),pertsite)*    &
-                                Coup_Ann_alpha(2,k)/sqrt(VNorm)
+                            LinearSystem_p(ind_p) = matel 
                             LinearSystem_p_inds(ind_p) = Coup_Ann_alpha_inds(k)
                         endif
                     enddo
@@ -756,11 +756,11 @@ module LinearResponse
                         endif
                     enddo
                     do k = Coup_Create_alpha_cum_T(i),Coup_Create_alpha_cum_T(i+1)-1
-                        if(abs(Coup_Create_alpha_T(k)).gt.CompressThresh) then
+                        matel = - Ga_i_F_xi_Ket(Coup_Create_alpha_T(1,k),pertsite)*Coup_Create_alpha_T(2,k)/sqrt(CNorm)
+                        if(abs(matel).gt.CompressThresh) then
                             ind_h = ind_h + 1
                             if(ind_h.gt.Nmax_Lin_p) call stop_all(t_r,'Compressed array h size too small 2')
-                            LinearSystem_h(ind_h) = - Ga_i_F_xi_Ket(Coup_Create_alpha_T(1,k),pertsite)* &
-                                Coup_Create_alpha_T(2,k)/sqrt(CNorm)
+                            LinearSystem_h(ind_h) = matel 
                             LinearSystem_h(ind_h) = Coup_Create_alpha_inds_T(k) + nNm1bFCIDet
                         endif
                     enddo
@@ -769,11 +769,11 @@ module LinearResponse
                 !Now, the rows from block 3^T and 2
                 do i = 1,nFCIDet
                     do k = Coup_Create_alpha_cum(i),Coup_Create_alpha_cum(i+1)-1
-                        if(abs(Coup_Create_alpha(k)).gt.CompressThresh) then
+                        matel = - Ga_i_F_xi_Bra(Coup_Create_alpha(1,k),pertsite)*Coup_Create_alpha(2,k)/sqrt(CNorm)
+                        if(abs(matel).gt.CompressThresh) then
                             ind_h = ind_h + 1
                             if(ind_h.gt.Nmax_Lin_h) call stop_all(t_r,'Compressed array h size too small 3')
-                            LinearSystem_h(ind_h) = - Ga_i_F_xi_Bra(Coup_Create_alpha(1,k),pertsite)*   &
-                                Coup_Create_alpha(2,k)/sqrt(CNorm)
+                            LinearSystem_h(ind_h) = matel 
                             LinearSystem_h_inds(ind_h) = Coup_Create_alpha_inds(k)
                         endif
                     enddo
@@ -1400,7 +1400,7 @@ module LinearResponse
                     !Update tmat with the new one-electron hamiltonian, with self-energy contribution
                     tmat_comp(:,:) = Emb_h0v_SE(:,:)
                     if(tChemPot) tmat_comp(1,1) = tmat_comp(1,1) - dcmplx(U/2.0_dp,0.0_dp)
-                    call Fill_N_Np1_Nm1b_FCIHam(Elec,NFCIHam,Np1FCIHam_alpha,Nm1FCIHam_beta)
+                    call Fill_N_Np1_Nm1b_FCIHam(Elec,1,1,1,NHam=NFCIHam,Np1Ham=Np1FCIHam_alpha,Nm1bHam=Nm1FCIHam_beta)
                 else
                     !First, find the non-interacting solution expressed in the schmidt basis
                     !This will only calculate it over the first impurity site
@@ -3311,8 +3311,10 @@ module LinearResponse
     end subroutine NonIntExContracted_TDA_MCLR
         
     !Calculate n-electron hamiltonian
-    subroutine Fill_N_Np1_Nm1b_FCIHam(nElec,Nmax_N,Nmax_Np1,Nmax_Nm1b,NHam,Np1Ham,Nm1bHam,NHam_cmps,Np1Ham_cmps,Nm1bHam_cmps)
+    subroutine Fill_N_Np1_Nm1b_FCIHam(nElec,Nmax_N,Nmax_Np1,Nmax_Nm1b,NHam,Np1Ham,Nm1bHam,  &
+            NHam_cmps,Np1Ham_cmps,Nm1bHam_cmps,NHam_inds,Np1Ham_inds,Nm1bHam_inds)
         use DetToolsData
+        use solvers, only: StoreCompMat_comp
         implicit none
         integer, intent(in) :: nElec
         integer, intent(in) :: Nmax_N,Nmax_Np1,Nmax_Nm1b
@@ -6053,7 +6055,7 @@ module LinearResponse
         implicit none
         integer, intent(in) :: n
 !        real(dp) :: Scal
-        integer :: i
+        integer :: i,k
         complex(dp) :: zdotc
         character(len=*), parameter :: t_r='FormPrecond'
         
@@ -6087,7 +6089,7 @@ module LinearResponse
 !                tmp = tmp * dconjg(zShift)
 !                Precond_diag(i) = Precond_diag(i) - 2.0_dp*real(tmp,dp) + Scal
             enddo
-        else
+        endif
         !call writevector(Precond_diag,'Precond')
     end subroutine FormPrecond
 
@@ -6130,6 +6132,7 @@ module LinearResponse
         integer, intent(in) :: n
         complex(dp), intent(in) :: V0(n)
         complex(dp), intent(out) :: Trans_V0(n)
+        integer :: i,j,k
         character(len=*), parameter :: t_r='setup_RHS'
         
         if(tCompressedMats.and.(.not.associated(zDirMV_Mat_cmprs))) call stop_all(t_r,'Compressed matrix not associated')
@@ -6162,6 +6165,7 @@ module LinearResponse
         integer(ip), intent(in) :: n
         complex(dp), intent(in) :: x(n)
         complex(dp), intent(out) :: y(n)
+        integer :: i,k,j
         complex(dp) :: temp(n)
         character(len=*), parameter :: t_r='zDirMV'
 
