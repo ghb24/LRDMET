@@ -514,9 +514,10 @@ module solvers
         use utils, only: get_free_unit,append_ext,append_ext_real
         use DetBitOps, only: SQOperator
         use DetToolsData
+        use DetTools, only: umatind,GenDets,GetHElement
         implicit none
         integer :: pSpaceDim,i,j,iunit,pertsitealpha,pertsitebeta,UMatSize,OrbPairs
-        integer :: umatind,lWork,info,ilut,pertsite
+        integer :: lWork,info,ilut,pertsite
         logical :: tParity
         complex(dp) :: DDRes,GFRes,GFRes_h,GFRes_p
         real(dp) :: ddot,Overlap,Omega,mu
@@ -884,9 +885,10 @@ module solvers
     subroutine CompleteDiag(tCreate2RDM)
         use DetToolsData
         use Davidson, only: Real_NonDir_Davidson
+        use DetTools, only: GetHElement,umatind,GenDets
         implicit none
         logical, intent(in) :: tCreate2RDM
-        integer :: OrbPairs,UMatSize,umatind,Nmax,ierr
+        integer :: OrbPairs,UMatSize,Nmax,ierr
         real(dp), allocatable :: work(:),CompressHam(:)
         integer, allocatable :: IndexHam(:)
         integer :: lwork,info,i,j
@@ -925,7 +927,8 @@ module solvers
 
         !Now generate all determinants in the active space
         if(allocated(FCIDetList)) deallocate(FCIDetList)
-        call GenDets(Elec,EmbSize,.false.,.false.,.false.)
+        if(allocated(FCIBitList)) deallocate(FCIBitList)
+        call GenDets(Elec,EmbSize,.false.,.true.,.false.)
         !FCIDetList now stores a list of all the determinants
         write(6,"(A,I14)") "Number of determinants in FCI space: ",nFCIDet
         if(tCompressedMats) then
@@ -950,6 +953,7 @@ module solvers
                 enddo
             enddo
         endif
+        if(allocated(FCIBitList)) deallocate(FCIBitList)
 !        call writematrix(FullHamil(1:nFCIDet,1:nFCIDet),'FCI hamil',.true.)
 
         !Diagonalize
@@ -958,9 +962,11 @@ module solvers
         if(tNonDirDavidson) then
             write(6,*) "Solving for ground state with non-direct davidson diagonalizer..."
             if(tCompressedMats) then
+                call writevector(CompressHam,'CompressHam')
                 call Real_NonDir_Davidson(nFCIDet,HL_Energy,HL_Vec,.false.,Nmax,CompressMat=CompressHam,IndexMat=IndexHam)
                 deallocate(CompressHam,IndexHam)
             else
+                call writematrix(FullHamil,'FullHamil',.true.)
                 call Real_NonDir_Davidson(nFCIDet,HL_Energy,HL_Vec,.false.,1,Mat=FullHamil)
                 deallocate(FullHamil)
             endif
@@ -1006,12 +1012,13 @@ module solvers
 
     subroutine FindFull1RDM(StateBra,StateKet,tGroundState,RDM)
         use DetToolsData, only: FCIDetList,nFCIDet
+        use DetTools, only: iGetExcitLevel,GetExcitation,gtid
         implicit none
         real(dp) , intent(out) :: RDM(EmbSize,EmbSize)
         integer , intent(in) :: StateBra,StateKet
         logical , intent(in) :: tGroundState
         real(dp), pointer :: Bra(:),Ket(:)
-        integer :: Ex(2),gtid,i,j,k,IC,iGetExcitLevel
+        integer :: Ex(2),i,j,k,IC
         logical :: tSign
         character(len=*), parameter :: t_r='FindFull1RDM'
 
@@ -1064,12 +1071,13 @@ module solvers
     !Done by running through all N^2 determinant pairs
     subroutine FindFull2RDM(StateBra,StateKet,tGroundState,RDM)
         use DetToolsData, only: FCIDetList,nFCIDet
+        use DetTools, only: iGetExcitLevel,GetExcitation,gtid
         implicit none
         real(dp) , intent(out) :: RDM(EmbSize,EmbSize,EmbSize,EmbSize)
         integer , intent(in) :: StateBra,StateKet
         logical , intent(in) :: tGroundState
         real(dp), pointer :: Bra(:),Ket(:)
-        integer :: Ex(2,2),gtid,i,j,k,IC,iGetExcitLevel,kel,lel,l,temp
+        integer :: Ex(2,2),i,j,k,IC,kel,lel,l,temp
         logical :: tSign
         character(len=*), parameter :: t_r='FindFull2RDM'
 
@@ -1364,18 +1372,8 @@ module solvers
 
     !Find logical size of desired compressed hamiltonian
     subroutine CountSizeCompMat(DetList,Elec,nDet,Nmax,BitDetList)
+        use DetTools, only: GetHElement
         implicit none
-        interface
-            subroutine GetHElement(nI,nJ,NEl,HEl,ilutnI,ilutnJ)
-                use const
-                use DetBitOps, only: FindBitExcitLevel
-                implicit none
-                integer, intent(in) :: NEl
-                integer, intent(in) :: nI(NEl),nJ(NEl)
-                integer, intent(in), optional :: ilutnI,ilutnJ
-                real(dp), intent(out) :: HEl
-            end subroutine GetHElement
-        end interface
         integer, intent(in) :: Elec,nDet
         integer, intent(out) :: Nmax
         integer, intent(in) :: DetList(Elec,nDet)
@@ -1412,6 +1410,7 @@ module solvers
     !Create compressed matrix form of hamiltonian from basis elements
     !DetList
     subroutine StoreCompMat(DetList,Elec,nDet,Nmax,sa,ija)
+        use DetTools, only: GetHElement
         implicit none
         integer, intent(in) :: Elec,nDet,Nmax
         integer, intent(in) :: DetList(Elec,nDet)
@@ -1426,6 +1425,7 @@ module solvers
 
         !Store diagonals
         do j = 1,nDet
+            write(6,*) "Attempting to store diagonal element",j
             call GetHElement(DetList(:,j),DetList(:,j),Elec,sa(j))
         enddo
         ija(1) = nDet + 2
@@ -1435,6 +1435,7 @@ module solvers
             do j = 1,nDet
                 if(i.eq.j) cycle
                 call GetHElement(DetList(:,i),DetList(:,j),Elec,Elem)
+                write(6,*) "***",i,j,DetList(:,i),DetList(:,j),Elem
                 if(abs(Elem).ge.CompressThresh) then
                     k = k + 1
                     if(k.gt.Nmax) call stop_all(t_r,'Compressed array sizes too small')
@@ -1445,11 +1446,14 @@ module solvers
             ija(i+1) = k + 1
         enddo
 
+        call writevector(sa,'CompressHam')
+
     end subroutine StoreCompMat
     
     !Create compressed matrix form of hamiltonian from basis elements
     !DetList
     subroutine StoreCompMat_comp(DetList,Elec,nDet,Nmax,sa,ija)
+        use DetTools, only: GetHElement_comp
         implicit none
         integer, intent(in) :: Elec,nDet,Nmax
         integer, intent(in) :: DetList(Elec,nDet)

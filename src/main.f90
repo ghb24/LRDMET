@@ -1725,9 +1725,10 @@ Program RealHub
 
     subroutine DumpFCIDUMP()
         use utils, only: get_free_unit,append_ext_real
+        use DetTools, only: GetHFInt_spinorb
         implicit none
         integer :: iunit,i,j,k,l,A,B,ex(2,2)
-        real(dp) :: hel,GetHFInt_spinorb
+        real(dp) :: hel
         real(dp), allocatable :: temp(:,:),h0HF(:,:)
         character(len=64) :: filename
         

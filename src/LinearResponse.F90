@@ -112,33 +112,34 @@ module LinearResponse
         use zminresqlpModule, only: MinresQLP  
         use DetToolsData
         use solvers, only: CountSizeCompMat
+        use DetTools, only: gtid,umatind,gendets
         implicit none
         complex(dp), allocatable :: NFCIHam_cmps(:),Np1FCIHam_alpha_cmps(:),Nm1FCIHam_beta_cmps(:)
         integer, allocatable :: NFCIHam_inds(:),Np1FCIHam_alpha_inds(:),Nm1FCIHam_beta_inds(:)
-        real(dp), allocatable :: W(:),dNorm_p(:),dNorm_h(:)
+        real(dp), allocatable :: dNorm_p(:),dNorm_h(:)
         complex(dp), allocatable , target :: LinearSystem_p(:),LinearSystem_h(:)
         integer, allocatable , target :: LinearSystem_p_inds(:),LinearSystem_h_inds(:)
         complex(dp), allocatable :: Cre_0(:,:),Ann_0(:,:),ResponseFn_p(:,:),ResponseFn_h(:,:)
         complex(dp), allocatable :: Gc_a_F_ax_Bra(:,:),Gc_a_F_ax_Ket(:,:),Gc_b_F_ab(:,:)
         complex(dp), allocatable :: ResponseFn_Mat(:,:),Ga_i_F_xi_Ket(:,:)
         complex(dp), allocatable :: Psi1_p(:),Psi1_h(:),Ga_i_F_xi_Bra(:,:),Ga_i_F_ij(:,:),ni_lr_Mat(:,:)
-        complex(dp), allocatable :: temp_vecc(:),Work(:),Psi_0(:),RHS(:)
+        complex(dp), allocatable :: Psi_0(:),RHS(:)
         complex(dp), allocatable :: NI_LRMat_Cre(:,:),NI_LRMat_Ann(:,:)
         integer, allocatable :: Coup_Ann_alpha(:,:),Coup_Create_alpha(:,:),Coup_Create_alpha_inds(:)
         integer, allocatable :: Coup_Ann_alpha_inds(:),Coup_Create_alpha_cum(:),Coup_Ann_alpha_cum(:)
         integer, allocatable :: Coup_Create_alpha_T(:,:),Coup_Ann_alpha_T(:,:),Coup_Create_alpha_inds_T(:)
         integer, allocatable :: Coup_Ann_alpha_inds_T(:),Coup_Create_alpha_cum_T(:),Coup_Ann_alpha_cum_T(:)
-        integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,umatind,ierr,info,iunit,nCore
+        integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,ierr,info,iunit,nCore
         integer :: nLinearSystem,nOrbs,nVirt,OrbPairs,tempK,UMatSize,VIndex,VirtStart,VirtEnd,ind_p,ind_h
-        integer :: orbdum(1),gtid,nLinearSystem_h,nGSSpace,Np1GSInd,Nm1GSInd,lWork,minres_unit
-        integer :: maxminres_iter,nImp_GF,pertsite,SE_Fit_Iter,nNR_Iters
+        integer :: orbdum(1),nLinearSystem_h,nGSSpace,Np1GSInd,Nm1GSInd,minres_unit
+        integer :: maxminres_iter,nImp_GF,pertsite
         integer :: Nmax_N,Nmax_Nm1b,Nmax_Np1,Nmax_Coup_Create,Nmax_Coup_Ann,Nmax_Lin_p,Nmax_Lin_h,i_Ann
         integer(ip) :: nLinearSystem_ip,minres_unit_ip,info_ip,maxminres_iter_ip,iters_p,iters_h
-        real(dp) :: Omega,GFChemPot,mu,SpectralWeight,Prev_Spec,AvdNorm_p,AvdNorm_h,Var_SE,Error_GF
+        real(dp) :: Omega,GFChemPot,mu,SpectralWeight,Prev_Spec,AvdNorm_p,AvdNorm_h
         real(dp) :: Diff_GF
         complex(dp) :: ResponseFn,tempel,ni_lr,ni_lr_p,ni_lr_h,AvResFn_p,AvResFn_h
-        complex(dp) :: zdotc,VNorm,CNorm,Prev_SE_Saved(nImp,nImp),TR_SE,matel
-        logical :: tParity,tFirst,tSCFConverged,tSCFFailed
+        complex(dp) :: zdotc,VNorm,CNorm,matel
+        logical :: tParity,tFirst
         character(64) :: filename,filename2
         character(len=*), parameter :: t_r='NonIntExCont_TDA_MCLR_Charged_Cmprs'
 
@@ -228,7 +229,8 @@ module LinearResponse
         allocate(Nm1FCIHam_beta_inds(Nmax_Nm1b),stat=ierr)
         if(ierr.ne.0) call stop_all(t_r,'Allocation fail')
         call Fill_N_Np1_Nm1b_FCIHam(Elec,Nmax_N,Nmax_Np1,Nmax_Nm1b,NHam_cmps=NFCIHam_cmps,Np1Ham_cmps=Np1FCIHam_alpha_cmps, &
-            Nm1bHam_cmps=Nm1FCIHam_beta_cmps,NHam_inds=NFCIHam_inds,Np1Ham_inds=Np1FCIHam_alpha_inds,Nm1bHam_inds=Nm1FCIHam_beta_inds)
+            Nm1bHam_cmps=Nm1FCIHam_beta_cmps,NHam_inds=NFCIHam_inds,Np1Ham_inds=Np1FCIHam_alpha_inds,   &
+            Nm1bHam_inds=Nm1FCIHam_beta_inds)
 
         nLinearSystem = nNp1FCIDet + nFCIDet
         nLinearSystem_h = nNm1bFCIDet + nFCIDet
@@ -982,6 +984,7 @@ module LinearResponse
         use fitting, only: Fit_SE
         use zminresqlpModule, only: MinresQLP  
         use DetToolsData
+        use DetTools, only: gtid,umatind,gendets
         implicit none
         complex(dp), allocatable :: NFCIHam(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
         real(dp), allocatable :: W(:),dNorm_p(:),dNorm_h(:)
@@ -993,9 +996,9 @@ module LinearResponse
         complex(dp), allocatable :: temp_vecc(:),Work(:),Psi_0(:),RHS(:),SE_Change(:,:)
         complex(dp), allocatable :: NI_LRMat_Cre(:,:),NI_LRMat_Ann(:,:)
         integer, allocatable :: Coup_Ann_alpha(:,:,:),Coup_Create_alpha(:,:,:)
-        integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,umatind,ierr,info,iunit,nCore
+        integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,ierr,info,iunit,nCore
         integer :: nLinearSystem,nOrbs,nVirt,OrbPairs,tempK,UMatSize,VIndex,VirtStart,VirtEnd
-        integer :: orbdum(1),gtid,nLinearSystem_h,nGSSpace,Np1GSInd,Nm1GSInd,lWork,minres_unit
+        integer :: orbdum(1),nLinearSystem_h,nGSSpace,Np1GSInd,Nm1GSInd,lWork,minres_unit
         integer :: maxminres_iter,nImp_GF,pertsite,SE_Fit_Iter,nNR_Iters
         integer(ip) :: nLinearSystem_ip,minres_unit_ip,info_ip,maxminres_iter_ip,iters_p,iters_h
         real(dp) :: Omega,GFChemPot,mu,SpectralWeight,Prev_Spec,AvdNorm_p,AvdNorm_h,Var_SE,Error_GF
@@ -1921,11 +1924,12 @@ module LinearResponse
         use DetBitOps, only: DecodeBitDet,SQOperator,CountBits
         use zminresqlpModule, only: MinresQLP  
         use DetToolsData
+        use DetTools, only: gtid,umatind,GenDets,GetHElement
         implicit none
-        integer :: a,i,j,k,OrbPairs,UMatSize,UMatInd,AVInd_tmp,b,beta
+        integer :: a,i,j,k,OrbPairs,UMatSize,AVInd_tmp,b,beta
         integer :: CoreEnd,VirtStart,VirtEnd,CVInd_tmp,iunit,iunit2
         integer :: DiffOrb,nOrbs,gam,gam1,gam1_ind,gam1_spat,gam2,gam2_ind,gam2_spat,ierr
-        integer :: gam_spat,nLinearSystem,tempK,gtid,nSpan,ActiveEnd,ActiveStart
+        integer :: gam_spat,nLinearSystem,tempK,nSpan,ActiveEnd,ActiveStart
         integer :: orbdum(1),CAInd_tmp,lwork,info,nSize,nCore,nVirt,nFullNm1,nFullNp1,iters
         integer :: maxminres_iter,minres_unit,InterMem,HamMem,CoupMem
         logical :: tParity,tCalcResponse,tTransformSpace
@@ -3314,6 +3318,7 @@ module LinearResponse
     subroutine Fill_N_Np1_Nm1b_FCIHam(nElec,Nmax_N,Nmax_Np1,Nmax_Nm1b,NHam,Np1Ham,Nm1bHam,  &
             NHam_cmps,Np1Ham_cmps,Nm1bHam_cmps,NHam_inds,Np1Ham_inds,Nm1bHam_inds)
         use DetToolsData
+        use DetTools, only : GetHElement_comp
         use solvers, only: StoreCompMat_comp
         implicit none
         integer, intent(in) :: nElec
@@ -5076,12 +5081,13 @@ module LinearResponse
     !det is the label to the single determinant function Dj
     subroutine FindDeterminantTransRDM(det,Trans1RDM,tGSKet)
         use DetToolsData, only: FCIDetList,nFCIDet
+        use DetTools, only: gtid,iGetExcitLevel,GetExcitation
         implicit none
         integer, intent(in) :: det
         logical, intent(in) :: tGSKet
         real(dp), intent(out) :: Trans1RDM(EmbSize,EmbSize)
         logical :: tSign
-        integer :: IC,Ex(2),k,i,iGetExcitLevel,gtid
+        integer :: IC,Ex(2),k,i
         character(len=*), parameter :: t_r='FindDeterminantTransRDM'
 
         Trans1RDM(:,:) = 0.0_dp
@@ -5119,10 +5125,11 @@ module LinearResponse
     subroutine CalcNp1_2RDM(Bra,Ket,RDM)
         use DetToolsData, only: nNp1FCIDet,Np1BitList,Np1FCIDetList
         use DetBitOps, only: CountBits
+        use DetTools, only: gtid,GetExcitation
         implicit none
         real(dp), intent(in) :: Bra(nNp1FCIDet),Ket(nNp1FCIDet)
         real(dp), intent(out) :: RDM(nImp*2,nImp*2,nImp*2,nImp*2)
-        integer :: Ex(2,2),i,j,IC,orbdiffs,k,l,kel,lel,gtid,temp
+        integer :: Ex(2,2),i,j,IC,orbdiffs,k,l,kel,lel,temp
         logical :: tSign
         character(len=*), parameter :: t_r='CalcNp1_2RDM'
 
@@ -5315,12 +5322,13 @@ module LinearResponse
     subroutine CalcNp1_1RDM(Bra,Ket,RDM)
         use DetToolsData, only: nNp1FCIDet,Np1BitList,Np1FCIDetList
         use DetBitOps, only: CountBits
+        use DetTools, only: gtid,getexcitation
         implicit none
         real(dp), intent(in) :: Bra(nNp1FCIDet),Ket(nNp1FCIDet)
         real(dp), intent(out) :: RDM(nImp*2,nImp*2)
         !real(dp) :: trace
         integer :: i,j,ex(2),k,i_spat,a_spat,k_spat,IC    !,igetexcitlevel,nCore
-        integer :: gtid,orbdiffs
+        integer :: orbdiffs
         logical :: tSign
         character(len=*), parameter :: t_r='CalcNp1_1RDM'
 
@@ -5362,11 +5370,11 @@ module LinearResponse
     subroutine CalcNm1_2RDM(Bra,Ket,RDM)
         use DetToolsData, only: nNm1FCIDet,Nm1BitList,Nm1FCIDetList
         use DetBitOps, only: CountBits
+        use DetTools, only: gtid,GetExcitation
         implicit none
         real(dp), intent(in) :: Bra(nNm1FCIDet),Ket(nNm1FCIDet)
         real(dp), intent(out) :: RDM(nImp*2,nImp*2,nImp*2,nImp*2)
         integer :: Ex(2,2),i,j,IC,orbdiffs,k,l,kel,lel,temp
-        integer :: gtid
         logical :: tSign
         character(len=*), parameter :: t_r='CalcNm1_2RDM'
 
@@ -5559,12 +5567,13 @@ module LinearResponse
     subroutine CalcNm1_1RDM(Bra,Ket,RDM)
         use DetToolsData, only: nNm1FCIDet,Nm1BitList,Nm1FCIDetList
         use DetBitOps, only: CountBits
+        use DetTools, only: gtid,getexcitation
         implicit none
         real(dp), intent(in) :: Bra(nNm1FCIDet),Ket(nNm1FCIDet)
         real(dp), intent(out) :: RDM(nImp*2,nImp*2)
         !real(dp) :: trace
         integer :: i,j,ex(2),k,i_spat,a_spat,k_spat,IC    !,igetexcitlevel,nCore
-        integer :: gtid,orbdiffs
+        integer :: orbdiffs
         logical :: tSign
         character(len=*), parameter :: t_r='CalcNm1_1RDM'
 
@@ -5604,12 +5613,12 @@ module LinearResponse
     !Do this very naively to start with.
     subroutine Calc1RDM(Bra,Ket,RDM)
         use DetToolsData, only: nFCIDet,FCIDetList
+        use DetTools, only: gtid,igetexcitlevel,getexcitation
         implicit none
         real(dp), intent(in) :: Bra(nFCIDet),Ket(nFCIDet)
         real(dp), intent(out) :: RDM(nSites,nSites)
         !real(dp) :: trace
-        integer :: nCore,i,j,ex(2),k,i_spat,a_spat,k_spat,IC,igetexcitlevel
-        integer :: gtid
+        integer :: nCore,i,j,ex(2),k,i_spat,a_spat,k_spat,IC
         logical :: tSign
         !character(len=*), parameter :: t_r='Calc1RDM'
 
@@ -5660,6 +5669,7 @@ module LinearResponse
     !of single excitations of core into active space. This will all be constructed explicitly initially.
     subroutine TDA_MCLR()
         use DetToolsData, only: nFCIDet,FCIDetList
+        use DetTools, only: GetHElement,GetExcitation
         implicit none
         integer :: nCoreVirt,nCoreActive,nActiveVirt,nLinearSystem,ierr,info
         integer :: i,j,CoreNEl,ind2,ind1,a,x,Ex(2),b,pertsite
@@ -6730,8 +6740,9 @@ module LinearResponse
 
     subroutine NonInteractingLR()
         use utils, only: get_free_unit,append_ext_real,append_ext
+        use DetTools, only: gtid
         implicit none
-        integer :: ov_space,virt_start,i,a,a_spat,i_spat,ai_ind,gtid,iunit
+        integer :: ov_space,virt_start,i,a,a_spat,i_spat,ai_ind,iunit
         integer :: highbound,pertsite 
         real(dp) :: Omega,EDiff
         complex(dp) :: ResponseFn,ResponseFnPosW
@@ -6849,13 +6860,14 @@ module LinearResponse
     subroutine TDA_LR()
         use utils, only: get_free_unit,append_ext_real,append_ext
         use DetToolsData, only: tmat,umat
+        use DetTools, only: gtid,GetHFAntisymInt_spinorb,GetExcitation
         implicit none
-        integer :: ov_space,virt_start,ierr,i,j,n,m,nj_ind,mi_ind,ex(2,2),gtid
+        integer :: ov_space,virt_start,ierr,i,j,n,m,nj_ind,mi_ind,ex(2,2)
         integer :: m_spat,i_spat,lwork,info,k,umatind,l,orbpairs,umatsize,ai_ind,a
         integer :: state,iunit,a_spat,highbound,pertsite
         logical :: tSign
         integer, allocatable :: detHF(:),detR(:),detL(:)
-        real(dp) :: HEl1,GetHFAntisymInt_spinorb,GetHFInt_spinorb,Omega
+        real(dp) :: HEl1,GetHFInt_spinorb,Omega
         complex(dp) :: ResponseFn
         real(dp), allocatable :: A_mat(:,:),W(:),Work(:),temp(:,:),Residues(:)
         real(dp), allocatable :: DM(:,:),DM_conj(:,:),DM_AO(:,:),DM_AO_conj(:,:)
@@ -7177,13 +7189,13 @@ module LinearResponse
     subroutine RPA_LR()
         use utils, only: get_free_unit,append_ext_real,append_ext
         use matrixops, only: d_inv
+        use DetTools, only: gtid,GetHFAntisymInt_spinorb
         implicit none
         integer :: ov_space,virt_start,ierr,j,ex(2,2),ex2(2,2),n,i,m,nj_ind,mi_ind,info,lwork
-        integer :: m_spat,i_spat,StabilitySize,mu,gtid,j_spat,ai_ind,iunit,a,excit,highbound
+        integer :: m_spat,i_spat,StabilitySize,mu,j_spat,ai_ind,iunit,a,excit,highbound
         integer :: pertsite
         real(dp) :: HEl1,HEl2,X_norm,Y_norm,norm,Energy_stab,DMEl1,DMEl2,Omega
         complex(dp) :: ResponseFn
-        real(dp) :: GetHFAntisymInt_spinorb
         real(dp), allocatable :: A_mat(:,:),B_mat(:,:),Stability(:,:),StabilityCopy(:,:),W(:),Work(:)
         real(dp), allocatable :: S_half(:,:),temp(:,:),temp2(:,:),W2(:),X_stab(:,:),Y_stab(:,:)
         real(dp), allocatable :: trans_moment(:),AOMO_Spin(:,:),DM(:,:)
@@ -7685,9 +7697,10 @@ module LinearResponse
     !First list all alpha excitations, then beta excitations
     !Within each spin-type, it is virtual fast
     integer function ov_space_spinind(a,i)
+        use DetTools, only: gtid
         implicit none
         integer, intent(in) :: i,a
-        integer :: a_spat,i_spat,nVirt_spat,gtid
+        integer :: a_spat,i_spat,nVirt_spat
 
         if(mod(i,2).ne.mod(a,2)) ov_space_spinind = -1  !*Should* be easy to see where this goes wrong
 

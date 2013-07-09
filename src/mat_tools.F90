@@ -821,8 +821,9 @@ module mat_tools
     !Run a full HF, including mean-field on-site repulsion term in the fock matrix
     !These are stored in FullHFOrbs and FullHFEnergies
     subroutine run_true_hf()
+        use DetTools, only: GetHFAntisymInt_spinorb
         implicit none
-        real(dp) :: HEl,GetHFAntisymInt_spinorb,PDiff,fockel
+        real(dp) :: HEl,PDiff,fockel
         real(dp), allocatable :: Work(:),OccOrbs_HF(:,:),PMatrix_old(:,:),PMatrix(:,:)
         real(dp), allocatable :: fock(:,:),temp(:,:),h0HF(:,:)
         integer :: i,lWork,info,ex(2,2),j,nIter
