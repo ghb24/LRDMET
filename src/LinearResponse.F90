@@ -3353,9 +3353,9 @@ module LinearResponse
             Np1Ham_inds(:) = 0
             Nm1bHam_inds(:) = 0
 
-            call StoreCompMat_comp(FCIDetList,nElec,nFCIDet,Nmax_N,NHam_cmps,NHam_inds)
-            call StoreCompMat_comp(Np1FCIDetList,nElec+1,nNp1FCIDet,Nmax_Np1,Np1Ham_cmps,Np1Ham_inds)
-            call StoreCompMat_comp(Nm1bFCIDetList,nElec-1,nNm1bFCIDet,Nmax_Nm1b,Nm1bHam_cmps,Nm1bHam_inds)
+            call StoreCompMat_comp(FCIDetList,nElec,nFCIDet,Nmax_N,NHam_cmps,NHam_inds,FCIBitList)
+            call StoreCompMat_comp(Np1FCIDetList,nElec+1,nNp1FCIDet,Nmax_Np1,Np1Ham_cmps,Np1Ham_inds,Np1BitList)
+            call StoreCompMat_comp(Nm1bFCIDetList,nElec-1,nNm1bFCIDet,Nmax_Nm1b,Nm1bHam_cmps,Nm1bHam_inds,Nm1bBitList)
         else
             NHam(:,:) = zzero
             Np1Ham(:,:) = zzero
@@ -3363,21 +3363,23 @@ module LinearResponse
             !Beware - these can be non-hermitian. Ensure that the indices are the right way around!
             do i = 1,nFCIDet
                 do j = 1,nFCIDet
-                    call GetHElement_comp(FCIDetList(:,i),FCIDetList(:,j),nElec,NHam(i,j))
+                    call GetHElement_comp(FCIDetList(:,i),FCIDetList(:,j),nElec,NHam(i,j),  &
+                        ilutnI=FCIBitList(i),ilutnJ=FCIBitList(j))
                 enddo
             enddo
             do i = 1,nNp1FCIDet
                 do j = 1,nNp1FCIDet
-                    call GetHElement_comp(Np1FCIDetList(:,i),Np1FCIDetList(:,j),nElec+1,Np1Ham(i,j))
+                    call GetHElement_comp(Np1FCIDetList(:,i),Np1FCIDetList(:,j),nElec+1,Np1Ham(i,j),    &
+                        ilutnI=Np1BitList(i),ilutnJ=Np1BitList(j))
                 enddo
             enddo
             do i = 1,nNm1bFCIDet
                 do j = 1,nNm1bFCIDet
-                    call GetHElement_comp(Nm1bFCIDetList(:,i),Nm1bFCIDetList(:,j),nElec-1,Nm1bHam(i,j))
+                    call GetHElement_comp(Nm1bFCIDetList(:,i),Nm1bFCIDetList(:,j),nElec-1,Nm1bHam(i,j), &
+                        ilutnI=Nm1bBitList(i),ilutnJ=Nm1bBitList(j))
                 enddo
             enddo
         endif
-
 
     end subroutine Fill_N_Np1_Nm1b_FCIHam
 

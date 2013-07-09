@@ -101,9 +101,9 @@ LINEAR_RESPONSE
 (Option for the density response: remove the non-null vectors of the overlap in the first-order space (argument gives threshold for non-null overlap eigenvalues))
     NON_NULL 1.0E-9
 (Option for the density response: reexpress the first-order space in the orthogonal eigenspace of the overlap matrix)
-    EXPLICIT_ORTHOG
-(Option for the density response: Explicitly project out any component of the ground state from the first-order wavefunction)
     WORKLINEARSPAN
+(Option for the density response: Explicitly project out any component of the ground state from the first-order wavefunction)
+    EXPLICIT_ORTHOG
 (Option for the density response: Explicitly remove the component of the ground state from the hamiltonian matrix)
     REMOVE_GS_FROM_H
 END

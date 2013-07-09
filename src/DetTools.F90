@@ -382,16 +382,22 @@ module DetTools
 
     end subroutine GetHElement
 
-    subroutine GetHElement_comp(nI,nJ,NEl,HEl)
+    subroutine GetHElement_comp(nI,nJ,NEl,HEl,ilutnI,ilutnJ)
         use const
+        use DetBitOps, only: FindBitExcitLevel
         implicit none
         integer, intent(in) :: NEl
         integer, intent(in) :: nI(NEl),nJ(NEl)
         complex(dp), intent(out) :: HEl
+        integer, intent(in), optional :: ilutnI,ilutnJ
         integer :: Ex(2,2),IC,DeltaSpin
         logical :: tSign
 
-        IC = IGETEXCITLEVEL(NI,NJ,NEL)
+        if(present(ilutnI)) then
+            IC = FindBitExcitLevel(ilutnI,ilutnJ)
+        else
+            IC = IGETEXCITLEVEL(NI,NJ,NEL)
+        endif
         Ex(1,1) = IC
         if(Ex(1,1).le.2) then
             call GetExcitation(nI,nJ,NEl,Ex,tSign)

@@ -940,7 +940,7 @@ module solvers
             allocate(CompressHam(Nmax),stat=ierr)
             allocate(IndexHam(Nmax),stat=ierr)
             if(ierr.ne.0) call stop_all(t_r,'Allocation failed')
-            call StoreCompMat(FCIDetList(:,:),Elec,nFCIDet,Nmax,CompressHam,IndexHam)
+            call StoreCompMat(FCIDetList(:,:),Elec,nFCIDet,Nmax,CompressHam,IndexHam,FCIBitList(:))
         else
             write(6,"(A,F14.6,A)") "Allocating memory for the hamiltonian: ",real((nFCIDet**2)*8,dp)/1048576.0_dp," Mb"
             if(allocated(FullHamil)) deallocate(FullHamil)
@@ -1389,7 +1389,10 @@ module solvers
                         Nmax = Nmax + 2     !Due to both sides of matrix
                     endif
                 enddo
-                write(6,*) "Counting: ",i,nDet
+                if(mod(i,25000).eq.0) then
+                    write(6,"(A,2I12)") "Counting Mat: ",i,nDet
+                    call flush(6)
+                endif
             enddo
         else
             do i = 1,nDet
@@ -1399,6 +1402,10 @@ module solvers
                         Nmax = Nmax + 2     !Due to both sides of matrix
                     endif
                 enddo
+                if(mod(i,25000).eq.0) then
+                    write(6,"(A,2I12)") "Counting Mat: ",i,nDet
+                    call flush(6)
+                endif
             enddo
         endif
 
@@ -1406,13 +1413,14 @@ module solvers
 
     !Create compressed matrix form of hamiltonian from basis elements
     !DetList
-    subroutine StoreCompMat(DetList,Elec,nDet,Nmax,sa,ija)
+    subroutine StoreCompMat(DetList,Elec,nDet,Nmax,sa,ija,BitDetList)
         use DetTools, only: GetHElement
         implicit none
         integer, intent(in) :: Elec,nDet,Nmax
         integer, intent(in) :: DetList(Elec,nDet)
         real(dp), intent(out) :: sa(Nmax)
         integer, intent(out) :: ija(Nmax)
+        integer, intent(in), optional :: BitDetList(nDet)
         integer :: i,j,k
         real(dp) :: Elem
         character(len=*), parameter :: t_r='StoreCompMat'
@@ -1422,36 +1430,65 @@ module solvers
 
         !Store diagonals
         do j = 1,nDet
-            call GetHElement(DetList(:,j),DetList(:,j),Elec,sa(j))
+            if(present(BitDetList)) then
+                call GetHElement(DetList(:,j),DetList(:,j),Elec,sa(j),ilutnI=BitDetList(j),ilutnJ=BitDetList(j))
+            else
+                call GetHElement(DetList(:,j),DetList(:,j),Elec,sa(j))
+            endif
         enddo
         ija(1) = nDet + 2
         k = nDet + 1
 
-        do i = 1,nDet
-            do j = 1,nDet
-                if(i.eq.j) cycle
-                call GetHElement(DetList(:,i),DetList(:,j),Elec,Elem)
-                if(abs(Elem).ge.CompressThresh) then
-                    k = k + 1
-                    if(k.gt.Nmax) call stop_all(t_r,'Compressed array sizes too small')
-                    sa(k) = Elem
-                    ija(k) = j
+        if(present(BitDetList)) then
+            do i = 1,nDet
+                do j = 1,nDet
+                    if(i.eq.j) cycle
+                    call GetHElement(DetList(:,i),DetList(:,j),Elec,Elem,ilutnI=BitDetList(i),ilutnJ=BitDetList(j))
+                    if(abs(Elem).ge.CompressThresh) then
+                        k = k + 1
+                        if(k.gt.Nmax) call stop_all(t_r,'Compressed array sizes too small')
+                        sa(k) = Elem
+                        ija(k) = j
+                    endif
+                enddo
+                ija(i+1) = k + 1
+                if(mod(i,25000).eq.0) then
+                    write(6,"(A,2I12)") "Building Mat: ",i,nDet
+                    call flush(6)
                 endif
             enddo
-            ija(i+1) = k + 1
-        enddo
+        else
+            do i = 1,nDet
+                do j = 1,nDet
+                    if(i.eq.j) cycle
+                    call GetHElement(DetList(:,i),DetList(:,j),Elec,Elem)
+                    if(abs(Elem).ge.CompressThresh) then
+                        k = k + 1
+                        if(k.gt.Nmax) call stop_all(t_r,'Compressed array sizes too small')
+                        sa(k) = Elem
+                        ija(k) = j
+                    endif
+                enddo
+                ija(i+1) = k + 1
+                if(mod(i,25000).eq.0) then
+                    write(6,"(A,2I12)") "Building Mat: ",i,nDet
+                    call flush(6)
+                endif
+            enddo
+        endif
 
     end subroutine StoreCompMat
     
     !Create compressed matrix form of hamiltonian from basis elements
     !DetList
-    subroutine StoreCompMat_comp(DetList,Elec,nDet,Nmax,sa,ija)
+    subroutine StoreCompMat_comp(DetList,Elec,nDet,Nmax,sa,ija,BitDetList)
         use DetTools, only: GetHElement_comp
         implicit none
         integer, intent(in) :: Elec,nDet,Nmax
         integer, intent(in) :: DetList(Elec,nDet)
         complex(dp), intent(out) :: sa(Nmax)
         integer, intent(out) :: ija(Nmax)
+        integer, intent(in), optional :: BitDetList(nDet)
         integer :: i,j,k
         complex(dp) :: Elem
         character(len=*), parameter :: t_r='StoreCompMat_comp'
@@ -1461,24 +1498,52 @@ module solvers
 
         !Store diagonals
         do j = 1,nDet
-            call GetHElement_comp(DetList(:,j),DetList(:,j),Elec,sa(j))
+            if(present(BitDetList)) then
+                call GetHElement_comp(DetList(:,j),DetList(:,j),Elec,sa(j),ilutnI=BitDetList(j),ilutnJ=BitDetList(j))
+            else
+                call GetHElement_comp(DetList(:,j),DetList(:,j),Elec,sa(j))
+            endif
         enddo
         ija(1) = nDet + 2
         k = nDet + 1
 
-        do i = 1,nDet
-            do j = 1,nDet
-                if(i.eq.j) cycle
-                call GetHElement_comp(DetList(:,i),DetList(:,j),Elec,Elem)
-                if(abs(Elem).ge.CompressThresh) then
-                    k = k + 1
-                    if(k.gt.Nmax) call stop_all(t_r,'Compressed array sizes too small')
-                    sa(k) = Elem
-                    ija(k) = j
+        if(present(BitDetList)) then
+            do i = 1,nDet
+                do j = 1,nDet
+                    if(i.eq.j) cycle
+                    call GetHElement_comp(DetList(:,i),DetList(:,j),Elec,Elem,ilutnI=BitDetList(i),ilutnJ=BitDetList(j))
+                    if(abs(Elem).ge.CompressThresh) then
+                        k = k + 1
+                        if(k.gt.Nmax) call stop_all(t_r,'Compressed array sizes too small')
+                        sa(k) = Elem
+                        ija(k) = j
+                    endif
+                enddo
+                ija(i+1) = k + 1
+                if(mod(i,25000).eq.0) then
+                    write(6,"(A,2I12)") "Building Mat: ",i,nDet
+                    call flush(6)
                 endif
             enddo
-            ija(i+1) = k + 1
-        enddo
+        else
+            do i = 1,nDet
+                do j = 1,nDet
+                    if(i.eq.j) cycle
+                    call GetHElement_comp(DetList(:,i),DetList(:,j),Elec,Elem)
+                    if(abs(Elem).ge.CompressThresh) then
+                        k = k + 1
+                        if(k.gt.Nmax) call stop_all(t_r,'Compressed array sizes too small')
+                        sa(k) = Elem
+                        ija(k) = j
+                    endif
+                enddo
+                ija(i+1) = k + 1
+                if(mod(i,25000).eq.0) then
+                    write(6,"(A,2I12)") "Building Mat: ",i,nDet
+                    call flush(6)
+                endif
+            enddo
+        endif
 
     end subroutine StoreCompMat_comp
 
