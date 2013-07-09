@@ -112,20 +112,26 @@ module LinearResponse
         use zminresqlpModule, only: MinresQLP  
         use DetToolsData
         implicit none
-        complex(dp), allocatable :: NFCIHam(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
+        complex(dp), allocatable :: NFCIHam_cmps(:),Np1FCIHam_alpha_cmps(:),Nm1FCIHam_beta_cmps(:)
+        integer, allocatable :: NFCIHam_inds(:),Np1FCIHam_alpha_inds(:),Nm1FCIHam_beta_inds(:)
         real(dp), allocatable :: W(:),dNorm_p(:),dNorm_h(:)
-        complex(dp), allocatable , target :: LinearSystem_p(:,:),LinearSystem_h(:,:)
+        complex(dp), allocatable , target :: LinearSystem_p(:),LinearSystem_h(:)
+        integer, allocatable , target :: LinearSystem_p_inds(:),LinearSystem_h_inds(:)
         complex(dp), allocatable :: Cre_0(:,:),Ann_0(:,:),ResponseFn_p(:,:),ResponseFn_h(:,:)
-        complex(dp), allocatable :: Gc_a_F_ax_Bra(:,:),Gc_a_F_ax_Ket(:,:),Gc_b_F_ab(:,:),GSHam(:,:)
+        complex(dp), allocatable :: Gc_a_F_ax_Bra(:,:),Gc_a_F_ax_Ket(:,:),Gc_b_F_ab(:,:)
         complex(dp), allocatable :: ResponseFn_Mat(:,:),Ga_i_F_xi_Ket(:,:)
         complex(dp), allocatable :: Psi1_p(:),Psi1_h(:),Ga_i_F_xi_Bra(:,:),Ga_i_F_ij(:,:),ni_lr_Mat(:,:)
-        complex(dp), allocatable :: temp_vecc(:),Work(:),Psi_0(:),RHS(:),SE_Change(:,:)
+        complex(dp), allocatable :: temp_vecc(:),Work(:),Psi_0(:),RHS(:)
         complex(dp), allocatable :: NI_LRMat_Cre(:,:),NI_LRMat_Ann(:,:)
-        integer, allocatable :: Coup_Ann_alpha(:,:,:),Coup_Create_alpha(:,:,:)
+        integer, allocatable :: Coup_Ann_alpha(:,:),Coup_Create_alpha(:,:),Coup_Create_alpha_inds(:)
+        integer, allocatable :: Coup_Ann_alpha_inds(:),Coup_Create_alpha_cum(:),Coup_Ann_alpha_cum(:)
+        integer, allocatable :: Coup_Create_alpha_T(:,:),Coup_Ann_alpha_T(:,:),Coup_Create_alpha_inds_T(:)
+        integer, allocatable :: Coup_Ann_alpha_T(:),Coup_Create_alpha_cum_T(:),Coup_Ann_alpha_cum_T(:)
         integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,umatind,ierr,info,iunit,nCore
-        integer :: nLinearSystem,nOrbs,nVirt,OrbPairs,tempK,UMatSize,VIndex,VirtStart,VirtEnd
+        integer :: nLinearSystem,nOrbs,nVirt,OrbPairs,tempK,UMatSize,VIndex,VirtStart,VirtEnd,ind_p,ind_h
         integer :: orbdum(1),gtid,nLinearSystem_h,nGSSpace,Np1GSInd,Nm1GSInd,lWork,minres_unit
         integer :: maxminres_iter,nImp_GF,pertsite,SE_Fit_Iter,nNR_Iters
+        integer :: Nmax_N,Nmax_Nm1b,Nmax_Np1,Nmax_Coup_Create,Nmax_Coup_Ann
         integer(ip) :: nLinearSystem_ip,minres_unit_ip,info_ip,maxminres_iter_ip,iters_p,iters_h
         real(dp) :: Omega,GFChemPot,mu,SpectralWeight,Prev_Spec,AvdNorm_p,AvdNorm_h,Var_SE,Error_GF
         real(dp) :: Diff_GF
@@ -171,6 +177,7 @@ module LinearResponse
         endif
         if(tLR_ReoptGS) call stop_all(t_r,'Cannot use compressed matrices with reoptimization of ground state currently')
         if(tSC_LR) call stop_all(t_r,'Cannot use compressed matrices with self-consistent greens functions currently')
+        if(.not.tMinRes_NonDir) call stop_all(t_r,'Must use minres solver with compressed matrices')
 
         !umat and tmat for the active space
         OrbPairs = (EmbSize*(EmbSize+1))/2
@@ -228,9 +235,6 @@ module LinearResponse
             call stop_all(t_r,'Should change restriction on the Linear system size being the same for particle/hole addition')
         endif
         
-        !TODO!!
-            write(6,"(A,F14.6,A)") "Memory required for the LR system: ",2*(real(Nmax_N+Nmax_Np1,dp)**2)*16/1048576.0_dp," Mb"
-
         !If doing full optimization of the GS problem
         nGSSpace = nFCIDet + nNp1FCIDet + nNm1bFCIDet
         Np1GSInd = nFCIDet + 1
@@ -393,12 +397,11 @@ module LinearResponse
             enddo
         enddo
 
-                    do k = Coup_Ann_alpha_cum(i),Coup_Ann_alpha_cum(i+1)-1
         allocate(Coup_Create_alpha(2,Nmax_Coup_Create)
         allocate(Coup_Ann_alpha(2,Nmax_Coup_Ann)
         !Also indexing arrays
         allocate(Coup_Create_alpha_inds(Nmax_Coup_Create)
-        allocate(Coup_Ann_alpha(Nmax_Coup_Ann)
+        allocate(Coup_Ann_alpha_inds(Nmax_Coup_Ann)
         !_cum arrays index start of row block
         allocate(Coup_Create_alpha_cum(nFCIDet+1))
         allocate(Coup_Ann_alpha_cum(nFCIDet+1))
@@ -406,7 +409,7 @@ module LinearResponse
         Coup_Create_alpha(:,:) = 0
         Coup_Ann_alpha(:,:) = 0
         Coup_Create_alpha_inds(:) = 0
-        Coup_Ann_alpha(:) = 0
+        Coup_Ann_alpha_inds(:) = 0
         Coup_Create_alpha_cum(:) = 0
         Coup_Ann_alpha_cum(:) = 0
         Coup_Create_alpha_cum(1) = 1
@@ -933,7 +936,7 @@ module LinearResponse
 
         write(6,"(A,G22.10)") "Total integrated spectral weight: ",SpectralWeight
 
-        deallocate(LinearSystem_p,LinearSystem_h,Psi1_p,Psi1_h)
+        deallocate(LinearSystem_p,LinearSystem_h,LinearSystem_p_inds,LinearSystem_h_inds,Psi1_p,Psi1_h)
         deallocate(Cre_0,Ann_0,Psi_0,SchmidtPertGF_Cre_Ket,SchmidtPertGF_Ann_Ket)
         deallocate(NI_LRMat_Cre,NI_LRMat_Ann,ResponseFn_p,ResponseFn_h,ResponseFn_Mat)
         deallocate(ni_lr_Mat,SchmidtPertGF_Cre_Bra,SchmidtPertGF_Ann_Bra)
@@ -959,13 +962,16 @@ module LinearResponse
         if(allocated(Np1bBitList)) deallocate(Np1bBitList)
 
         !Stored intermediates
-        deallocate(NFCIHam,Nm1FCIHam_beta,Np1FCIHam_alpha)
-        deallocate(Coup_Create_alpha,Coup_Ann_alpha)
+        deallocate(NFCIHam_cmps,Nm1FCIHam_beta_cmps,Np1FCIHam_alpha_cmps)
+        deallocate(NFCIHam_inds,Nm1FCIHam_beta_inds,Np1FCIHam_alpha_inds)
+        deallocate(Coup_Create_alpha,Coup_Ann_alpha,Coup_Create_alpha_inds,Coup_Ann_alpha_inds)
+        deallocate(Coup_Create_alpha_cum,Coup_Ann_alpha_cum,Coup_Create_alpha_T,Coup_Ann_alpha_T)
+        deallocate(Coup_Create_alpha_inds_T,Coup_Ann_alpha_inds_T,Coup_Create_alpha_cum_T,Coup_Ann_alpha_cum_T)
         deallocate(FockSchmidt_SE,FockSchmidt_SE_VV,FockSchmidt_SE_CC)
         deallocate(FockSchmidt_SE_VX,FockSchmidt_SE_CX,FockSchmidt_SE_XV,FockSchmidt_SE_XC)
         deallocate(Gc_a_F_ax_Bra,Gc_a_F_ax_Ket,Gc_b_F_ab,Ga_i_F_xi_Bra,Ga_i_F_xi_Ket,Ga_i_F_ij)
 
-    end subroutine NonIntExCont_TDA_MCLR_Charged
+    end subroutine NonIntExCont_TDA_MCLR_Charged_Cmprs
 
     !Calculate linear response for charged excitations - add the hole creation to particle creation
     subroutine NonIntExCont_TDA_MCLR_Charged()
