@@ -376,7 +376,8 @@ module Davidson
 
             !Apply hamiltonian to subspace vector and store all results
             if(tCompressedMat) then
-                call ApplyMat_real(SubspaceVecs(:,iter),HSubspace(:,iter),nSize,tCompressedMat,Nmax,CompressMat=CompressMat,IndexMat=IndexMat)
+                call ApplyMat_real(SubspaceVecs(:,iter),HSubspace(:,iter),nSize,tCompressedMat,Nmax,    &
+                    CompressMat=CompressMat,IndexMat=IndexMat)
             else
                 call ApplyMat_real(SubspaceVecs(:,iter),HSubspace(:,iter),nSize,tCompressedMat,Nmax,Mat=Mat)
             endif
