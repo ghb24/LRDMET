@@ -1389,6 +1389,7 @@ module solvers
                         Nmax = Nmax + 2     !Due to both sides of matrix
                     endif
                 enddo
+                write(6,*) "Counting: ",i,nDet
             enddo
         else
             do i = 1,nDet
