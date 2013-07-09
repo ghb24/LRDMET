@@ -496,8 +496,8 @@ module LinearResponse
         !Also indexing arrays
         allocate(Coup_Create_alpha_inds_T(Nmax_Coup_Create))
         allocate(Coup_Ann_alpha_inds_T(Nmax_Coup_Ann))
-        allocate(Coup_Create_alpha_cum_T(nNm1bFCIDet))
-        allocate(Coup_Ann_alpha_cum_T(nNp1FCIDet))
+        allocate(Coup_Create_alpha_cum_T(nNm1bFCIDet+1))
+        allocate(Coup_Ann_alpha_cum_T(nNp1FCIDet+1))
 
         Coup_Create_alpha_T(:,:) = 0
         Coup_Ann_alpha_T(:,:) = 0
@@ -763,7 +763,7 @@ module LinearResponse
                             ind_h = ind_h + 1
                             if(ind_h.gt.Nmax_Lin_p) call stop_all(t_r,'Compressed array h size too small 2')
                             LinearSystem_h(ind_h) = matel 
-                            LinearSystem_h(ind_h) = Coup_Create_alpha_inds_T(k) + nNm1bFCIDet
+                            LinearSystem_h_inds(ind_h) = Coup_Create_alpha_inds_T(k) + nNm1bFCIDet
                         endif
                     enddo
                     LinearSystem_h_inds(i+1) = ind_h + 1
@@ -1641,6 +1641,7 @@ module LinearResponse
                     if(tMinRes_NonDir) then
 !                        zShift = dcmplx(-Omega-mu-GFChemPot,-dDelta)
                         zDirMV_Mat => LinearSystem_p
+!                        call writematrixcomp(LinearSystem_p,'LinearSystem_p',.true.)
                         call setup_RHS(nLinearSystem,Cre_0(:,pertsite),RHS)
                         maxminres_iter_ip = int(maxminres_iter,ip)
                         minres_unit_ip = int(minres_unit,ip)
@@ -1684,6 +1685,7 @@ module LinearResponse
                     if(tMinRes_NonDir) then
                         !zShift = dcmplx(-Omega-mu+GFChemPot,-dDelta)
                         zDirMV_Mat => LinearSystem_h
+!                        call writematrixcomp(LinearSystem_h,'LinearSystem_h',.true.)
                         call setup_RHS(nLinearSystem,Ann_0(:,pertsite),RHS)
                         maxminres_iter_ip = int(maxminres_iter,ip)
                         minres_unit_ip = int(minres_unit,ip)
@@ -6146,7 +6148,11 @@ module LinearResponse
         character(len=*), parameter :: t_r='setup_RHS'
         
         if(tCompressedMats.and.(.not.associated(zDirMV_Mat_cmprs))) call stop_all(t_r,'Compressed matrix not associated')
+        if(tCompressedMats.and.(.not.associated(zDirMV_Mat_cmprs_inds))) call stop_all(t_r,'Compressed indices not associated')
         if((.not.tCompressedMats).and.(.not.associated(zDirMV_Mat))) call stop_all(t_r,'Matrix not associated!')
+
+!        call writevectorint(zDirMV_Mat_cmprs_inds,'zDirMV_Mat_cmprs_inds')
+!        call writevectorcomp(zDirMV_Mat_cmprs,'zDirMV_Mat_cmprs')
 
 !        Trans_V0(:) = V0(:)
 !        call ZGEMV('C',n,n,zone,zDirMV_Mat,n,V0,1,-dconjg(zShift),Trans_V0,1)
