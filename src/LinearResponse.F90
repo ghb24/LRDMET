@@ -3145,7 +3145,7 @@ module LinearResponse
             call set_timer(LR_EC_TDA_SolveLR)
 
             !Check hamiltonian is hermitian (on non-diagonals)
-            if(.not.tRemoveGSFromH) then
+            if((.not.tRemoveGSFromH).and.tOrthogBasis) then
                 do i=1,nSpan
                     do j=i+1,nSpan
                         if(abs(LHS(i,j)-conjg(LHS(j,i))).gt.1.0e-7_dp) then
