@@ -732,6 +732,25 @@ Program RealHub
         if(tCompressedMats.and.(.not.tNonDirDavidson)) then
             call stop_all(t_r,'Can only use compressed matrices option with non-direct davisdon solver')
         endif
+        if((.not.tMinRes_NonDir).and.tLR_DMET.and.tCompressedMats) then
+            call stop_all(t_r,'Can only use MinRes solver for MR response with compressed matrices')
+        endif
+        if(tDDResponse.and.tRemoveGSFromH.and.tCompressedMats) then
+            call stop_all(t_r,'REMOVE_GS_FROM_H option cannot be used with compressed matrix DD response')
+        endif
+        if(tDDResponse.and.tLR_ReoptGS.and.tCompressedMats) then
+            call stop_all(t_r,'REOPT_GS option cannot be used with compressed matrix DD response')
+        endif
+        if(tDDResponse.and.tExplicitlyOrthog.and.tCompressedMats) then
+            call stop_all(t_r,'EXPLICIT_ORTHOG option cannot be used with compressed matrix DD response')
+        endif
+        if(tDDResponse.and.tOrthogBasis.and.tCompressedMats) then
+            call stop_all(t_r,'WORKLINEARSPAN option cannot be used with compressed matrix DD response')
+        endif
+        if(tDDResponse.and.tProjectOutNull.and.tCompressedMats) then
+            call stop_all(t_r,'NON_NULL option cannot be used with compressed matrix DD response')
+        endif
+
 
     end subroutine check_input
 
@@ -1034,7 +1053,7 @@ Program RealHub
                     
                     call set_timer(HL_Time)
                     !Construct the two electron integrals in the system, and solve embedded system with high-level method
-                    t2RDM = .true.
+                    t2RDM = .false.
                     if(tFCIQMC) t2RDM = .false.
                     call SolveSystem(t2RDM)
                     call halt_timer(HL_Time)
@@ -1080,6 +1099,7 @@ Program RealHub
                         write(6,"(I7,5G22.10)") it,TotalE_Imp,VarVloc,ErrRDM,FillingError,mean_vloc
                         write(DMETfile,"(I7,7G22.10)") it,TotalE_Imp,HL_Energy,VarVloc,ErrRDM,  &
                             Actualfilling_Imp,FillingError,mean_vloc
+                        call flush(6)
 
                         exit    !Anderson model, so we do not want to iterate
                     endif
@@ -1090,6 +1110,7 @@ Program RealHub
                     
                 !Potentially run FCI again now to get correlation functions from 2RDMs?
                 write(6,"(A,F10.4,A,G20.10)") "FINAL energy per site for U=",U,' is: ',TotalE_Imp
+                call flush(6)
                 
                 if(.not.tAnderson) then
                     close(DMETfile)

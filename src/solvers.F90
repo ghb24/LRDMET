@@ -479,8 +479,8 @@ module solvers
         write(6,"(A,F10.6)") "One electron energy per impurity:     ",One_ElecE_Imp
         write(6,"(A,F10.6)") "Two electron energy per impurity:     ",Two_ElecE_Imp
         write(6,"(A,F10.6)") "Coupling energy to bath per impurity: ",CoupE_Imp
-
         write(6,"(A,2F10.6)") "Total energy per impurity site:       ",TotalE_Imp
+        call flush(6)
 
         !The target filling is the original filling of the mean field RDM per site
         !We know that the filling should be uniform due to the translational symmetry
@@ -501,6 +501,7 @@ module solvers
         write(6,"(A,F15.7)") "Target filling per site: ",Targetfilling_Imp
         write(6,"(A,F15.7)") "Actual filling per site: ",Actualfilling_Imp
         write(6,"(A,F15.7)") "Filling error  per site: ",Fillingerror
+        call flush(6)
 
 !        if(tDebug) call writematrix(HL_1RDM,'hl_1rdm',.true.)
         if(tWriteOut) then
@@ -953,7 +954,6 @@ module solvers
                 enddo
             enddo
         endif
-        if(allocated(FCIBitList)) deallocate(FCIBitList)
 !        call writematrix(FullHamil(1:nFCIDet,1:nFCIDet),'FCI hamil',.true.)
 
         !Diagonalize
@@ -990,6 +990,7 @@ module solvers
         endif
 
         write(6,*) "FCI energy: ",HL_Energy
+        call flush(6)
             
         if(allocated(HL_1RDM)) deallocate(HL_1RDM)
         allocate(HL_1RDM(EmbSize,EmbSize))
@@ -1006,11 +1007,14 @@ module solvers
             call FindFull2RDM(1,1,.true.,HL_2RDM)
         endif
 
+        if(allocated(FCIBitList)) deallocate(FCIBitList)
+
     end subroutine CompleteDiag
 
     subroutine FindFull1RDM(StateBra,StateKet,tGroundState,RDM)
-        use DetToolsData, only: FCIDetList,nFCIDet
+        use DetToolsData, only: FCIDetList,nFCIDet,FCIBitList
         use DetTools, only: iGetExcitLevel,GetExcitation,gtid
+        use DetBitOps, only: FindBitExcitLevel
         implicit none
         real(dp) , intent(out) :: RDM(EmbSize,EmbSize)
         integer , intent(in) :: StateBra,StateKet
@@ -1030,31 +1034,73 @@ module solvers
             Ket => FullHamil(1:nFCIDet,StateKet)
         endif
 
-        do i=1,nFCIDet
-            do j=1,nFCIDet
-                IC = iGetExcitLevel(FCIDetList(:,i),FCIDetList(:,j),Elec)
-                if(IC.eq.1) then
-                    !Connected by a single
-                    Ex(1) = 1
-                    call GetExcitation(FCIDetList(:,i),FCIDetList(:,j),Elec,Ex,tSign)
-                    if(tSign) then
-                        RDM(gtid(Ex(1)),gtid(Ex(2))) = RDM(gtid(Ex(1)),gtid(Ex(2))) -   &
-                            Bra(i)*Ket(j)
-                    else
-                        RDM(gtid(Ex(1)),gtid(Ex(2))) = RDM(gtid(Ex(1)),gtid(Ex(2))) +   &
-                            Bra(i)*Ket(j)
+        if(allocated(FCIBitList)) then
+            do i=1,nFCIDet
+                do j=i,nFCIDet
+                    IC = FindBitExcitLevel(FCIBitList(i),FCIBitList(j))
+                    if(IC.eq.1) then
+                        !Connected by a single
+                        Ex(1) = 1
+                        call GetExcitation(FCIDetList(:,i),FCIDetList(:,j),Elec,Ex,tSign)
+                        if(tSign) then
+                            RDM(gtid(Ex(1)),gtid(Ex(2))) = RDM(gtid(Ex(1)),gtid(Ex(2))) -   &
+                                Bra(i)*Ket(j)
+                        else
+                            RDM(gtid(Ex(1)),gtid(Ex(2))) = RDM(gtid(Ex(1)),gtid(Ex(2))) +   &
+                                Bra(i)*Ket(j)
+                        endif
+                        !And also do other way round
+                        Ex(1) = 1
+                        call GetExcitation(FCIDetList(:,j),FCIDetList(:,i),Elec,Ex,tSign)
+                        if(tSign) then
+                            RDM(gtid(Ex(1)),gtid(Ex(2))) = RDM(gtid(Ex(1)),gtid(Ex(2))) -   &
+                                Bra(j)*Ket(i)
+                        else
+                            RDM(gtid(Ex(1)),gtid(Ex(2))) = RDM(gtid(Ex(1)),gtid(Ex(2))) +   &
+                                Bra(j)*Ket(i)
+                        endif
+                    elseif(IC.eq.0) then
+                        !Same det
+                        if(i.ne.j) call stop_all(t_r,'Error here')
+                        do k=1,Elec
+                            RDM(gtid(FCIDetList(k,i)),gtid(FCIDetList(k,i))) = RDM(gtid(FCIDetList(k,i)),gtid(FCIDetList(k,i))) &
+                                + Bra(i)*Ket(j)
+                        enddo
                     endif
-                elseif(IC.eq.0) then
-                    !Same det
-                    if(i.ne.j) call stop_all(t_r,'Error here')
-                    do k=1,Elec
-                        RDM(gtid(FCIDetList(k,i)),gtid(FCIDetList(k,i))) = RDM(gtid(FCIDetList(k,i)),gtid(FCIDetList(k,i))) &
-                            + Bra(i)*Ket(j)
-                    enddo
-                endif
 
+                enddo
+                if(mod(i,25000).eq.0) then
+                    write(6,"(A,2I12)") "Finding 1RDM (stupidly...) ",i,nFCIDet
+                    call flush(6)
+                endif
             enddo
-        enddo
+        else
+            do i=1,nFCIDet
+                do j=1,nFCIDet
+                    IC = iGetExcitLevel(FCIDetList(:,i),FCIDetList(:,j),Elec)
+                    if(IC.eq.1) then
+                        !Connected by a single
+                        Ex(1) = 1
+                        call GetExcitation(FCIDetList(:,i),FCIDetList(:,j),Elec,Ex,tSign)
+                        if(tSign) then
+                            RDM(gtid(Ex(1)),gtid(Ex(2))) = RDM(gtid(Ex(1)),gtid(Ex(2))) -   &
+                                Bra(i)*Ket(j)
+                        else
+                            RDM(gtid(Ex(1)),gtid(Ex(2))) = RDM(gtid(Ex(1)),gtid(Ex(2))) +   &
+                                Bra(i)*Ket(j)
+                        endif
+                    elseif(IC.eq.0) then
+                        !Same det
+                        if(i.ne.j) call stop_all(t_r,'Error here')
+                        do k=1,Elec
+                            RDM(gtid(FCIDetList(k,i)),gtid(FCIDetList(k,i))) = RDM(gtid(FCIDetList(k,i)),gtid(FCIDetList(k,i))) &
+                                + Bra(i)*Ket(j)
+                        enddo
+                    endif
+
+                enddo
+            enddo
+        endif
 
         do i=1,EmbSize
             do j=1,EmbSize

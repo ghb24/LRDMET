@@ -286,7 +286,7 @@ module Davidson
         endif
         if(.not.present(max_iter)) then
             !Set max iter default
-            max_iter_=100
+            max_iter_=400
         else
             max_iter_ = max_iter
         endif
@@ -347,8 +347,10 @@ module Davidson
 
         do iter = 1,max_iter_
 
-!            write(6,*) "Starting iter: ",iter
-!            call flush(6)
+            if(mod(iter,10).eq.0) then
+                write(6,*) "Starting Davidson iteration: ",iter,dConv
+                call flush(6)
+            endif
 
             !First, orthogonalize current vector against previous vectors, using a modified Gram-Schmidt
             !Returns normalized trial vector
@@ -357,22 +359,6 @@ module Davidson
 !            write(6,*) "Orthogonalized subspace vector"
 
             SubspaceVecs(:,iter) = CurrVec(:)
-!            call writevector(SubspaceVecs(:,iter),'Current subspace vector')
-!            do i = 1,iter
-!                do j = 1,iter
-!                    norm = ddot(nSize,SubspaceVecs(:,i),1,SubspaceVecs(:,j),1)
-!                    if(i.eq.j) then
-!                        if(abs(norm-1.0_dp).gt.1.0e-8_dp) then
-!                            write(6,*) "i,j: ",i,j,norm
-!                            call stop_all(t_r,'Subspace vectors not normalized')
-!                        endif
-!                    else
-!                        if(abs(norm).gt.1.0e-8_dp) then
-!                            call stop_all(t_r,'Subspace vectors not orthogonal')
-!                        endif
-!                    endif
-!                enddo
-!            enddo
 
             !Apply hamiltonian to subspace vector and store all results
             if(tCompressedMat) then

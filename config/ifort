@@ -9,9 +9,9 @@ module_flag = -module
 
 [opt]
 #fflags = -O3 -ip -ipo
-fflags = -O3 -ip -ipo
+fflags = -O3 -ip -ipo -integer-size 64
 #cxxflags = -O3
 
 [dbg]
-fflags = -g -traceback -CB -CU -fp-stack-check -ftrapuv -check arg_temp_created -check format -O0
+fflags = -g -traceback -CB -CU -fp-stack-check -ftrapuv -check arg_temp_created -check format -O0 -integer-size 64
 cxxflags = -g -traceback

@@ -6,9 +6,9 @@ libs = -llapack -lblas
 module_flag = -J
 
 [opt]
-fflags = -O3 -fno-range-check
+fflags = -O3 -fno-range-check -fdefault-integer-8
 cxxflags = -O3
 
 [dbg]
-fflags = -g -fbounds-check -Wall -Wextra -fno-range-check
+fflags = -g -fbounds-check -Wall -Wextra -fno-range-check -fdefault-integer-8
 cxxflags = -g -Wall -Wextra

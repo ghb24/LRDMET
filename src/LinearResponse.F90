@@ -40,7 +40,11 @@ module LinearResponse
         if(tEC_TDA_Response) then
             !Externally contracted
             if(tDDResponse) then
-                call NonIntExContracted_TDA_MCLR()
+!                if(tCompressedMats) then
+!                    call NonIntExCont_TDA_MCLR_DD_Cmprs()
+!                else
+                    call NonIntExContracted_TDA_MCLR()
+!                endif
             endif
             if(tChargedResponse) then
                 if(tCompressedMats) then
@@ -100,6 +104,1874 @@ module LinearResponse
         endif
 
     end subroutine SR_LinearResponse
+    
+    subroutine NonIntExCont_TDA_MCLR_DD_Cmprs()
+        use utils, only: get_free_unit,append_ext_real,append_ext
+        use DetBitOps, only: DecodeBitDet,SQOperator,CountBits
+        use zminresqlpModule, only: MinresQLP  
+        use DetToolsData
+        use DetTools, only: gtid,umatind,GenDets,GetHElement
+        implicit none
+        integer :: a,i,j,k,OrbPairs,UMatSize,AVInd_tmp,b,beta
+        integer :: CoreEnd,VirtStart,VirtEnd,CVInd_tmp,iunit,iunit2
+        integer :: DiffOrb,nOrbs,gam,gam1,gam1_ind,gam1_spat,gam2,gam2_ind,gam2_spat,ierr
+        integer :: gam_spat,nLinearSystem,tempK,nSpan,ActiveEnd,ActiveStart
+        integer :: orbdum(1),CAInd_tmp,lwork,info,nSize,nCore,nVirt,nFullNm1,nFullNp1,iters
+        integer :: maxminres_iter,minres_unit,InterMem,HamMem,CoupMem
+        logical :: tParity,tCalcResponse,tTransformSpace
+        real(dp) :: Omega,CVNorm,GSEnergy
+        complex(dp) :: tempel,ResponseFn,dOrthog,dNorm,testc,ni_lr
+        complex(dp) , allocatable :: LinearSystem(:,:),Overlap(:,:),Projector(:,:),VGS(:),CanTrans(:,:)
+        complex(dp) , allocatable :: temp_vecc(:),tempc(:,:),RHS(:),Transform(:,:),OrthogHam(:,:)
+        complex(dp) , allocatable :: Psi_0(:),S_EigVec(:,:),G_ai_G_aj(:,:),G_ai_G_bi(:,:),G_xa_G_ya(:,:)
+        complex(dp) , allocatable :: G_xa_F_ab(:,:),G_xa_G_yb_F_ab(:,:),FockSchmidtComp(:,:),G_ia_G_xa(:,:)
+        complex(dp) , allocatable :: F_xi_G_ia_G_ya(:,:),G_xa_F_ya(:,:),G_xi_G_yi(:,:),G_ix_F_ij(:,:)
+        complex(dp) , allocatable :: G_ix_G_jy_F_ji(:,:),G_ia_G_ix(:,:),F_ax_G_ia_G_iy(:,:),G_ix_F_iy(:,:)
+        complex(dp) , allocatable :: SBlock(:,:),temp_vecc_2(:),S_Diag(:),temp_vecc_3(:)
+        complex(dp) , allocatable , target :: LHS(:,:)
+        real(dp), allocatable :: NFCIHam(:,:),Nm1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
+        real(dp), allocatable :: Np1FCIHam_alpha(:,:),Np1FCIHam_beta(:,:),SBlock_val(:)
+        real(dp), allocatable :: AVNorm(:),CANorm(:),Work(:),H_Vals(:),S_EigVal(:)
+        integer, allocatable :: Coup_Ann_alpha(:,:,:),Coup_Ann_beta(:,:,:)
+        integer, allocatable :: Coup_Create_alpha(:,:,:),Coup_Create_beta(:,:,:)
+        character(64) :: filename,filename2
+        character(len=*), parameter :: t_r='NonIntExCont_TDA_MCLR_DD_Cmprs'
+        integer(ip) :: maxminres_iter_ip,minres_unit_ip,nSpan_ip,info_ip
+        complex(dp) , allocatable :: RHS2(:),Psi1(:)
+        logical, parameter :: tDiagHam = .false.
+
+        call set_timer(LR_EC_TDA_Precom)
+        
+        maxminres_iter = iMinRes_MaxIter
+        iters = 0
+
+        write(6,*) "Calculating non-interacting EC MR-TDA LR system for DD excitations..."
+        if(.not.tConstructFullSchmidtBasis) call stop_all(t_r,'To solve LR, must construct full schmidt basis')
+        if(tMinRes_NonDir) then
+            if(tPreCond_MinRes) then
+                write(6,"(A)") "Solving linear system with iterative non-direct preconditioned MinRes-QLP algorithm"
+            else
+                write(6,"(A)") "Solving linear system with iterative non-direct MinRes-QLP algorithm"
+            endif
+            write(6,"(A,G22.10)") "Tolerance for solution of linear system: ",rtol_LR
+            write(6,"(A,G22.10)") "Maximum iterations for each solution: ",maxminres_iter
+        else
+            call stop_all(t_r,"NonDir_Minres algorithm must be used with compressed matrices")
+        endif
+        !umat and tmat for the active space
+        OrbPairs = (EmbSize*(EmbSize+1))/2
+        UMatSize = (OrbPairs*(OrbPairs+1))/2
+        if(allocated(UMat)) deallocate(UMat)
+        allocate(UMat(UMatSize))
+        UMat(:) = 0.0_dp
+        if(tAnderson) then
+            umat(umatind(1,1,1,1)) = U
+        else
+            do i=1,nImp
+                umat(umatind(i,i,i,i)) = U
+            enddo
+        endif
+        if(allocated(tmat)) deallocate(tmat)
+        allocate(tmat(EmbSize,EmbSize))
+        tmat(:,:) = 0.0_dp
+        do i=1,EmbSize
+            do j=1,EmbSize
+                if(abs(Emb_h0v(i,j)).gt.1.0e-10_dp) then
+                    tmat(i,j) = Emb_h0v(i,j)
+                endif
+            enddo
+        enddo
+        if(tChemPot) then
+            tmat(1,1) = tmat(1,1) - U/2.0_dp
+        endif
+        if(tMinRes_NonDir) then
+            minres_unit = get_free_unit()
+            open(minres_unit,file='zMinResQLP.txt',status='unknown',position='append')
+        endif
+        
+        !Enumerate excitations for fully coupled space
+        !Seperate the lists into different Ms sectors in the N+- lists
+        call GenDets(Elec,EmbSize,.true.,.true.,.true.) 
+        write(6,*) "Number of determinants in {N,N+1,N-1} FCI space: ",ECoupledSpace
+        write(6,"(A,F12.5,A)") "Memory required for det list storage: ",DetListStorage*RealtoMb, " Mb"
+
+        !Construct FCI hamiltonians for the N, N-1_alpha, N-1_beta, N+1_alpha and N+1_beta spaces
+        !N electron
+        if(nNp1FCIDet.ne.nNm1FCIDet) call stop_all(t_r,'Active space not half-filled')
+        if(nNp1FCIDet.ne.nNp1bFCIDet) call stop_all(t_r,'Cannot deal with open shell systems')
+        write(6,"(A)") "Computing size of compressed Hamiltonian matrices"
+        call flush(6)
+        call CountSizeCompMat(FCIDetList,Elec,nFCIDet,Nmax_N,FCIBitList)
+        call CountSizeCompMat(Nm1bFCIDetList,Elec-1,nNm1bFCIDet,Nmax_Nm1b,Nm1bBitList)
+        call CountSizeCompMat(Np1FCIDetList,Elec+1,nNp1FCIDet,Nmax_Np1,Np1BitList)
+        !Assume flipping spins for the open shells doesn't change the number of off diagonal matrix elements
+        Nmax_Nm1 = Nmax_Nm1b
+        Nmax_Np1b = Nmax_Np1
+        write(6,"(A,F12.5,A)") "Memory required for N-electron hamil: ",(real(Nmax_N,dp)*2)*RealtoMb, " Mb"
+        write(6,"(A,F12.5,A)") "Memory required for N+1-electron hamil: ",(real(Nmax_Nm1b,dp)*4)*RealtoMb, " Mb"
+        write(6,"(A,F12.5,A)") "Memory required for N-1-electron hamil: ",(real(Nmax_Np1,dp)*4)*RealtoMb, " Mb"
+        HamMem = 2*nNp1FCIDet**2 + 2*nNm1FCIDet**2 + nFCIDet**2
+        write(6,'(A,F9.3,A)') "IF uncompressed, memory required for hamiltonians: ",real(HamMem,dp)*RealtoMb,' Mb'
+        call flush(6)
+        allocate(NFCIHam_cmps(Nmax_N),stat=ierr)
+        allocate(Np1FCIHam_alpha_cmps(Nmax_Np1),stat=ierr)
+        allocate(Np1FCIHam_beta_cmps(Nmax_Np1b),stat=ierr)
+        allocate(Nm1FCIHam_alpha_cmps(Nmax_Nm1),stat=ierr)
+        allocate(Nm1FCIHam_beta_cmps(Nmax_Nm1b),stat=ierr)
+        !And for indexing arrays
+        allocate(NFCIHam_inds(Nmax_N),stat=ierr)
+        allocate(Np1FCIHam_alpha_inds(Nmax_Np1),stat=ierr)
+        allocate(Np1FCIHam_beta_inds(Nmax_Np1b),stat=ierr)
+        allocate(Nm1FCIHam_alpha_inds(Nmax_Nm1),stat=ierr)
+        allocate(Nm1FCIHam_beta_inds(Nmax_Nm1b),stat=ierr)
+        if(ierr.ne.0) call stop_all(t_r,'Allocation fail')
+
+        NFCIHam_cmps(:) = zero
+        Np1FCIHam_alpha_cmps(:) = zero
+        Np1FCIHam_beta_cmps(:) = zero
+        Nm1FCIHam_alpha_cmps(:) = zero
+        Nm1FCIHam_beta_cmps(:) = zero
+        NFCIHam_inds(:) = 0
+        Np1FCIHam_alpha_inds(:) = 0
+        Np1FCIHam_beta_inds(:) = 0
+        Nm1FCIHam_alpha_inds(:) = 0
+        Nm1FCIHam_beta_inds(:) = 0
+
+        call StoreCompMat(FCIDetList,nElec,nFCIDet,Nmax_N,NFCIHam_cmps,NFCIHam_inds,FCIBitList)
+        call StoreCompMat(Np1FCIDetList,nElec+1,nNp1FCIDet,Nmax_Np1,Np1FCIHam_alpha_cmps,Np1FCIHam_alpha_inds,Np1BitList)
+        call StoreCompMat(Np1bFCIDetList,nElec+1,nNp1bFCIDet,Nmax_Np1b,Np1FCIHam_beta_cmps,Np1FCIHam_beta_inds,Np1bBitList)
+        call StoreCompMat(Nm1FCIDetList,nElec-1,nNm1FCIDet,Nmax_Nm1,Nm1FCIHam_alpha_cmps,Nm1FCIHam_alpha_inds,Nm1BitList)
+        call StoreCompMat(Nm1bFCIDetList,nElec-1,nNm1bFCIDet,Nmax_Nm1b,Nm1FCIHam_beta_cmps,Nm1FCIHam_beta_inds,Nm1bBitList)
+        
+        nLinearSystem = (2*nFCIDet) + nImp*2*(nNm1FCIDet+nNm1bFCIDet) + nImp*2*(nNp1FCIDet+nNp1bFCIDet) 
+        write(6,*) "Total size of linear sys: ",nLinearSystem
+        
+        !Set up orbital indices
+        CoreEnd = nOcc-nImp
+        VirtStart = nOcc+nImp+1
+        VirtEnd = nSites
+        ActiveStart = nOcc-nImp+1
+        ActiveEnd = nOcc+nImp
+        nCore = nOcc-nImp
+        nVirt = nSites-nOcc-nImp   
+        if(tHalfFill.and.(nCore.ne.nVirt)) then
+            call stop_all(t_r,'Error in setting up half filled lattice')
+        endif
+        !And full N pm 1 space sizes
+        nFullNm1 = nNm1FCIDet + nNm1bFCIDet
+        nFullNp1 = nNp1FCIDet + nNp1bFCIDet
+
+        !Set up indices for the block of the linear system
+        CVIndex = nFCIDet + 1   !Beginning of EC Core virtual excitations
+        AVIndex = nFCIDet + nFCIDet + 1 !Beginning of EC Active Virtual excitations
+        CAIndex = AVIndex + (nImp*2)*nFullNm1 !Beginning of EC Core Active excitations
+
+        write(6,*) "CV indices start from: ",CVIndex
+        write(6,*) "AV indices start from: ",AVIndex
+        write(6,*) "CA indices start from: ",CAIndex
+            
+        !Allocate memory for normalization constants
+        allocate(AVNorm(1:nImp*2))
+        allocate(CANorm(1:nImp*2))
+
+        !Allocate and precompute 1-operator coupling coefficients between the different sized spaces.
+        !First number is the index of operator, and the second is the parity change when applying the operator
+
+        !First, determine the size of these matrices in compressed form
+        !Assume that all *8* matrices are the same size (this should be true for hole-particle symmetric systems)
+        Nmax_Coup = 0
+        do J = 1,nFCIDet
+            do K = 1,nNm1bFCIDet
+                DiffOrb = ieor(Nm1bBitList(K),FCIBitList(J))
+                nOrbs = CountBits(DiffOrb)
+                if(nOrbs.eq.1) then
+                    Nmax_Coup = Nmax_Coup + 1
+                endif
+            enddo
+        enddo
+
+        write(6,'(A,I8)') "Number of elements in coupling matrices: ",Nmax_Coup
+        !Need to store 24 of this number - 3 for each coupling matrix (2 integers per list + indexing) and 8 different types (including transposes)
+        write(6,'(A,F9.3,A)') "Memory required to store compressed coupling matrices: ",24*real(Nmax_Coup,dp)*RealtoMb,' Mb'
+        CoupMem = 2*nFCIDet*nNm1bFCIDet + 2*nFCIDet*nNm1FCIDet + 2*nFCIDet*nNp1FCIDet + 2*nFCIDet*nNp1bFCIDet
+        write(6,'(A,F9.3,A)') "Memory required to store uncompressed coupling matrices: ",real(CoupMem,dp)*RealtoMb,' Mb'
+
+        allocate(Coup_Create_alpha(2,Nmax_Coup))
+        allocate(Coup_Create_alpha_inds(Nmax_Coup))
+        allocate(Coup_Create_alpha_cum(nFCIDet+1))  !Indexing positions of new rows
+        Coup_Create_alpha(:,:) = 0
+        Coup_Create_alpha_inds(:) = 0
+        Coup_Create_alpha_cum(:) = 0
+        Coup_Create_alpha_cum(1) = 1
+
+        allocate(Coup_Create_alpha_T(2,Nmax_Coup))
+        allocate(Coup_Create_alpha_inds_T(Nmax_Coup))
+        allocate(Coup_Create_alpha_cum_T(nNm1bFCIDet+1))  !Indexing positions of new rows
+        Coup_Create_alpha_T(:,:) = 0
+        Coup_Create_alpha_inds_T(:) = 0
+        Coup_Create_alpha_cum_T(:) = 0
+        Coup_Create_alpha_cum_T(1) = 1
+
+        allocate(Coup_Create_beta(2,Nmax_Coup))
+        allocate(Coup_Create_beta_inds(Nmax_Coup))
+        allocate(Coup_Create_beta_cum(nFCIDet+1))  !Indexing positions of new rows
+        Coup_Create_beta(:,:) = 0
+        Coup_Create_beta_inds(:) = 0
+        Coup_Create_beta_cum(:) = 0
+        Coup_Create_beta_cum(1) = 1
+        
+        allocate(Coup_Create_beta_T(2,Nmax_Coup))
+        allocate(Coup_Create_beta_inds_T(Nmax_Coup))
+        allocate(Coup_Create_beta_cum_T(nNm1FCIDet+1))  !Indexing positions of new rows
+        Coup_Create_beta_T(:,:) = 0
+        Coup_Create_beta_inds_T(:) = 0
+        Coup_Create_beta_cum_T(:) = 0
+        Coup_Create_beta_cum_T(1) = 1
+        
+        allocate(Coup_Ann_alpha(2,Nmax_Coup))
+        allocate(Coup_Ann_alpha_inds(Nmax_Coup))
+        allocate(Coup_Ann_alpha_cum(nFCIDet+1))  !Indexing positions of new rows
+        Coup_Ann_alpha(:,:) = 0
+        Coup_Ann_alpha_inds(:) = 0
+        Coup_Ann_alpha_cum(:) = 0
+        Coup_Ann_alpha_cum(1) = 1
+        
+        allocate(Coup_Ann_alpha_T(2,Nmax_Coup))
+        allocate(Coup_Ann_alpha_inds_T(Nmax_Coup))
+        allocate(Coup_Ann_alpha_cum_T(nNp1FCIDet+1))  !Indexing positions of new rows
+        Coup_Ann_alpha_T(:,:) = 0
+        Coup_Ann_alpha_inds_T(:) = 0
+        Coup_Ann_alpha_cum_T(:) = 0
+        Coup_Ann_alpha_cum_T(1) = 1
+        
+        allocate(Coup_Ann_beta(2,Nmax_Coup))
+        allocate(Coup_Ann_beta_inds(Nmax_Coup))
+        allocate(Coup_Ann_beta_cum(nFCIDet+1))  !Indexing positions of new rows
+        Coup_Ann_beta(:,:) = 0
+        Coup_Ann_beta_inds(:) = 0
+        Coup_Ann_beta_cum(:) = 0
+        Coup_Ann_beta_cum(1) = 1
+        
+        allocate(Coup_Ann_beta_T(2,Nmax_Coup))
+        allocate(Coup_Ann_beta_inds_T(Nmax_Coup))
+        allocate(Coup_Ann_beta_cum_T(nNp1bFCIDet+1))  !Indexing positions of new rows
+        Coup_Ann_beta_T(:,:) = 0
+        Coup_Ann_beta_inds_T(:) = 0
+        Coup_Ann_beta_cum_T(:) = 0
+        Coup_Ann_beta_cum_T(1) = 1
+
+        i_Create = 0
+        i_Create_b = 0
+        i_Ann = 0
+        i_Ann_b = 0
+        do J = 1,nFCIDet
+            !Start with the creation of an alpha orbital
+            do K = 1,nNm1bFCIDet
+                DiffOrb = ieor(Nm1bBitList(K),FCIBitList(J))
+                nOrbs = CountBits(DiffOrb)
+                if(mod(nOrbs,2).ne.1) then 
+                    !There must be an odd number of orbital differences between the determinants
+                    !since they are of different electron number by one
+                    call stop_all(t_r,'Not odd number of electrons')
+                endif
+                if(nOrbs.ne.1) then
+                    !We only want one orbital different
+                    cycle
+                endif
+                !Now, find out what SPINorbital this one is from the bit number set
+                call DecodeBitDet(orbdum,1,DiffOrb)
+                gam = orbdum(1)
+                if(mod(gam,2).ne.1) then
+                    call stop_all(t_r,'differing orbital should be an alpha spin orbital')
+                endif
+                !Now find out the parity change when applying this creation operator to the original determinant
+                tempK = Nm1bBitList(K)
+                call SQOperator(tempK,gam,tParity,.false.)
+
+                i_Create = i_Create + 1
+                if(i_Create.gt.Nmax_Coup) call stop_all(t_r,'Compressed array size too small')
+                Coup_Create_alpha(1,i_Create) = gtid(gam)+CoreEnd
+                if(tParity) then
+                    Coup_Create_alpha(2,i_Create) = -1
+                else
+                    Coup_Create_alpha(2,i_Create) = 1
+                endif
+                Coup_Create_alpha_inds(i_Create) = K
+            enddo
+            !Now the creation of a beta orbital
+            do K = 1,nNm1FCIDet
+                DiffOrb = ieor(Nm1BitList(K),FCIBitList(J))
+                nOrbs = CountBits(DiffOrb)
+                if(mod(nOrbs,2).ne.1) then 
+                    !There must be an odd number of orbital differences between the determinants
+                    !since they are of different electron number by one
+                    call stop_all(t_r,'Not odd number of electrons')
+                endif
+                if(nOrbs.ne.1) then
+                    !We only want one orbital different
+                    cycle
+                endif
+                !Now, find out what SPINorbital this one is from the bit number set
+                call DecodeBitDet(orbdum,1,DiffOrb)
+                gam = orbdum(1)
+                if(mod(gam,2).ne.0) then
+                    call stop_all(t_r,'differing orbital should be an beta spin orbital')
+                endif
+                !Now find out the parity change when applying this creation operator to the original determinant
+                tempK = Nm1BitList(K)
+                call SQOperator(tempK,gam,tParity,.false.)
+
+                i_Create_b = i_Create_b + 1
+                if(i_Create_b.gt.Nmax_Coup) call stop_all(t_r,'Compressed array size too small')
+                Coup_Create_beta(1,i_Create_b) = gtid(gam)+CoreEnd
+                if(tParity) then
+                    Coup_Create_beta(2,i_Create_b) = -1
+                else
+                    Coup_Create_beta(2,i_Create_b) = 1
+                endif
+                Coup_Create_beta_inds(i_Create_b) = K
+            enddo
+            !Now, annihilation of an alpha orbital
+            do K = 1,nNp1FCIDet
+                DiffOrb = ieor(Np1BitList(K),FCIBitList(J))
+                nOrbs = CountBits(DiffOrb)
+                if(mod(nOrbs,2).ne.1) then 
+                    !There must be an odd number of orbital differences between the determinants
+                    !since they are of different electron number by one
+                    call stop_all(t_r,'Not odd number of electrons 3')
+                endif
+                if(nOrbs.ne.1) then
+                    !We only want one orbital different
+                    cycle
+                endif
+                !Now, find out what SPINorbital this one is from the bit number set
+                call DecodeBitDet(orbdum,1,DiffOrb)
+                gam = orbdum(1)
+                if(mod(gam,2).ne.1) then
+                    call stop_all(t_r,'differing orbital should be an alpha spin orbital')
+                endif
+                !Now find out the parity change when applying this creation operator to the original determinant
+                tempK = Np1BitList(K)
+                call SQOperator(tempK,gam,tParity,.true.)
+
+                i_Ann = i_Ann + 1
+                if(i_Ann.gt.Nmax_Coup) call stop_all(t_r,'Compressed array size too small')
+                Coup_Ann_alpha(1,i_Ann) = gtid(gam)+CoreEnd
+                if(tParity) then
+                    Coup_Ann_alpha(2,i_Ann) = -1
+                else
+                    Coup_Ann_alpha(2,i_Ann) = 1
+                endif
+                Coup_Ann_alpha_inds(i_Ann) = K
+            enddo
+            !Now, annihilation of a beta orbital
+            do K = 1,nNp1bFCIDet
+                DiffOrb = ieor(Np1bBitList(K),FCIBitList(J))
+                nOrbs = CountBits(DiffOrb)
+                if(mod(nOrbs,2).ne.1) then 
+                    !There must be an odd number of orbital differences between the determinants
+                    !since they are of different electron number by one
+                    call stop_all(t_r,'Not odd number of electrons 3')
+                endif
+                if(nOrbs.ne.1) then
+                    !We only want one orbital different
+                    cycle
+                endif
+                !Now, find out what SPINorbital this one is from the bit number set
+                call DecodeBitDet(orbdum,1,DiffOrb)
+                gam = orbdum(1)
+                if(mod(gam,2).ne.0) then
+                    call stop_all(t_r,'differing orbital should be an beta spin orbital')
+                endif
+                !Now find out the parity change when applying this creation operator to the original determinant
+                tempK = Np1bBitList(K)
+                call SQOperator(tempK,gam,tParity,.true.)
+
+                i_Ann_b = i_Ann_b + 1
+                if(i_Ann_b.gt.Nmax_Coup) call stop_all(t_r,'Compressed array size too small')
+                Coup_Ann_beta(1,i_Ann_b) = gtid(gam)+CoreEnd
+                if(tParity) then
+                    Coup_Ann_beta(2,i_Ann_b) = -1
+                else
+                    Coup_Ann_beta(2,i_Ann_b) = 1
+                endif
+                Coup_Ann_beta_inds(i_Ann_b) = K
+            enddo
+
+            Coup_Create_alpha_cum(J+1) = i_Create + 1
+            Coup_Create_beta_cum(J+1) = i_Create_b + 1
+            Coup_Ann_alpha_cum(J+1) = i_Ann + 1
+            Coup_Ann_beta_cum(J+1) = i_Ann_b + 1
+            if(mod(J,25000).eq.0) then
+                write(6,*) "Constructing coupling matrices 1: ",J,nFCIDet
+                call flush(6)
+            endif
+        enddo
+
+        !Now to explicitly construct the transpose of the matrices too!
+        i = 0
+        do J = 1,nNm1bFCIDet
+            !Start with the creation of an alpha orbital
+            do K = 1,nFCIDet
+                DiffOrb = ieor(Nm1bBitList(J),FCIBitList(K))
+                nOrbs = CountBits(DiffOrb)
+                if(mod(nOrbs,2).ne.1) then 
+                    !There must be an odd number of orbital differences between the determinants
+                    !since they are of different electron number by one
+                    call stop_all(t_r,'Not odd number of electrons')
+                endif
+                if(nOrbs.ne.1) then
+                    !We only want one orbital different
+                    cycle
+                endif
+                !Now, find out what SPINorbital this one is from the bit number set
+                call DecodeBitDet(orbdum,1,DiffOrb)
+                gam = orbdum(1)
+                if(mod(gam,2).ne.1) then
+                    call stop_all(t_r,'differing orbital should be an alpha spin orbital')
+                endif
+                !Now find out the parity change when applying this creation operator to the original determinant
+                tempK = FCIBitList(K)
+                call SQOperator(tempK,gam,tParity,.true.)
+
+                i = i + 1
+                if(i.gt.Nmax_Coup) call stop_all(t_r,'Compressed array size too small')
+                Coup_Create_alpha_T(1,i) = gtid(gam)+CoreEnd
+                if(tParity) then
+                    Coup_Create_alpha_T(2,i) = -1
+                else
+                    Coup_Create_alpha_T(2,i) = 1
+                endif
+                Coup_Create_alpha_inds_T(i) = K
+            enddo
+            Coup_Create_alpha_cum_T(J+1) = i+1
+        enddo
+        
+        i = 0
+        do J = 1,nNm1FCIDet
+            !Now the creation of an beta orbital
+            do K = 1,nFCIDet
+                DiffOrb = ieor(Nm1BitList(J),FCIBitList(K))
+                nOrbs = CountBits(DiffOrb)
+                if(mod(nOrbs,2).ne.1) then 
+                    !There must be an odd number of orbital differences between the determinants
+                    !since they are of different electron number by one
+                    call stop_all(t_r,'Not odd number of electrons')
+                endif
+                if(nOrbs.ne.1) then
+                    !We only want one orbital different
+                    cycle
+                endif
+                !Now, find out what SPINorbital this one is from the bit number set
+                call DecodeBitDet(orbdum,1,DiffOrb)
+                gam = orbdum(1)
+                if(mod(gam,2).ne.0) then
+                    call stop_all(t_r,'differing orbital should be an beta spin orbital')
+                endif
+                !Now find out the parity change when applying this creation operator to the original determinant
+                tempK = FCIBitList(K)
+                call SQOperator(tempK,gam,tParity,.true.)
+
+                i = i + 1
+                if(i.gt.Nmax_Coup) call stop_all(t_r,'Compressed array size too small')
+                Coup_Create_beta_T(1,i) = gtid(gam)+CoreEnd
+                if(tParity) then
+                    Coup_Create_beta_T(2,i) = -1
+                else
+                    Coup_Create_beta_T(2,i) = 1
+                endif
+                Coup_Create_beta_inds_T(i) = K
+            enddo
+            Coup_Create_beta_cum_T(J+1) = i+1
+        enddo
+
+        i = 0
+        do J = 1,nNp1FCIDet
+            !Annihilation of alpha
+            do K = 1,nFCIDet
+                DiffOrb = ieor(Np1BitList(J),FCIBitList(K))
+                nOrbs = CountBits(DiffOrb)
+                if(mod(nOrbs,2).ne.1) then 
+                    !There must be an odd number of orbital differences between the determinants
+                    !since they are of different electron number by one
+                    call stop_all(t_r,'Not odd number of electrons')
+                endif
+                if(nOrbs.ne.1) then
+                    !We only want one orbital different
+                    cycle
+                endif
+                !Now, find out what SPINorbital this one is from the bit number set
+                call DecodeBitDet(orbdum,1,DiffOrb)
+                gam = orbdum(1)
+                if(mod(gam,2).ne.1) then
+                    call stop_all(t_r,'differing orbital should be an alpha spin orbital')
+                endif
+                !Now find out the parity change when applying this creation operator to the original determinant
+                tempK = FCIBitList(K)
+                call SQOperator(tempK,gam,tParity,.false.)
+
+                i = i + 1
+                if(i.gt.Nmax_Coup) call stop_all(t_r,'Compressed array size too small')
+                Coup_Ann_alpha_T(1,i) = gtid(gam)+CoreEnd
+                if(tParity) then
+                    Coup_Ann_alpha_T(2,i) = -1
+                else
+                    Coup_Ann_alpha_T(2,i) = 1
+                endif
+                Coup_Ann_alpha_inds_T(i) = K
+            enddo
+            Coup_Ann_alpha_cum_T(J+1) = i+1
+        enddo
+
+        i = 0
+        do J = 1,nNp1bFCIDet
+            !Annihilation of beta
+            do K = 1,nFCIDet
+                DiffOrb = ieor(Np1bBitList(J),FCIBitList(K))
+                nOrbs = CountBits(DiffOrb)
+                if(mod(nOrbs,2).ne.1) then 
+                    !There must be an odd number of orbital differences between the determinants
+                    !since they are of different electron number by one
+                    call stop_all(t_r,'Not odd number of electrons')
+                endif
+                if(nOrbs.ne.1) then
+                    !We only want one orbital different
+                    cycle
+                endif
+                !Now, find out what SPINorbital this one is from the bit number set
+                call DecodeBitDet(orbdum,1,DiffOrb)
+                gam = orbdum(1)
+                if(mod(gam,2).ne.0) then
+                    call stop_all(t_r,'differing orbital should be an beta spin orbital')
+                endif
+                !Now find out the parity change when applying this creation operator to the original determinant
+                tempK = FCIBitList(K)
+                call SQOperator(tempK,gam,tParity,.false.)
+
+                i = i + 1
+                if(i.gt.Nmax_Coup) call stop_all(t_r,'Compressed array size too small')
+                Coup_Ann_beta_T(1,i) = gtid(gam)+CoreEnd
+                if(tParity) then
+                    Coup_Ann_beta_T(2,i) = -1
+                else
+                    Coup_Ann_beta_T(2,i) = 1
+                endif
+                Coup_Ann_beta_inds_T(i) = K
+            enddo
+            Coup_Ann_beta_cum_T(J+1) = i+1
+        enddo
+
+        write(6,"(A)") "Coupling matrices calculated."
+        call flush(6)
+
+        !Now, compute the size of the full linear system matrix, and the overlap
+        Nmax_Lin = Nmax_N                   !Block 1
+        Nmax_Lin = Nmax_Lin + Nmax_N        !Block 2 (N-electron hamiltonian with modified diagonals)
+        Nmax_Lin = Nmax_Lin + (Nmax_Nm1+Nmax_Nm1b)*((nImp*2)**2)    !Block 4
+        Nmax_Lin = Nmax_Lin + (Nmax_Np1+Nmax_Np1b)*((nImp*2)**2)    !Block 7
+        Nmax_Lin = Nmax_Lin + nFCIDet*2     !Block 3 and 3^T    (Diagonal N-electron hamiltonian)
+        Nmax_Lin = Nmax_Lin + 2*2*nMax_Coup*nImp*2      !Block 5 and 5^T
+        Nmax_Lin = Nmax_Lin + 2*2*nMax_Coup*nImp*2      !Block 6 and 6^T
+        Nmax_Lin = Nmax_Lin + 2*2*nMax_Coup*nImp*2      !Block 9 and 9^T
+        Nmax_Lin = Nmax_Lin + 2*2*nMax_Coup*nImp*2      !Block 10 and 10^T
+
+        !Now for the overlap matrix size
+        Nmax_S = Nmax_N*2       !Block 1 and 2 (diagonal)
+        Nmax_S = Nmax_S + (nNm1bFCIDet + nNm1FCIDet)*((nImp*2)**2)  !Block 4 (each subblock is diagonal)
+        Nmax_S = Nmax_S + (nNp1bFCIDet + nNp1FCIDet)*((nImp*2)**2)  !Block 7 (each subblock is diagonal)
+
+        write(6,"(A,I12)") "Maximum number of elements in linear system: ",Nmax_Lin
+        write(6,"(A,I12)") "Maximum number of elements in overlap matrix: ",Nmax_S
+
+        !Allocate memory for hmailtonian in this system:
+        write(6,'(A,F13.3,A)') "Memory required to store linear system: ",    &
+            1.5_dp*real(Nmax_Lin,dp)*ComptoMb,' Mb'
+        write(6,'(A,F13.3,A)') "Memory required to store overlap: ",    &
+            1.5_dp*real(Nmax_S,dp)*ComptoMb,' Mb'
+        allocate(LinearSystem(Nmax_Lin),stat=ierr)
+        allocate(Overlap(Nmax_S),stat=ierr)
+        allocate(LinearSystem_inds(Nmax_Lin),stat=ierr)
+        allocate(Overlap_inds(Nmax_S),stat=ierr)
+        if(ierr.ne.0) call stop_all(t_r,'Error allocating')
+        
+        iunit = get_free_unit()
+        call append_ext_real('EC-TDA_DDResponse',U,filename)
+        if(.not.tHalfFill) then
+            !Also append occupation of lattice to the filename
+            call append_ext(filename,nOcc,filename2)
+        else
+            filename2 = filename
+        endif
+        open(unit=iunit,file=filename2,status='unknown')
+        write(iunit,"(A)") "# 1.Frequency     2.DD_LinearResponse(Re)    3.DD_LinearResponse(Im)    " &
+            & //"4.Orthog    5.Norm    6.NewGS   7.OldGS  8.OrthogRHS    9.NI_LR(Re)   10.NI_LR(Im)   11.Iters"
+        
+        !Store the fock matrix in complex form, so that we can ZGEMM easily
+        write(6,'(A,F9.3,A)') "Memory required to store fock matrix: ",real(nSites**2,dp)*ComptoMb,' Mb'
+        write(6,'(A,F9.3,A)') "Memory required to store bath states: ",4.0_dp*real(nSites**2,dp)*ComptoMb,' Mb'
+        allocate(FockSchmidtComp(nSites,nSites))
+        do i = 1,nSites
+            do j = 1,nSites
+                FockSchmidtComp(j,i) = dcmplx(FockSchmidt(j,i),0.0_dp)
+            enddo
+        enddo
+
+        InterMem = nCore**2 + nVirt**2 + 8*(EmbSize**2) + 2*(EmbSize*nVirt) + 2*(nCore*EmbSize)
+        write(6,'(A,F9.3,A)') "Memory required to store contracted intermediates: ",real(InterMem,dp)*ComptoMb,' Mb'
+        !Space for useful intermediates
+        allocate(G_ai_G_aj(nCore,nCore))    !Core,Core, contracted over virtual space
+        allocate(G_ai_G_bi(VirtStart:VirtEnd,VirtStart:VirtEnd))    !Virt,Virt, contracted over core space
+        allocate(G_xa_G_ya(ActiveStart:ActiveEnd,ActiveStart:ActiveEnd))    !Active,Active, contracted over virtuals
+        allocate(G_xa_F_ab(ActiveStart:ActiveEnd,VirtStart:VirtEnd))
+        allocate(G_xa_G_yb_F_ab(ActiveStart:ActiveEnd,ActiveStart:ActiveEnd))
+        allocate(G_ia_G_xa(1:CoreEnd,ActiveStart:ActiveEnd))
+        allocate(F_xi_G_ia_G_ya(ActiveStart:ActiveEnd,ActiveStart:ActiveEnd))
+        allocate(G_xa_F_ya(ActiveStart:ActiveEnd,ActiveStart:ActiveEnd))
+        allocate(G_xi_G_yi(ActiveStart:ActiveEnd,ActiveStart:ActiveEnd))
+        allocate(G_ix_F_ij(ActiveStart:ActiveEnd,1:CoreEnd))
+        allocate(G_ix_G_jy_F_ji(ActiveStart:ActiveEnd,ActiveStart:ActiveEnd))
+        allocate(G_ia_G_ix(VirtStart:VirtEnd,ActiveStart:ActiveEnd))
+        allocate(F_ax_G_ia_G_iy(ActiveStart:ActiveEnd,ActiveStart:ActiveEnd))
+        allocate(G_ix_F_iy(ActiveStart:ActiveEnd,ActiveStart:ActiveEnd))
+
+        call halt_timer(LR_EC_TDA_Precom)
+
+        Omega = Start_Omega
+        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+
+            write(6,*) "Calculating linear response for frequency: ",Omega
+            call flush(6)
+            call set_timer(LR_EC_TDA_HBuild)
+        
+            LinearSystem(:) = zzero
+            Overlap(:) = zzero
+            LinearSystem_inds(:) = 0
+            Overlap_inds(:) = 0
+            ind = 0 
+            if(tMinRes_NonDir) write(minres_unit,*) "Iteratively solving for frequency: ",Omega
+
+            !**************************    CONTRACTION COEFFICIENTS    **********************
+
+            !First, find the non-interacting solution expressed in the schmidt basis
+            call FindSchmidtPert(.false.,Omega,ni_lr)
+
+            !**************************    INTERMEDIATES    *****************************
+
+            !sum_a G_ai^* G_aj
+            call ZGEMM('C','N',nCore,nCore,nVirt,dcmplx(1.0_dp,0.0_dp),SchmidtPert(VirtStart:VirtEnd,1:CoreEnd),nVirt, &
+                SchmidtPert(VirtStart:VirtEnd,1:CoreEnd),nVirt,dcmplx(0.0_dp,0.0_dp),G_ai_G_aj,nCore)
+            !sum_i G_ai^* G_bi = sum_i G_ia^* G_bi
+            call ZGEMM('C','N',nVirt,nVirt,nCore,dcmplx(1.0_dp,0.0_dp),SchmidtPert(1:CoreEnd,VirtStart:VirtEnd),nCore, &
+                SchmidtPert(1:CoreEnd,VirtStart:VirtEnd),nCore,dcmplx(0.0_dp,0.0_dp),G_ai_G_bi,nVirt)
+            !sum_a G_xa^* G_ya  (where (x,y) in active space)
+            call ZGEMM('C','N',EmbSize,EmbSize,nVirt,dcmplx(1.0_dp,0.0_dp),    &
+                SchmidtPert(VirtStart:VirtEnd,ActiveStart:ActiveEnd),nVirt, &
+                SchmidtPert(VirtStart:VirtEnd,ActiveStart:ActiveEnd),nVirt,dcmplx(0.0_dp,0.0_dp),G_xa_G_ya,EmbSize)
+            !sum_a G_xa F_ab
+            call ZGEMM('N','N',EmbSize,nVirt,nVirt,dcmplx(1.0_dp,0.0_dp),SchmidtPert(ActiveStart:ActiveEnd,VirtStart:VirtEnd), &
+                EmbSize,FockSchmidtComp(VirtStart:VirtEnd,VirtStart:VirtEnd),nVirt,dcmplx(0.0_dp,0.0_dp),G_xa_F_ab,EmbSize)
+            !sum_ab G_xa^* G_yb F_ab
+            call ZGEMM('C','T',EmbSize,EmbSize,nVirt,dcmplx(1.0_dp,0.0_dp),SchmidtPert(VirtStart:VirtEnd,ActiveStart:ActiveEnd), &
+                nVirt,G_xa_F_ab(ActiveStart:ActiveEnd,VirtStart:VirtEnd),EmbSize,dcmplx(0.0_dp,0.0_dp),G_xa_G_yb_F_ab,EmbSize)
+            !sum_a G_ia^* G_xa
+            call ZGEMM('C','T',nCore,EmbSize,nVirt,dcmplx(1.0_dp,0.0_dp),SchmidtPert(VirtStart:VirtEnd,1:CoreEnd),nVirt,   &
+                SchmidtPert(ActiveStart:ActiveEnd,VirtStart:VirtEnd),EmbSize,dcmplx(0.0_dp,0.0_dp),G_ia_G_xa,nCore)
+            !sum_ia F_xi G_ia^* G_ya
+            call ZGEMM('N','N',EmbSize,EmbSize,nCore,dcmplx(1.0_dp,0.0_dp),FockSchmidtComp(ActiveStart:ActiveEnd,1:CoreEnd),   &
+                EmbSize,G_ia_G_xa,nCore,dcmplx(0.0_dp,0.0_dp),F_xi_G_ia_G_ya,EmbSize)
+            !sum_a G_xa F_ya
+            call ZGEMM('N','T',EmbSize,EmbSize,nVirt,dcmplx(1.0_dp,0.0_dp),SchmidtPert(ActiveStart:ActiveEnd,VirtStart:VirtEnd), &
+                EmbSize,FockSchmidtComp(ActiveStart:ActiveEnd,VirtStart:VirtEnd),EmbSize,dcmplx(0.0_dp,0.0_dp),G_xa_F_ya,EmbSize)
+            !sum_i G_ix^* G_iy
+            call ZGEMM('C','N',EmbSize,EmbSize,nCore,dcmplx(1.0_dp,0.0_dp),SchmidtPert(1:CoreEnd,ActiveStart:ActiveEnd),nCore, &
+                SchmidtPert(1:CoreEnd,ActiveStart:ActiveEnd),nCore,dcmplx(0.0_dp,0.0_dp),G_xi_G_yi,EmbSize)
+            !sum_i G_ix F_ij
+            call ZGEMM('T','N',EmbSize,nCore,nCore,dcmplx(1.0_dp,0.0_dp),SchmidtPert(1:CoreEnd,ActiveStart:ActiveEnd),nCore,   &
+                FockSchmidtComp(1:CoreEnd,1:CoreEnd),nCore,dcmplx(0.0_dp,0.0_dp),G_ix_F_ij,EmbSize)
+            !sum_ij G_ix^* G_jy F_ji
+            call ZGEMM('C','T',EmbSize,EmbSize,nCore,dcmplx(1.0_dp,0.0_dp),SchmidtPert(1:CoreEnd,ActiveStart:ActiveEnd),nCore, &
+                G_ix_F_ij,EmbSize,dcmplx(0.0_dp,0.0_dp),G_ix_G_jy_F_ji,EmbSize)
+            !sum_i G_ia^* G_ix
+            call ZGEMM('C','N',nVirt,EmbSize,nCore,dcmplx(1.0_dp,0.0_dp),SchmidtPert(1:CoreEnd,VirtStart:VirtEnd),nCore,   &
+                SchmidtPert(1:CoreEnd,ActiveStart:ActiveEnd),nCore,dcmplx(0.0_dp,0.0_dp),G_ia_G_ix,nVirt)
+            !sum_ia F_ax G_ia^* G_iy
+            call ZGEMM('T','N',EmbSize,EmbSize,nVirt,dcmplx(1.0_dp,0.0_dp),    &
+                FockSchmidtComp(VirtStart:VirtEnd,ActiveStart:ActiveEnd),nVirt,G_ia_G_ix,nVirt, &
+                dcmplx(0.0_dp,0.0_dp),F_ax_G_ia_G_iy,EmbSize)
+            !sum_i G^ix F_iy
+            call ZGEMM('T','N',EmbSize,EmbSize,nCore,dcmplx(1.0_dp,0.0_dp),SchmidtPert(1:CoreEnd,ActiveStart:ActiveEnd),nCore, &
+                FockSchmidtComp(1:CoreEnd,ActiveStart:ActiveEnd),nCore,dcmplx(0.0_dp,0.0_dp),G_ix_F_iy,EmbSize)
+
+            !****************************    NORMALIZATION CONSTANTS    ************
+            !Calc normalization for the CV block
+            CVNorm = 0.0_dp
+            do i=1,CoreEnd
+                CVNorm = CVNorm + real(G_ai_G_aj(i,i))
+            enddo
+            CVNorm = CVNorm * 2.0_dp
+            ! Active-Virtual block normalizations
+            AVNorm(:) = 0.0_dp
+            do a = VirtStart,VirtEnd
+                do gam = 1,EmbSize
+                    gam_spat = gam+CoreEnd
+                    !AVNorm(gam) = AVNorm(gam) + real(SchmidtPert(gam_spat,a))**2 + aimag(SchmidtPert(gam_spat,a))**2
+                    AVNorm(gam) = AVNorm(gam) + real(conjg(SchmidtPert(gam_spat,a))*SchmidtPert(gam_spat,a),dp)
+                enddo
+            enddo
+            ! Core-Active block normalizations
+            CANorm(:) = 0.0_dp
+            do gam = 1,nImp*2
+                gam_spat = gam+(nOcc-nImp)
+                do i = 1,CoreEnd 
+                    CANorm(gam) = CANorm(gam) + real(SchmidtPert(i,gam_spat))**2 + aimag(SchmidtPert(i,gam_spat))**2
+                enddo
+            enddo
+
+            !****************************    DIAGONALS    *************************
+            !BLOCK 1
+            do i = 1,nFCIDet
+                LinearSystem(i) = NFCIHam(i)   
+            enddo
+            !BLOCK 2 
+            !Find the augmenting factor for the diagonals of this block 
+            tempel = dcmplx(0.0_dp,0.0_dp)
+            do i=1,CoreEnd
+                do j=1,CoreEnd
+                    tempel = tempel - FockSchmidt(j,i)*G_ai_G_aj(j,i)
+                enddo
+            enddo
+            do b = VirtStart,VirtEnd
+                do a = VirtStart,VirtEnd
+                    tempel = tempel + FockSchmidt(a,b)*G_ai_G_bi(a,b)
+                enddo
+            enddo
+            tempel = tempel * (2.0_dp/CVNorm)
+            j = 0
+            do i = CVIndex,AVIndex-1
+                j = j + 1
+                LinearSystem(i) = NFCIHam(j) + tempel
+            enddo
+            if(j.ne.nFCIDet) call stop_all(t_r,'Indexing problem')
+            !BLOCK 4
+            do gam = 1,EmbSize
+                !Run through active space orbitals
+                gam_spat = gam + (nOcc-nImp)
+                !gam_ind gives the starting index of the AV diagonal block for orbital gam
+                gam_ind = AVIndex + (gam-1)*nFullNm1
+                
+                do i = gam_ind,gam_ind+nNm1bFCIDet-1
+                    !Run through beta block
+                    LinearSystem(i) = (dcmplx(Nm1FCIHam_beta_cmps(i-gam_ind+1),0.0_dp)*G_xa_G_ya(gam_spat,gam_spat) + G_xa_G_yb_F_ab(gam_spat,gam_spat)) / (sqrt(AVNorm(gam)*AVNorm(gam)))
+                enddo
+                do i = gam_ind+nNm1bFCIDet,gam_ind+nFullNm1-1
+                    !And alpha block
+                    LinearSystem(i) = (dcmplx(Nm1FCIHam_alpha_cmps(i-(gam_ind+nNm1bFCIDet)+1),0.0_dp)*G_xa_G_ya(gam_spat,gam_spat) + G_xa_G_yb_F_ab(gam_spat,gam_spat)) / (sqrt(AVNorm(gam)*AVNorm(gam)))
+                enddo
+            enddo
+            !BLOCK 7 (similar to block 4)
+            do gam = 1,EmbSize
+                gam_spat = gam+(nOcc-nImp)
+                gam_ind = CAIndex + (gam-1)*nFullNp1
+                do i = gam_ind,gam_ind+nNp1FCIDet-1
+                    LinearSystem(i) = (dcmplx(Np1FCIHam_alpha_cmps(i-gam_ind+1),0.0_dp)*G_xi_G_yi(gam_spat,gam_spat) - G_ix_G_jy_F_ji(gam_spat,gam_spat)) / (sqrt(CANorm(gam)*CANorm(gam)))
+                enddo
+                do i = gam_ind+nNp1FCIDet,gam_ind+nFullNp1-1
+                    LinearSystem(i) = (dcmplx(Np1FCIHam_beta_cmps(i-(gam_ind+nNp1FCIDet)+1),0.0_dp)*G_xi_G_yi(gam_spat,gam_spat) - G_ix_G_jy_F_ji(gam_spat,gam_spat)) / (sqrt(CANorm(gam)*CANorm(gam)))
+                enddo
+            enddo
+
+            !*****************************    OFF-DIAGONAL MATRIX ELEMENT    ***********
+
+            !Precompute the value of all elements in block 3
+            tempel = dcmplx(0.0_dp,0.0_dp)
+            do i = 1,CoreEnd
+                do a = VirtStart,VirtEnd
+                    tempel = tempel + SchmidtPert(a,i)*FockSchmidt(a,i)
+                enddo
+            enddo
+            tempel = tempel * (2.0_dp/(sqrt(CVNorm)))
+
+            !Set up indexing for the off-diagonal elements of the linear system
+            ind = nLinearSystem + 1
+            LinearSystem_inds(1) = nLinearSystem + 2
+
+            !First, the top nFCIDet rows, running through blocks 1, 3, 6, 10
+            do i = 1,nFCIDet
+                !Block 1
+                do k = NFCIHam_inds(i),NFCIHam_inds(i+1)-1
+                    ind = ind + 1
+                    if(ind.gt.Nmax_Lin) call stop_all(t_r,'Compressed array too small')
+                    LinearSystem(ind) = NFCIHam_cmps(k)
+                    LinearSystem_inds(ind) = NFCIHam_inds(k)
+                enddo
+                !Block 3 is diagonal, and so there is only *1* non-zero element per row
+                ind = ind + 1
+                if(ind.gt.Nmax_Lin) call stop_all(t_r,'Compressed array too small')
+                LinearSystem(ind) = tempel
+                LinearSystem_inds(ind) = nFCIDet + i
+                !Block 6
+                !Run through orbitals in active space
+                do beta = 1,EmbSize
+                    !Run through non-zero connections in that block
+                    do k = Coup_Create_alpha_cum(i),Coup_Create_alpha_cum(i+1)-1
+
+                        matel = G_xa_F_ya(beta+CoreEnd,Coup_Create_alpha(1,k))*Coup_Create_alpha(2,k) / sqrt(AVNorm(beta))
+                        if(abs(matel).gt.CompressThresh) then
+                            ind = ind + 1
+                            if(ind.gt.Nmax_Lin) call stop_all(t_r,'Compressed array too small')
+                            LinearSystem(ind) = matel
+                            LinearSystem_inds(ind) = AVIndex + (beta-1)*nFullNm1 + Coup_Create_alpha_inds(k) - 1
+                        endif
+                    enddo
+                    !Now for other spin type
+                    do k = Coup_Create_beta_cum(i),Coup_Create_beta_cum(i+1)-1
+                        matel = G_xa_F_ya(beta+CoreEnd,Coup_Create_beta(1,k))*Coup_Create_beta(2,k) / sqrt(AVNorm(beta))
+                        if(abs(matel).gt.CompressThresh) then
+                            ind = ind + 1
+                            if(ind.gt.Nmax_Lin) call stop_all(t_r,'Compressed array too small')
+                            LinearSystem(ind) = matel
+                            LinearSystem_inds(ind) = AVIndex + (beta-1)*nFullNm1 + nNm1bFCIDet + Coup_Create_beta_inds(k) - 1
+                        endif
+                    enddo
+                enddo
+                !Block 10 (Similar to block 6)
+                do beta = 1,EmbSize
+                    do k = Coup_Ann_alpha_cum(i),Coup_Ann_alpha_cum(i+1)-1
+                        matel = -G_ix_F_iy(beta+CoreEnd,Coup_Ann_alpha(1,k))*Coup_Ann_alpha(2,k) / sqrt(CANorm(beta))
+                        if(abs(matel).gt.CompressThresh) then
+                            ind = ind + 1
+                            if(ind.gt.Nmax_Lin) call stop_all(t_r,'Compressed array too small')
+                            LinearSystem(ind) = matel
+                            LinearSystem_inds(ind) = CAIndex + (beta-1)*nFullNp1 + Coup_Ann_alpha_inds(k) - 1
+                        endif
+                    enddo
+                    !Other spin
+                    do k = Coup_Ann_beta_cum(i),Coup_Ann_beta_cum(i+1)-1
+                        matel = -G_ix_F_iy(beta+CoreEnd,Coup_Ann_beta(1,k))*Coup_Ann_beta(2,k) / sqrt(CANorm(beta))
+                        if(abs(matel).gt.CompressThresh) then
+                            ind = ind + 1
+                            if(ind.gt.Nmax_Lin) call stop_all(t_r,'Compressed array too small')
+                            LinearSystem(ind) = matel
+                            LinearSystem_inds(ind) = CAIndex + (beta-1)*nFullNp1 + nNp1FCIDet + Coup_Ann_beta_inds(k) - 1
+                        endif
+                    enddo
+                enddo
+                LinearSystem_inds(i+1) = ind + 1
+            enddo   !Finish row i (Block 1 column)
+            
+            !Now, the next nFCIDet rows, running through blocks 3^T, 2, 5, 9
+            do i = 1,nFCIDet
+                !Block 3^T
+                ind = ind + 1
+                if(ind.gt.Nmax_Lin) call stop_all(t_r,'Compressed array too small')
+                LinearSystem(ind) = conjg(tempel)
+                LinearSystem_inds(ind) = i
+                !Block 2
+                do k = NFCIHam_inds(i),NFCIHam_inds(i+1)-1
+                    ind = ind + 1
+                    if(ind.gt.NMax_Lin) call stop_all(t_r,'Compressed array too small')
+                    LinearSystem(ind) = NFCIHam_cmps(k)
+                    LinearSystem_inds(ind) = NFCIHam_inds(k) + nFCIDet
+                enddo
+                !Block 5
+                do beta = 1,EmbSize
+                    do k = Coup_Create_alpha_cum(i),Coup_Create_alpha_cum(i+1)-1
+                        matel = -F_xi_G_ia_G_ya(Coup_Create_alpha(1,k),beta+CoreEnd)*Coup_Create_alpha(2,k) / sqrt(CVNorm*AVNorm(beta))
+                        if(abs(matel).gt.CompressThresh) then
+                            ind = ind + 1
+                            if(ind.gt.Nmax_Lin) call stop_all(t_r,'Compressed array too small')
+                            LinearSystem(ind) = matel
+                            LinearSystem_inds(ind) = AVIndex + (beta-1)*nFullNm1 + Coup_Create_alpha_inds(k) - 1
+                        endif
+                    enddo
+                    !Now for other spin type
+                    do k = Coup_Create_beta_cum(i),Coup_Create_beta_cum(i+1)-1
+                        matel = -F_xi_G_ia_G_ya(Coup_Create_beta(1,k),beta+CoreEnd)*Coup_Create_beta(2,k) / sqrt(CVNorm*AVNorm(beta))
+                        if(abs(matel).gt.CompressThresh) then
+                            ind = ind + 1
+                            if(ind.gt.Nmax_Lin) call stop_all(t_r,'Compressed array too small')
+                            LinearSystem(ind) = matel
+                            LinearSystem_inds(ind) = AVIndex + (beta-1)*nFullNm1 + nNm1bFCIDet + Coup_Create_beta_inds(k) - 1
+                        endif
+                    enddo
+                enddo
+                !Block 9
+                do beta = 1,EmbSize
+                    do k = Coup_Ann_alpha_cum(i),Coup_Ann_alpha_cum(i+1)-1
+                        matel = -F_ax_G_ia_G_iy(Coup_Ann_alpha(1,k),beta+CoreEnd)*Coup_Ann_alpha(2,k) / sqrt(CVNorm*CANorm(beta))
+                        if(abs(matel).gt.CompressThresh) then
+                            ind = ind + 1
+                            if(ind.gt.Nmax_Lin) call stop_all(t_r,'Compressed array too small')
+                            LinearSystem(ind) = matel
+                            LinearSystem_inds(ind) = CAIndex + (beta-1)*nFullNp1 + Coup_Ann_alpha_inds(k) - 1
+                        endif
+                    enddo
+                    !Other spin
+                    do k = Coup_Ann_beta_cum(i),Coup_Ann_beta_cum(i+1)-1
+                        matel = -F_ax_G_ia_G_iy(Coup_Ann_beta(1,k),beta+CoreEnd)*Coup_Ann_beta(2,k) / sqrt(CVNorm*CANorm(beta))
+                        if(abs(matel).gt.CompressThresh) then
+                            ind = ind + 1
+                            if(ind.gt.Nmax_Lin) call stop_all(t_r,'Compressed array too small')
+                            LinearSystem(ind) = matel
+                            LinearSystem_inds(ind) = CAIndex + (beta-1)*nFullNp1 + nNp1FCIDet + Coup_Ann_beta_inds(k) - 1
+                        endif
+                    enddo
+                enddo
+                LinearSystem_inds(nFCIDet+i+1) = ind + 1
+            enddo   !Finish row i (Block 2 columns)
+
+
+
+
+
+            
+            !First, construct FCI space, in determinant basis
+            !****************************   Block 1   **************************
+            do i = 1,nFCIDet
+                do j = 1,nFCIDet
+                    LinearSystem(j,i) = dcmplx(NFCIHam(j,i),0.0_dp)
+                enddo
+            enddo
+
+            !****************************************************************************
+            !*********    CORE-VIRTUAL EXCITATION BLOCK *********************************
+            !****************************************************************************
+
+            !Calc normalization for the CV block
+            CVNorm = 0.0_dp
+            do i=1,CoreEnd
+                CVNorm = CVNorm + real(G_ai_G_aj(i,i))
+            enddo
+            CVNorm = CVNorm * 2.0_dp
+
+            !*****************************   Block 2   *****************************
+            !Copy the uncontracted FCI hamiltonian space
+            LinearSystem(CVIndex:AVIndex-1,CVIndex:AVIndex-1) = LinearSystem(1:nFCIDet,1:nFCIDet)
+
+            !Now alter the diagonals of this block
+            tempel = dcmplx(0.0_dp,0.0_dp)
+            do i=1,CoreEnd
+                do j=1,CoreEnd
+                    tempel = tempel - FockSchmidt(j,i)*G_ai_G_aj(j,i)
+                enddo
+            enddo
+
+            do b = VirtStart,VirtEnd
+                do a = VirtStart,VirtEnd
+                    tempel = tempel + FockSchmidt(a,b)*G_ai_G_bi(a,b)
+                enddo
+            enddo
+            tempel = tempel * (2.0_dp/CVNorm)
+
+            !write(6,*) "In the CV diagonal space, the diagonals are offset by (should be +ve): ",tempel
+            !Offset all diagonals of the CV space by this value
+            do i = CVIndex,AVIndex-1
+                LinearSystem(i,i) = LinearSystem(i,i) + tempel
+            enddo
+
+            !Now for the coupling of the CV excitations to the uncontracted space
+            !***********************   Block 3   ***************************
+            tempel = dcmplx(0.0_dp,0.0_dp)
+            do i = 1,CoreEnd
+                do a = VirtStart,VirtEnd
+                    tempel = tempel + SchmidtPert(a,i)*FockSchmidt(a,i)
+                enddo
+            enddo
+            tempel = tempel * (2.0_dp/(sqrt(CVNorm)))
+
+            !Add these in to the diagonals of the coupling blocks
+            do i = 1,nFCIDet
+                LinearSystem(i,nFCIDet+i) = tempel
+                LinearSystem(nFCIDet+i,i) = conjg(tempel)
+            enddo
+
+            !****************************************************************************
+            !*********    ACTIVE-VIRTUAL EXCITATION BLOCK *******************************
+            !****************************************************************************
+
+            !First, get normalization constants
+            AVNorm(:) = 0.0_dp
+            do a = VirtStart,VirtEnd
+                do gam = 1,EmbSize
+                    gam_spat = gam+CoreEnd
+                    !AVNorm(gam) = AVNorm(gam) + real(SchmidtPert(gam_spat,a))**2 + aimag(SchmidtPert(gam_spat,a))**2
+                    AVNorm(gam) = AVNorm(gam) + real(conjg(SchmidtPert(gam_spat,a))*SchmidtPert(gam_spat,a),dp)
+                enddo
+            enddo
+            !call writevector(AVNorm,'AV Norm')
+
+            !This starts at 'AVIndex'
+            !'Diagonal' block
+            !*****************************   Block 4   *****************************
+            do gam1 = 1,EmbSize
+                !Run through all active space orbitals
+                gam1_spat = gam1+(nOcc-nImp)
+
+                !gam1_ind now gives the starting index of the AV diagonal block
+                !for orbital gam1
+                gam1_ind = AVIndex + (gam1-1)*nFullNm1
+
+                do gam2 = 1,EmbSize
+                    gam2_spat = gam2+(nOcc-nImp)
+
+                    gam2_ind = AVIndex + (gam2-1)*nFullNm1
+
+                    !Construct appropriate weighting factor for the hamiltonian matrix element contribution
+                    !Fill with appropriate FCI hamiltonian block
+                    do i = gam2_ind,gam2_ind+nNm1bFCIDet-1
+                        do j = gam1_ind,gam1_ind+nNm1bFCIDet-1
+                            LinearSystem(j,i) = dcmplx(Nm1FCIHam_beta(j-gam1_ind+1,i-gam2_ind+1),0.0_dp)
+                        enddo
+                    enddo
+!                    call R_C_Copy_2D(LinearSystem(gam1_ind:gam1_ind+nNm1bFCIDet-1,gam2_ind:gam2_ind+nNm1bFCIDet-1), &
+!                        Nm1FCIHam_beta(:,:),nNm1bFCIDet,nNm1bFCIDet)
+
+                    !Now construct for the gam1_beta : gam2_beta block
+                    do i = gam2_ind+nNm1bFCIDet,gam2_ind+nFullNm1-1
+                        do j = gam1_ind+nNm1bFCIDet,gam1_ind+nFullNm1-1
+                            LinearSystem(j,i) =     &
+                                dcmplx(Nm1FCIHam_alpha(j-(gam1_ind+nNm1bFCIDet)+1,i-(gam2_ind+nNm1bFCIDet)+1),0.0_dp)
+                        enddo
+                    enddo
+                    !call R_C_Copy_2D(LinearSystem(gam1_ind+nNm1bFCIDet:gam1_ind+nFullNm1-1,   &
+                    !    gam2_ind+nNm1bFCIDet:gam2_ind+nFullNm1-1),Nm1FCIHam_alpha(:,:),nNm1FCIDet,nNm1FCIDet)
+                    
+                    !Multiply every element by the appropriate weighting factor
+                    !This weighting factor is the same for both spin blocks, so no need to do seperately
+                    LinearSystem(gam1_ind:gam1_ind+nFullNm1-1,gam2_ind:gam2_ind+nFullNm1-1) =   & 
+                        LinearSystem(gam1_ind:gam1_ind+nFullNm1-1,gam2_ind:gam2_ind+nFullNm1-1) &
+                        *G_xa_G_ya(gam1_spat,gam2_spat)
+
+                    !Now for the virtual excitation term, which is diagonal in each determinant space
+                    !Add this term in to the diagonals of each block
+                    do i = 0,nFullNm1-1
+                        LinearSystem(gam1_ind+i,gam2_ind+i) = LinearSystem(gam1_ind+i,gam2_ind+i) +     &
+                            G_xa_G_yb_F_ab(gam1_spat,gam2_spat) 
+                    enddo
+
+                    !Finally, all the elements need to be normalized correctly.
+                    !Again, the normalization condition is the same for both spins.
+                    tempel = sqrt(AVNorm(gam1)*AVNorm(gam2))
+                    LinearSystem(gam1_ind:gam1_ind+nFullNm1-1,gam2_ind:gam2_ind+nFullNm1-1) =   &
+                        LinearSystem(gam1_ind:gam1_ind+nFullNm1-1,gam2_ind:gam2_ind+nFullNm1-1) / tempel
+
+                enddo   !End gam2
+            enddo   !End gam1
+
+            !Now for the coupling to the active-virtual excitation and uncontracted blocks
+            !**********************   Block 5 & 6  ***************************
+            !First, when the AV excitations are both alpha operators
+            do J = 1,nFCIDet
+                CVInd_tmp = CVIndex + J - 1 
+                do K = 1,nNm1bFCIDet
+                    if(Coup_Create_alpha(1,J,K).ne.0) then
+                        do beta = 1,EmbSize
+                            AVInd_tmp = AVIndex + (beta-1)*nFullNm1 + K -1
+
+                            !Block 5
+                            LinearSystem(CVInd_tmp,AVInd_tmp) = LinearSystem(CVInd_tmp,AVInd_tmp) - &
+                                F_xi_G_ia_G_ya(Coup_Create_alpha(1,J,K),beta+CoreEnd)*Coup_Create_alpha(2,J,K) / &
+                                sqrt(CVNorm*AVNorm(beta))
+
+                            !Hermiticity
+                            LinearSystem(AVInd_tmp,CVInd_tmp) = conjg(LinearSystem(CVInd_tmp,AVInd_tmp))
+
+                            !Block 6
+                            LinearSystem(J,AVInd_tmp) = LinearSystem(J,AVInd_tmp) + &
+                                G_xa_F_ya(beta+CoreEnd,Coup_Create_alpha(1,J,K))*Coup_Create_alpha(2,J,K) / &
+                                sqrt(AVNorm(beta))
+
+                            !Hermiticity
+                            LinearSystem(AVInd_tmp,J) = conjg(LinearSystem(J,AVInd_tmp))
+                        enddo
+                    endif
+                enddo
+                !Now for other spin-type
+                do K = 1,nNm1FCIDet
+                    if(Coup_Create_beta(1,J,K).ne.0) then
+                        do beta = 1,EmbSize
+                            AVInd_tmp = AVIndex + (beta-1)*nFullNm1 + nNm1bFCIDet + K -1
+
+                            !Block 5
+                            LinearSystem(CVInd_tmp,AVInd_tmp) = LinearSystem(CVInd_tmp,AVInd_tmp) - &
+                                F_xi_G_ia_G_ya(Coup_Create_beta(1,J,K),beta+CoreEnd)*Coup_Create_beta(2,J,K) /  &
+                                sqrt(CVNorm*AVNorm(beta))
+
+                            !Hermiticity
+                            LinearSystem(AVInd_tmp,CVInd_tmp) = conjg(LinearSystem(CVInd_tmp,AVInd_tmp))
+
+                            !Block 6
+                            LinearSystem(J,AVInd_tmp) = LinearSystem(J,AVInd_tmp) + &
+                                G_xa_F_ya(beta+CoreEnd,Coup_Create_beta(1,J,K))*Coup_Create_beta(2,J,K) / &
+                                sqrt(AVNorm(beta))
+
+                            !Hermiticity
+                            LinearSystem(AVInd_tmp,J) = conjg(LinearSystem(J,AVInd_tmp))
+                        enddo
+                    endif
+                enddo
+            enddo
+
+            !****************************************************************************
+            !************    CORE-ACTIVE EXCITATION BLOCK *******************************
+            !****************************************************************************
+
+            !First, get normalization constants
+            CANorm(:) = 0.0_dp
+            do gam = 1,nImp*2
+                gam_spat = gam+(nOcc-nImp)
+                do i = 1,CoreEnd 
+                    CANorm(gam) = CANorm(gam) + real(SchmidtPert(i,gam_spat))**2 + aimag(SchmidtPert(i,gam_spat))**2
+                enddo
+            enddo
+            !call writevector(CANorm,'CA Norm')
+
+
+            !This starts at 'CAIndex'
+            !'Diagonal' block
+            !*****************************   Block 7   *****************************
+            !As opposed to block 4, the beta hamiltonian now corresponds to the correct block for the excitation
+            do gam1 = 1,nImp*2
+                !Run through all active space orbitals
+                gam1_spat = gam1+(nOcc-nImp)
+
+                !gam1_ind now gives the starting index of the AV diagonal block
+                !for orbital gam1
+                gam1_ind = CAIndex + (gam1-1)*nFullNp1
+
+                do gam2 = 1,nImp*2
+                    gam2_spat = gam2+(nOcc-nImp)
+
+                    gam2_ind = CAIndex + (gam2-1)*nFullNp1
+
+                    !Fill with appropriate FCI hamiltonian block
+                    do i = gam2_ind,gam2_ind+nNp1FCIDet-1
+                        do j = gam1_ind,gam1_ind+nNp1FCIDet-1
+                            LinearSystem(j,i) = dcmplx(Np1FCIHam_alpha(j-gam1_ind+1,i-gam2_ind+1),0.0_dp)
+                        enddo
+                    enddo
+                    !call R_C_Copy_2D(LinearSystem(gam1_ind:gam1_ind+nNp1FCIDet-1,gam2_ind:gam2_ind+nNp1FCIDet-1),   &
+                    !    Np1FCIHam_alpha(:,:),nNp1FCIDet,nNp1FCIDet)
+
+                    !Now construct for the gam1_beta : gam2_beta block
+                    do i = gam2_ind+nNp1FCIDet,gam2_ind+nFullNp1-1
+                        do j = gam1_ind+nNp1FCIDet,gam1_ind+nFullNp1-1
+                            LinearSystem(j,i) = dcmplx(Np1FCIHam_beta(j-(gam1_ind+nNp1FCIDet)+1,i-(gam2_ind+nNp1FCIDet)+1),0.0_dp)
+                        enddo
+                    enddo
+                    !call R_C_Copy_2D(LinearSystem(gam1_ind+nNp1FCIDet:gam1_ind+nFullNp1-1,    &
+                    !    gam2_ind+nNp1FCIDet:gam2_ind+nFullNp1-1),Np1FCIHam_beta(:,:),nNp1bFCIDet,nNp1bFCIDet)
+                    
+                    !Multiply every element by the appropriate weighting factor
+                    !This weighting factor is the same for both spin blocks, so no need to do seperately
+                    LinearSystem(gam1_ind:gam1_ind+nFullNp1-1,gam2_ind:gam2_ind+nFullNp1-1) =   &
+                        LinearSystem(gam1_ind:gam1_ind+nFullNp1-1,gam2_ind:gam2_ind+nFullNp1-1) *   &
+                        G_xi_G_yi(gam1_spat,gam2_spat)
+
+                    !Now for the occupied excitation term, which is diagonal in each determinant space
+                    !Add this term in to the diagonals of each block
+                    do i = 0,nFullNp1-1
+                        LinearSystem(gam1_ind+i,gam2_ind+i) = LinearSystem(gam1_ind+i,gam2_ind+i) - &
+                            G_ix_G_jy_F_ji(gam1_spat,gam2_spat)
+                    enddo
+
+                    !Finally, all the elements need to be normalized correctly.
+                    !Again, the normalization condition is the same for both spins.
+                    tempel = sqrt(CANorm(gam1)*CANorm(gam2))
+                    LinearSystem(gam1_ind:gam1_ind+nFullNp1-1,gam2_ind:gam2_ind+nFullNp1-1) =   &
+                        LinearSystem(gam1_ind:gam1_ind+nFullNp1-1,gam2_ind:gam2_ind+nFullNp1-1) / tempel
+                enddo   !End gam2
+            enddo   !End gam1
+
+            !*************************   Block 8 is ZERO   ******************************
+
+            !*************************   Block 9 & 10  **************************************
+            do J = 1,nFCIDet
+                CVInd_tmp = CVIndex + J - 1 
+                do K = 1,nNp1FCIDet
+                    if(Coup_Ann_alpha(1,J,K).ne.0) then
+                        do beta = 1,EmbSize
+                            CAInd_tmp = CAIndex + (beta-1)*nFullNp1 + K - 1
+
+                            !Block 9
+                            LinearSystem(CVInd_tmp,CAInd_tmp) = LinearSystem(CVInd_tmp,CAInd_tmp) - &
+                                F_ax_G_ia_G_iy(Coup_Ann_alpha(1,J,K),beta+CoreEnd)*Coup_Ann_alpha(2,J,K) / &
+                                sqrt(CVNorm*CANorm(beta))
+
+                            !Hermiticity
+                            LinearSystem(CAInd_tmp,CVInd_tmp) = conjg(LinearSystem(CVInd_tmp,CAInd_tmp))
+
+                            !Block 10
+                            LinearSystem(J,CAInd_tmp) = LinearSystem(J,CAInd_tmp) - &
+                                G_ix_F_iy(beta+CoreEnd,Coup_Ann_alpha(1,J,K))*Coup_Ann_alpha(2,J,K) / &
+                                sqrt(CANorm(beta))
+
+                            !Hermiticity
+                            LinearSystem(CAInd_tmp,J) = conjg(LinearSystem(J,CAInd_tmp))
+                        enddo
+                    endif
+                enddo
+                !Now for beta spin
+                do K = 1,nNp1bFCIDet
+                    if(Coup_Ann_beta(1,J,K).ne.0) then
+                        do beta = 1,EmbSize
+                            CAInd_tmp = CAIndex + (beta-1)*nFullNp1 + nNp1FCIDet + K - 1
+
+                            !Block 9
+                            LinearSystem(CVInd_tmp,CAInd_tmp) = LinearSystem(CVInd_tmp,CAInd_tmp) - &
+                                F_ax_G_ia_G_iy(Coup_Ann_beta(1,J,K),beta+CoreEnd)*Coup_Ann_beta(2,J,K) / &
+                                sqrt(CVNorm*CANorm(beta))
+
+                            !Hermiticity
+                            LinearSystem(CAInd_tmp,CVInd_tmp) = conjg(LinearSystem(CVInd_tmp,CAInd_tmp))
+
+                            !Block 10
+                            LinearSystem(J,CAInd_tmp) = LinearSystem(J,CAInd_tmp) - &
+                                G_ix_F_iy(beta+CoreEnd,Coup_Ann_beta(1,J,K))*Coup_Ann_beta(2,J,K) / &
+                                sqrt(CANorm(beta))
+
+                            !Hermiticity
+                            LinearSystem(CAInd_tmp,J) = conjg(LinearSystem(J,CAInd_tmp))
+                        enddo
+                    endif
+                enddo
+            enddo
+
+!            !Now check that Hessian is hermitian
+!            do i=1,nLinearSystem
+!                do j=i,nLinearSystem
+!                    if(abs(LinearSystem(i,j)-conjg(LinearSystem(j,i))).gt.1.0e-8_dp) then
+!                        write(6,*) "i, j: ",i,j
+!                        write(6,*) "LinearSystem(i,j): ",LinearSystem(i,j)
+!                        write(6,*) "LinearSystem(j,i): ",LinearSystem(j,i)
+!                        call stop_all(t_r,'Hessian for EC-LR not hermitian')
+!                    endif
+!                enddo
+!            enddo
+
+            !write(6,*) "Hessian constructed successfully...",Omega
+            call halt_timer(LR_EC_TDA_HBuild)
+
+            !*********************   Hessian construction finished   **********************
+            !call writematrix(LinearSystem(1:nFCIDet,1:nFCIDet),'Hessian_N',.true.)
+
+            !****************************************************************************
+            !************    OVERLAP MATRIX   *******************************************
+            !****************************************************************************
+            call set_timer(LR_EC_TDA_SBuild)
+
+            ! Block 1 and 2 are equal to the identity
+            do i = 1,AVIndex-1
+                Overlap(i,i) = dcmplx(1.0_dp,0.0_dp)
+            enddo
+
+            !Now deal with block 4
+            !AV-AV overlap
+            do gam1 = 1,nImp*2
+                !Run through all active space orbitals
+                gam1_spat = gam1+(nOcc-nImp)
+
+                !gam1_ind now gives the starting index of the AV diagonal block
+                !for orbital gam1
+                gam1_ind = AVIndex + (gam1-1)*nFullNm1
+
+                do gam2 = 1,nImp*2
+                    gam2_spat = gam2+(nOcc-nImp)
+
+                    gam2_ind = AVIndex + (gam2-1)*nFullNm1
+
+                    !Now for the overlap, which is diagonal in each determinant space
+                    tempel = G_xa_G_ya(gam1_spat,gam2_spat) / sqrt(AVNorm(gam1)*AVNorm(gam2))
+                    if((gam1.eq.gam2).and.(abs(tempel-1.0_dp).gt.1.0e-7_dp)) then
+                        write(6,*) "gam1,gam2: ",gam1,gam2
+                        write(6,*) "tempel: ",tempel
+                        call stop_all(t_r,'Error calculating overlap 1')
+                    endif
+                    !Add this term in to the diagonals of each block
+                    do i = 0,nFullNm1-1
+                        Overlap(gam1_ind+i,gam2_ind+i) = tempel
+                    enddo
+                enddo   !End gam2
+            enddo   !End gam1
+
+            !Now deal with block 7
+            !CA-CA overlap
+            do gam1 = 1,nImp*2
+                !Run through all active space orbitals
+                gam1_spat = gam1+(nOcc-nImp)
+
+                !gam1_ind now gives the starting index of the AV diagonal block
+                !for orbital gam1
+                gam1_ind = CAIndex + (gam1-1)*nFullNp1
+
+                do gam2 = 1,nImp*2
+                    gam2_spat = gam2+(nOcc-nImp)
+
+                    gam2_ind = CAIndex + (gam2-1)*nFullNp1
+
+                    !Now for the occupied excitation term, which is diagonal in each determinant space
+                    tempel = G_xi_G_yi(gam1_spat,gam2_spat) / sqrt(CANorm(gam1)*CANorm(gam2))
+                    if((gam1.eq.gam2).and.(abs(tempel-1.0_dp).gt.1.0e-7_dp)) then
+                        call stop_all(t_r,'Error calculating overlap 2')
+                    endif
+                    !Add this term in to the diagonals of each block
+                    do i = 0,nFullNp1-1
+                        Overlap(gam1_ind+i,gam2_ind+i) = tempel
+                    enddo
+
+                enddo   !End gam2
+            enddo   !End gam1
+!            !Check hermiticity and normalization of overlap matrix
+            do i=1,nLinearSystem
+                do j=i,nLinearSystem
+                    if(abs(Overlap(i,j)-conjg(Overlap(j,i))).gt.1.0e-7_dp) then
+                        call stop_all(t_r,'Overlap matrix not hermitian')
+                    endif
+                enddo
+                if(abs(Overlap(i,i)-1.0_dp).gt.1.0e-7_dp) then
+                    write(6,*) "i: ",i
+                    write(6,*) "Overlap(i,i): ",Overlap(i,i)
+                    call stop_all(t_r,'Functions not normalized')
+                endif
+            enddo
+
+!            write(6,*) "Overlap matrix constructed successfully..."
+            call halt_timer(LR_EC_TDA_SBuild)
+            call set_timer(LR_EC_TDA_Project)
+
+            if(tProjectOutNull.or.tLR_ReoptGS.or.tOrthogBasis) then
+                !We need eigenvalues and vectors of S
+                !Beware, that by block diagonalizing, the eigenvalues are no longer in increasing order
+
+                !Fill in orthogonal blocks (no need to diagonalize)
+                allocate(S_EigVec(nLinearSystem,nLinearSystem))
+                allocate(S_Eigval(nLinearSystem))
+                S_EigVec(:,:) = dcmplx(0.0_dp,0.0_dp)
+                do i=1,AVIndex-1
+                    S_EigVec(i,i) = dcmplx(1.0_dp,0.0_dp)
+                    S_Eigval(i) = 1.0_dp
+                enddo
+
+                !Diagonalize block 4
+                nSize = nFullNm1 * EmbSize
+                if(nSize.ne.(CAIndex-AVIndex)) then
+                    write(6,*) "nSize: ",nSize
+                    write(6,*) "CVIndex-AVIndex: ",CAIndex-AVIndex
+                    call stop_all(t_r,'Block sizes wrong')
+                endif
+                allocate(SBlock(nSize,nSize))
+                SBlock(:,:) = Overlap(AVIndex:CAIndex-1,AVIndex:CAIndex-1)
+                allocate(Work(max(1,3*nSize-2)))
+                allocate(temp_vecc(1))
+                allocate(SBlock_val(nSize))
+                SBlock_val(:) = 0.0_dp
+                lWork = -1
+                info = 0
+                call zheev('V','U',nSize,SBlock,nSize,SBlock_val,temp_vecc,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'workspace query failed')
+                lwork = int(temp_vecc(1))+1
+                deallocate(temp_vecc)
+                allocate(temp_vecc(lwork))
+                call zheev('V','U',nSize,SBlock,nSize,SBlock_val,temp_vecc,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'S Diag failed 1')
+                deallocate(work,temp_vecc)
+                !Fill into main arrays
+                S_Eigval(AVIndex:CAIndex-1) = SBlock_val(:)
+                S_EigVec(AVIndex:CAIndex-1,AVIndex:CAIndex-1) = SBlock(:,:)
+                deallocate(SBlock,SBlock_val)
+
+                !Block 7
+                nSize = nFullNp1 * EmbSize
+                if(nSize.ne.(nLinearSystem-CAIndex+1)) call stop_all(t_r,'Block sizes wrong')
+                allocate(SBlock(nSize,nSize))
+                SBlock(:,:) = Overlap(CAIndex:nLinearSystem,CAIndex:nLinearSystem)
+                allocate(Work(max(1,3*nSize-2)))
+                allocate(temp_vecc(1))
+                allocate(SBlock_val(nSize))
+                SBlock_val(:) = 0.0_dp
+                lWork = -1
+                info = 0
+                call zheev('V','U',nSize,SBlock,nSize,SBlock_val,temp_vecc,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'workspace query failed')
+                lwork = int(temp_vecc(1))+1
+                deallocate(temp_vecc)
+                allocate(temp_vecc(lwork))
+                call zheev('V','U',nSize,SBlock,nSize,SBlock_val,temp_vecc,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'S Diag failed 2')
+                deallocate(work,temp_vecc)
+                !Fill into main arrays
+                S_Eigval(CAIndex:nLinearSystem) = SBlock_val(:)
+                S_EigVec(CAIndex:nLinearSystem,CAIndex:nLinearSystem) = SBlock(:,:)
+                deallocate(SBlock,SBlock_val)
+
+                !call writevector(S_Eigval,'Overlap EVals')
+            endif
+
+            if(tProjectOutNull) then
+                !Project out the null space from the equations to ensure unique representation.
+                !Work in the linear span of S
+                !S_EigVec contains the eigenvectors of the overlap matrix. Only keep ones with large enough eigenvalues
+                nSpan = 0
+                do i=1,nLinearSystem
+                    if(S_Eigval(i).lt.(-1.0e-8_dp)) then
+                        call stop_all(t_r,'Error - shouldnt have negative eigenvalues in overlap spectrum')
+                    elseif(S_Eigval(i).gt.MinS_Eigval) then
+                        !Include this eigenvector
+                        nSpan = nSpan + 1
+                    endif
+                enddo
+                if(nSpan.eq.nLinearSystem) then
+                    write(6,*) "No linear dependencies found in overlap"
+                    tTransformSpace = .false.
+                    allocate(Transform(nLinearSystem,nLinearSystem))
+                    Transform(:,:) = S_EigVec(:,:)
+                    allocate(S_Diag(nSpan))
+                    S_Diag(:) = S_Eigval(:)
+                else
+                    tTransformSpace = .true.
+                    write(6,*) "Removing linear dependencies in overlap. Vectors removed: ",nLinearSystem-nSpan
+
+                    !Find transformation matrix to the new space with linear dependencies removed before solving
+                    allocate(Transform(nLinearSystem,nSpan))
+                    allocate(S_Diag(nSpan))
+                    Transform(:,:) = dcmplx(0.0_dp,0.0_dp)
+                    S_Diag(:) = dcmplx(0.0_dp,0.0_dp)
+                    nSpan = 0
+                    do i=1,nLinearSystem
+                        if(S_Eigval(i).gt.MinS_Eigval) then
+                            nSpan = nSpan + 1
+                            !Include vector
+                            Transform(:,nSpan) = S_EigVec(:,i)
+                            S_Diag(nSpan) = S_Eigval(i)
+                        endif
+                    enddo
+
+                endif
+            else
+                !Do not project out null space
+                tTransformSpace = .false.
+                nSpan = nLinearSystem
+                if(tLR_ReoptGS) then
+                    allocate(Transform(nLinearSystem,nLinearSystem))
+                    Transform(:,:) = S_EigVec(:,:)
+                endif
+            endif
+            call halt_timer(LR_EC_TDA_Project)
+
+            call set_timer(LR_EC_TDA_OptGS)
+            if(tOrthogBasis) then
+                allocate(Psi_0(nSpan))  !To store the ground state in the full basis
+                Psi_0(:) = dcmplx(0.0_dp,0.0_dp)
+            else
+                allocate(Psi_0(nLinearSystem))  !To store the ground state in the full basis
+                Psi_0(:) = dcmplx(0.0_dp,0.0_dp)
+            endif
+
+            if(tLR_ReoptGS) then
+                !Reoptimize the GS in this new space
+
+                !Transform to the canonically orthogonalized representation in the non-null space of S
+                allocate(CanTrans(nLinearSystem,nSpan))
+                allocate(tempc(nSpan,nSpan))
+                tempc(:,:) = dcmplx(0.0_dp,0.0_dp)
+                j = 1
+                do i=1,nLinearSystem
+                    if(S_EigVal(i).gt.MinS_Eigval) then
+                        tempc(j,j) = dcmplx(1.0_dp/sqrt(S_Eigval(i)),0.0_dp)
+                        j=j+1
+                    elseif(.not.tProjectOutNull) then
+                        write(6,*) "Small overlap eigenvalue: ",S_EigVal(i)
+                        call stop_all(t_r,  &
+                            'Cannot reoptimize ground state without projecting out null space due to small overlap eigenvals')
+                    endif
+                enddo
+                if(j.ne.(nSpan+1)) call stop_all(t_r,'Error in indexing when reoptimizing ground state')
+
+                call ZGEMM('N','N',nLinearSystem,nSpan,nSpan,dcmplx(1.0_dp,0.0_dp),    &
+                    Transform,nLinearSystem,tempc,nSpan,dcmplx(0.0_dp,0.0_dp),CanTrans,nLinearSystem)
+
+                !Now, transform that hamiltonian into this new basis
+                allocate(OrthogHam(nSpan,nSpan))
+                deallocate(tempc)
+                allocate(tempc(nLinearSystem,nSpan))
+                !call writematrixcomp(CanTrans,'CanTrans',.true.)
+                call ZGEMM('N','N',nLinearSystem,nSpan,nLinearSystem,dcmplx(1.0_dp,0.0_dp),    &
+                    LinearSystem,nLinearSystem,CanTrans,nLinearSystem,dcmplx(0.0_dp,0.0_dp),tempc,nLinearSystem)
+                call ZGEMM('C','N',nSpan,nSpan,nLinearSystem,dcmplx(1.0_dp,0.0_dp),    &
+                    CanTrans,nLinearSystem,tempc,nLinearSystem,dcmplx(0.0_dp,0.0_dp),OrthogHam,nSpan)
+                !call writematrixcomp(OrthogHam,'OrthogHam',.true.)
+
+                !Rediagonalize this new hamiltonian
+                allocate(Work(max(1,3*nSpan-2)))
+                allocate(temp_vecc(1))
+                allocate(H_Vals(nSpan))
+                H_Vals(:)=0.0_dp
+                lWork=-1
+                info=0
+                call zheev('V','U',nSpan,OrthogHam,nSpan,H_Vals,temp_vecc,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'workspace query failed')
+                lwork=int(abs(temp_vecc(1)))+1
+                deallocate(temp_vecc)
+                allocate(temp_vecc(lwork))
+                call zheev('V','U',nSpan,OrthogHam,nSpan,H_Vals,temp_vecc,lWork,Work,info)
+                if (info.ne.0) then
+                    write(6,*) "info: ",info
+                    call stop_all(t_r,"Diag failed 2")
+                endif
+                deallocate(work,temp_vecc)
+
+                GSEnergy = H_Vals(1)
+                write(6,"(A,G20.10,A,G20.10,A)") "Reoptimized ground state energy is: ",GSEnergy, &  
+                    " (old = ",HL_Energy,")"
+                if(tDiagHam) write(iunit2,*) Omega,H_Vals(:)
+                if(GSEnergy-HL_Energy.gt.1.0e-8_dp) then
+                    call stop_all(t_r,'Reoptimized GS energy lower than original GS energy - this should not be possible')
+                endif
+
+                if(.not.tOrthogBasis) then
+                    !Store the eigenvector in the original basis
+                    !However, just rotate the ground state, not all the eigenvectors
+                    call ZGEMV('N',nLinearSystem,nSpan,dcmplx(1.0_dp,0.0_dp),CanTrans,nLinearSystem,   &
+                        OrthogHam(:,1),1,dcmplx(0.0_dp,0.0_dp),Psi_0,1)
+                else
+                    !Do not rotate - keep in the orthogonal basis
+                    Psi_0(:) = OrthogHam(:,1)
+                endif
+
+                deallocate(OrthogHam,H_Vals,tempc,CanTrans)
+            else
+                !We are not reoptimizing the GS
+                GSEnergy = HL_Energy
+                do i = 1,nFCIDet
+                    Psi_0(i) = dcmplx(HL_Vec(i),0.0_dp)
+                enddo
+            endif
+            call halt_timer(LR_EC_TDA_OptGS)
+
+            call set_timer(LR_EC_TDA_BuildLR)
+            !Remove the ground state from the hamiltonian
+            if(tOrthogBasis) then
+                allocate(Projector(nSpan,nSpan))
+                allocate(temp_vecc_2(nSpan))
+                do j = 1,nSpan
+                    do i = 1,nSpan
+                        Projector(i,j) = Psi_0(i)*conjg(Psi_0(j))*S_Diag(j)
+                    enddo
+                    temp_vecc_2(j) = conjg(Psi_0(j))*S_Diag(j)
+                enddo
+            else
+                allocate(Projector(nLinearSystem,nLinearSystem))
+                allocate(temp_vecc_2(nLinearSystem))
+                allocate(temp_vecc_3(nLinearSystem))
+                temp_vecc_3(:) = conjg(Psi_0(:))
+                call ZGEMV('T',nLinearSystem,nLinearSystem,dcmplx(1.0_dp,0.0_dp),Overlap,nLinearSystem,    &
+                    temp_vecc_3,1,dcmplx(0.0_dp,0.0_dp),temp_vecc_2,1)
+                deallocate(temp_vecc_3)
+                Projector(:,:) = dcmplx(0.0_dp,0.0_dp)
+                do i = 1,nLinearSystem
+                    do j = 1,nLinearSystem
+                        Projector(i,j) = temp_vecc_2(j)*Psi_0(i)
+                    enddo
+                enddo
+            endif
+
+            !Construct LHS
+            allocate(LHS(nSpan,nSpan))
+            if(tOrthogBasis) then
+                !Rotate linear system into the orthogonal basis.
+                allocate(tempc(nSpan,nLinearSystem))
+                call ZGEMM('C','N',nSpan,nLinearSystem,nLinearSystem,dcmplx(1.0_dp,0.0_dp),Transform,nLinearSystem,    &
+                    LinearSystem,nLinearSystem,dcmplx(0.0_dp,0.0_dp),tempc,nSpan)
+                call ZGEMM('N','N',nSpan,nSpan,nLinearSystem,dcmplx(1.0_dp,0.0_dp),tempc,nSpan,Transform,nLinearSystem,    &
+                    dcmplx(0.0_dp,0.0_dp),LHS,nSpan)
+
+                !Rotated overlap should be diagonal matrix
+                !Check this
+                allocate(CanTrans(nSpan,nSpan))
+                call ZGEMM('C','N',nSpan,nLinearSystem,nLinearSystem,dcmplx(1.0_dp,0.0_dp),Transform,nLinearSystem,    &
+                    Overlap,nLinearSystem,dcmplx(0.0_dp,0.0_dp),tempc,nSpan)
+                call ZGEMM('N','N',nSpan,nSpan,nLinearSystem,dcmplx(1.0_dp,0.0_dp),tempc,nSpan,Transform,nLinearSystem,    &
+                    dcmplx(0.0_dp,0.0_dp),CanTrans,nSpan)
+                do i=1,nSpan
+                    do j=1,nSpan
+                        if((i.eq.j).and.(abs(CanTrans(i,i)-S_Diag(i)).gt.1.0e-8_dp)) then
+                            write(6,*) "S: ",i,j,CanTrans(i,j)
+                            call stop_all(t_r,'Projected overlap matrix does not have unit diagonal')
+                        elseif((i.ne.j).and.(abs(CanTrans(j,i)).gt.1.0e-8_dp)) then
+                            write(6,*) "S: ",i,j,CanTrans(j,i)
+                            call stop_all(t_r,'Projected overlap matrix has non-zero off-diagonals')
+                        endif
+                    enddo
+                enddo
+                deallocate(CanTrans,tempc)
+                
+                if(tRemoveGSFromH) then
+                    !Remove ground state from linear system
+                    LHS(:,:) = LHS(:,:) - (Projector(:,:)*GSEnergy)
+                endif
+
+                !Form LHS - easier as S is diagonal   
+                do i = 1,nSpan
+                    LHS(i,i) = LHS(i,i) - S_Diag(i)*(GSEnergy + dcmplx(Omega,dDelta))
+                enddo
+            else
+                if(tRemoveGSFromH) then
+                    !Remove ground state from linear system
+                    LinearSystem(:,:) = LinearSystem(:,:) - (Projector(:,:)*GSEnergy)
+                endif
+
+                !Now construct the lhs of the equations
+                !Now, we want to calculate H - (E_0 + Omega)S
+                do i=1,nLinearSystem
+                    do j=1,nLinearSystem
+                        LinearSystem(j,i) = LinearSystem(j,i) - (Overlap(j,i)*(GSEnergy + dcmplx(Omega,dDelta)))
+                    enddo
+                enddo
+
+                if(tTransformSpace) then
+                    !Transform the LHS to the linear span of S
+                    allocate(tempc(nLinearSystem,nSpan))
+                    call ZGEMM('N','N',nLinearSystem,nSpan,nLinearSystem,dcmplx(1.0_dp,0.0_dp),LinearSystem,nLinearSystem, &
+                        Transform,nLinearSystem,dcmplx(0.0_dp,0.0_dp),tempc,nLinearSystem)
+                    call ZGEMM('C','N',nSpan,nSpan,nLinearSystem,dcmplx(1.0_dp,0.0_dp),Transform,nLinearSystem,    &
+                        tempc,nLinearSystem,dcmplx(0.0_dp,0.0_dp),LHS,nSpan)
+                    deallocate(tempc)
+                else
+                    LHS(:,:) = LinearSystem(:,:)
+                endif
+            endif
+
+            !Set up RHS of linear system: -Q V |0>
+
+            !Change projector so that it now projects *out* the ground state
+            Projector(:,:) = Projector(:,:)*dcmplx(-1.0_dp,0.0_dp)
+            if(tOrthogBasis) then
+                do i = 1,nSpan
+                    Projector(i,i) = dcmplx(1.0_dp,0.0_dp) + Projector(i,i)
+                enddo
+            else
+                do i = 1,nLinearSystem
+                    Projector(i,i) = dcmplx(1.0_dp,0.0_dp) + Projector(i,i)
+                enddo
+            endif
+            
+            !find V |0> and store it in temp_vecc
+            if(tOrthogBasis) then
+                allocate(temp_vecc(nSpan))
+                call ApplyDensityPert_EC_Orthog(Psi_0,temp_vecc,nSpan,nLinearSystem,Transform)
+            else
+                allocate(temp_vecc(nLinearSystem))
+                call ApplyDensityPert_EC(Psi_0,temp_vecc,nLinearSystem)
+            endif
+            !call writevectorcomp(Psi_0,'Psi_0')
+            !call writevectorcomp(temp_vecc,'V|0>')
+
+            !Now, calculate -QV|0> and put into VGS
+            if(tOrthogBasis) then
+                allocate(VGS(nSpan))
+                call ZGEMV('N',nSpan,nSpan,dcmplx(-1.0_dp,0.0_dp),Projector,nSpan, &
+                    temp_vecc,1,dcmplx(0.0_dp,0.0_dp),VGS,1)
+
+                !Check that RHS is orthogonal to the ground state
+                testc = dcmplx(0.0_dp,0.0_dp)
+                do j = 1,nSpan
+                    testc = testc + temp_vecc_2(j)*VGS(j) !Overlap(i,j)*conjg(Psi_0(i))*VGS(j)
+                enddo
+            else
+                allocate(VGS(nLinearSystem))
+                call ZGEMV('N',nLinearSystem,nLinearSystem,dcmplx(-1.0_dp,0.0_dp),Projector,nLinearSystem, &
+                    temp_vecc,1,dcmplx(0.0_dp,0.0_dp),VGS,1)
+
+                !Check that RHS is orthogonal to the ground state
+                testc = dcmplx(0.0_dp,0.0_dp)
+                do j = 1,nLinearSystem
+                    testc = testc + temp_vecc_2(j)*VGS(j) !Overlap(i,j)*conjg(Psi_0(i))*VGS(j)
+                enddo
+            endif
+
+            !We now have the RHS in 'VGS'. Project this into the linear span of S if needed
+            allocate(RHS(nSpan))
+            if(tTransformSpace.and.(.not.tOrthogBasis)) then
+                call ZGEMV('C',nLinearSystem,nSpan,dcmplx(1.0_dp,0.0_dp),Transform,nLinearSystem,  &
+                    VGS,1,dcmplx(0.0_dp,0.0_dp),RHS,1)
+            else
+                RHS(:) = VGS(:)
+            endif
+            call halt_timer(LR_EC_TDA_BuildLR)
+
+            call set_timer(LR_EC_TDA_SolveLR)
+
+            !Check hamiltonian is hermitian (on non-diagonals)
+            if((.not.tRemoveGSFromH).and.tOrthogBasis) then
+                do i=1,nSpan
+                    do j=i+1,nSpan
+                        if(abs(LHS(i,j)-conjg(LHS(j,i))).gt.1.0e-7_dp) then
+                            write(6,*) i,j,LHS(i,j),LHS(j,i),abs(LHS(i,j)-conjg(LHS(j,i)))
+                            call warning(t_r,'Linear system off-diagonal hermiticity lost')
+                        endif
+                    enddo
+                enddo
+            endif
+
+            !Now solve these linear equations
+            if(tMinRes_NonDir) then
+                zDirMV_Mat => LHS
+                maxminres_iter_ip = int(maxminres_iter,ip)
+                minres_unit_ip = int(minres_unit,ip)
+                nSpan_ip = int(nSpan,ip)
+                allocate(RHS2(nSpan))
+                allocate(Psi1(nSpan))
+                call setup_RHS(nSpan,RHS,RHS2)
+                if(tPrecond_MinRes) then
+                    allocate(Precond_Diag(nSpan))
+                    call FormPrecond(nSpan)
+                    call MinResQLP(n=nSpan_ip,Aprod=zDirMV,b=RHS2,nout=minres_unit_ip,x=Psi1, &
+                        itnlim=maxminres_iter_ip,Msolve=zPreCond,istop=info_ip,rtol=rtol_LR,itn=iters, &
+                        startguess=tReuse_LS)
+                else
+                    call MinResQLP(n=nSpan_ip,Aprod=zDirMV,b=RHS2,nout=minres_unit_ip,x=Psi1, &
+                        itnlim=maxminres_iter_ip,istop=info_ip,rtol=rtol_LR,itn=iters,startguess=tReuse_LS)
+                endif
+                info = info_ip
+                zDirMV_Mat => null()
+                if(info.gt.7) write(6,*) "info: ",info
+                if(info.eq.8) write(6,"(A,I9)") "Linear equation solver hit iteration limit: ",iters
+                if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) then
+                    call stop_all(t_r,'Input matrices to linear solver incorrect')
+                endif
+                if(info.gt.11) call stop_all(t_r,'Linear equation solver failed')
+                info = 0
+                !Copy solution to RHS
+                RHS(:) = Psi1(:)
+                deallocate(RHS2,Psi1)
+                if(tPrecond_MinRes) deallocate(Precond_Diag)
+            else
+                call SolveCompLinearSystem(LHS,RHS,nSpan,info)
+            endif
+            if(info.ne.0) then 
+                write(6,*) "INFO: ",info
+                !call stop_all(t_r,'Solving Linear system failed') 
+                call warning(t_r,'Solving linear system failed - skipping this frequency')
+            else
+
+                if(tTransformSpace.and.(.not.tOrthogBasis)) then
+                    !Expand back out the perturbed wavefunction into the original basis
+                    call ZGEMV('N',nLinearSystem,nSpan,dcmplx(1.0_dp,0.0_dp),Transform,nLinearSystem,  &
+                        RHS,1,dcmplx(0.0_dp,0.0_dp),VGS,1)
+                else
+                    VGS(:) = RHS(:)
+                endif
+
+                if(tExplicitlyOrthog) then
+                    if(tOrthogBasis) then
+                        !Explicitly project out any component on psi_0
+                        call ZGEMV('N',nSpan,nSpan,dcmplx(1.0_dp,0.0_dp),Projector,nSpan,VGS,1,    &
+                            dcmplx(0.0_dp,0.0_dp),temp_vecc,1)
+                        VGS(:) = temp_vecc(:)
+                    else
+                        !Explicitly project out any component on psi_0
+                        call ZGEMV('N',nLinearSystem,nLinearSystem,dcmplx(1.0_dp,0.0_dp),Projector,nLinearSystem,VGS,1,    &
+                            dcmplx(0.0_dp,0.0_dp),temp_vecc,1)
+                        VGS(:) = temp_vecc(:)
+                    endif
+                endif
+
+                !Find normalization of first-order wavefunction
+                !Test whether the perturbed wavefunction is orthogonal to the ground state wavefunction
+                dNorm = dcmplx(0.0_dp,0.0_dp)
+                dOrthog = dcmplx(0.0_dp,0.0_dp)
+                if(tOrthogBasis) then
+                    do j = 1,nSpan
+                        dNorm = dNorm + S_Diag(j)*conjg(VGS(j))*VGS(j)
+                        dOrthog = dOrthog + temp_vecc_2(j)*VGS(j)
+                    enddo
+                else
+                    do j = 1,nLinearSystem
+                        do i = 1,nLinearSystem
+                            dNorm = dNorm + Overlap(i,j)*conjg(VGS(i))*VGS(j)
+                        enddo
+                        dOrthog = dOrthog + temp_vecc_2(j)*VGS(j)
+                    enddo
+                endif
+!                write(6,*) "Normalization of first-order wavefunction: ",dNorm
+!                write(6,*) "Orthogonality of first-order wavefunction: ",dOrthog
+
+                tCalcResponse = .true.
+                !write(20,*) U,Omega,abs(dOrthog),abs(dNorm),real(dOrthog/dNorm),aimag(dOrthog/dNorm),abs(dOrthog/dNorm)
+                if(abs(dOrthog).gt.1.0e-4_dp) then
+                    !call warning(t_r,'First order wavefunction not orthogonal - skipping this frequency')
+                    call warning(t_r,'First order wavefunction not orthogonal')
+                    !tCalcResponse=.false.
+                elseif(abs(dOrthog).gt.1.0e-8_dp) then
+                    call warning(t_r,'First order solution not strictly orthogonal')
+                endif
+
+                if(tCalcResponse) then
+                    !Now, use temp_vecc to hold V|1>
+                    ResponseFn = dcmplx(0.0_dp,0.0_dp)
+                    if(tOrthogBasis) then
+                        call ApplyDensityPert_EC_Orthog(VGS,temp_vecc,nSpan,nLinearSystem,Transform)
+                        do j = 1,nSpan
+                            ResponseFn = ResponseFn + temp_vecc(j)*temp_vecc_2(j)
+                        enddo
+                    else
+                        call ApplyDensityPert_EC(VGS,temp_vecc,nLinearSystem)
+                        do j = 1,nLinearSystem
+                            ResponseFn = ResponseFn + temp_vecc(j)*temp_vecc_2(j)
+                        enddo
+                    endif
+                    write(iunit,"(10G22.10,I8)") Omega,real(ResponseFn),-aimag(ResponseFn), &
+                        abs(dOrthog),abs(dNorm),GSEnergy,HL_Energy,abs(testc),real(ni_lr),-aimag(ni_lr),iters
+                    call flush(iunit)
+                    deallocate(temp_vecc)
+                endif
+
+            endif
+
+            if(allocated(Transform)) deallocate(Transform)
+            if(allocated(S_Diag)) deallocate(S_Diag)
+            if(allocated(S_EigVec)) then
+                deallocate(S_EigVec)
+                deallocate(S_EigVal)
+            endif
+            deallocate(LHS,RHS,Psi_0,Projector,temp_vecc_2,VGS)
+
+            Omega = Omega + Omega_Step
+
+            call halt_timer(LR_EC_TDA_SolveLR)
+        enddo   !End loop over omega
+
+        deallocate(LinearSystem,Overlap)
+        close(iunit)
+        if(tDiagHam) close(iunit2)
+        if(tMinRes_NonDir) then
+            close(minres_unit)
+        endif
+
+        !Deallocate determinant lists
+        if(allocated(FCIDetList)) deallocate(FCIDetList)
+        if(allocated(FCIBitList)) deallocate(FCIBitList)
+        if(allocated(UMat)) deallocate(UMat)
+        if(allocated(TMat)) deallocate(TMat)
+        if(allocated(Nm1FCIDetList)) deallocate(Nm1FCIDetList)
+        if(allocated(Nm1BitList)) deallocate(Nm1BitList)
+        if(allocated(Np1FCIDetList)) deallocate(Np1FCIDetList)
+        if(allocated(Np1BitList)) deallocate(Np1BitList)
+        if(allocated(Nm1bFCIDetList)) deallocate(Nm1bFCIDetList)
+        if(allocated(Nm1bBitList)) deallocate(Nm1bBitList)
+        if(allocated(Np1bFCIDetList)) deallocate(Np1bFCIDetList)
+        if(allocated(Np1bBitList)) deallocate(Np1bBitList)
+
+        !Stored intermediates
+        deallocate(NFCIHam,Nm1FCIHam_alpha,Nm1FCIHam_beta,Np1FCIHam_alpha,Np1FCIHam_beta)
+        deallocate(AVNorm,CANorm)
+        deallocate(Coup_Create_alpha,Coup_Create_beta,Coup_Ann_alpha,Coup_Ann_beta)
+        deallocate(FockSchmidtComp,G_ai_G_aj,G_ai_G_bi,G_xa_G_ya,G_xa_F_ab,G_xa_G_yb_F_ab)
+        deallocate(G_ia_G_xa,F_xi_G_ia_G_ya,G_xa_F_ya,G_xi_G_yi,G_ix_F_ij,G_ix_G_jy_F_ji)
+        deallocate(G_ia_G_ix,F_ax_G_ia_G_iy,G_ix_F_iy)
+
+
+    end subroutine NonIntExCont_TDA_MCLR_DD_Cmprs
     
     !Calculate linear response for charged excitations - add the hole creation to particle creation
     !This routine uses a compressed matrix formalism
@@ -215,12 +2087,14 @@ module LinearResponse
         if(nNp1FCIDet.ne.nNm1FCIDet) call stop_all(t_r,'Active space not half-filled')
         if(nNp1FCIDet.ne.nNp1bFCIDet) call stop_all(t_r,'Cannot deal with open shell systems')
         write(6,"(A)") "Computing size of compressed Hamiltonian matrices"
+        call flush(6)
         call CountSizeCompMat(FCIDetList,Elec,nFCIDet,Nmax_N,FCIBitList)
         call CountSizeCompMat(Nm1bFCIDetList,Elec-1,nNm1bFCIDet,Nmax_Nm1b,Nm1bBitList)
         call CountSizeCompMat(Np1FCIDetList,Elec+1,nNp1FCIDet,Nmax_Np1,Np1BitList)
         write(6,"(A,F12.5,A)") "Memory required for N-electron hamil: ",(real(Nmax_N,dp)*2)*ComptoMb, " Mb"
         write(6,"(A,F12.5,A)") "Memory required for N+1-electron hamil: ",(real(Nmax_Nm1b,dp)*2)*ComptoMb, " Mb"
         write(6,"(A,F12.5,A)") "Memory required for N-1-electron hamil: ",(real(Nmax_Np1,dp)*2)*ComptoMb, " Mb"
+        call flush(6)
         allocate(NFCIHam_cmps(Nmax_N),stat=ierr)
         allocate(Np1FCIHam_alpha_cmps(Nmax_Np1),stat=ierr)
         allocate(Nm1FCIHam_beta_cmps(Nmax_Nm1b),stat=ierr)
@@ -396,7 +2270,7 @@ module LinearResponse
                 DiffOrb = ieor(Np1BitList(K),FCIBitList(J))
                 nOrbs = CountBits(DiffOrb)
                 if(nOrbs.eq.1) then
-                    Nmax_Coup_Ann = Nmax_Coup_Create
+                    Nmax_Coup_Ann = Nmax_Coup_Ann + 1
                 endif
             enddo
         enddo
@@ -446,6 +2320,7 @@ module LinearResponse
                 call SQOperator(tempK,gam,tParity,.false.)
 
                 i = i + 1
+                if(i.gt.Nmax_Coup_Create) call stop_all(t_r,'Compressed array size too small')
                 Coup_Create_alpha(1,i) = gtid(gam)+CoreEnd
                 if(tParity) then
                     Coup_Create_alpha(2,i) = -1
@@ -478,6 +2353,7 @@ module LinearResponse
                 call SQOperator(tempK,gam,tParity,.true.)
 
                 i_Ann = i_Ann + 1
+                if(i_Ann.gt.Nmax_Coup_Ann) call stop_all(t_r,'Compressed array size too small')
                 Coup_Ann_alpha(1,i_Ann) = gtid(gam)+CoreEnd
                 if(tParity) then
                     Coup_Ann_alpha(2,i_Ann) = -1
@@ -534,6 +2410,7 @@ module LinearResponse
                 call SQOperator(tempK,gam,tParity,.true.)
 
                 i = i + 1
+                if(i.gt.Nmax_Coup_Create) call stop_all(t_r,'Compressed array size too small')
                 Coup_Create_alpha_T(1,i) = gtid(gam)+CoreEnd
                 if(tParity) then
                     Coup_Create_alpha_T(2,i) = -1
@@ -547,7 +2424,7 @@ module LinearResponse
 
         i = 0
         do J = 1,nNp1FCIDet
-            !Start with the creation of an alpha orbital
+            !Annihilation of an alpha orbital
             do K = 1,nFCIDet
                 DiffOrb = ieor(Np1BitList(J),FCIBitList(K))
                 nOrbs = CountBits(DiffOrb)
@@ -571,6 +2448,7 @@ module LinearResponse
                 call SQOperator(tempK,gam,tParity,.false.)
 
                 i = i + 1
+                if(i.gt.Nmax_Coup_Ann) call stop_all(t_r,'Compressed array size too small')
                 Coup_Ann_alpha_T(1,i) = gtid(gam)+CoreEnd
                 if(tParity) then
                     Coup_Ann_alpha_T(2,i) = -1
