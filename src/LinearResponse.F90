@@ -40,11 +40,11 @@ module LinearResponse
         if(tEC_TDA_Response) then
             !Externally contracted
             if(tDDResponse) then
-!                if(tCompressedMats) then
-!                    call NonIntExCont_TDA_MCLR_DD_Cmprs()
-!                else
+                if(tCompressedMats) then
+                    call NonIntExCont_TDA_MCLR_DD_Cmprs()
+                else
                     call NonIntExContracted_TDA_MCLR()
-!                endif
+                endif
             endif
             if(tChargedResponse) then
                 if(tCompressedMats) then
@@ -111,16 +111,19 @@ module LinearResponse
         use zminresqlpModule, only: MinresQLP  
         use DetToolsData
         use DetTools, only: gtid,umatind,GenDets,GetHElement
+        use solvers, only: CountSizeCompMat,StoreCompMat
         implicit none
         integer :: a,i,j,k,OrbPairs,UMatSize,AVInd_tmp,b,beta
         integer :: CoreEnd,VirtStart,VirtEnd,CVInd_tmp,iunit,iunit2
         integer :: DiffOrb,nOrbs,gam,gam1,gam1_ind,gam1_spat,gam2,gam2_ind,gam2_spat,ierr
         integer :: gam_spat,nLinearSystem,tempK,nSpan,ActiveEnd,ActiveStart
         integer :: orbdum(1),CAInd_tmp,lwork,info,nSize,nCore,nVirt,nFullNm1,nFullNp1,iters
-        integer :: maxminres_iter,minres_unit,InterMem,HamMem,CoupMem
+        integer :: maxminres_iter,minres_unit,InterMem,HamMem,CoupMem,gam_ind,i_Ann,i_Create,i_Ann_b,i_Create_b
+        integer :: ind,ind_S,Nmax_Coup,Nmax_Lin,Nmax_Nm1,Nmax_Nm1b,Nmax_Np1,Nmax_Np1b,Nmax_N,Nmax_S,pertsite
+        integer :: pertsitealpha,pertsitebeta,row
         logical :: tParity
         real(dp) :: Omega,CVNorm
-        complex(dp) :: tempel,ResponseFn,dOrthog,dNorm,testc,ni_lr
+        complex(dp) :: tempel,ResponseFn,dOrthog,dNorm,testc,ni_lr,matel,matel_S
         complex(dp) , allocatable :: Overlap(:)
         complex(dp) , allocatable :: temp_vecc(:),RHS(:),RHS2(:),Psi1(:)
         complex(dp) , allocatable :: G_ai_G_aj(:,:),G_ai_G_bi(:,:),G_xa_G_ya(:,:)
@@ -142,11 +145,11 @@ module LinearResponse
         integer, allocatable :: Coup_Create_alpha_cum(:),Coup_Create_alpha_cum_T(:),Coup_Create_beta_cum(:) 
         integer, allocatable :: Coup_Create_beta_cum_T(:),Coup_Ann_alpha_cum(:),Coup_Ann_alpha_cum_T(:)
         integer, allocatable :: Coup_Ann_beta_cum(:),Coup_Ann_beta_cum_T(:)
-        integer, allocatable :: Overlap_inds(:),LinearSystem_inds(:)
+        integer, allocatable :: Overlap_inds(:)
+        integer, allocatable, target :: LinearSystem_inds(:)
         character(64) :: filename,filename2
         character(len=*), parameter :: t_r='NonIntExCont_TDA_MCLR_DD_Cmprs'
-        integer(ip) :: maxminres_iter_ip,minres_unit_ip,nSpan_ip,info_ip
-        complex(dp) , allocatable :: 
+        integer(ip) :: maxminres_iter_ip,minres_unit_ip,nLinearSystem_ip,info_ip
         logical, parameter :: tDiagHam = .false.
 
         call set_timer(LR_EC_TDA_Precom)
@@ -247,11 +250,11 @@ module LinearResponse
         Nm1FCIHam_alpha_inds(:) = 0
         Nm1FCIHam_beta_inds(:) = 0
 
-        call StoreCompMat(FCIDetList,nElec,nFCIDet,Nmax_N,NFCIHam_cmps,NFCIHam_inds,FCIBitList)
-        call StoreCompMat(Np1FCIDetList,nElec+1,nNp1FCIDet,Nmax_Np1,Np1FCIHam_alpha_cmps,Np1FCIHam_alpha_inds,Np1BitList)
-        call StoreCompMat(Np1bFCIDetList,nElec+1,nNp1bFCIDet,Nmax_Np1b,Np1FCIHam_beta_cmps,Np1FCIHam_beta_inds,Np1bBitList)
-        call StoreCompMat(Nm1FCIDetList,nElec-1,nNm1FCIDet,Nmax_Nm1,Nm1FCIHam_alpha_cmps,Nm1FCIHam_alpha_inds,Nm1BitList)
-        call StoreCompMat(Nm1bFCIDetList,nElec-1,nNm1bFCIDet,Nmax_Nm1b,Nm1FCIHam_beta_cmps,Nm1FCIHam_beta_inds,Nm1bBitList)
+        call StoreCompMat(FCIDetList,Elec,nFCIDet,Nmax_N,NFCIHam_cmps,NFCIHam_inds,FCIBitList)
+        call StoreCompMat(Np1FCIDetList,Elec+1,nNp1FCIDet,Nmax_Np1,Np1FCIHam_alpha_cmps,Np1FCIHam_alpha_inds,Np1BitList)
+        call StoreCompMat(Np1bFCIDetList,Elec+1,nNp1bFCIDet,Nmax_Np1b,Np1FCIHam_beta_cmps,Np1FCIHam_beta_inds,Np1bBitList)
+        call StoreCompMat(Nm1FCIDetList,Elec-1,nNm1FCIDet,Nmax_Nm1,Nm1FCIHam_alpha_cmps,Nm1FCIHam_alpha_inds,Nm1BitList)
+        call StoreCompMat(Nm1bFCIDetList,Elec-1,nNm1bFCIDet,Nmax_Nm1b,Nm1FCIHam_beta_cmps,Nm1FCIHam_beta_inds,Nm1bBitList)
         
         nLinearSystem = (2*nFCIDet) + nImp*2*(nNm1FCIDet+nNm1bFCIDet) + nImp*2*(nNp1FCIDet+nNp1bFCIDet) 
         write(6,*) "Total size of linear sys: ",nLinearSystem
@@ -888,7 +891,7 @@ module LinearResponse
             !****************************    DIAGONALS    *************************
             !BLOCK 1
             do i = 1,nFCIDet
-                LinearSystem(i) = dcmplx(NFCIHam(i),0.0_dp) - (dcmplx(HL_Energy + Omega,dDelta))
+                LinearSystem(i) = dcmplx(NFCIHam_cmps(i),0.0_dp) - (dcmplx(HL_Energy + Omega,dDelta))
                 Overlap(i) = zone
             enddo
             !BLOCK 2 
@@ -908,7 +911,7 @@ module LinearResponse
             j = 0
             do i = CVIndex,AVIndex-1
                 j = j + 1
-                LinearSystem(i) = (NFCIHam(j) + tempel) - (dcmplx(HL_Energy + Omega,dDelta))
+                LinearSystem(i) = (NFCIHam_cmps(j) + tempel) - (dcmplx(HL_Energy + Omega,dDelta))
                 Overlap(i) = zone
             enddo
             if(j.ne.nFCIDet) call stop_all(t_r,'Indexing problem')
@@ -921,12 +924,16 @@ module LinearResponse
                 
                 do i = gam_ind,gam_ind+nNm1bFCIDet-1
                     !Run through beta block
-                    LinearSystem(i) = ((dcmplx(Nm1FCIHam_beta_cmps(i-gam_ind+1),0.0_dp)*G_xa_G_ya(gam_spat,gam_spat) + G_xa_G_yb_F_ab(gam_spat,gam_spat)) / (sqrt(AVNorm(gam)*AVNorm(gam)))) - (dcmplx(HL_Energy + Omega,dDelta))
+                    LinearSystem(i) = ((dcmplx(Nm1FCIHam_beta_cmps(i-gam_ind+1),0.0_dp)*G_xa_G_ya(gam_spat,gam_spat) +  &
+                        G_xa_G_yb_F_ab(gam_spat,gam_spat)) / (sqrt(AVNorm(gam)*AVNorm(gam)))) - (dcmplx(HL_Energy + Omega,dDelta))
                     Overlap(i) = zone
                 enddo
                 do i = gam_ind+nNm1bFCIDet,gam_ind+nFullNm1-1
                     !And alpha block
-                    LinearSystem(i) = ((dcmplx(Nm1FCIHam_alpha_cmps(i-(gam_ind+nNm1bFCIDet)+1),0.0_dp)*G_xa_G_ya(gam_spat,gam_spat) + G_xa_G_yb_F_ab(gam_spat,gam_spat)) / (sqrt(AVNorm(gam)*AVNorm(gam)))) - (dcmplx(HL_Energy + Omega,dDelta))
+                    LinearSystem(i) = ((dcmplx(Nm1FCIHam_alpha_cmps(i-(gam_ind+nNm1bFCIDet)+1),0.0_dp)* &
+                        G_xa_G_ya(gam_spat,gam_spat) +   &
+                        G_xa_G_yb_F_ab(gam_spat,gam_spat)) / (sqrt(AVNorm(gam)*AVNorm(gam)))) -     &
+                        (dcmplx(HL_Energy + Omega,dDelta))
                     Overlap(i) = zone
                 enddo
             enddo
@@ -935,11 +942,15 @@ module LinearResponse
                 gam_spat = gam+(nOcc-nImp)
                 gam_ind = CAIndex + (gam-1)*nFullNp1
                 do i = gam_ind,gam_ind+nNp1FCIDet-1
-                    LinearSystem(i) = ((dcmplx(Np1FCIHam_alpha_cmps(i-gam_ind+1),0.0_dp)*G_xi_G_yi(gam_spat,gam_spat) - G_ix_G_jy_F_ji(gam_spat,gam_spat)) / (sqrt(CANorm(gam)*CANorm(gam)))) - (dcmplx(HL_Energy + Omega,dDelta))
+                    LinearSystem(i) = ((dcmplx(Np1FCIHam_alpha_cmps(i-gam_ind+1),0.0_dp)*G_xi_G_yi(gam_spat,gam_spat) -     &
+                        G_ix_G_jy_F_ji(gam_spat,gam_spat)) / (sqrt(CANorm(gam)*CANorm(gam)))) - (dcmplx(HL_Energy + Omega,dDelta))
                     Overlap(i) = zone
                 enddo
                 do i = gam_ind+nNp1FCIDet,gam_ind+nFullNp1-1
-                    LinearSystem(i) = ((dcmplx(Np1FCIHam_beta_cmps(i-(gam_ind+nNp1FCIDet)+1),0.0_dp)*G_xi_G_yi(gam_spat,gam_spat) - G_ix_G_jy_F_ji(gam_spat,gam_spat)) / (sqrt(CANorm(gam)*CANorm(gam)))) - (dcmplx(HL_Energy + Omega,dDelta))
+                    LinearSystem(i) = ((dcmplx(Np1FCIHam_beta_cmps(i-(gam_ind+nNp1FCIDet)+1),0.0_dp)*   &
+                        G_xi_G_yi(gam_spat,gam_spat) -     &
+                        G_ix_G_jy_F_ji(gam_spat,gam_spat)) / (sqrt(CANorm(gam)*CANorm(gam)))) -     &
+                        (dcmplx(HL_Energy + Omega,dDelta))
                     Overlap(i) = zone
                 enddo
             enddo
@@ -1043,7 +1054,8 @@ module LinearResponse
                 !Block 5
                 do beta = 1,EmbSize
                     do k = Coup_Create_alpha_cum(i),Coup_Create_alpha_cum(i+1)-1
-                        matel = -F_xi_G_ia_G_ya(Coup_Create_alpha(1,k),beta+CoreEnd)*Coup_Create_alpha(2,k) / sqrt(CVNorm*AVNorm(beta))
+                        matel = -F_xi_G_ia_G_ya(Coup_Create_alpha(1,k),beta+CoreEnd)*Coup_Create_alpha(2,k)     &
+                            / sqrt(CVNorm*AVNorm(beta))
                         if(abs(matel).gt.CompressThresh) then
                             ind = ind + 1
                             if(ind.gt.Nmax_Lin) call stop_all(t_r,'Compressed array too small')
@@ -1053,19 +1065,22 @@ module LinearResponse
                     enddo
                     !Now for other spin type
                     do k = Coup_Create_beta_cum(i),Coup_Create_beta_cum(i+1)-1
-                        matel = -F_xi_G_ia_G_ya(Coup_Create_beta(1,k),beta+CoreEnd)*Coup_Create_beta(2,k) / sqrt(CVNorm*AVNorm(beta))
+                        matel = -F_xi_G_ia_G_ya(Coup_Create_beta(1,k),beta+CoreEnd)*Coup_Create_beta(2,k)   &
+                            / sqrt(CVNorm*AVNorm(beta))
                         if(abs(matel).gt.CompressThresh) then
                             ind = ind + 1
                             if(ind.gt.Nmax_Lin) call stop_all(t_r,'Compressed array too small')
                             LinearSystem(ind) = matel
-                            LinearSystem_inds(ind) = AVIndex + (beta-1)*nFullNm1 + nNm1bFCIDet + Coup_Create_beta_inds(k) - 1
+                            LinearSystem_inds(ind) = AVIndex + (beta-1)*nFullNm1 + nNm1bFCIDet +    &
+                                Coup_Create_beta_inds(k) - 1
                         endif
                     enddo
                 enddo
                 !Block 9
                 do beta = 1,EmbSize
                     do k = Coup_Ann_alpha_cum(i),Coup_Ann_alpha_cum(i+1)-1
-                        matel = -F_ax_G_ia_G_iy(Coup_Ann_alpha(1,k),beta+CoreEnd)*Coup_Ann_alpha(2,k) / sqrt(CVNorm*CANorm(beta))
+                        matel = -F_ax_G_ia_G_iy(Coup_Ann_alpha(1,k),beta+CoreEnd)*Coup_Ann_alpha(2,k) /     &
+                            sqrt(CVNorm*CANorm(beta))
                         if(abs(matel).gt.CompressThresh) then
                             ind = ind + 1
                             if(ind.gt.Nmax_Lin) call stop_all(t_r,'Compressed array too small')
@@ -1075,12 +1090,14 @@ module LinearResponse
                     enddo
                     !Other spin
                     do k = Coup_Ann_beta_cum(i),Coup_Ann_beta_cum(i+1)-1
-                        matel = -F_ax_G_ia_G_iy(Coup_Ann_beta(1,k),beta+CoreEnd)*Coup_Ann_beta(2,k) / sqrt(CVNorm*CANorm(beta))
+                        matel = -F_ax_G_ia_G_iy(Coup_Ann_beta(1,k),beta+CoreEnd)*Coup_Ann_beta(2,k) /   &
+                            sqrt(CVNorm*CANorm(beta))
                         if(abs(matel).gt.CompressThresh) then
                             ind = ind + 1
                             if(ind.gt.Nmax_Lin) call stop_all(t_r,'Compressed array too small')
                             LinearSystem(ind) = matel
-                            LinearSystem_inds(ind) = CAIndex + (beta-1)*nFullNp1 + nNp1FCIDet + Coup_Ann_beta_inds(k) - 1
+                            LinearSystem_inds(ind) = CAIndex + (beta-1)*nFullNp1 + nNp1FCIDet +     &
+                                Coup_Ann_beta_inds(k) - 1
                         endif
                     enddo
                 enddo
@@ -1094,7 +1111,8 @@ module LinearResponse
                 do i = 1,nNm1bFCIDet
                     !Cols through 6^T
                     do k = Coup_Create_alpha_cum_T(i),Coup_Create_alpha_cum_T(i+1)-1
-                        matel = G_xa_F_ya(beta+CoreEnd,Coup_Create_alpha_T(1,k))*Coup_Create_alpha_T(2,k) / sqrt(AVNorm(beta))
+                        matel = G_xa_F_ya(beta+CoreEnd,Coup_Create_alpha_T(1,k))*   &
+                            Coup_Create_alpha_T(2,k) / sqrt(AVNorm(beta))
                         if(abs(matel).gt.CompressThresh) then
                             ind = ind + 1
                             if(ind.gt.Nmax_Lin) call stop_all(t_r,'Compressed array too small')
@@ -1104,7 +1122,8 @@ module LinearResponse
                     enddo
                     !Cols through 5^T
                     do k = Coup_Create_alpha_cum_T(i),Coup_Create_alpha_cum_T(i+1)-1
-                        matel = -F_xi_G_ia_G_ya(Coup_Create_alpha_T(1,k),beta+CoreEnd)*Coup_Create_alpha_T(2,k) / sqrt(CVNorm*AVNorm(beta)) 
+                        matel = -F_xi_G_ia_G_ya(Coup_Create_alpha_T(1,k),beta+CoreEnd)* &
+                            Coup_Create_alpha_T(2,k) / sqrt(CVNorm*AVNorm(beta)) 
                         if(abs(matel).gt.CompressThresh) then
                             ind = ind + 1
                             if(ind.gt.Nmax_Lin) call stop_all(t_r,'Compressed array too small')
@@ -1120,7 +1139,8 @@ module LinearResponse
                         gam2_ind = AVIndex + (gam2-1)*nFullNm1
                         do k = Nm1FCIHam_beta_inds(i),Nm1FCIHam_beta_inds(i+1)-1
                             !Off-diagonals
-                            matel = dcmplx(Nm1FCIHam_beta_cmps(k),0.0_dp)*G_xa_G_ya(gam1_spat,gam2_spat) / sqrt(AVNorm(beta)*AVNorm(gam2)) 
+                            matel = dcmplx(Nm1FCIHam_beta_cmps(k),0.0_dp)*G_xa_G_ya(gam1_spat,gam2_spat) /  &
+                                sqrt(AVNorm(beta)*AVNorm(gam2)) 
                             if(abs(matel).gt.CompressThresh) then
                                 ind = ind + 1
                                 if(ind.gt.Nmax_Lin) call stop_all(t_r,'Compressed array too small')
@@ -1140,7 +1160,9 @@ module LinearResponse
                                 Overlap_inds(ind) = gam2_ind + i - 1
                             endif
                             !Now for the Hessian
-                            matel = ((dcmplx(Nm1FCIHam_beta_cmps(i).0.0_dp)*G_xa_G_ya(gam1_spat,gam2_spat) + G_xa_G_yb_F_ab(gam1_spat,gam2_spat)) / sqrt(AVNorm(beta)*AVNorm(gam2))) - matel_S*dcmplx(HL_Energy + Omega,dDelta)
+                            matel = ((dcmplx(Nm1FCIHam_beta_cmps(i),0.0_dp)*G_xa_G_ya(gam1_spat,gam2_spat) +    &
+                                G_xa_G_yb_F_ab(gam1_spat,gam2_spat)) / sqrt(AVNorm(beta)*AVNorm(gam2))) -   &
+                                matel_S*dcmplx(HL_Energy + Omega,dDelta)
                             if(abs(matel).gt.CompressThresh) then
                                 ind = ind + 1
                                 if(ind.gt.Nmax_Lin) call stop_all(t_r,'Compressed array too small')
@@ -1158,7 +1180,8 @@ module LinearResponse
                 do i = 1,nNm1FCIDet
                     !Cols through 6^T
                     do k = Coup_Create_beta_cum_T(i),Coup_Create_beta_cum_T(i+1)-1
-                        matel = G_xa_F_ya(beta+CoreEnd,Coup_Create_beta_T(1,k))*Coup_Create_beta_T(2,k) / sqrt(AVNorm(beta))
+                        matel = G_xa_F_ya(beta+CoreEnd,Coup_Create_beta_T(1,k))*Coup_Create_beta_T(2,k)     &
+                            / sqrt(AVNorm(beta))
                         if(abs(matel).gt.CompressThresh) then
                             ind = ind + 1
                             if(ind.gt.Nmax_Lin) call stop_all(t_r,'Compressed array too small')
@@ -1168,7 +1191,8 @@ module LinearResponse
                     enddo
                     !Cols through 5^T
                     do k = Coup_Create_beta_cum_T(i),Coup_Create_beta_cum_T(i+1)-1
-                        matel = -F_xi_G_ia_G_ya(Coup_Create_beta_T(1,k),beta+CoreEnd)*Coup_Create_beta_T(2,k) / sqrt(CVNorm*AVNorm(beta)) 
+                        matel = -F_xi_G_ia_G_ya(Coup_Create_beta_T(1,k),beta+CoreEnd)*Coup_Create_beta_T(2,k) / &
+                            sqrt(CVNorm*AVNorm(beta)) 
                         if(abs(matel).gt.CompressThresh) then
                             ind = ind + 1
                             if(ind.gt.Nmax_Lin) call stop_all(t_r,'Compressed array too small')
@@ -1184,7 +1208,8 @@ module LinearResponse
                         gam2_ind = AVIndex + (gam2-1)*nFullNm1
                         do k = Nm1FCIHam_alpha_inds(i),Nm1FCIHam_alpha_inds(i+1)-1
                             !Off-diagonals
-                            matel = dcmplx(Nm1FCIHam_alpha_cmps(k),0.0_dp)*G_xa_G_ya(gam1_spat,gam2_spat) / sqrt(AVNorm(beta)*AVNorm(gam2)) 
+                            matel = dcmplx(Nm1FCIHam_alpha_cmps(k),0.0_dp)*G_xa_G_ya(gam1_spat,gam2_spat) / &
+                                sqrt(AVNorm(beta)*AVNorm(gam2)) 
                             if(abs(matel).gt.CompressThresh) then
                                 ind = ind + 1
                                 if(ind.gt.Nmax_Lin) call stop_all(t_r,'Compressed array too small')
@@ -1204,7 +1229,9 @@ module LinearResponse
                                 Overlap_inds(ind) = gam2_ind + nNm1bFCIDet + i - 1
                             endif
                             !Now for the Hessian
-                            matel = ((dcmplx(Nm1FCIHam_alpha_cmps(i).0.0_dp)*G_xa_G_ya(gam1_spat,gam2_spat) + G_xa_G_yb_F_ab(gam1_spat,gam2_spat)) / sqrt(AVNorm(beta)*AVNorm(gam2))) - matel_S*dcmplx(HL_Energy + Omega,dDelta)
+                            matel = ((dcmplx(Nm1FCIHam_alpha_cmps(i),0.0_dp)*G_xa_G_ya(gam1_spat,gam2_spat) +   &
+                                G_xa_G_yb_F_ab(gam1_spat,gam2_spat)) / sqrt(AVNorm(beta)*AVNorm(gam2))) -   &
+                                matel_S*dcmplx(HL_Energy + Omega,dDelta)
                             if(abs(matel).gt.CompressThresh) then
                                 ind = ind + 1
                                 if(ind.gt.Nmax_Lin) call stop_all(t_r,'Compressed array too small')
@@ -1226,7 +1253,8 @@ module LinearResponse
                 do i = 1,nNp1FCIDet
                     !Cols through 10^T
                     do k = Coup_Ann_alpha_cum_T(i),Coup_Ann_alpha_cum_T(i+1)-1
-                        matel = -G_ix_F_iy(beta+CoreEnd,Coup_Ann_alpha_T(1,k))*Coup_Ann_alpha_T(2,k) / sqrt(CANorm(beta))
+                        matel = -G_ix_F_iy(beta+CoreEnd,Coup_Ann_alpha_T(1,k))*Coup_Ann_alpha_T(2,k) /  &
+                            sqrt(CANorm(beta))
                         if(abs(matel).gt.CompressThresh) then
                             ind = ind + 1
                             if(ind.gt.Nmax_Lin) call stop_all(t_r,'Compressed array too small')
@@ -1236,7 +1264,8 @@ module LinearResponse
                     enddo
                     !Cols through 9^T
                     do k = Coup_Ann_alpha_cum_T(i),Coup_Ann_alpha_cum_T(i+1)-1
-                        matel = -F_ax_G_ia_G_iy(Coup_Ann_alpha_T(1,k),beta+CoreEnd)*Coup_Ann_alpha_T(2,k) / sqrt(CVNorm*CANorm(beta)) 
+                        matel = -F_ax_G_ia_G_iy(Coup_Ann_alpha_T(1,k),beta+CoreEnd)*Coup_Ann_alpha_T(2,k) / &
+                            sqrt(CVNorm*CANorm(beta)) 
                         if(abs(matel).gt.CompressThresh) then
                             ind = ind + 1
                             if(ind.gt.Nmax_Lin) call stop_all(t_r,'Compressed array too small')
@@ -1253,7 +1282,8 @@ module LinearResponse
                         gam2_ind = CAIndex + (gam2-1)*nFullNp1
                         do k = Np1FCIHam_alpha_inds(i),Np1FCIHam_alpha_inds(i+1)-1
                             !Off-diagonals
-                            matel = dcmplx(Np1FCIHam_alpha_cmps(k),0.0_dp)*G_xi_G_yi(gam1_spat,gam2_spat) / sqrt(CANorm(beta)*CANorm(gam2)) 
+                            matel = dcmplx(Np1FCIHam_alpha_cmps(k),0.0_dp)*G_xi_G_yi(gam1_spat,gam2_spat) / &
+                                sqrt(CANorm(beta)*CANorm(gam2)) 
                             if(abs(matel).gt.CompressThresh) then
                                 ind = ind + 1
                                 if(ind.gt.Nmax_Lin) call stop_all(t_r,'Compressed array too small')
@@ -1273,7 +1303,9 @@ module LinearResponse
                                 Overlap_inds(ind) = gam2_ind + i - 1
                             endif
                             !Now for Hessian contribution
-                            matel = ((dcmplx(Np1FCIHam_alpha_cmps(i).0.0_dp)*G_xi_G_yi(gam1_spat,gam2_spat) - G_ix_G_jy_F_ji(gam1_spat,gam2_spat)) / sqrt(CANorm(beta)*CANorm(gam2))) - matel_S*dcmplx(HL_Energy + Omega,dDelta)
+                            matel = ((dcmplx(Np1FCIHam_alpha_cmps(i),0.0_dp)*G_xi_G_yi(gam1_spat,gam2_spat) -   &
+                                G_ix_G_jy_F_ji(gam1_spat,gam2_spat)) / sqrt(CANorm(beta)*CANorm(gam2))) -   &
+                                matel_S*dcmplx(HL_Energy + Omega,dDelta)
                             if(abs(matel).gt.CompressThresh) then
                                 ind = ind + 1
                                 if(ind.gt.Nmax_Lin) call stop_all(t_r,'Compressed array too small')
@@ -1290,7 +1322,8 @@ module LinearResponse
                 do i = 1,nNp1bFCIDet
                     !Cols through 10^T
                     do k = Coup_Ann_beta_cum_T(i),Coup_Ann_beta_cum_T(i+1)-1
-                        matel = -G_ix_F_iy(beta+CoreEnd,Coup_Ann_beta_T(1,k))*Coup_Ann_beta_T(2,k) / sqrt(CANorm(beta))
+                        matel = -G_ix_F_iy(beta+CoreEnd,Coup_Ann_beta_T(1,k))*Coup_Ann_beta_T(2,k) /    &
+                            sqrt(CANorm(beta))
                         if(abs(matel).gt.CompressThresh) then
                             ind = ind + 1
                             if(ind.gt.Nmax_Lin) call stop_all(t_r,'Compressed array too small')
@@ -1300,7 +1333,8 @@ module LinearResponse
                     enddo
                     !Cols through 9^T
                     do k = Coup_Ann_beta_cum_T(i),Coup_Ann_beta_cum_T(i+1)-1
-                        matel = -F_ax_G_ia_G_iy(Coup_Ann_beta_T(1,k),beta+CoreEnd)*Coup_Ann_beta_T(2,k) / sqrt(CVNorm*CANorm(beta)) 
+                        matel = -F_ax_G_ia_G_iy(Coup_Ann_beta_T(1,k),beta+CoreEnd)*Coup_Ann_beta_T(2,k) /   &
+                            sqrt(CVNorm*CANorm(beta)) 
                         if(abs(matel).gt.CompressThresh) then
                             ind = ind + 1
                             if(ind.gt.Nmax_Lin) call stop_all(t_r,'Compressed array too small')
@@ -1317,7 +1351,8 @@ module LinearResponse
                         gam2_ind = CAIndex + (gam2-1)*nFullNp1
                         do k = Np1FCIHam_beta_inds(i),Np1FCIHam_beta_inds(i+1)-1
                             !Off-diagonals
-                            matel = dcmplx(Np1FCIHam_beta_cmps(k),0.0_dp)*G_xi_G_yi(gam1_spat,gam2_spat) / sqrt(CANorm(beta)*CANorm(gam2)) 
+                            matel = dcmplx(Np1FCIHam_beta_cmps(k),0.0_dp)*G_xi_G_yi(gam1_spat,gam2_spat) /  &
+                                sqrt(CANorm(beta)*CANorm(gam2)) 
                             if(abs(matel).gt.CompressThresh) then
                                 ind = ind + 1
                                 if(ind.gt.Nmax_Lin) call stop_all(t_r,'Compressed array too small')
@@ -1337,7 +1372,9 @@ module LinearResponse
                                 Overlap_inds(ind) = gam2_ind + nNp1FCIDet + i - 1
                             endif
                             !Now for Hessian
-                            matel = ((dcmplx(Np1FCIHam_beta_cmps(i).0.0_dp)*G_xi_G_yi(gam1_spat,gam2_spat) - G_ix_G_jy_F_ji(gam1_spat,gam2_spat)) / sqrt(CANorm(beta)*CANorm(gam2))) - matel_S*dcmplx(HL_Energy + Omega,dDelta)
+                            matel = ((dcmplx(Np1FCIHam_beta_cmps(i),0.0_dp)*G_xi_G_yi(gam1_spat,gam2_spat) -    &
+                                G_ix_G_jy_F_ji(gam1_spat,gam2_spat)) / sqrt(CANorm(beta)*CANorm(gam2))) -   &
+                                matel_S*dcmplx(HL_Energy + Omega,dDelta)
                             if(abs(matel).gt.CompressThresh) then
                                 ind = ind + 1
                                 if(ind.gt.Nmax_Lin) call stop_all(t_r,'Compressed array too small')
@@ -1348,7 +1385,7 @@ module LinearResponse
                     enddo
                     row = row + 1
                     LinearSystem_inds(row) = ind + 1
-                    Overlap_inds(row) + ind_S + 1
+                    Overlap_inds(row) = ind_S + 1
                 enddo
             enddo   !Finish row beta (Block 4 columns)
 
