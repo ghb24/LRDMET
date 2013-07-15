@@ -113,11 +113,11 @@ module LinearResponse
         use DetTools, only: gtid,umatind,GenDets,GetHElement
         use solvers, only: CountSizeCompMat,StoreCompMat
         implicit none
-        integer :: a,i,j,k,OrbPairs,UMatSize,AVInd_tmp,b,beta
-        integer :: CoreEnd,VirtStart,VirtEnd,CVInd_tmp,iunit,iunit2
-        integer :: DiffOrb,nOrbs,gam,gam1,gam1_ind,gam1_spat,gam2,gam2_ind,gam2_spat,ierr
-        integer :: gam_spat,nLinearSystem,tempK,nSpan,ActiveEnd,ActiveStart
-        integer :: orbdum(1),CAInd_tmp,lwork,info,nSize,nCore,nVirt,nFullNm1,nFullNp1,iters
+        integer :: a,i,j,k,OrbPairs,UMatSize,b,beta
+        integer :: CoreEnd,VirtStart,VirtEnd,iunit
+        integer :: DiffOrb,nOrbs,gam,gam1_ind,gam1_spat,gam2,gam2_ind,gam2_spat,ierr
+        integer :: gam_spat,nLinearSystem,tempK,ActiveEnd,ActiveStart
+        integer :: orbdum(1),info,nCore,nVirt,nFullNm1,nFullNp1,iters
         integer :: maxminres_iter,minres_unit,InterMem,HamMem,CoupMem,gam_ind,i_Ann,i_Create,i_Ann_b,i_Create_b
         integer :: ind,ind_S,Nmax_Coup,Nmax_Lin,Nmax_Nm1,Nmax_Nm1b,Nmax_Np1,Nmax_Np1b,Nmax_N,Nmax_S,pertsite
         integer :: pertsitealpha,pertsitebeta,row
@@ -150,7 +150,6 @@ module LinearResponse
         character(64) :: filename,filename2
         character(len=*), parameter :: t_r='NonIntExCont_TDA_MCLR_DD_Cmprs'
         integer(ip) :: maxminres_iter_ip,minres_unit_ip,nLinearSystem_ip,info_ip
-        logical, parameter :: tDiagHam = .false.
 
         call set_timer(LR_EC_TDA_Precom)
         
@@ -1402,24 +1401,16 @@ module LinearResponse
             maxminres_iter_ip = int(maxminres_iter,ip)
             minres_unit_ip = int(minres_unit,ip)
             nLinearSystem_ip = int(nLinearSystem,ip)
-            write(6,*) "Get here 1"
-            call flush(6)
             call setup_RHS(nLinearSystem,RHS,RHS2)
-            write(6,*) "Get here 2"
-            call flush(6)
             if(tPrecond_MinRes) then
                 call FormPrecond(nLinearSystem)
                 call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS2,nout=minres_unit_ip,x=Psi1, &
                     itnlim=maxminres_iter_ip,Msolve=zPreCond,istop=info_ip,rtol=rtol_LR,itn=iters, &
                     startguess=tReuse_LS)
             else
-                write(6,*) "nLinearSystem_ip: ",nLinearSystem_ip
-                call flush(6)
                 call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS2,nout=minres_unit_ip,x=Psi1, &
                     itnlim=maxminres_iter_ip,istop=info_ip,rtol=rtol_LR,itn=iters,startguess=tReuse_LS)
             endif
-            write(6,*) "Get here 3"
-            call flush(6)
             info = info_ip
             zDirMV_Mat_cmprs => null()
             zDirMV_Mat_cmprs_inds => null()
@@ -1461,9 +1452,9 @@ module LinearResponse
 
                 if(abs(dOrthog).gt.1.0e-4_dp) then
                     !call warning(t_r,'First order wavefunction not orthogonal - skipping this frequency')
-                    call warning(t_r,'First order wavefunction not orthogonal')
+                    write(6,"(A,G25.10)") 'First order solution not orthogonal',abs(dOrthog)
                 elseif(abs(dOrthog).gt.1.0e-8_dp) then
-                    call warning(t_r,'First order solution not strictly orthogonal')
+                    write(6,"(A,G25.10)") 'First order solution not strictly orthogonal',abs(dOrthog)
                 endif
 
                 !Calculating the response is also trivial - <RHS|S|1>
@@ -3080,10 +3071,8 @@ module LinearResponse
                                 itnlim=maxminres_iter_ip,Msolve=zPreCond,istop=info_ip,rtol=rtol_LR,itn=iters_p, &
                                 startguess=tReuse_LS)
                         else
-                            write(6,*) "I am going in at the right place"
-                            call flush(6)
-                            call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_p, &
-                                itnlim=maxminres_iter_ip,istop=info_ip,rtol=rtol_LR,itn=iters_p,startguess=tReuse_LS)
+                            call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip, &
+                                itnlim=maxminres_iter_ip,rtol=rtol_LR,x=Psi1_p,istop=info_ip,itn=iters_p,startguess=tReuse_LS)
                         endif
                         info = info_ip
                         zDirMV_Mat => null()
