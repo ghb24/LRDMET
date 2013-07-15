@@ -1,5 +1,5 @@
 # 624 sites, broadening 0.005t, 0.02 removed from highest peak of hole + lowest peak of particle (which was gap at U=0)
-# U     Refresh_2_Noopt Refresh_2_Opt  Refresh_4_Noopt 4_Opt-zero 2_OpticalGap(d=0.0002)    Exact
+# U     Refresh_2_Noopt Refresh_2_Opt  Refresh_4_Noopt 2_OpticalGap(d=0.0002)    Exact
 0.0     0.0     0.0         0.012        0.0122719      0.000000
 0.5     0.00082 0.00078     0.012935     0.012953       0.000006
 1.0     0.00719 0.00730     0.027525     0.0218882      0.005027

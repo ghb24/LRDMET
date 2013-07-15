@@ -62,6 +62,7 @@ module Globals
     logical :: tCompleteDiag    !Complete rather than iterative diagonalization of the embedded system
     logical :: tNonDirDavidson  !Compute GS with a non-direct davidson algorithm
     logical :: tMinRes_NonDir   !Solve any systems of linear equations with a non-direct linear solver
+    logical :: tGMRes_NonDir    !Solve any systems of linear equations with a non-direct GMRES linear solver
     logical :: tPrecond_MinRes  !Apply preconditioning to the solution of the linear equations
     logical :: tReuse_LS        ! Whether or not to reuse the previous frequency calculation for the solution of the linear equation
     real(dp) :: rtol_LR         !Tolerance for exit criterion for linear solver

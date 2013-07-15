@@ -510,8 +510,6 @@ contains
       " /     a, 5x, a, e12.4, 5x, a, e12.4 "                     // &
       " /     a, 5x, a, e12.4 )" 
      character(len=*), parameter :: finalStr2 = "(      a, 5x, a )"
-     integer :: test
-     integer(ip) :: testip
 
     !------------------------------------------------------------------ 
     ! Optional inputs

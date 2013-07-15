@@ -543,6 +543,11 @@ Program RealHub
                 if(item.lt.nitems) then
                     call readf(rtol_LR)
                 endif
+            case("NONDIR_GMRES")
+                tGMRES_NonDir = .true.
+                if(item.lt.nitems) then
+                    call readf(rtol_LR)
+                endif
             case("MINRES_MAXITER")
                 call readi(iMinRes_MaxIter)
             case("REUSE_FIRSTORDER_PSI")
@@ -600,6 +605,7 @@ Program RealHub
                 write(6,"(A)") "DD_RESPONSE"
                 write(6,"(A)") "GF_RESPONSE"
                 write(6,"(A)") "NONDIR_MINRES"
+                write(6,"(A)") "NONDIR_GMRES"
                 write(6,"(A)") "MINRES_MAXITER"
                 write(6,"(A)") "PRECONDITION_LR"
                 write(6,"(A)") "REUSE_FIRSTORDER_PSI"
@@ -685,6 +691,9 @@ Program RealHub
             call stop_all(t_r,  &
                 'A single-reference particle + hole response function asked for, but SR only coded up for Density response')
         endif
+        if(tMinRes_NonDir.and.tGMRes_NonDir) then
+            call stop_all(t_r,'Cannot specify both MinRes and GMRes algorithms')
+        endif
         if(tPrecond_MinRes.and.(.not.tMinRes_NonDir)) then
             call stop_all(t_r,'Cannot precondition linear response matrix if not solving iteratively!')
         endif
@@ -723,7 +732,7 @@ Program RealHub
         if(tPartialSE_Fit.and.(iPartialSE_Fit.le.0)) then
             call stop_all(t_r,'Partial self-energy fitting specified, but not the number of fits (should be argument)')
         endif
-        if(tReuse_LS.and.(.not.tMinRes_NonDir)) then
+        if(tReuse_LS.and..not.(tMinRes_NonDir.or.tGMRes_NonDir)) then
             call stop_all(t_r,'Cannot reuse first-order wavefunctions if not using iterative solver')
         endif
         if(tCoreH_EmbBasis.and.(tNonDirDavidson.or.tCompleteDiag)) then
@@ -732,8 +741,8 @@ Program RealHub
         if(tCompressedMats.and.(.not.tNonDirDavidson)) then
             call stop_all(t_r,'Can only use compressed matrices option with non-direct davisdon solver')
         endif
-        if((.not.tMinRes_NonDir).and.tLR_DMET.and.tCompressedMats) then
-            call stop_all(t_r,'Can only use MinRes solver for MR response with compressed matrices')
+        if((.not.(tMinRes_NonDir.or.tGMRES_NonDir)).and.tLR_DMET.and.tCompressedMats) then
+            call stop_all(t_r,'Can only use MinRes/GMRES solver for MR response with compressed matrices')
         endif
         if(tDDResponse.and.tRemoveGSFromH.and.tCompressedMats) then
             call stop_all(t_r,'REMOVE_GS_FROM_H option cannot be used with compressed matrix DD response')

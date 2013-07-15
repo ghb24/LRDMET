@@ -167,8 +167,16 @@ module LinearResponse
             endif
             write(6,"(A,G22.10)") "Tolerance for solution of linear system: ",rtol_LR
             write(6,"(A,G22.10)") "Maximum iterations for each solution: ",maxminres_iter
+        elseif(tGMRES_NonDir) then
+            if(tPreCond_MinRes) then
+                call stop_all(t_r,'Preconditioning not yet set up with GMRES solver')
+            else
+                write(6,'(A)') "Solving linear system with iterative non-direct GMRES algorithm"
+            endif
+            write(6,"(A,G22.10)") "Tolerance for solution of linear system: ",rtol_LR
+            write(6,"(A,G22.10)") "Maximum iterations for each solution: ",maxminres_iter
         else
-            call stop_all(t_r,"NonDir_Minres algorithm must be used with compressed matrices")
+            call stop_all(t_r,"NonDir_Minres or GMRES algorithm must be used with compressed matrices")
         endif
         !umat and tmat for the active space
         OrbPairs = (EmbSize*(EmbSize+1))/2
@@ -199,6 +207,9 @@ module LinearResponse
         if(tMinRes_NonDir) then
             minres_unit = get_free_unit()
             open(minres_unit,file='zMinResQLP.txt',status='unknown',position='append')
+        else
+            minres_unit = get_free_unit()
+            open(minres_unit,file='zGMRES.txt',status='unknown',position='append')
         endif
         
         !Enumerate excitations for fully coupled space
@@ -790,9 +801,9 @@ module LinearResponse
 
         write(6,"(A,2G20.10)") "Orthogonality condition between RHS and |0>: ",testc
             
-        allocate(RHS2(nLinearSystem))
+        if(tMinRes_NonDir) allocate(RHS2(nLinearSystem))
+        if(tPrecond_MinRes.and.tMinRes_NonDir) allocate(Precond_Diag(nLinearSystem))
         allocate(Psi1(nLinearSystem))
-        if(tPrecond_MinRes) allocate(Precond_Diag(nLinearSystem))
 
         call halt_timer(LR_EC_TDA_Precom)
 
@@ -808,7 +819,7 @@ module LinearResponse
             LinearSystem_inds(:) = 0
             Overlap_inds(:) = 0
             ind = 0 
-            if(tMinRes_NonDir) write(minres_unit,*) "Iteratively solving for frequency: ",Omega
+            write(minres_unit,*) "Iteratively solving for frequency: ",Omega
 
             !**************************    CONTRACTION COEFFICIENTS    **********************
 
@@ -1402,29 +1413,33 @@ module LinearResponse
             !Now solve these linear equations
             zDirMV_Mat_cmprs => LinearSystem
             zDirMV_Mat_cmprs_inds => LinearSystem_inds
-            maxminres_iter_ip = int(maxminres_iter,ip)
-            minres_unit_ip = int(minres_unit,ip)
-            nLinearSystem_ip = int(nLinearSystem,ip)
-            call setup_RHS(nLinearSystem,RHS,RHS2)
-            if(tPrecond_MinRes) then
-                call FormPrecond(nLinearSystem)
-                call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS2,nout=minres_unit_ip,x=Psi1, &
-                    itnlim=maxminres_iter_ip,Msolve=zPreCond,istop=info_ip,rtol=rtol_LR,itn=iters, &
-                    startguess=tReuse_LS)
-            else
-                call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS2,nout=minres_unit_ip,x=Psi1, &
-                    itnlim=maxminres_iter_ip,istop=info_ip,rtol=rtol_LR,itn=iters,startguess=tReuse_LS)
+            if(tMinRes_NonDir) then
+                maxminres_iter_ip = int(maxminres_iter,ip)
+                minres_unit_ip = int(minres_unit,ip)
+                nLinearSystem_ip = int(nLinearSystem,ip)
+                call setup_RHS(nLinearSystem,RHS,RHS2)
+                if(tPrecond_MinRes) then
+                    call FormPrecond(nLinearSystem)
+                    call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS2,nout=minres_unit_ip,x=Psi1, &
+                        itnlim=maxminres_iter_ip,Msolve=zPreCond,istop=info_ip,rtol=rtol_LR,itn=iters, &
+                        startguess=tReuse_LS)
+                else
+                    call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS2,nout=minres_unit_ip,x=Psi1, &
+                        itnlim=maxminres_iter_ip,istop=info_ip,rtol=rtol_LR,itn=iters,startguess=tReuse_LS)
+                endif
+                info = info_ip
+                if(info.gt.7) write(6,*) "info: ",info
+                if(info.eq.8) write(6,"(A,I9)") "Linear equation solver hit iteration limit: ",iters
+                if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) then
+                    call stop_all(t_r,'Input matrices to linear solver incorrect')
+                endif
+                if(info.gt.11) call stop_all(t_r,'Linear equation solver failed')
+                info = 0
+            elseif(tGMRES_NonDir) then
+                call GMRES_Solve(nLinearSystem,RHS,minres_unit,maxminres_iter,rtol_LR,tPrecond_MinRes,tReuse_LS,iters,Psi1,info)
             endif
-            info = info_ip
             zDirMV_Mat_cmprs => null()
             zDirMV_Mat_cmprs_inds => null()
-            if(info.gt.7) write(6,*) "info: ",info
-            if(info.eq.8) write(6,"(A,I9)") "Linear equation solver hit iteration limit: ",iters
-            if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) then
-                call stop_all(t_r,'Input matrices to linear solver incorrect')
-            endif
-            if(info.gt.11) call stop_all(t_r,'Linear equation solver failed')
-            info = 0
             if(info.ne.0) then 
                 write(6,*) "INFO: ",info
                 !call stop_all(t_r,'Solving Linear system failed') 
@@ -1479,8 +1494,9 @@ module LinearResponse
             call halt_timer(LR_EC_TDA_SolveLR)
         enddo   !End loop over omega
 
-        deallocate(RHS,RHS2,Psi1,temp_vecc)
-        if(tPrecond_MinRes) deallocate(Precond_Diag)
+        deallocate(RHS,Psi1,temp_vecc)
+        if(tMinRes_NonDir) deallocate(RHS2)
+        if(tPrecond_MinRes.and.tMinRes_NonDir) deallocate(Precond_Diag)
         deallocate(LinearSystem,Overlap,LinearSystem_inds,Overlap_inds)
         close(iunit)
         close(minres_unit)
@@ -5317,7 +5333,209 @@ module LinearResponse
 
 
     end subroutine ApplyDensityPert_EC
+                
+    !Input: n (size of linear system)
+    !       RHS (RHS of system)
+    !       nout (unit)
+    !       Maxiter (max iterations)
+    !       rtol    (Convergence tolerance)
+    !       tGuess  (Logical: Whether x is initial guess or not)
+    !       tPrecond (Logical: Whether to precondition)
+    !Output: iters (number of iterations required)
+    !        gmres_info (0 if success)
+    !InOut: x (solution / initial guess)
+    subroutine GMRES_Solve(n,RHS,nout,Maxiter,rtol,tPrecond,tGuess,iters,x,err)
+        implicit none
+        integer, intent(in) :: n,nout,Maxiter
+        real(dp) :: rtol
+        logical, intent(in) :: tGuess,tPrecond
+        complex(dp), intent(in) :: RHS(n)
+        complex(dp), intent(inout) :: x(n)
+        integer, intent(out) :: iters,err
+        integer :: i,k,m
+        integer :: lwork 
+        integer :: icntl(8), irc(8), info(3)
+        integer :: revcom, colx, coly, colz, nbscal, ierr
+        complex(dp), allocatable :: work(:)
+        real(dp) :: cntl(5),rinfo(2)
+        integer, parameter :: matvec = 1
+        integer, parameter :: precondLeft = 2
+        integer, parameter :: precondRight = 3
+        integer, parameter :: dotprod = 4
+        character(len=*), parameter :: t_r='GMRES_Solve'
 
+!        write(6,*) "Entering gmres_solve..."
+        m = 100  !This is the number of krylov vectors to store before restarting. Affects memory
+
+        !Initialise control parameters to default values (note zero unit numbers means supress output)
+        call init_zgmres(icntl,cntl)
+        !icntl(1) = unit for error messages (6)
+        !icntl(2) = unit for warnings (6)
+        !icntl(3) = unit for convergence history (0)
+        !icntl(4) = Location of preconditioning (0: None, 1: Left, 2: Right, 3: Double, 4: Error)
+        !icntl(5) = What orthogonalization? (0: modified Gram-Schmidt (default), 1: Iterative modified GS, 2: Classical GS, 3: Iterative GS)
+        !icntl(6) = Initial Guess? (1 = yes, 0 = no - use zero)
+        !icntl(7) = Max interations
+        !icntl(8) = How to compute residual at restart (1)
+
+        !cntl(1) = Convergence tolerance of backward error (default = 1.E-5)
+        !cntl(2:5) = normalizations (default 0)
+
+        icntl(1) = nout
+        icntl(2) = nout
+        icntl(3) = nout
+        icntl(7) = Maxiter
+        
+        if(tPrecond) then
+            !TODO: Implement preconditioning
+            call stop_all(t_r,'George! Implement preconditioning!')
+        else
+            icntl(4) = 0
+        endif
+
+        cntl(1) = rtol
+
+        !Determine the size of the work array
+        if((icntl(5).eq.0).or.(icntl(5).eq.1)) then
+            if(icntl(8).eq.1) then
+                lwork = m*m + m*(n+5) + 5*n + 2
+            else
+                lwork = m*m + m*(n+5) + 6*n + 2
+            endif
+        else
+            if(icntl(8).eq.1) then
+                lwork = m*m + m*(n+5) + 5*n + m + 1
+            else
+                lwork = m*m + m*(n+5) + 6*n + m + 1
+            endif
+        endif
+
+        allocate(work(lwork),stat=ierr)
+        if(ierr.ne.0) call stop_all(t_r,'Alloc error')
+        work(:) = zzero
+        
+        !Are we inputting a guess solution?
+        if(tGuess) then
+            icntl(6) = 1
+            do i = 1,n
+                work(i) = x(i)
+            enddo
+        else
+            icntl(6) = 0
+        endif
+
+        !Set b
+!        write(6,*) "RHS set to: "
+        do i = 1,n
+            work(i+n) = RHS(i)
+!            write(6,*) RHS(i),work(i+n)
+        enddo
+
+        do while(.true.)
+
+            call drive_zgmres(n,n,m,lwork,work,irc,icntl,cntl,info,rinfo)
+
+            !What does the driver want us to do?
+            !irc(1) determines what the gmres algorithm wants us to do
+            !while irc(2:5) determines where or how to do it.
+            revcom = irc(1)
+            colx = irc(2)
+            coly = irc(3)
+            colz = irc(4)
+            nbscal = irc(5)
+
+            if(revcom.eq.matvec) then
+                !Do Matrix vector multiplicitation with vector work(colx:colx+n-1)
+                !and put the result into work(colz:colz+n-1) 
+                if(((colz.ge.colx).and.(colz.le.(colx+n-1))).or.    &
+                    (((colz+n-1).ge.colx).and.((colz+n-1).le.(colx+n-1)))) then
+                    !Check that they will not overwrite each other
+                    write(6,*) "Vector indices to multiply: ",colx,'to',colx+n-1
+                    write(6,*) "Output vector: ",colz,'to',colz+n-1
+                    call stop_all(t_r,'vector indices overlapping')
+                endif
+
+                if(tCompressedMats) then
+                    if(.not.associated(zDirMV_Mat_cmprs)) call stop_all(t_r,'Compressed matrix not associated')
+                    
+                    !Sparse matrix multiply
+                    if(zDirMV_Mat_cmprs_inds(1).ne.(n+2)) then
+                        call stop_all(t_r,'Mismatched vector and matrix')
+                    endif
+                    do i = 1,n
+                        work(colz+i-1) = zDirMV_Mat_cmprs(i)*work(colx+i-1)
+                        do k = zDirMV_Mat_cmprs_inds(i),zDirMV_Mat_cmprs_inds(i+1)-1
+                            work(colz+i-1) = work(colz+i-1) + zDirMV_Mat_cmprs(k)*work(colx+zDirMV_Mat_cmprs_inds(k)-1)
+                        enddo
+                    enddo
+                else
+                    if(.not.associated(zDirMV_Mat)) call stop_all(t_r,'Maxtrix not associated')
+                    call ZGEMV('N',n,n,zone,zDirMV_Mat,n,work(colx),1,zzero,work(colz),1)
+                endif
+
+            elseif(revcom.eq.precondLeft) then
+                !Perform left preconditioning, i.e.
+                !work(colz:colz+n-1)  <--  M_1^{-1} * work(colx:colx+n-1)
+                !TODO: Implement properly!
+                work(colz:colz+n-1) = work(colx:colx+n-1)
+            elseif(revcom.eq.precondRight) then
+                !Perform right preconditioning, i.e.
+                !work(colz:colz+n-1)  <--  M_2^{-1} * work(colx:colx+n-1)
+                !TODO: Implement properly!
+                work(colz:colz+n-1) = work(colx:colx+n-1)
+            elseif(revcom.eq.dotProd) then
+                !Dot product with all previous vectors
+                !work(colz:colz+n-1)  <--  work(colx:colx+n-1) * work(coly:coly+n-1)
+
+                call zgemv('C',n,nbscal,zone,work(colx),n,work(coly),1,zzero,work(colz),1)
+                !Same as
+!                do i = 0,nbscal-1
+!                    work(colz+i) = zdotc(n,work(colx+i*n),1,work(coly),1)
+!                enddo
+            else
+                if(info(1).eq.0) then
+!                    write(6,*) "Convergence reached..."
+                    exit
+                endif
+            endif
+        enddo
+
+        !info(1) = 0 (Convergence reached, info(2) = number of iterations, rinfo(1) = preconditioned error, rinfo(2) = unpreconditioned error)
+        !info(1) = -1 (n < 1)
+        !info(1) = -2 (m < 1)
+        !info(1) = -3 (lwork too small)
+        !info(1) = -4 (Convergence not achieved in the number of iterations allowed)
+        !info(1) = -5 (Preconditioning type not set)
+
+        if(info(1).eq.-1) then
+            call stop_all(t_r,'n < 1')
+        elseif(info(1).eq.-2) then
+            call stop_all(t_r,'m < 1')
+        elseif(info(1).eq.-3) then
+            write(6,*) "Minimal workspace required is: ",info(2)
+            call stop_all(t_r,'lwork too small for current settings')
+        elseif(info(1).eq.-4) then
+            write(6,*) "Max iter: ",Maxiter
+            call stop_all(t_r,'Convergence not achieved in number of iterations allowed')
+        elseif(info(1).eq.-5) then
+            call stop_all(t_r,'Preconditioning type not set')
+        elseif(info(1).ne.0) then
+            call stop_all(t_r,'Unspecified error')
+        endif
+
+        !Set return variables
+!        write(6,*) "Final vector is: "
+        do i = 1,n
+            x(i) = work(i)
+!            write(6,*) work(i)
+        enddo
+        iters = info(2)
+        err = info(1)
+
+        !Final error given by rinfo(1)
+        deallocate(work)
+
+    end subroutine GMRES_Solve
     
     !Contract the basis of single excitations, by summing together all the uncontracted parts with the non-interacting LR coefficients
     !This results in requiring the solution of a system which *only* scales with the size of the active hilbert space, not the lattice

@@ -58,8 +58,10 @@ LINEAR_RESPONSE
     DD_RESPONSE
 (Calculate charged particle + hole response functions)
     GF_RESPONSE
-(Solve linear system with a non-direct iterative solver)
+(Solve linear system with a non-direct MINRES iterative solver)
     NONDIR_MINRES
+(Solve linear system with a non-direct GMRES iterative solver (preferable))
+    NONDIR_GMRES
 (Max number of iterations for each attempt at the linear equation solver)
     MINRES_MAXITER 20000
 (Reuse the previous frequency solution as a starting vector for the next one)
