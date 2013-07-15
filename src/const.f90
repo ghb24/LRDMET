@@ -14,7 +14,7 @@ module const
     integer, parameter :: i2 = selected_int_kind(3)     !int*2
     integer, parameter :: i4 = selected_int_kind(6)     !int*4
     integer, parameter :: i8 = selected_int_kind(10)    !int*8
-    integer, parameter :: ip = selected_int_kind(9)
+    integer, parameter :: ip = i8
 
     integer, parameter :: sp = selected_real_kind(6,37)     !For single precision real numbers
     integer, parameter :: dp = selected_real_kind(15,307)   !For double precision real numbers
