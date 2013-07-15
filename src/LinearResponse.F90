@@ -206,10 +206,10 @@ module LinearResponse
         endif
         if(tMinRes_NonDir) then
             minres_unit = get_free_unit()
-            open(minres_unit,file='zMinResQLP.txt',status='unknown',position='append')
+            open(minres_unit,file='zMinResQLP.txt',status='unknown')
         else
             minres_unit = get_free_unit()
-            open(minres_unit,file='zGMRES.txt',status='unknown',position='append')
+            open(minres_unit,file='zGMRES.txt',status='unknown')
         endif
         
         !Enumerate excitations for fully coupled space
@@ -804,6 +804,7 @@ module LinearResponse
         if(tMinRes_NonDir) allocate(RHS2(nLinearSystem))
         if(tPrecond_MinRes.and.tMinRes_NonDir) allocate(Precond_Diag(nLinearSystem))
         allocate(Psi1(nLinearSystem))
+        Psi1(:) = zzero
 
         call halt_timer(LR_EC_TDA_Precom)
 
@@ -5364,7 +5365,6 @@ module LinearResponse
         integer, parameter :: dotprod = 4
         character(len=*), parameter :: t_r='GMRES_Solve'
 
-!        write(6,*) "Entering gmres_solve..."
         m = 100  !This is the number of krylov vectors to store before restarting. Affects memory
 
         !Initialise control parameters to default values (note zero unit numbers means supress output)
@@ -5444,6 +5444,9 @@ module LinearResponse
             colz = irc(4)
             nbscal = irc(5)
 
+!            write(6,*) "Return operation: ",revcom
+!            call flush(6)
+
             if(revcom.eq.matvec) then
                 !Do Matrix vector multiplicitation with vector work(colx:colx+n-1)
                 !and put the result into work(colz:colz+n-1) 
@@ -5457,6 +5460,8 @@ module LinearResponse
 
                 if(tCompressedMats) then
                     if(.not.associated(zDirMV_Mat_cmprs)) call stop_all(t_r,'Compressed matrix not associated')
+!                    write(6,*) "Matrix multiplication..."
+!                    call flush(6)
                     
                     !Sparse matrix multiply
                     if(zDirMV_Mat_cmprs_inds(1).ne.(n+2)) then

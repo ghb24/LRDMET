@@ -552,7 +552,6 @@ Program RealHub
                 call readi(iMinRes_MaxIter)
             case("REUSE_FIRSTORDER_PSI")
                 tReuse_LS = .true.
-                call stop_all(t_r,'The REUSE_FIRSTORDER_PSI does not currently work. Debug this option if you want to use it')
             case("STORE_HERMIT_HAMIL")
                 call stop_all(t_r,'The STORE_HERMIT_HAMIL option has been depreciated since it will not improve efficiency')
             case("PRECONDITION_LR")
