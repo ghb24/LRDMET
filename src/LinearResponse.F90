@@ -862,6 +862,9 @@ module LinearResponse
             call ZGEMM('T','N',EmbSize,EmbSize,nCore,dcmplx(1.0_dp,0.0_dp),SchmidtPert(1:CoreEnd,ActiveStart:ActiveEnd),nCore, &
                 FockSchmidtComp(1:CoreEnd,ActiveStart:ActiveEnd),nCore,dcmplx(0.0_dp,0.0_dp),G_ix_F_iy,EmbSize)
 
+            write(6,*) "Intermediates formed..."
+            call flush(6)
+
             !****************************    NORMALIZATION CONSTANTS    ************
             !Calc normalization for the CV block
             CVNorm = 0.0_dp
@@ -1388,7 +1391,8 @@ module LinearResponse
                 enddo
             enddo   !Finish row beta (Block 4 columns)
 
-            !write(6,*) "Hessian constructed successfully...",Omega
+            write(6,*) "Hessian constructed successfully..."
+            call flush(6)
             call halt_timer(LR_EC_TDA_HBuild)
 
             !*********************   Hessian construction finished   **********************
@@ -8291,14 +8295,14 @@ module LinearResponse
     subroutine TDA_LR()
         use utils, only: get_free_unit,append_ext_real,append_ext
         use DetToolsData, only: tmat,umat
-        use DetTools, only: gtid,GetHFAntisymInt_spinorb,GetExcitation
+        use DetTools, only: gtid,GetHFAntisymInt_spinorb,GetExcitation,GetHFInt_spinorb,umatind,GetHElement
         implicit none
         integer :: ov_space,virt_start,ierr,i,j,n,m,nj_ind,mi_ind,ex(2,2)
-        integer :: m_spat,i_spat,lwork,info,k,umatind,l,orbpairs,umatsize,ai_ind,a
+        integer :: m_spat,i_spat,lwork,info,k,l,orbpairs,umatsize,ai_ind,a
         integer :: state,iunit,a_spat,highbound,pertsite
         logical :: tSign
         integer, allocatable :: detHF(:),detR(:),detL(:)
-        real(dp) :: HEl1,GetHFInt_spinorb,Omega
+        real(dp) :: HEl1,Omega
         complex(dp) :: ResponseFn
         real(dp), allocatable :: A_mat(:,:),W(:),Work(:),temp(:,:),Residues(:)
         real(dp), allocatable :: DM(:,:),DM_conj(:,:),DM_AO(:,:),DM_AO_conj(:,:)
