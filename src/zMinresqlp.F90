@@ -498,7 +498,7 @@ contains
            "     'precon   =', l4                           "      // &
            "  / ' itnlim   =', i7, 6x, 'rtol     =', e11.2, 3x,"   // &
            "     'shift    =', e11.2, ' + I * ', e11.2    "        // & 
-           "  / ' maxxnorm =', e11.2, 2x, 'Acondlim =', e11.2, 3x,"// &
+           
            "     'trancond =', e11.2)"
      character(len=*), parameter :: tableHeaderStr =                                            &
       "(// '    iter   x(1)                                 xnorm     rnorm     Arnorm   '," // &
@@ -621,12 +621,16 @@ contains
        shift_, maxxnorm_, Acondlim_, trancond_
        !write(nout_,*) "b: ",b(1:(min(n,10))) 
     end if   
+
+    write(6,*) "****** n is: ",n
  
     !------------------------------------------------------------------
     ! Set up y and v for the first Lanczos vector v1.
     ! y  =  beta1 P'v1,  where  P = C**(-1).
     ! v is really P'v1.
     !------------------------------------------------------------------
+    write(6,*) "At this point, n= ",n, startguess_,precon_
+    call flush(6)
     if ( startguess_ ) then
         if(znrm2(n, x, 1) < eps) then
             x  = zzero
@@ -664,11 +668,15 @@ contains
     end if
 
     beta1  = sqrt( beta1 )     ! Normalize y to get v1 later.
+    write(6,*) "At this point, n= ",n
+    call flush(6)
 
     if (debug) then
        write(*,ddebugStr1) ' y_', itn_, ' = ', (y(j), j=1,nprint)
        write(*,*) 'beta1 ', beta1
     end if
+    write(6,*) "At this point, n= ",n
+    call flush(6)
 
     !------------------------------------------------------------------
     ! See if Msolve is Hermitian.
@@ -685,12 +693,21 @@ contains
        end if
     end if
 
+    write(6,*) "At this point, n= ",n
+    call flush(6)
+
     !------------------------------------------------------------------
     ! See if Aprod  is Hermitian.
     !------------------------------------------------------------------
     if (checkA_) then
+        write(6,*) "Get here 1*",n
+        call flush(6)
        call Aprod ( n, y, w  )  ! w  = A*y
+        write(6,*) "Get here 2*",n
+        call flush(6)
        call Aprod ( n, w, r2 )  ! r2 = A*w
+        write(6,*) "Get here 1"
+        call flush(6)
        s      = zdotc(n, w, 1, r2, 1)
        t      = conjg(zdotc(n, r2, 1, w, 1))
        z      = abs( s - t )
@@ -787,6 +804,8 @@ contains
        s      = zone / beta         ! Normalize previous vector (in y).
        v      = s*y;                ! v = vk if P = I.
        call Aprod ( n, v, y )
+        write(6,*) "Get here 1"
+        call flush(6)
        if (abs(shift_) >= realmin) then
           y = y - shift_ * v
        end if
@@ -1193,8 +1212,12 @@ contains
           end if
 
           call Aprod ( n, x, r1 )      
+        write(6,*) "Get here 1"
+        call flush(6)
           r1  = b - r1 + shift_*x       ! r1 to temporarily store residual vector
           call Aprod ( n, r1, wl2 )     ! wl2 to temporarily store A*r1
+        write(6,*) "Get here 1"
+        call flush(6)
           wl2 = wl2 - shift_*r1
           Arnorm_ = znrm2(n, wl2, 1)
           if (rnorm_ > zero  .and.  Anorm_ > zero) then

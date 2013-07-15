@@ -786,7 +786,7 @@ module LinearResponse
         !Check that RHS is orthogonal to the ground state
         testc = dcmplx(0.0_dp,0.0_dp)
         do j = 1,nFCIDet
-            testc = testc + RHS(j)*dcmplx(HL_Vec(i),0.0_dp)  
+            testc = testc + RHS(j)*dcmplx(HL_Vec(j),0.0_dp)  
         enddo
 
         write(6,"(A,2G20.10)") "Orthogonality condition between RHS and |0>: ",testc
@@ -1156,8 +1156,8 @@ module LinearResponse
                             if(abs(matel_S).gt.CompressThresh) then
                                 ind_S = ind_S + 1
                                 if(ind_S.gt.Nmax_S) call stop_all(t_r,'Compressed S array too small')
-                                Overlap(ind) = matel_S
-                                Overlap_inds(ind) = gam2_ind + i - 1
+                                Overlap(ind_S) = matel_S
+                                Overlap_inds(ind_S) = gam2_ind + i - 1
                             endif
                             !Now for the Hessian
                             matel = ((dcmplx(Nm1FCIHam_beta_cmps(i),0.0_dp)*G_xa_G_ya(gam1_spat,gam2_spat) +    &
@@ -1225,8 +1225,8 @@ module LinearResponse
                             if(abs(matel_S).gt.CompressThresh) then
                                 ind_S = ind_S + 1
                                 if(ind_S.gt.Nmax_S) call stop_all(t_r,'Compressed S array too small')
-                                Overlap(ind) = matel_S
-                                Overlap_inds(ind) = gam2_ind + nNm1bFCIDet + i - 1
+                                Overlap(ind_S) = matel_S
+                                Overlap_inds(ind_S) = gam2_ind + nNm1bFCIDet + i - 1
                             endif
                             !Now for the Hessian
                             matel = ((dcmplx(Nm1FCIHam_alpha_cmps(i),0.0_dp)*G_xa_G_ya(gam1_spat,gam2_spat) +   &
@@ -1299,8 +1299,8 @@ module LinearResponse
                             if(abs(matel_S).gt.CompressThresh) then
                                 ind_S = ind_S + 1
                                 if(ind_S.gt.Nmax_S) call stop_all(t_r,'Compressed S array too small')
-                                Overlap(ind) = matel_S
-                                Overlap_inds(ind) = gam2_ind + i - 1
+                                Overlap(ind_S) = matel_S
+                                Overlap_inds(ind_S) = gam2_ind + i - 1
                             endif
                             !Now for Hessian contribution
                             matel = ((dcmplx(Np1FCIHam_alpha_cmps(i),0.0_dp)*G_xi_G_yi(gam1_spat,gam2_spat) -   &
@@ -1368,8 +1368,8 @@ module LinearResponse
                             if(abs(matel_S).gt.CompressThresh) then
                                 ind_S = ind_S + 1
                                 if(ind_S.gt.Nmax_S) call stop_all(t_r,'Compressed S array too small')
-                                Overlap(ind) = matel_S
-                                Overlap_inds(ind) = gam2_ind + nNp1FCIDet + i - 1
+                                Overlap(ind_S) = matel_S
+                                Overlap_inds(ind_S) = gam2_ind + nNp1FCIDet + i - 1
                             endif
                             !Now for Hessian
                             matel = ((dcmplx(Np1FCIHam_beta_cmps(i),0.0_dp)*G_xi_G_yi(gam1_spat,gam2_spat) -    &
@@ -1402,16 +1402,24 @@ module LinearResponse
             maxminres_iter_ip = int(maxminres_iter,ip)
             minres_unit_ip = int(minres_unit,ip)
             nLinearSystem_ip = int(nLinearSystem,ip)
+            write(6,*) "Get here 1"
+            call flush(6)
             call setup_RHS(nLinearSystem,RHS,RHS2)
+            write(6,*) "Get here 2"
+            call flush(6)
             if(tPrecond_MinRes) then
                 call FormPrecond(nLinearSystem)
                 call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS2,nout=minres_unit_ip,x=Psi1, &
                     itnlim=maxminres_iter_ip,Msolve=zPreCond,istop=info_ip,rtol=rtol_LR,itn=iters, &
                     startguess=tReuse_LS)
             else
+                write(6,*) "nLinearSystem_ip: ",nLinearSystem_ip
+                call flush(6)
                 call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS2,nout=minres_unit_ip,x=Psi1, &
                     itnlim=maxminres_iter_ip,istop=info_ip,rtol=rtol_LR,itn=iters,startguess=tReuse_LS)
             endif
+            write(6,*) "Get here 3"
+            call flush(6)
             info = info_ip
             zDirMV_Mat_cmprs => null()
             zDirMV_Mat_cmprs_inds => null()
@@ -3072,6 +3080,8 @@ module LinearResponse
                                 itnlim=maxminres_iter_ip,Msolve=zPreCond,istop=info_ip,rtol=rtol_LR,itn=iters_p, &
                                 startguess=tReuse_LS)
                         else
+                            write(6,*) "I am going in at the right place"
+                            call flush(6)
                             call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_p, &
                                 itnlim=maxminres_iter_ip,istop=info_ip,rtol=rtol_LR,itn=iters_p,startguess=tReuse_LS)
                         endif
@@ -7612,7 +7622,11 @@ module LinearResponse
 
         if(tCompressedMats) then
             !Sparse matrix multiply
-            if(zDirMV_Mat_cmprs_inds(1).ne.(n+2)) call stop_all(t_r,'Mismatched vector and matrix')
+            if(zDirMV_Mat_cmprs_inds(1).ne.(n+2)) then
+                write(6,*) "zDirMV_Mat_cmprs_inds(1): ",zDirMV_Mat_cmprs_inds(1)
+                write(6,*) "n+2: ",n+2
+                call stop_all(t_r,'Mismatched vector and matrix')
+            endif
             do i = 1,n
                 temp(i) = zDirMV_Mat_cmprs(i)*x(i)
                 do k = zDirMV_Mat_cmprs_inds(i),zDirMV_Mat_cmprs_inds(i+1)-1

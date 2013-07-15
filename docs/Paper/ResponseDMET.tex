@@ -40,7 +40,7 @@
 \def \Kij {{K_{\bvec{i}\bvec{j}}}}
 
 \begin{document}
-\title{Spectral functions of correlated extended systems via quantum embedding}
+\title{Spectral functions of correlated extended systems via an exact quantum embedding}
 \author{George~H.~Booth}
 %\email{ghb24@cam.ac.uk}
 \author{Garnet~Kin-Lic~Chan}  
@@ -86,8 +86,8 @@ operators respectively, with appropriate time-ordering of the operators. Spectra
 where the spectral broadening is given by the small imaginary component of the energy, $\eta$, which regularizes the correlation function. The single particle
 density of states is given by the spectral representation of the one-particle Greens function, experimentally measured within STM 
 and (angle-resolved) photoemission spectroscopy. However, other spectral functions are also highly sought after, such as the two-hole propagator, 
-probed with Auger spectroscopy\cite{Mona2013}, or the two-electron Greens function, a key descriptor in Raman spectroscopy, and in the 
-mechanism of high-$T_c$ superconductivity\cite{Millis2012,Millis2013}.
+probed with Auger spectroscopy\cite{Mona2013}, or the two-electron Greens function, providing the polarizability, $\Chi(\omega)$, a key descriptor in 
+Raman spectroscopy, and in the mechanism of high-$T_c$ superconductivity\cite{Millis2012,Sordi2012,Millis2013}.
 
 One such method which has proved successful in obtaining strongly correlated spectral functions is dynamical mean-field theory (DMFT)\cite{Georges1992,Georges1996,Kotliar2006}. In 
 DMFT, the central variable is the local, one-particle Greens function, which is self-consistently embedded within a non-interacting or 
@@ -105,20 +105,20 @@ methods\cite{Senechal2000} are restricted to certain correlation strengths, syst
 
 Here, we aim to circumvent these issues, by generalizing and extending the idea of quantum embedding of {\em states}, as introduced in 
 Ref.~\onlinecite{Chan2012}. This is achieved by embedding a local correlation function defined over a set of `impurity' sites, within an 
-analytic coupling to the rest of the delocalized excitation space. This is determined through the Schmidt decomposition of a mean-field 
+analytic coupling to the rest of the delocalized excitation space. This is determined through the exact Schmidt decomposition of a mean-field 
 response computed throughout the bulk system. This renders the spectra exact in the non-interacting and local excitation limits. 
 Since the method is formulated in terms of a general response vector, it is also not restricted in the type or rank of perturbation 
 operators that it can consider. Furthermore, since the analytic coupling is only defined for a given frequency (rather than all frequencies 
 for DMFT), the entanglement bath for the spectra is compact and exactly represents the coupling defined by the global response function. This 
 allows for large impurity clusters to be treated with small numbers of additional `bath' states, without discretization error in the coupling 
-to the extended system, and direct evaluation of spectra on the real frequency axis. The approach will be demonstrated for the Hubbard model, 
+to the extended system, and allow for direct evaluation of spectra on the real frequency axis. The approach will be demonstrated for the Hubbard model, 
 defined by the Hamiltonian in the site basis as
 \begin{equation}
 H = -t \sum_{\langle ij \rangle, \sigma} (a_{i,\sigma}^{\dagger}a_{j,\sigma} + \text{\textnormal {h.c.}}) + U \sum_i (n_{i,\uparrow} - \frac{1}{2})(n_{i,\downarrow} - \frac{1}{2})  . \label{eqn:hub}
 \end{equation}
 This lattice model encapsulates many of the difficulties in the electronic structure of correlated materials, displaying correlation driven 
 phase transitions in the thermodynamic limit, and is closely representative of many transition metal oxides\cite{Limelette2003}, including qualitative aspects 
-of high-$T_c$ superconductivity\cite{Millis2013,Anderson87}. Where possible, we compare to one-dimensional exact results\cite{Lieb68,Ovchinni1970}, as 
+of high-$T_c$ superconductivity\cite{Anderson87,Sordi2012,Millis2013}. Where possible, we compare to one-dimensional exact results\cite{Lieb68,Ovchinni1970}, as 
 well as large-scale DMFT calculations\cite{Go2009,Kotliar2008}, in addition to demonstrating spectra for the doped system and two-particle Greens functions.
 
 \emph{Method.-} Within the analytic quantum embedding formalism introduced for the ground state with the DMET method (see 
