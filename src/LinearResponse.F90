@@ -779,7 +779,7 @@ module LinearResponse
                 temp_vecc(i) = temp_vecc(i) - dcmplx(HL_Vec(i)*HL_Vec(j),0.0_dp)*RHS(j)
             enddo
         enddo
-        RHS(:) = - temp_vecc(:)
+        RHS(:) = dcmplx(-1.0_dp,0.0_dp) * temp_vecc(:)
         !We now have the RHS
 
         !Check that RHS is orthogonal to the ground state
@@ -1435,7 +1435,7 @@ module LinearResponse
                 do i = 1,nLinearSystem
                     temp_vecc(i) = Overlap(i)*Psi1(i)   !Diagonal terms
                     do j = Overlap_inds(i),Overlap_inds(i+1)-1
-                        temp_vecc(i) = temp_vecc(i) + Overlap(k)*Psi1(Overlap_inds(k))
+                        temp_vecc(i) = temp_vecc(i) + Overlap(j)*Psi1(Overlap_inds(j))
                     enddo
                 enddo
                 !Norm now just dot product
@@ -1461,7 +1461,7 @@ module LinearResponse
                 !RHS again only lives in space of |0>
                 ResponseFn = dcmplx(0.0_dp,0.0_dp)
                 do i = 1,nFCIDet
-                    ResponseFn = ResponseFn + RHS(i)*temp_vecc(i)
+                    ResponseFn = ResponseFn - RHS(i)*temp_vecc(i)
                 enddo
                 
                 write(iunit,"(10G22.10,I8)") Omega,real(ResponseFn),-aimag(ResponseFn), &
