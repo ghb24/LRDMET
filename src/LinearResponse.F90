@@ -5353,14 +5353,14 @@ module LinearResponse
     !Output: iters (number of iterations required)
     !        gmres_info (0 if success)
     !InOut: x (solution / initial guess)
-    subroutine GMRES_Solve(n,RHS,nout,Maxiter,rtol,tPrecond,tGuess,iters,x,err)
+    subroutine GMRES_Solve(n,RHS,nout,Maxiter,rtol,tPrecond,tGuess,iters,x,error)
         implicit none
         integer, intent(in) :: n,nout,Maxiter
         real(dp) :: rtol
         logical, intent(in) :: tGuess,tPrecond
         complex(dp), intent(in) :: RHS(n)
         complex(dp), intent(inout) :: x(n)
-        integer, intent(out) :: iters,err
+        integer, intent(out) :: iters,error
         integer :: i,k,m
         integer :: lwork 
         integer :: icntl(8), irc(8), info(3)
@@ -5560,7 +5560,7 @@ module LinearResponse
 !            write(6,*) work(i)
         enddo
         iters = info(2)
-        err = info(1)
+        error = 0         
 
         !Final error given by rinfo(1)
         deallocate(work)
