@@ -5367,6 +5367,7 @@ module LinearResponse
         integer :: revcom, colx, coly, colz, nbscal, ierr
         complex(dp), allocatable :: work(:)
         real(dp) :: cntl(5),rinfo(2)
+        integer, parameter :: finished = 0
         integer, parameter :: matvec = 1
         integer, parameter :: precondLeft = 2
         integer, parameter :: precondRight = 3
@@ -5523,11 +5524,8 @@ module LinearResponse
 !                do i = 0,nbscal-1
 !                    work(colz+i) = zdotc(n,work(colx+i*n),1,work(coly),1)
 !                enddo
-            else
-                if(info(1).eq.0) then
-!                    write(6,*) "Convergence reached..."
-                    exit
-                endif
+            elseif(revcom.eq.finished) then
+                exit
             endif
         enddo
 
@@ -5546,8 +5544,9 @@ module LinearResponse
             write(6,*) "Minimal workspace required is: ",info(2)
             call stop_all(t_r,'lwork too small for current settings')
         elseif(info(1).eq.-4) then
-            write(6,*) "Max iter: ",Maxiter
-            call stop_all(t_r,'Convergence not achieved in number of iterations allowed')
+            write(6,"(A,I10)") "Max iter: ",Maxiter
+            write(6,"(A,2G20.10)") "Convergence: ",rinfo(:)
+            call warning(t_r,'Convergence not achieved in number of iterations allowed')
         elseif(info(1).eq.-5) then
             call stop_all(t_r,'Preconditioning type not set')
         elseif(info(1).ne.0) then
