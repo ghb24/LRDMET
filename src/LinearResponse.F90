@@ -169,14 +169,12 @@ module LinearResponse
             write(6,"(A,G22.10)") "Maximum iterations for each solution: ",maxminres_iter
         elseif(tGMRES_NonDir) then
             if(tPreCond_MinRes) then
-                call stop_all(t_r,'Preconditioning not yet set up with GMRES solver')
+                write(6,'(A)') "Solving linear system with preconditioned iterative non-direct GMRES algorithm"
             else
                 write(6,'(A)') "Solving linear system with iterative non-direct GMRES algorithm"
             endif
             write(6,"(A,G22.10)") "Tolerance for solution of linear system: ",rtol_LR
             write(6,"(A,G22.10)") "Maximum iterations for each solution: ",maxminres_iter
-        else
-            call stop_all(t_r,"NonDir_Minres or GMRES algorithm must be used with compressed matrices")
         endif
         !umat and tmat for the active space
         OrbPairs = (EmbSize*(EmbSize+1))/2
@@ -1598,22 +1596,19 @@ module LinearResponse
             endif
             write(6,"(A,G22.10)") "Tolerance for solution of linear system: ",rtol_LR
             write(6,"(A,G22.10)") "Maximum iterations for each solution: ",maxminres_iter
-        else
-            if(iSolveLR.eq.1) then
-                write(6,"(A)") "Solving linear system with standard ZGESV linear solver"
-            elseif(iSolveLR.eq.2) then
-                write(6,"(A)") "Solving linear system with advanced ZGELS linear solver"
-            elseif(iSolveLR.eq.3) then
-                write(6,"(A)") "Solving linear system with direct inversion of hamiltonian"
-            elseif(iSolveLR.eq.4) then
-                write(6,"(A)") "Solving linear system via complete diagonalization of hamiltonian"
+        elseif(tGMRES_NonDir) then
+            if(tPreCond_MinRes) then
+                write(6,'(A)') "Solving linear system with preconditioned iterative non-direct GMRES algorithm"
             else
-                call stop_all(t_r,"Linear equation solver unknown")
+                write(6,'(A)') "Solving linear system with iterative non-direct GMRES algorithm"
             endif
+            write(6,"(A,G22.10)") "Tolerance for solution of linear system: ",rtol_LR
+            write(6,"(A,G22.10)") "Maximum iterations for each solution: ",maxminres_iter
+        else
+            call stop_all(t_r,"Require iterative linear equation solver with compressed matrices")
         endif
         if(tLR_ReoptGS) call stop_all(t_r,'Cannot use compressed matrices with reoptimization of ground state currently')
         if(tSC_LR) call stop_all(t_r,'Cannot use compressed matrices with self-consistent greens functions currently')
-        if(.not.tMinRes_NonDir) call stop_all(t_r,'Must use minres solver with compressed matrices')
 
         !umat and tmat for the active space
         OrbPairs = (EmbSize*(EmbSize+1))/2
@@ -1728,6 +1723,9 @@ module LinearResponse
             if(tPrecond_MinRes) then
                 allocate(Precond_Diag(nLinearSystem))
             endif
+        else
+            minres_unit = get_free_unit()
+            open(minres_unit,file='zGMRES.txt',status='unknown',position='append')
         endif
         
         if(tAllImp_LR) then
@@ -2054,7 +2052,7 @@ module LinearResponse
             call set_timer(LR_EC_GF_HBuild)
         
             write(6,*) "Calculating linear response for frequency: ",Omega
-            if(tMinRes_NonDir) write(minres_unit,*) "Iteratively solving for frequency: ",Omega
+            write(minres_unit,*) "Iteratively solving for frequency: ",Omega
 
             !First, find the non-interacting solution expressed in the schmidt basis
             !This will only calculate it over the first impurity site
@@ -2251,28 +2249,33 @@ module LinearResponse
                 !call writevectorcomp(Psi1_p,'Cre_0')
                 zDirMV_Mat_cmprs => LinearSystem_p
                 zDirMV_Mat_cmprs_inds => LinearSystem_p_inds
-                call setup_RHS(nLinearSystem,Cre_0(:,pertsite),RHS)
-                maxminres_iter_ip = int(maxminres_iter,ip)
-                minres_unit_ip = int(minres_unit,ip)
-                nLinearSystem_ip = int(nLinearSystem,ip)
-                if(tPrecond_MinRes) then
-                    call FormPrecond(nLinearSystem)
-                    call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_p, &
-                        itnlim=maxminres_iter_ip,Msolve=zPreCond,istop=info_ip,rtol=rtol_LR,itn=iters_p, &
-                        startguess=tReuse_LS)
-                else
-                    call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_p, &
-                        itnlim=maxminres_iter_ip,istop=info_ip,rtol=rtol_LR,itn=iters_p,startguess=tReuse_LS)
+                if(tMinRes_NonDir) then
+                    call setup_RHS(nLinearSystem,Cre_0(:,pertsite),RHS)
+                    maxminres_iter_ip = int(maxminres_iter,ip)
+                    minres_unit_ip = int(minres_unit,ip)
+                    nLinearSystem_ip = int(nLinearSystem,ip)
+                    if(tPrecond_MinRes) then
+                        call FormPrecond(nLinearSystem)
+                        call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_p, &
+                            itnlim=maxminres_iter_ip,Msolve=zPreCond,istop=info_ip,rtol=rtol_LR,itn=iters_p, &
+                            startguess=tReuse_LS)
+                    else
+                        call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_p, &
+                            itnlim=maxminres_iter_ip,istop=info_ip,rtol=rtol_LR,itn=iters_p,startguess=tReuse_LS)
+                    endif
+                    info = info_ip
+                    if(info.gt.7) write(6,*) "info: ",info
+                    if(info.eq.8) write(6,"(A,I9)") "Linear equation solver hit iteration limit: ",iters_p
+                    if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) then
+                        call stop_all(t_r,'Input matrices to linear solver incorrect')
+                    endif
+                    if(info.gt.11) call stop_all(t_r,'Linear equation solver failed')
+                elseif(tGMRES_NonDir) then
+                    call GMRES_Solve(nLinearSystem,Cre_0(:,pertsite),minres_unit,maxminres_iter,rtol_LR,tPrecond_MinRes,    &
+                        tReuse_LS,iters_p,Psi1_p,info)
                 endif
                 zDirMV_Mat_cmprs => null() 
                 zDirMV_Mat_cmprs_inds => null() 
-                info = info_ip
-                if(info.gt.7) write(6,*) "info: ",info
-                if(info.eq.8) write(6,"(A,I9)") "Linear equation solver hit iteration limit: ",iters_p
-                if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) then
-                    call stop_all(t_r,'Input matrices to linear solver incorrect')
-                endif
-                if(info.gt.11) call stop_all(t_r,'Linear equation solver failed')
                 !call writevectorcomp(Psi1_p,'Psi1_p')
 
                 !Now solve the LR for the hole addition
@@ -2281,29 +2284,34 @@ module LinearResponse
                 enddo
                 zDirMV_Mat_cmprs => LinearSystem_h
                 zDirMV_Mat_cmprs_inds => LinearSystem_h_inds
-                call setup_RHS(nLinearSystem,Ann_0(:,pertsite),RHS)
-                maxminres_iter_ip = int(maxminres_iter,ip)
-                minres_unit_ip = int(minres_unit,ip)
-                nLinearSystem_ip = int(nLinearSystem,ip)
-                if(tPrecond_MinRes) then
-                    call FormPrecond(nLinearSystem)
-                    call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_h, &
-                        itnlim=maxminres_iter_ip,Msolve=zPreCond,istop=info_ip,rtol=rtol_LR,itn=iters_h, &
-                        startguess=tReuse_LS)
-                else
-                    call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_h, &
-                        itnlim=maxminres_iter_ip,istop=info_ip,rtol=rtol_LR,itn=iters_h,startguess=tReuse_LS)
+                if(tMinRes_NonDir) then
+                    call setup_RHS(nLinearSystem,Ann_0(:,pertsite),RHS)
+                    maxminres_iter_ip = int(maxminres_iter,ip)
+                    minres_unit_ip = int(minres_unit,ip)
+                    nLinearSystem_ip = int(nLinearSystem,ip)
+                    if(tPrecond_MinRes) then
+                        call FormPrecond(nLinearSystem)
+                        call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_h, &
+                            itnlim=maxminres_iter_ip,Msolve=zPreCond,istop=info_ip,rtol=rtol_LR,itn=iters_h, &
+                            startguess=tReuse_LS)
+                    else
+                        call MinResQLP(n=nLinearSystem_ip,Aprod=zDirMV,b=RHS,nout=minres_unit_ip,x=Psi1_h, &
+                            itnlim=maxminres_iter_ip,istop=info_ip,rtol=rtol_LR,itn=iters_h,startguess=tReuse_LS)
+                    endif
+                    info = info_ip
+                    if(info.gt.7) write(6,*) "info: ",info
+                    if(info.eq.8) write(6,"(A,I9)") "Linear equation solver hit iteration limit: ",iters_h
+                    if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) then
+                        call stop_all(t_r,'Input matrices to linear solver incorrect')
+                    endif
+                    if(info.gt.11) call stop_all(t_r,'Linear equation solver failed')
+                elseif(tGMRES_NonDir) then
+                    call GMRES_Solve(nLinearSystem,Ann_0(:,pertsite),minres_unit,maxminres_iter,rtol_LR,tPrecond_MinRes,    &
+                        tReuse_LS,iters_h,Psi1_h,info)
                 endif
-                info = info_ip
+        
                 zDirMV_Mat_cmprs => null()
                 zDirMV_Mat_cmprs_inds => null()
-                if(info.gt.7) write(6,*) "info: ",info
-                if(info.eq.8) write(6,"(A,I9)") "Linear equation solver hit iteration limit: ",iters_h
-                if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) then
-                    call stop_all(t_r,'Input matrices to linear solver incorrect')
-                endif
-                if(info.gt.11) call stop_all(t_r,'Linear equation solver failed')
-        
                 !Find normalization of first-order wavefunctions
                 dNorm_p(pertsite) = znrm2(nLinearSystem,Psi1_p,1)
                 dNorm_h(pertsite) = znrm2(nLinearSystem,Psi1_h,1)
@@ -2384,10 +2392,10 @@ module LinearResponse
         deallocate(ni_lr_Mat,SchmidtPertGF_Cre_Bra,SchmidtPertGF_Ann_Bra)
         close(iunit)
         if(tMinRes_NonDir) then
-            close(minres_unit)
             deallocate(RHS)
             if(tPrecond_MinRes) deallocate(Precond_Diag)
         endif
+        if(tGMRES_NonDir.or.tMinRes_NonDir) close(minres_unit)
 
         !Deallocate determinant lists
         if(allocated(FCIDetList)) deallocate(FCIDetList)
@@ -5387,8 +5395,7 @@ module LinearResponse
         icntl(7) = Maxiter
         
         if(tPrecond) then
-            !TODO: Implement preconditioning
-            call stop_all(t_r,'George! Implement preconditioning!')
+            icntl(4) = 1    !Left preconditioning only
         else
             icntl(4) = 0
         endif
@@ -5481,8 +5488,27 @@ module LinearResponse
             elseif(revcom.eq.precondLeft) then
                 !Perform left preconditioning, i.e.
                 !work(colz:colz+n-1)  <--  M_1^{-1} * work(colx:colx+n-1)
-                !TODO: Implement properly!
-                work(colz:colz+n-1) = work(colx:colx+n-1)
+                !work(colz:colz+n-1) = work(colx:colx+n-1)
+                !Assume that preconditioner is just the diagonal (Jacobi preconditioning). Probably not optimal.
+
+                if(tCompressedMats) then
+                    do i = 1,n
+                        if(abs(zDirMV_Mat_cmprs(i)).gt.1.0e-7_dp) then
+                            work(colz+i-1) = work(colx+i-1)/zDirMV_Mat_cmprs(i)
+                        else
+                            work(colz+i-1) = work(colx+i-1)*1.0e7_dp
+                        endif
+                    enddo
+                else
+                    do i = 1,n
+                        if(abs(zDirMV_Mat(i,i)).gt.1.0e-7_dp) then
+                            work(colz+i-1) = work(colx+i-1)/zDirMV_Mat(i,i)
+                        else
+                            work(colz+i-1) = work(colx+i-1)*1.0e7_dp
+                        endif
+                    enddo
+                endif
+
             elseif(revcom.eq.precondRight) then
                 !Perform right preconditioning, i.e.
                 !work(colz:colz+n-1)  <--  M_2^{-1} * work(colx:colx+n-1)

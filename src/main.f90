@@ -693,7 +693,7 @@ Program RealHub
         if(tMinRes_NonDir.and.tGMRes_NonDir) then
             call stop_all(t_r,'Cannot specify both MinRes and GMRes algorithms')
         endif
-        if(tPrecond_MinRes.and.(.not.tMinRes_NonDir)) then
+        if(tPrecond_MinRes.and.(.not.(tMinRes_NonDir.or.tGMRES_NonDir))) then
             call stop_all(t_r,'Cannot precondition linear response matrix if not solving iteratively!')
         endif
         if(tDDResponse.and.tSC_LR) then
@@ -742,6 +742,9 @@ Program RealHub
         endif
         if((.not.(tMinRes_NonDir.or.tGMRES_NonDir)).and.tLR_DMET.and.tCompressedMats) then
             call stop_all(t_r,'Can only use MinRes/GMRES solver for MR response with compressed matrices')
+        endif
+        if(tGMRES_NonDir.and..not.tCompressedMats.and.tLR_DMET) then
+            call stop_all(t_r,'Can only use GMRES solver with compressed matrices')
         endif
         if(tDDResponse.and.tRemoveGSFromH.and.tCompressedMats) then
             call stop_all(t_r,'REMOVE_GS_FROM_H option cannot be used with compressed matrix DD response')
