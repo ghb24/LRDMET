@@ -68,6 +68,8 @@ LINEAR_RESPONSE
     REUSE_FIRSTORDER_PSI
 (Use preconditioning with iterative linear system solver)
     PRECONDITION_LR
+(The number of Kryloc subspace vectors to store before restarting in the GMRES algorithm)
+    NKRYLOV 100
 (Calculate non-interacting response functions with HF orbitals)
     NONINT
 (Calculate TDA response functions with HF orbitals)

@@ -8,8 +8,8 @@ libs = -lacml
 module_flag = -module
 
 [opt]
-#fflags = -O3 -ip -ipo
-fflags = -O3 -ip -ipo -integer-size 64
+#fflags = -O3 -ip 
+fflags = -O3 -ip -integer-size 64
 #cxxflags = -O3
 
 [dbg]

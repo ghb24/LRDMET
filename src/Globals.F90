@@ -64,6 +64,7 @@ module Globals
     logical :: tMinRes_NonDir   !Solve any systems of linear equations with a non-direct linear solver
     logical :: tGMRes_NonDir    !Solve any systems of linear equations with a non-direct GMRES linear solver
     logical :: tPrecond_MinRes  !Apply preconditioning to the solution of the linear equations
+    integer :: nKrylov          !The number of krylov vectors to store for the GMRES algorithm
     logical :: tReuse_LS        ! Whether or not to reuse the previous frequency calculation for the solution of the linear equation
     real(dp) :: rtol_LR         !Tolerance for exit criterion for linear solver
     real(dp) :: Lambda=1.0_dp          !Strength of perturbation

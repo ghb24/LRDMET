@@ -175,6 +175,7 @@ module LinearResponse
             endif
             write(6,"(A,G22.10)") "Tolerance for solution of linear system: ",rtol_LR
             write(6,"(A,G22.10)") "Maximum iterations for each solution: ",maxminres_iter
+            write(6,"(A,I8)") "Number of krylov subspace vectors to store: ",nKrylov
         endif
         !umat and tmat for the active space
         OrbPairs = (EmbSize*(EmbSize+1))/2
@@ -1604,6 +1605,7 @@ module LinearResponse
             endif
             write(6,"(A,G22.10)") "Tolerance for solution of linear system: ",rtol_LR
             write(6,"(A,G22.10)") "Maximum iterations for each solution: ",maxminres_iter
+            write(6,"(A,I8)") "Number of krylov subspace vectors to store: ",nKrylov
         else
             call stop_all(t_r,"Require iterative linear equation solver with compressed matrices")
         endif
@@ -5374,7 +5376,7 @@ module LinearResponse
         integer, parameter :: dotprod = 4
         character(len=*), parameter :: t_r='GMRES_Solve'
 
-        m = 100  !This is the number of krylov vectors to store before restarting. Affects memory
+        m = nKrylov  !This is the number of krylov vectors to store before restarting. Affects memory
 
         !Initialise control parameters to default values (note zero unit numbers means supress output)
         call init_zgmres(icntl,cntl)

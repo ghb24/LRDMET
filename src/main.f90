@@ -88,6 +88,7 @@ Program RealHub
         tRemoveGSFromH = .false.
         tMinRes_NonDir = .false.
         tPreCond_MinRes = .false.
+        nKrylov = 100
         rtol_LR = 1.0e-8_dp
         tReuse_LS = .false.
         tSC_LR = .false.
@@ -556,6 +557,8 @@ Program RealHub
                 call stop_all(t_r,'The STORE_HERMIT_HAMIL option has been depreciated since it will not improve efficiency')
             case("PRECONDITION_LR")
                 tPreCond_MinRes = .true.
+            case("NKRYLOV")
+                call readi(nKrylov)
             case("FREQ")
                 call readf(Start_Omega)
                 call readf(End_Omega)
@@ -608,6 +611,7 @@ Program RealHub
                 write(6,"(A)") "MINRES_MAXITER"
                 write(6,"(A)") "PRECONDITION_LR"
                 write(6,"(A)") "REUSE_FIRSTORDER_PSI"
+                write(6,"(A)") "NKRYLOV"
                 write(6,"(A)") "STORE_HERMIT_HAMIL"
                 write(6,"(A)") "NONINT"
                 write(6,"(A)") "TDA"
