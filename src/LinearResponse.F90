@@ -1565,14 +1565,14 @@ module LinearResponse
         integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,ierr,info,iunit,nCore
         integer :: nLinearSystem,nOrbs,nVirt,OrbPairs,tempK,UMatSize,VIndex,VirtStart,VirtEnd,ind_p,ind_h
         integer :: orbdum(1),nLinearSystem_h,nGSSpace,Np1GSInd,Nm1GSInd,minres_unit
-        integer :: maxminres_iter,nImp_GF,pertsite
+        integer :: maxminres_iter,nImp_GF,pertsite,isize,iunit_tmp
         integer :: Nmax_N,Nmax_Nm1b,Nmax_Np1,Nmax_Coup_Create,Nmax_Coup_Ann,Nmax_Lin_p,Nmax_Lin_h,i_Ann
         integer(ip) :: nLinearSystem_ip,minres_unit_ip,info_ip,maxminres_iter_ip,iters_p,iters_h
         real(dp) :: Omega,GFChemPot,mu,SpectralWeight,Prev_Spec,AvdNorm_p,AvdNorm_h
         real(dp) :: Diff_GF
         complex(dp) :: ResponseFn,tempel,ni_lr,ni_lr_p,ni_lr_h,AvResFn_p,AvResFn_h
         complex(dp) :: zdotc,VNorm,CNorm,matel
-        logical :: tParity,tFirst
+        logical :: tParity,tFirst,texist
         character(64) :: filename,filename2
         character(len=*), parameter :: t_r='NonIntExCont_TDA_MCLR_Charged_Cmprs'
 
@@ -1647,9 +1647,30 @@ module LinearResponse
         if(nNp1FCIDet.ne.nNp1bFCIDet) call stop_all(t_r,'Cannot deal with open shell systems')
         write(6,"(A)") "Computing size of compressed Hamiltonian matrices"
         call flush(6)
-        call CountSizeCompMat(FCIDetList,Elec,nFCIDet,Nmax_N,FCIBitList)
+        if(tReadMats) then
+            inquire(file='CompressHam_N',exist=texist)
+            if(texist) then
+                write(6,*) "N-electron hamiltonian found"
+                iunit_tmp = get_free_unit()
+                open(iunit_tmp,file='CompressHam_N',status='old')
+                read(iunit_tmp,*) isize
+                Nmax_N = isize
+                rewind(iunit_tmp)
+                close(iunit_tmp)
+                write(6,*) "Read in NMAX_N = ",Nmax_N
+            else
+                call CountSizeCompMat(FCIDetList,Elec,nFCIDet,Nmax_N,FCIBitList)
+            endif
+        else
+            call CountSizeCompMat(FCIDetList,Elec,nFCIDet,Nmax_N,FCIBitList)
+        endif
+        !Nmax_N = 22275793
         call CountSizeCompMat(Nm1bFCIDetList,Elec-1,nNm1bFCIDet,Nmax_Nm1b,Nm1bBitList)
+!        Nmax_Nm1b = 18838522
+!        write(6,*) "ASSUMING NMAX_Nm1b = ",Nmax_Nm1b
         call CountSizeCompMat(Np1FCIDetList,Elec+1,nNp1FCIDet,Nmax_Np1,Np1BitList)
+        !Nmax_Np1 = 18838522
+        !write(6,*) "ASSUMING NMAX_N = ",Nmax_Np1
         write(6,"(A,F12.5,A)") "Memory required for N-electron hamil: ",(real(Nmax_N,dp)*2)*ComptoMb, " Mb"
         write(6,"(A,F12.5,A)") "Memory required for N+1-electron hamil: ",(real(Nmax_Nm1b,dp)*2)*ComptoMb, " Mb"
         write(6,"(A,F12.5,A)") "Memory required for N-1-electron hamil: ",(real(Nmax_Np1,dp)*2)*ComptoMb, " Mb"
@@ -4772,6 +4793,7 @@ module LinearResponse
         use DetToolsData
         use DetTools, only : GetHElement_comp
         use solvers, only: StoreCompMat_comp
+        use utils, only: get_free_unit
         implicit none
         integer, intent(in) :: nElec
         integer, intent(in) :: Nmax_N,Nmax_Np1,Nmax_Nm1b
@@ -4784,8 +4806,9 @@ module LinearResponse
         integer, intent(out), optional :: NHam_inds(Nmax_N)
         integer, intent(out), optional :: Np1Ham_inds(Nmax_Np1)
         integer, intent(out), optional :: Nm1bHam_inds(Nmax_Nm1b)
-        integer :: i,j
-        logical :: tCmprsMats
+        real(dp) :: rtmp
+        integer :: i,j,iSize,iunit_tmp
+        logical :: tCmprsMats,tExist
         character(len=*), parameter :: t_r='Fill_N_Np1_Nm1b_FCIHam'
 
         if(present(NHam)) then
@@ -4803,7 +4826,26 @@ module LinearResponse
             Np1Ham_inds(:) = 0
             Nm1bHam_inds(:) = 0
 
-            call StoreCompMat_comp(FCIDetList,nElec,nFCIDet,Nmax_N,NHam_cmps,NHam_inds,FCIBitList)
+            if(tReadMats) then
+                inquire(file='CompressHam_N',exist=texist)
+                if(texist) then
+                    write(6,*) "N-electron hamiltonian found"
+                    iunit_tmp = get_free_unit()
+                    open(iunit_tmp,file='CompressHam_N',status='old')
+                    rewind(iunit_tmp)
+                    read(iunit_tmp,*) isize
+                    if(isize.gt.Nmax_N) call stop_all(t_r,'Error here')
+                    do i = 1,iSize
+                        read(iunit_tmp,*) rtmp,NHam_inds(i)
+                        NHam_cmps(i) = dcmplx(rtmp,0.0_dp)
+                    enddo
+                    close(iunit_tmp)
+                else
+                    call StoreCompMat_comp(FCIDetList,nElec,nFCIDet,Nmax_N,NHam_cmps,NHam_inds,FCIBitList)
+                endif
+            else
+                call StoreCompMat_comp(FCIDetList,nElec,nFCIDet,Nmax_N,NHam_cmps,NHam_inds,FCIBitList)
+            endif
             call StoreCompMat_comp(Np1FCIDetList,nElec+1,nNp1FCIDet,Nmax_Np1,Np1Ham_cmps,Np1Ham_inds,Np1BitList)
             call StoreCompMat_comp(Nm1bFCIDetList,nElec-1,nNm1bFCIDet,Nmax_Nm1b,Nm1bHam_cmps,Nm1bHam_inds,Nm1bBitList)
         else

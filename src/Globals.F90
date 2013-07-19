@@ -77,6 +77,7 @@ module Globals
                                 !interacting case to stop the electrons fleeing the impurity site.
 
     real(dp) :: HFEnergy    !Calculated HF energy
+    logical :: tReadMats, tWriteMats    !Options for reading/writing the compressed matrices (N-electron only)
 
     integer , allocatable :: TD_Imp_Lat(:,:),TD_Imp_Phase(:,:)  !Parameterization of the orbital space for 2D hubbard
     integer , allocatable :: ImpSites(:)    !The list of site indices for the impurity sites

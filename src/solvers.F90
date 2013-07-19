@@ -887,12 +887,14 @@ module solvers
         use DetToolsData
         use Davidson, only: Real_NonDir_Davidson
         use DetTools, only: GetHElement,umatind,GenDets
+        use utils, only: get_free_unit
         implicit none
         logical, intent(in) :: tCreate2RDM
         integer :: OrbPairs,UMatSize,Nmax,ierr
         real(dp), allocatable :: work(:),CompressHam(:)
         integer, allocatable :: IndexHam(:)
-        integer :: lwork,info,i,j
+        integer :: lwork,info,i,j,iSize,iunit_tmp
+        logical :: texist
         character(len=*), parameter :: t_r='CompleteDiag'
 
         !First, allocate and fill the umat and tmat for the FCI space
@@ -934,14 +936,34 @@ module solvers
         write(6,"(A,I14)") "Number of determinants in FCI space: ",nFCIDet
         if(tCompressedMats) then
             write(6,"(A)") "Compressing hamiltonian matrix..."
-            call CountSizeCompMat(FCIDetList(:,:),Elec,nFCIDet,Nmax,FCIBitList(:))
+            if(tReadMats) then
+                inquire(file='CompressHam_N',exist=texist)
+                iunit_tmp = get_free_unit()
+                open(iunit_tmp,file='CompressHam_N',status='old')
+                read(iunit_tmp,*) isize
+                Nmax = isize
+            else
+                call CountSizeCompMat(FCIDetList(:,:),Elec,nFCIDet,Nmax,FCIBitList(:))
+            endif
             write(6,"(A,2I14)") "Size of Compressed/Full Hamiltonians: ",Nmax,nFCIDet**2
             write(6,"(A,F14.6,A)") "Allocating memory for compressed hamiltonian: ",real(Nmax*16,dp)/1048576.0_dp," Mb"
             write(6,"(A,F14.6,A)") "Saving in compression of: ",(real(nFCIDet**2 - Nmax*2,dp))*8/1048576.0_dp," Mb"
             allocate(CompressHam(Nmax),stat=ierr)
             allocate(IndexHam(Nmax),stat=ierr)
             if(ierr.ne.0) call stop_all(t_r,'Allocation failed')
-            call StoreCompMat(FCIDetList(:,:),Elec,nFCIDet,Nmax,CompressHam,IndexHam,FCIBitList(:))
+            if(tReadMats) then
+                if(texist) then
+                    if(isize.ne.Nmax) call stop_all(t_r,'Error here')
+                    do i = 1,iSize
+                        read(iunit_tmp,*) CompressHam(i),IndexHam(i)
+                    enddo
+                    close(iunit_tmp)
+                else
+                    call StoreCompMat(FCIDetList(:,:),Elec,nFCIDet,Nmax,CompressHam,IndexHam,FCIBitList(:))
+                endif
+            else
+                call StoreCompMat(FCIDetList(:,:),Elec,nFCIDet,Nmax,CompressHam,IndexHam,FCIBitList(:))
+            endif
         else
             write(6,"(A,F14.6,A)") "Allocating memory for the hamiltonian: ",real((nFCIDet**2)*8,dp)/1048576.0_dp," Mb"
             if(allocated(FullHamil)) deallocate(FullHamil)
@@ -963,6 +985,16 @@ module solvers
             write(6,*) "Solving for ground state with non-direct davidson diagonalizer..."
             if(tCompressedMats) then
                 call Real_NonDir_Davidson(nFCIDet,HL_Energy,HL_Vec,.false.,Nmax,CompressMat=CompressHam,IndexMat=IndexHam)
+                if(tWriteMats) then
+                    write(6,*) "Writing out matrices"
+                    iunit_tmp = get_free_unit()
+                    open(iunit_tmp,file='CompressHam_N',status='unknown')
+                    write(iunit_tmp,*) Nmax
+                    do i = 1,Nmax
+                        write(iunit_tmp,*) CompressHam(i),IndexHam(i)
+                    enddo
+                    close(iunit_tmp)
+                endif
                 deallocate(CompressHam,IndexHam)
             else
                 call Real_NonDir_Davidson(nFCIDet,HL_Energy,HL_Vec,.false.,1,Mat=FullHamil)
@@ -996,7 +1028,34 @@ module solvers
         allocate(HL_1RDM(EmbSize,EmbSize))
         HL_1RDM(:,:) = 0.0_dp
 
-        call FindFull1RDM(1,1,.true.,HL_1RDM)
+        if(tReadMats) then
+            inquire(file='RDM_N',exist=texist)
+            if(texist) then
+                iunit_tmp = get_free_unit()
+                open(iunit_tmp,file='RDM_N',status='old')
+                do i = 1,EmbSize
+                    do j = 1,EmbSize
+                        read(iunit_tmp,*) HL_1RDM(i,j)
+                    enddo
+                enddo
+                close(iunit_tmp)
+            else
+                call FindFull1RDM(1,1,.true.,HL_1RDM)
+            endif
+        else
+            call FindFull1RDM(1,1,.true.,HL_1RDM)
+        endif
+        if(tWriteMats) then
+            write(6,*) "Writing out RDM"
+            iunit_tmp = get_free_unit()
+            open(iunit_tmp,file='RDM_N',status='unknown')
+            do i = 1,EmbSize
+                do j = 1,EmbSize
+                    write(iunit_tmp,*) HL_1RDM(i,j)
+                enddo
+            enddo
+            close(iunit_tmp)
+        endif
 
         if(tWriteOut) call writematrix(HL_1RDM,'HL_1RDM',.true.)
 

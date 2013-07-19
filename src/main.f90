@@ -59,6 +59,8 @@ Program RealHub
         tCheck = .false.
         tCompressedMats = .false.
         CompressThresh = 1.0e-10_dp !Integral threshold for compressed matrices
+        tReadMats = .false.
+        tWriteMats = .false.
 
         !General LR options
         Start_Omega = 0.0_dp
@@ -424,6 +426,10 @@ Program RealHub
                     !Optional threshold argument
                     call readf(CompressThresh)
                 endif
+            case("READCMPRSMATS")
+                tReadMats = .true.
+            case("WRITECMPRSMATS")
+                tWriteMats = .true.
             case("COMPLETE_DIAG")
                 tCompleteDiag = .true.
             case("DAVIDSON")
@@ -480,6 +486,8 @@ Program RealHub
                 write(6,"(A)") "HALF_FILL"
                 write(6,"(A)") "FILLING"
                 write(6,"(A)") "COMPRESSMATS"
+                write(6,"(A)") "READCMPRSMATS"
+                write(6,"(A)") "WRITECMPRSMATS"
                 write(6,"(A)") "COMPLETE_DIAG"
                 write(6,"(A)") "DAVIDSON"
                 write(6,"(A)") "FCIQMC"
@@ -764,6 +772,12 @@ Program RealHub
         endif
         if(tDDResponse.and.tProjectOutNull.and.tCompressedMats) then
             call stop_all(t_r,'NON_NULL option cannot be used with compressed matrix DD response')
+        endif
+        if(tReadMats.and..not.tCompressedMats) then
+            call stop_all(t_r,'Cannot read matrices if not compressing them')
+        endif
+        if(tWriteMats.and..not.tCompressedMats) then
+            call stop_all(t_r,'Cannot write matrices if not if compressed form')
         endif
 
 
