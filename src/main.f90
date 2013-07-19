@@ -781,9 +781,9 @@ Program RealHub
         if(tWriteMats.and..not.tCompressedMats) then
             call stop_all(t_r,'Cannot write matrices if not if compressed form')
         endif
-        if(tUHF.and..not.tReadSystem) then
-            call stop_all(t_r,'UHF currently only working with systems which are read in')
-        endif
+!        if(tUHF.and..not.tReadSystem) then
+!            call stop_all(t_r,'UHF currently only working with systems which are read in')
+!        endif
         if(tUHF.and..not.(tCompleteDiag.or.tNonDirDavidson)) then
             call stop_all(t_r,'Cannot currently solve UHF impurity problem without complete or non-direct davidson solvers')
         endif

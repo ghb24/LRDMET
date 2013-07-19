@@ -31,18 +31,19 @@ module solvers
         character(len=*), parameter :: t_r="SolveSystem"
 
         !Calculate the number of electrons in the embedded system 
+        write(6,"(A,I5)") "Number of electrons in full system: ",NEl
         Emb_nElec = 0.0_dp
         do i=1,EmbSize
             Emb_nElec = Emb_nElec + Emb_MF_DM(i,i)
         enddo
         if(tUHF) then
+            write(6,"(A,F10.7)") "Number of electrons in alpha spin channel: ",Emb_nElec
             do i=1,EmbSize
                 Emb_nElec = Emb_nElec + Emb_MF_DM_b(i,i)
             enddo
         endif
-        write(6,"(A,I5)") "Number of electrons in full system: ",NEl
         Elec = nint(Emb_nElec)
-        write(6,"(A,F10.7,I5)") "Number of electrons in embedded system: ",Emb_nElec,Elec
+        write(6,"(A,F10.7,I5)") "Number of total electrons in embedded system: ",Emb_nElec,Elec
 
         if(tCompleteDiag.or.tNonDirDavidson) then
             !Do a complete diagonalization, or solve with in-built non-direct davidson diagonalizer
@@ -958,6 +959,7 @@ module solvers
             do i=1,nFCIDet
                 do j=1,nFCIDet
                     call GetHElement(FCIDetList(:,i),FCIDetList(:,j),Elec,FullHamil(i,j))
+                    !write(6,*) i,j,FullHamil(i,j)
                 enddo
             enddo
         endif
@@ -1090,7 +1092,12 @@ module solvers
         UMat(:) = zero
         if(tAnderson) then
             umat(umatind(1,1,1,1)) = U
-            if(tUHF) umat(umatind(2,2,2,2)) = U
+            if(tUHF) then
+                !mixed spin
+                umat(umatind(2,2,2,2)) = U
+                umat(umatind(1,2,1,2)) = U
+                umat(umatind(2,1,2,1)) = U
+            endif
         else
             do i=1,nImp
                 umat(umatind(i,i,i,i)) = U
@@ -1098,6 +1105,11 @@ module solvers
             if(tUHF) then
                 do i = nImp+1,nImp*2
                     umat(umatind(i,i,i,i)) = U
+                enddo
+                do i = 1,nImp*2,2
+                    !abab and baba spins
+                    umat(umatind(i,i+1,i,i+1)) = U
+                    umat(umatind(i+1,i,i+1,i)) = U
                 enddo
             endif
         endif

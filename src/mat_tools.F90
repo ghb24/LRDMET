@@ -1095,7 +1095,7 @@ module mat_tools
         integer, intent(in) :: it
         real(dp), allocatable :: fock(:,:),OccOrbs(:,:),fock_b(:,:)
         integer :: iFirst,iLast,i
-        real(dp) :: ThrDeg
+        real(dp) :: ThrDeg,Occupancy
         !complex(dp), allocatable :: k_ham(:,:)
         character(len=*), parameter :: t_r="run_hf"
 
@@ -1162,18 +1162,26 @@ module mat_tools
             endif
         enddo
 
+        if(tUHF) then
+            Occupancy = one
+        else
+            Occupancy = 2.0_dp
+        endif
+
         !Now calculate the density matrix from the calculation based on double occupancy of the lowest lying nOcc orbitals
         !First, extract the occupied orbitals. Since eigenvalues are ordered in increasing order, these will be the first nOcc
         allocate(OccOrbs(nSites,nOcc))
         OccOrbs(:,:) = HFOrbs(:,1:nOcc)
         !Now construct the density matrix in the original AO basis. The eigenvectors are given as AO x MO, so we want to contract out the
         !MO contributions in order to get the 1DM in the AO basis.
-        call DGEMM('N','T',nSites,nSites,nOcc,2.0_dp,OccOrbs,nSites,OccOrbs,nSites,0.0_dp,MeanFieldDM,nSites)
+        call DGEMM('N','T',nSites,nSites,nOcc,Occupancy,OccOrbs,nSites,OccOrbs,nSites,0.0_dp,MeanFieldDM,nSites)
 
-        OccOrbs(:,:) = HFOrbs_b(:,1:nOcc)
-        !Now construct the density matrix in the original AO basis. The eigenvectors are given as AO x MO, so we want to contract out the
-        !MO contributions in order to get the 1DM in the AO basis.
-        call DGEMM('N','T',nSites,nSites,nOcc,1.0_dp,OccOrbs,nSites,OccOrbs,nSites,0.0_dp,MeanFieldDM_b,nSites)
+        if(tUHF) then
+            OccOrbs(:,:) = HFOrbs_b(:,1:nOcc)
+            !Now construct the density matrix in the original AO basis. The eigenvectors are given as AO x MO, so we want to contract out the
+            !MO contributions in order to get the 1DM in the AO basis.
+            call DGEMM('N','T',nSites,nSites,nOcc,Occupancy,OccOrbs,nSites,OccOrbs,nSites,0.0_dp,MeanFieldDM_b,nSites)
+        endif
 
 
         ChemPot = (HFEnergies(nOcc) + HFEnergies(nOcc+1))/2.0_dp  !Chemical potential is half way between HOMO and LUMO

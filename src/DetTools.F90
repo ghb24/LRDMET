@@ -486,6 +486,7 @@ module DetTools
         do i=1,NEl
             hel = hel + tmat(id(i),id(i))
         enddo
+!        write(6,*) 'sltcnd0: ',hel,id(:)
 
         do i=1,nel-1
             do j=i+1,nel
@@ -676,7 +677,7 @@ module DetTools
 
     end function umatind
 
-    !In physical notation and spatial orbitals
+    !In physical notation and spatial orbitals (unless tUHF)
     pure function umatel(i,j,k,l) result(hel)
         use const
         use DetToolsData, only: UMat
