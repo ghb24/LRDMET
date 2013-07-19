@@ -33,6 +33,10 @@ MODEL
     NONDIR_DAVIDSON
 (Compress matrices for nondir_davidson solver with optional threshold for matrix elements)
     COMPRESSMATS <THRESH>
+(Read compressed N-electron matrices from disk)
+    READCMPRSMATS
+(Write compressed N-electron matrices to disk)
+    WRITECMPRSMATS
 (Impurity solver is non-direct davidson diagonalizer via call to 'fci' code)
     DAVIDSON
 (Impurity solver is FCIQMC via call to 'neci' code)
