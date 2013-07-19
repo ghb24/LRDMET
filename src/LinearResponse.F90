@@ -8404,9 +8404,9 @@ module LinearResponse
         endif
 
         allocate(HFPertBasis(nSites,nSites))
-        HFPertBasis(:,:) = dcmplx(0.0_dp,0.0_dp)
+        HFPertBasis(:,:) = zzero 
 
-        ni_lr = dcmplx(0.0_dp,0.0_dp)
+        ni_lr = zzero 
 
         !Assume perturbation is local to the first impurity site (pertsite = 1).
         if(pertsite.ne.1) call stop_all(t_r,'Perturbation is not local to the impurity site')
@@ -8452,10 +8452,10 @@ module LinearResponse
         if(allocated(SchmidtPert)) deallocate(SchmidtPert)
         allocate(SchmidtPert(nSites,nSites))
         !call DGEMM('T','N',nSites,nSites,nSites,dcmplx(1.0_dp,0.0_dp),HFtoSchmidtTransform,nSites,HFPertBasis,nSites,0.0_dp,temp,nSites)
-        call ZGEMM('T','N',nSites,nSites,nSites,dcmplx(1.0_dp,0.0_dp),C_HFtoSTrans,nSites, &
-            HFPertBasis,nSites,dcmplx(0.0_dp,0.0_dp),temp,nSites)
-        call ZGEMM('N','N',nSites,nSites,nSites,dcmplx(1.0_dp,0.0_dp),temp,nSites, &
-            C_HFtoSTrans,nSites,dcmplx(0.0_dp,0.0_dp),SchmidtPert,nSites)
+        call ZGEMM('T','N',nSites,nSites,nSites,zone,C_HFtoSTrans,nSites, &
+            HFPertBasis,nSites,zzero,temp,nSites)
+        call ZGEMM('N','N',nSites,nSites,nSites,zone,temp,nSites, &
+            C_HFtoSTrans,nSites,zzero,SchmidtPert,nSites)
         deallocate(temp,HFPertBasis,C_HFtoSTrans)
 
         !SchmidtPert is now the perturbation in the schmidt basis
