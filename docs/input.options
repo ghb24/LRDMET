@@ -5,6 +5,8 @@ MODEL
     SITES   24 1
 (Number of electrons to include in the entire system)
     FILLING 24
+(Unrestricted mean-field calculation for (anti-)ferromagnetic phase solutions)
+    UHF
 (List of U values to consider)
     U_VALS 0.0 1.5 4.0 10.0
 (Range of U values to consider (Start End Step) Step can be negative to ramp down in U)
@@ -13,8 +15,6 @@ MODEL
     READ_CORRPOT CORRPOT_FILE
 (Use previous U converged correlation potential when starting next U value)
     REUSE_CORRPOT
-(Invert the correlation potential as it is tiled through the mean-field space)
-    FLIP_CORRPOT_TILING
 (Periodic boundary conditions)
     PBC
 (Anti-periodic boundary conditions)

@@ -182,6 +182,7 @@ module mat_tools
                 h0(1,nSites) = -t
                 h0(nSites,1) = -t
             endif
+
         elseif(LatticeDim.eq.2) then
 
             do site = 0,nSites-1
@@ -236,6 +237,12 @@ module mat_tools
         else
             call stop_all(t_r,'Higher dimensional models not coded up')
         endif
+
+        if(tUHF) then
+            !TODO: THIS IS JUST FOR TESTING!!
+            h0_b(:,:) = h0(:,:)
+        endif
+
 
     end subroutine make_hop_mat
 
@@ -512,14 +519,16 @@ module mat_tools
     !Add the local potential striped across the core hamiltonian 
     !(only possible with translational invariance)
     !If tAdd, then the correlation potential is added to the core potential, otherwise it is subtracted
-    subroutine add_localpot(core,core_v,CorrPot,tAdd)
+    subroutine add_localpot(core,core_v,CorrPot,tAdd,core_b,core_v_b,CorrPot_b)
         implicit none
         real(dp) , intent(in) :: core(nSites,nSites)
         real(dp) , intent(out) :: core_v(nSites,nSites)
         real(dp) , intent(in) :: CorrPot(nImp,nImp)
         logical , intent(in), optional :: tAdd
+        real(dp) , intent(in), optional :: core_b(nSites,nSites)
+        real(dp) , intent(out), optional :: core_v_b(nSites,nSites)
+        real(dp) , intent(in), optional :: CorrPot_b(nImp,nImp)
         real(dp), allocatable :: temp(:,:)
-        real(dp) :: CorrPot_Flip(nImp,nImp)
         integer :: i,j,k,i_ind,j_ind,a,b
         logical :: tAdd_
         character(len=*) , parameter :: t_r='add_localpot'
@@ -529,6 +538,11 @@ module mat_tools
         endif
             
         core_v(:,:) = 0.0_dp
+        if(tUHF) then
+            if(.not.(present(core_b).and.present(core_v_b).and.present(CorrPot_b))) then
+                call stop_all(t_r,'If using UHF, should be passing these through')
+            endif
+        endif
 
         if(present(tAdd)) then
             tAdd_ = tAdd
@@ -536,42 +550,18 @@ module mat_tools
             tAdd_ = .true.
         endif
 
-        if(tFlipUTiling) then
-            write(6,*) "Flipping correlation potential when tiling mean-field hamiltonian"
-            CorrPot_Flip(:,:) = 0.0_dp
-            do i=1,nImp
-                do j=1,nImp
-                    j_ind = nImp - j + 1
-                    i_ind = nImp - i + 1
-                    CorrPot_Flip(j_ind,i_ind) = CorrPot(i,j)
-                enddo
-            enddo
-        endif
-
         if(LatticeDim.eq.1) then
             !Construct new hamiltonian which is block diagonal in the local potential
             do k=0,(nSites/nImp)-1
-                if(tFlipUTiling.and.(mod(k,2).eq.1)) then
-                    do i=1,nImp
-                        do j=1,nImp
-                            if(tAdd_) then
-                                core_v((k*nImp)+i,(k*nImp)+j)=CorrPot_Flip(i,j)
-                            else
-                                core_v((k*nImp)+i,(k*nImp)+j)=-CorrPot_Flip(i,j)
-                            endif
-                        enddo
+                do i=1,nImp
+                    do j=1,nImp
+                        if(tAdd_) then
+                            core_v((k*nImp)+i,(k*nImp)+j)=CorrPot(i,j)
+                        else
+                            core_v((k*nImp)+i,(k*nImp)+j)=-CorrPot(i,j)
+                        endif
                     enddo
-                else
-                    do i=1,nImp
-                        do j=1,nImp
-                            if(tAdd_) then
-                                core_v((k*nImp)+i,(k*nImp)+j)=CorrPot(i,j)
-                            else
-                                core_v((k*nImp)+i,(k*nImp)+j)=-CorrPot(i,j)
-                            endif
-                        enddo
-                    enddo
-                endif
+                enddo
             enddo
 
             !Add this to the original mean-field hamiltonian
@@ -580,9 +570,30 @@ module mat_tools
                     core_v(i,j) = core_v(i,j) + core(i,j)
                 enddo
             enddo
+
+            if(tUHF) then
+                do k=0,(nSites/nImp)-1
+                    do i=1,nImp
+                        do j=1,nImp
+                            if(tAdd_) then
+                                core_v_b((k*nImp)+i,(k*nImp)+j)=CorrPot_b(i,j)
+                            else
+                                core_v_b((k*nImp)+i,(k*nImp)+j)=-CorrPot_b(i,j)
+                            endif
+                        enddo
+                    enddo
+                enddo
+
+                !Add this to the original mean-field hamiltonian
+                do i=1,nSites
+                    do j=1,nSites
+                        core_v_b(i,j) = core_v_b(i,j) + core_b(i,j)
+                    enddo
+                enddo
+            endif
+
         elseif(LatticeDim.eq.2) then
             !2D lattices.
-            if(tFlipUTiling) call stop_all(t_r,'Cannot flip tiling of correlation potential in 2D')
 
             allocate(temp(nSites,nSites))
             temp(:,:) = core(:,:)
@@ -616,6 +627,41 @@ module mat_tools
 
             !Transform both core_v and core back to the impurity ordering
             call Mat_to_imp_order(Core_v)
+
+            if(tUHF) then
+                temp(:,:) = core_b(:,:)
+                call Mat_to_lattice_order(temp)
+                
+                !Add correlation potential to Core_v
+                Core_v_b(:,:) = temp(:,:)
+
+                !Tile through space
+                do i = 1,nSites
+                    do j = 1,nSites
+                        !TD_Imp_Lat gives the element of the v_loc which should be added here
+                        !(Row major)
+                        if(TD_Imp_Lat(j,i).ne.0) then
+                            !Convert these into the actual values of each dimension
+                            b = mod(TD_Imp_Lat(j,i)-1,nImp) + 1
+                            a = ((TD_Imp_Lat(j,i)-1)/nImp) + 1
+                            !write(6,*) TD_Imp_Lat(j,i),
+                            !write(6,*) "a: ",a
+                            !write(6,*) "b: ",b
+
+                            if(tAdd_) then
+                                Core_v_b(j,i) = Core_v_b(j,i) + CorrPot_b(a,b)*TD_Imp_Phase(j,i)
+                            else
+                                Core_v_b(j,i) = Core_v_b(j,i) - CorrPot_b(a,b)*TD_Imp_Phase(j,i)
+                            endif
+                        endif
+                    enddo
+                enddo
+
+                !Transform both core_v and core back to the impurity ordering
+                call Mat_to_imp_order(Core_v_b)
+
+            endif
+
             deallocate(temp)
         endif
 
@@ -630,7 +676,6 @@ module mat_tools
         complex(dp) , intent(inout) :: core_v(nSites,nSites)
         complex(dp) , intent(in) :: CorrPot(nImp,nImp)
         logical , intent(in), optional :: tAdd
-        complex(dp) :: CorrPot_Flip(nImp,nImp)
         integer :: i,j,k,i_ind,j_ind,a,b
         logical :: tAdd_
 
@@ -644,42 +689,18 @@ module mat_tools
             tAdd_ = .true.
         endif
 
-        if(tFlipUTiling) then
-            write(6,*) "Flipping correlation potential when tiling mean-field hamiltonian"
-            CorrPot_Flip(:,:) = zzero
-            do i=1,nImp
-                do j=1,nImp
-                    j_ind = nImp - j + 1
-                    i_ind = nImp - i + 1
-                    CorrPot_Flip(j_ind,i_ind) = CorrPot(i,j)
-                enddo
-            enddo
-        endif
-
         if(LatticeDim.eq.1) then
             !Construct new hamiltonian which is block diagonal in the local potential
             do k=0,(nSites/nImp)-1
-                if(tFlipUTiling.and.(mod(k,2).eq.1)) then
-                    do i=1,nImp
-                        do j=1,nImp
-                            if(tAdd_) then
-                                core_v((k*nImp)+i,(k*nImp)+j)=core_v((k*nImp)+i,(k*nImp)+j) + CorrPot_Flip(i,j)
-                            else
-                                core_v((k*nImp)+i,(k*nImp)+j)=core_v((k*nImp)+i,(k*nImp)+j) - CorrPot_Flip(i,j)
-                            endif
-                        enddo
+                do i=1,nImp
+                    do j=1,nImp
+                        if(tAdd_) then
+                            core_v((k*nImp)+i,(k*nImp)+j)=core_v((k*nImp)+i,(k*nImp)+j) + CorrPot(i,j)
+                        else
+                            core_v((k*nImp)+i,(k*nImp)+j)=core_v((k*nImp)+i,(k*nImp)+j) - CorrPot(i,j)
+                        endif
                     enddo
-                else
-                    do i=1,nImp
-                        do j=1,nImp
-                            if(tAdd_) then
-                                core_v((k*nImp)+i,(k*nImp)+j)=core_v((k*nImp)+i,(k*nImp)+j) + CorrPot(i,j)
-                            else
-                                core_v((k*nImp)+i,(k*nImp)+j)=core_v((k*nImp)+i,(k*nImp)+j) - CorrPot(i,j)
-                            endif
-                        enddo
-                    enddo
-                endif
+                enddo
             enddo
         elseif(LatticeDim.eq.2) then
 
@@ -720,7 +741,6 @@ module mat_tools
         complex(dp) , intent(out) :: core_v(nSites,nSites)
         complex(dp) , intent(in) :: CorrPot(nImp,nImp)
         logical , intent(in), optional :: tAdd
-        complex(dp) :: CorrPot_Flip(nImp,nImp)
         complex(dp), allocatable :: temp(:,:)
         integer :: i,j,k,i_ind,j_ind,a,b
         logical :: tAdd_
@@ -736,43 +756,19 @@ module mat_tools
             tAdd_ = .true.
         endif
 
-        if(tFlipUTiling) then
-            write(6,*) "Flipping correlation potential when tiling mean-field hamiltonian"
-            CorrPot_Flip(:,:) = zzero
-            do i=1,nImp
-                do j=1,nImp
-                    j_ind = nImp - j + 1
-                    i_ind = nImp - i + 1
-                    CorrPot_Flip(j_ind,i_ind) = CorrPot(i,j)
-                enddo
-            enddo
-        endif
-
         if(LatticeDim.eq.1) then
             !Construct new hamiltonian which is block diagonal in the local potential
             core_v = zzero
             do k=0,(nSites/nImp)-1
-                if(tFlipUTiling.and.(mod(k,2).eq.1)) then
-                    do i=1,nImp
-                        do j=1,nImp
-                            if(tAdd_) then
-                                core_v((k*nImp)+i,(k*nImp)+j)=CorrPot_Flip(i,j)
-                            else
-                                core_v((k*nImp)+i,(k*nImp)+j)=-CorrPot_Flip(i,j)
-                            endif
-                        enddo
+                do i=1,nImp
+                    do j=1,nImp
+                        if(tAdd_) then
+                            core_v((k*nImp)+i,(k*nImp)+j)=CorrPot(i,j)
+                        else
+                            core_v((k*nImp)+i,(k*nImp)+j)=-CorrPot(i,j)
+                        endif
                     enddo
-                else
-                    do i=1,nImp
-                        do j=1,nImp
-                            if(tAdd_) then
-                                core_v((k*nImp)+i,(k*nImp)+j)=CorrPot(i,j)
-                            else
-                                core_v((k*nImp)+i,(k*nImp)+j)=-CorrPot(i,j)
-                            endif
-                        enddo
-                    enddo
-                endif
+                enddo
             enddo
 
             !Add this to the original mean-field hamiltonian
@@ -1097,8 +1093,7 @@ module mat_tools
     subroutine run_hf(it)
         implicit none
         integer, intent(in) :: it
-        real(dp), allocatable :: fock(:,:),OccOrbs(:,:)
-        logical :: tRotateOrbs
+        real(dp), allocatable :: fock(:,:),OccOrbs(:,:),fock_b(:,:)
         integer :: iFirst,iLast,i
         real(dp) :: ThrDeg
         !complex(dp), allocatable :: k_ham(:,:)
@@ -1107,20 +1102,22 @@ module mat_tools
         !Construct fock matrix
         !The fock matrix is just the core hamiltonian (with the fitted potential) + diag(1/2 U * rdm(i,i)) on the diagonals
         allocate(fock(nSites,nSites))
+        if(tUHF) allocate(fock_b(nSites,nSites))
         if(it.eq.0) then
             fock(:,:) = h0(:,:)
+            if(tUHF) fock_b(:,:) = h0_b(:,:)
         else
             fock(:,:) = h0v(:,:)
+            if(tUHF) fock_b(:,:) = h0v_b(:,:)
         endif
                     
 !        call writematrix(h0v,'h0v',.true.)
 
         if(allocated(HFOrbs)) then
             !If HFOrbs is already allocated, then we want to maximize the overlap between orbitals of different iterations
-            tRotateOrbs = .true.
         else
-            tRotateOrbs = .false.
             allocate(HFOrbs(nSites,nSites)) !The orbitals from the diagonalization of the fock matrix
+            if(tUHF) allocate(HFOrbs_b(nSites,nSites))
         endif
         !Don't include the 2 electron terms in the mean field. Therefore fock matrix is core hamiltonian
         !The diagonal on-site repulsion will just be mopped up by the correlation potential
@@ -1138,56 +1135,32 @@ module mat_tools
         else
             call DiagOneEOp(HFOrbs,HFEnergies,nImp,nSites,.false.)
         endif
-!        allocate(Work(1))
-!        lWork=-1
-!        info=0
-!        call dsyev('V','U',nSites,HFOrbs,nSites,HFEnergies,Work,lWork,info)
-!        if(info.ne.0) call stop_all(t_r,'Workspace queiry failed')
-!        lwork=int(work(1))+1
-!        deallocate(work)
-!        allocate(work(lwork))
-!        call dsyev('V','U',nSites,HFOrbs,nSites,HFEnergies,Work,lWork,info)
-!        if(info.ne.0) call stop_all(t_r,'Diag failed')
-!        deallocate(work)
+        if(tUHF) then
+            HFOrbs_b(:,:) = Fock_b(:,:)
+            HFEnergies_b(:) = zero
+            if(tDiag_kspace) then
+                call DiagOneEOp(HFOrbs_b,HFEnergies_b,nImp,nSites,tDiag_kspace)
+            else
+                call DiagOneEOp(HFOrbs_b,HFEnergies_b,nImp,nSites,.false.)
+            endif
+        endif
             
         write(6,*) "nOCC", nOcc
         write(6,*) "Fock eigenvalues around fermi level: "
         do i=max(1,nOcc-7),nOcc
-            write(6,*) HFEnergies(i),"*"
+            if(tUHF) then
+                write(6,*) HFEnergies(i),HFEnergies_b(i),"*"
+            else
+                write(6,*) HFEnergies(i),"*"
+            endif
         enddo
         do i=nOcc+1,min(nSites,nOcc+7)
-            write(6,*) HFEnergies(i)
-        enddo
-        
-!        allocate(k_ham(nSites,nSites))
-!        if(it.eq.1) then
-!            !No correlation potential applied - periodicity is just 1
-!            call Convert1DtoKSpace(fock,nSites,1,k_ham) 
-!        else
-!            call Convert1DtoKSpace(fock,nSites,nImp,k_ham) 
-!        endif
-!        deallocate(k_ham)
-
-
-        if(tRotateOrbs.and.(it.ge.4)) then
-            !Rotate the orbitals so that we can maximise overlap between these orbitals and the orbitals of the previous iteration
-            !at the Fermi level if not a unique CS solution there.
-
-            iFirst = max(1,nOcc-40)
-            iLast = min(nSites,nOcc+40)
-            ThrDeg = 1.0e-4
-            do while(abs(HFEnergies(iFirst) - HFEnergies(nOcc)) .gt. ThrDeg)
-                iFirst = iFirst + 1
-            enddo
-            do while(abs(HFEnergies(iLast) - HFEnergies(nOcc)) .gt.ThrDeg)
-                iLast = iLast - 1
-            enddo
-            if(iLast .lt. iFirst) call stop_all(t_r,'Error in rotating orbitals')
-            if((iLast - iFirst).ge.1) then
-                write(6,*) "Warning: May potentially need to rotate orbitals at the fermi level for maximum overlap"
-!                call stop_all(t_r,'Need to rotate orbitals at Fermi level')
+            if(tUHF) then
+                write(6,*) HFEnergies(i),HFEnergies_b(i)
+            else
+                write(6,*) HFEnergies(i)
             endif
-        endif
+        enddo
 
         !Now calculate the density matrix from the calculation based on double occupancy of the lowest lying nOcc orbitals
         !First, extract the occupied orbitals. Since eigenvalues are ordered in increasing order, these will be the first nOcc
@@ -1196,6 +1169,12 @@ module mat_tools
         !Now construct the density matrix in the original AO basis. The eigenvectors are given as AO x MO, so we want to contract out the
         !MO contributions in order to get the 1DM in the AO basis.
         call DGEMM('N','T',nSites,nSites,nOcc,2.0_dp,OccOrbs,nSites,OccOrbs,nSites,0.0_dp,MeanFieldDM,nSites)
+
+        OccOrbs(:,:) = HFOrbs_b(:,1:nOcc)
+        !Now construct the density matrix in the original AO basis. The eigenvectors are given as AO x MO, so we want to contract out the
+        !MO contributions in order to get the 1DM in the AO basis.
+        call DGEMM('N','T',nSites,nSites,nOcc,1.0_dp,OccOrbs,nSites,OccOrbs,nSites,0.0_dp,MeanFieldDM_b,nSites)
+
 
         ChemPot = (HFEnergies(nOcc) + HFEnergies(nOcc+1))/2.0_dp  !Chemical potential is half way between HOMO and LUMO
         HLGap = HFEnergies(nOcc+1)-HFEnergies(nOcc)   !one body HOMO-LUMO Gap

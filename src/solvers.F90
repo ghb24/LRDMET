@@ -35,11 +35,14 @@ module solvers
         do i=1,EmbSize
             Emb_nElec = Emb_nElec + Emb_MF_DM(i,i)
         enddo
+        if(tUHF) then
+            do i=1,EmbSize
+                Emb_nElec = Emb_nElec + Emb_MF_DM_b(i,i)
+            enddo
+        endif
         write(6,"(A,I5)") "Number of electrons in full system: ",NEl
         Elec = nint(Emb_nElec)
         write(6,"(A,F10.7,I5)") "Number of electrons in embedded system: ",Emb_nElec,Elec
-
-        if(nSys.gt.EmbSize) call stop_all(t_r,"Error in determining basis")
 
         if(tCompleteDiag.or.tNonDirDavidson) then
             !Do a complete diagonalization, or solve with in-built non-direct davidson diagonalizer
@@ -364,8 +367,10 @@ module solvers
                 if((i.eq.1).and.(j.eq.1).and.(tChemPot)) then
                     !Include the chemical potential in the one-electron hamiltonian
                     One_ElecE = One_ElecE + (Emb_h0v(i,j)-(U/2.0_dp))*HL_1RDM(i,j)
+                    if(tUHF) One_ElecE = One_ElecE + (Emb_h0v_b(i,j)-(U/2.0_dp))*HL_1RDM_b(i,j)
                 else
                     One_ElecE = One_ElecE + Emb_h0v(i,j)*HL_1RDM(i,j)
+                    if(tUHF) One_ElecE = One_ElecE + Emb_h0v_b(i,j)*HL_1RDM_b(i,j)
                 endif
             enddo
         enddo
@@ -374,6 +379,8 @@ module solvers
         Two_ElecE = HL_Energy - One_ElecE
 
         if(tCreate2RDM) then
+
+            if(tUHF) call stop_all(t_r,'2RDM not created with UHF')
             !Do some tests to make sure we have the right 2RDM
             do i=1,EmbSize
                 do j=1,EmbSize
@@ -452,8 +459,10 @@ module solvers
             do i=1,nImp
                 if(tChemPot.and.(i.eq.1).and.(j.eq.1)) then
                     One_ElecE_Imp = One_ElecE_Imp + (Emb_h0v(i,j)-U/2.0_dp)*HL_1RDM(i,j)
+                    if(tUHF) One_ElecE_Imp = One_ElecE_Imp + (Emb_h0v_b(i,j)-U/2.0_dp)*HL_1RDM_b(i,j)
                 else
                     One_ElecE_Imp = One_ElecE_Imp + Emb_h0v(i,j)*HL_1RDM(i,j)
+                    if(tUHF) One_ElecE_Imp = One_ElecE_Imp + Emb_h0v_b(i,j)*HL_1RDM_b(i,j)
                 endif
             enddo
         enddo
@@ -461,6 +470,7 @@ module solvers
 
         !Two electron energy terms are not contained in core hamiltonian, or expressed over the bath, 
         !so just divided total 2e contribution by number of impurities to get the 2e contrib
+        !Note, we can only do this since there is no correlated bath??
         Two_ElecE_Imp = Two_ElecE/real(nImp)
 
         !There is also finally an interaction term between the bath and impurity which we can calculate
@@ -469,6 +479,7 @@ module solvers
         do j=nImp+1,EmbSize
             do i=1,nImp
                 CoupE_Imp = CoupE_Imp + (Emb_h0v(i,j) + 0.5_dp*Emb_CorrPot(i,j))*HL_1RDM(i,j)
+                if(tUHF) CoupE_Imp = CoupE_Imp + (Emb_h0v_b(i,j) + 0.5_dp*Emb_CorrPot_b(i,j))*HL_1RDM_b(i,j)
 !                CoupE_Imp = CoupE_Imp + (Emb_h0v(i,j) + 0.5_dp*v_loc(i,j))*HL_1RDM(i,j)
             enddo
         enddo
@@ -487,6 +498,7 @@ module solvers
         Targetfilling_Imp = 0.0_dp
         do i=1,nSites
             Targetfilling_Imp = Targetfilling_Imp + MeanFieldDM(i,i)
+            if(tUHF) Targetfilling_Imp = Targetfilling_Imp + MeanFieldDM_b(i,i)
         enddo
         Targetfilling_Imp = Targetfilling_Imp / (2.0_dp*real(nSites))
 
@@ -494,6 +506,7 @@ module solvers
         Actualfilling_Imp = 0.0_dp
         do i=1,nImp
             Actualfilling_Imp = Actualfilling_Imp + HL_1RDM(i,i)
+            if(tUHF) Actualfilling_Imp = Actualfilling_Imp + HL_1RDM_b(i,i)
         enddo
         Actualfilling_Imp = Actualfilling_Imp / (2.0_dp*real(nImp))
         Fillingerror = Actualfilling_Imp - Targetfilling_Imp
@@ -506,6 +519,7 @@ module solvers
 !        if(tDebug) call writematrix(HL_1RDM,'hl_1rdm',.true.)
         if(tWriteOut) then
             call writematrix(HL_1RDM,'hl_1rdm',.true.)
+            if(tUHF) call writematrix(HL_1RDM_b,'hl_1rdm_b',.true.)
         endif
 
     end subroutine SolveSystem
@@ -886,47 +900,18 @@ module solvers
     subroutine CompleteDiag(tCreate2RDM)
         use DetToolsData
         use Davidson, only: Real_NonDir_Davidson
-        use DetTools, only: GetHElement,umatind,GenDets
+        use DetTools, only: GetHElement,GenDets
         use utils, only: get_free_unit
         implicit none
         logical, intent(in) :: tCreate2RDM
-        integer :: OrbPairs,UMatSize,Nmax,ierr
+        integer :: Nmax,ierr
         real(dp), allocatable :: work(:),CompressHam(:)
         integer, allocatable :: IndexHam(:)
         integer :: lwork,info,i,j,iSize,iunit_tmp
         logical :: texist
         character(len=*), parameter :: t_r='CompleteDiag'
 
-        !First, allocate and fill the umat and tmat for the FCI space
-        OrbPairs = (EmbSize*(EmbSize+1))/2
-        UMatSize = (OrbPairs*(OrbPairs+1))/2
-        write(6,*) "Allocating memory to store 2 electron integrals: ",UMatSize
-        if(allocated(UMat)) deallocate(UMat)
-        allocate(UMat(UMatSize))
-        UMat(:) = 0.0_dp
-        if(tAnderson) then
-            umat(umatind(1,1,1,1)) = U
-        else
-            do i=1,nImp
-                umat(umatind(i,i,i,i)) = U
-            enddo
-        endif
-        if(allocated(tmat)) deallocate(tmat)
-        allocate(tmat(EmbSize,EmbSize))
-        tmat(:,:) = 0.0_dp
-        do i=1,EmbSize
-            do j=1,EmbSize
-                if(abs(Emb_h0v(i,j)).gt.1.0e-10_dp) then
-                    tmat(i,j) = Emb_h0v(i,j)
-                endif
-            enddo
-        enddo
-        if(tChemPot) then
-            tmat(1,1) = tmat(1,1) - U/2.0_dp
-        endif
-        if(tWriteOut) then
-            call writematrix(tmat,'tmat',.true.)
-        endif
+        call CreateIntMats()
 
         !Now generate all determinants in the active space
         if(allocated(FCIDetList)) deallocate(FCIDetList)
@@ -1026,7 +1011,12 @@ module solvers
             
         if(allocated(HL_1RDM)) deallocate(HL_1RDM)
         allocate(HL_1RDM(EmbSize,EmbSize))
-        HL_1RDM(:,:) = 0.0_dp
+        HL_1RDM(:,:) = zero
+        if(tUHF) then
+            if(allocated(HL_1RDM_b)) deallocate(HL_1RDM_b)
+            allocate(HL_1RDM_b(EmbSize,EmbSize))
+            HL_1RDM_b(:,:) = zero
+        endif
 
         if(tReadMats) then
             inquire(file='RDM_N',exist=texist)
@@ -1043,7 +1033,11 @@ module solvers
                 call FindFull1RDM(1,1,.true.,HL_1RDM)
             endif
         else
-            call FindFull1RDM(1,1,.true.,HL_1RDM)
+            if(tUHF) then
+                call FindFull1RDM(1,1,.true.,HL_1RDM,RDM_Beta=HL_1RDM_b)
+            else
+                call FindFull1RDM(1,1,.true.,HL_1RDM)
+            endif
         endif
         if(tWriteMats) then
             write(6,*) "Writing out RDM"
@@ -1057,25 +1051,92 @@ module solvers
             close(iunit_tmp)
         endif
 
-        if(tWriteOut) call writematrix(HL_1RDM,'HL_1RDM',.true.)
+        if(tWriteOut) then
+            call writematrix(HL_1RDM,'HL_1RDM',.true.)
+            if(tUHF) call writematrix(HL_1RDM_b,'Beta HL_1RDM',.true.)
+        endif
 
         if(tCreate2RDM) then
             if(allocated(HL_2RDM)) deallocate(HL_2RDM)
             allocate(HL_2RDM(EmbSize,EmbSize,EmbSize,EmbSize))
-            HL_2RDM(:,:,:,:) = 0.0_dp
-            call FindFull2RDM(1,1,.true.,HL_2RDM)
+            HL_2RDM(:,:,:,:) = zero
+            if(tUHF) then
+                call stop_all(t_r,'Cannot calculate 2RDM with UHF currently')
+            else
+                call FindFull2RDM(1,1,.true.,HL_2RDM)
+            endif
         endif
 
         if(allocated(FCIBitList)) deallocate(FCIBitList)
 
     end subroutine CompleteDiag
 
-    subroutine FindFull1RDM(StateBra,StateKet,tGroundState,RDM)
+
+    !This subroutine will fill the integral arrays, tmat and umat,
+    !used by the sltcnd routines, from the contents of Emb_h0v, and
+    !put U over the impurity sites.
+    subroutine CreateIntMats()
+        use DetToolsData
+        use DetTools, only: umatind
+        implicit none
+        integer :: OrbPairs,UMatSize,j,i
+
+        !First, allocate and fill the umat and tmat for the FCI space
+        OrbPairs = (EmbSizeSpin*(EmbSizeSpin+1))/2
+        UMatSize = (OrbPairs*(OrbPairs+1))/2
+        write(6,*) "Allocating memory to store 2 electron integrals: ",UMatSize
+        if(allocated(UMat)) deallocate(UMat)
+        allocate(UMat(UMatSize))
+        UMat(:) = zero
+        if(tAnderson) then
+            umat(umatind(1,1,1,1)) = U
+            if(tUHF) umat(umatind(2,2,2,2)) = U
+        else
+            do i=1,nImp
+                umat(umatind(i,i,i,i)) = U
+            enddo
+            if(tUHF) then
+                do i = nImp+1,nImp*2
+                    umat(umatind(i,i,i,i)) = U
+                enddo
+            endif
+        endif
+
+        !EmbSizeSpin = EmbSize for RHF, or EmbSize*2 for UHF
+        if(allocated(tmat)) deallocate(tmat)
+        allocate(tmat(EmbSizeSpin,EmbSizeSpin))
+        tmat(:,:) = 0.0_dp
+        do i=1,EmbSizeSpin
+            do j=1,EmbSizeSpin
+                if(tUHF) then
+                    if(mod(i,2).ne.mod(j,2)) cycle
+                    if(mod(i,2).eq.1) then
+                        !alpha orbital
+                        tmat(i,j) = Emb_h0v((i-1)/2 + 1,(j-1)/2 + 1)
+                    else
+                        tmat(i,j) = Emb_h0v_b(i/2,j/2)
+                    endif
+                else
+                    tmat(i,j) = Emb_h0v(i,j)
+                endif
+            enddo
+        enddo
+        if(tChemPot) then
+            tmat(1,1) = tmat(1,1) - U/2.0_dp
+            if(tUHF) tmat(2,2) = tmat(2,2) - U/2.0_dp
+        endif
+        if(tWriteOut) then
+            call writematrix(tmat,'tmat',.true.)
+        endif
+    end subroutine CreateIntMats
+
+    subroutine FindFull1RDM(StateBra,StateKet,tGroundState,RDM,RDM_Beta)
         use DetToolsData, only: FCIDetList,nFCIDet,FCIBitList
-        use DetTools, only: iGetExcitLevel,GetExcitation,gtid
+        use DetTools, only: iGetExcitLevel,GetExcitation,tospat
         use DetBitOps, only: FindBitExcitLevel
         implicit none
         real(dp) , intent(out) :: RDM(EmbSize,EmbSize)
+        real(dp), intent(out), optional :: RDM_Beta(EmbSize,EmbSize)
         integer , intent(in) :: StateBra,StateKet
         logical , intent(in) :: tGroundState
         real(dp), pointer :: Bra(:),Ket(:)
@@ -1083,7 +1144,12 @@ module solvers
         logical :: tSign
         character(len=*), parameter :: t_r='FindFull1RDM'
 
-        RDM(:,:) = 0.0_dp
+        if(tUHF.and.(.not.present(RDM_Beta))) then
+            call stop_all(t_r,'Beta spin channel RDM not present')
+        endif
+
+        RDM(:,:) = zero 
+        if(tUHF) RDM_Beta(:,:) = zero
 
         if(tGroundState) then
             Bra => HL_Vec(1:nFCIDet)
@@ -1102,28 +1168,81 @@ module solvers
                         Ex(1) = 1
                         call GetExcitation(FCIDetList(:,i),FCIDetList(:,j),Elec,Ex,tSign)
                         if(tSign) then
-                            RDM(gtid(Ex(1)),gtid(Ex(2))) = RDM(gtid(Ex(1)),gtid(Ex(2))) -   &
-                                Bra(i)*Ket(j)
+                            if(tUHF) then
+                                if(mod(Ex(1),2).eq.1) then
+                                    RDM(tospat(Ex(1)),tospat(Ex(2))) = RDM(tospat(Ex(1)),tospat(Ex(2))) -   &
+                                        Bra(i)*Ket(j)
+                                else
+                                    RDM_Beta(tospat(Ex(1)),tospat(Ex(2))) = RDM_Beta(tospat(Ex(1)),tospat(Ex(2))) -   &
+                                        Bra(i)*Ket(j)
+                                endif
+                            else
+                                RDM(tospat(Ex(1)),tospat(Ex(2))) = RDM(tospat(Ex(1)),tospat(Ex(2))) -   &
+                                    Bra(i)*Ket(j)
+                            endif
                         else
-                            RDM(gtid(Ex(1)),gtid(Ex(2))) = RDM(gtid(Ex(1)),gtid(Ex(2))) +   &
-                                Bra(i)*Ket(j)
+                            if(tUHF) then
+                                if(mod(Ex(1),2).eq.1) then
+                                    RDM(tospat(Ex(1)),tospat(Ex(2))) = RDM(tospat(Ex(1)),tospat(Ex(2))) +   &
+                                        Bra(i)*Ket(j)
+                                else
+                                    RDM_Beta(tospat(Ex(1)),tospat(Ex(2))) = RDM_Beta(tospat(Ex(1)),tospat(Ex(2))) +   &
+                                        Bra(i)*Ket(j)
+                                endif
+                            else
+                                RDM(tospat(Ex(1)),tospat(Ex(2))) = RDM(tospat(Ex(1)),tospat(Ex(2))) +   &
+                                    Bra(i)*Ket(j)
+                            endif
                         endif
                         !And also do other way round
                         Ex(1) = 1
                         call GetExcitation(FCIDetList(:,j),FCIDetList(:,i),Elec,Ex,tSign)
                         if(tSign) then
-                            RDM(gtid(Ex(1)),gtid(Ex(2))) = RDM(gtid(Ex(1)),gtid(Ex(2))) -   &
-                                Bra(j)*Ket(i)
+                            if(tUHF) then
+                                if(mod(Ex(1),2).eq.1) then
+                                    RDM(tospat(Ex(1)),tospat(Ex(2))) = RDM(tospat(Ex(1)),tospat(Ex(2))) -   &
+                                        Bra(j)*Ket(i)
+                                else
+                                    RDM_Beta(tospat(Ex(1)),tospat(Ex(2))) = RDM_Beta(tospat(Ex(1)),tospat(Ex(2))) -   &
+                                        Bra(j)*Ket(i)
+                                endif
+                            else
+                                RDM(tospat(Ex(1)),tospat(Ex(2))) = RDM(tospat(Ex(1)),tospat(Ex(2))) -   &
+                                    Bra(j)*Ket(i)
+                            endif
                         else
-                            RDM(gtid(Ex(1)),gtid(Ex(2))) = RDM(gtid(Ex(1)),gtid(Ex(2))) +   &
-                                Bra(j)*Ket(i)
+                            if(tUHF) then
+                                if(mod(Ex(1),2).eq.1) then
+                                    RDM(tospat(Ex(1)),tospat(Ex(2))) = RDM(tospat(Ex(1)),tospat(Ex(2))) +   &
+                                        Bra(j)*Ket(i)
+                                else
+                                    RDM_Beta(tospat(Ex(1)),tospat(Ex(2))) = RDM_Beta(tospat(Ex(1)),tospat(Ex(2))) +   &
+                                        Bra(j)*Ket(i)
+                                endif
+                            else
+                                RDM(tospat(Ex(1)),tospat(Ex(2))) = RDM(tospat(Ex(1)),tospat(Ex(2))) +   &
+                                    Bra(j)*Ket(i)
+                            endif
                         endif
                     elseif(IC.eq.0) then
                         !Same det
                         if(i.ne.j) call stop_all(t_r,'Error here')
                         do k=1,Elec
-                            RDM(gtid(FCIDetList(k,i)),gtid(FCIDetList(k,i))) = RDM(gtid(FCIDetList(k,i)),gtid(FCIDetList(k,i))) &
-                                + Bra(i)*Ket(j)
+                            if(tUHF) then
+                                if(mod(Ex(1),2).eq.1) then
+                                    RDM(tospat(FCIDetList(k,i)),tospat(FCIDetList(k,i))) =  &
+                                        RDM(tospat(FCIDetList(k,i)),tospat(FCIDetList(k,i))) &
+                                        + Bra(i)*Ket(j)
+                                else
+                                    RDM_Beta(tospat(FCIDetList(k,i)),tospat(FCIDetList(k,i))) =     &
+                                        RDM_Beta(tospat(FCIDetList(k,i)),tospat(FCIDetList(k,i))) &
+                                        + Bra(i)*Ket(j)
+                                endif
+                            else
+                                RDM(tospat(FCIDetList(k,i)),tospat(FCIDetList(k,i))) =  &
+                                    RDM(tospat(FCIDetList(k,i)),tospat(FCIDetList(k,i))) &
+                                    + Bra(i)*Ket(j)
+                            endif
                         enddo
                     endif
 
@@ -1142,18 +1261,51 @@ module solvers
                         Ex(1) = 1
                         call GetExcitation(FCIDetList(:,i),FCIDetList(:,j),Elec,Ex,tSign)
                         if(tSign) then
-                            RDM(gtid(Ex(1)),gtid(Ex(2))) = RDM(gtid(Ex(1)),gtid(Ex(2))) -   &
-                                Bra(i)*Ket(j)
+                            if(tUHF) then
+                                if(mod(Ex(1),2).eq.1) then
+                                    RDM(tospat(Ex(1)),tospat(Ex(2))) = RDM(tospat(Ex(1)),tospat(Ex(2))) -   &
+                                        Bra(i)*Ket(j)
+                                else
+                                    RDM_Beta(tospat(Ex(1)),tospat(Ex(2))) = RDM_Beta(tospat(Ex(1)),tospat(Ex(2))) -   &
+                                        Bra(i)*Ket(j)
+                                endif
+                            else
+                                RDM(tospat(Ex(1)),tospat(Ex(2))) = RDM(tospat(Ex(1)),tospat(Ex(2))) -   &
+                                    Bra(i)*Ket(j)
+                            endif
                         else
-                            RDM(gtid(Ex(1)),gtid(Ex(2))) = RDM(gtid(Ex(1)),gtid(Ex(2))) +   &
-                                Bra(i)*Ket(j)
+                            if(tUHF) then
+                                if(mod(Ex(1),2).eq.1) then
+                                    RDM(tospat(Ex(1)),tospat(Ex(2))) = RDM(tospat(Ex(1)),tospat(Ex(2))) +   &
+                                        Bra(i)*Ket(j)
+                                else
+                                    RDM_Beta(tospat(Ex(1)),tospat(Ex(2))) = RDM_Beta(tospat(Ex(1)),tospat(Ex(2))) +   &
+                                        Bra(i)*Ket(j)
+                                endif
+                            else
+                                RDM(tospat(Ex(1)),tospat(Ex(2))) = RDM(tospat(Ex(1)),tospat(Ex(2))) +   &
+                                    Bra(i)*Ket(j)
+                            endif
                         endif
                     elseif(IC.eq.0) then
                         !Same det
                         if(i.ne.j) call stop_all(t_r,'Error here')
                         do k=1,Elec
-                            RDM(gtid(FCIDetList(k,i)),gtid(FCIDetList(k,i))) = RDM(gtid(FCIDetList(k,i)),gtid(FCIDetList(k,i))) &
-                                + Bra(i)*Ket(j)
+                            if(tUHF) then
+                                if(mod(Ex(1),2).eq.1) then
+                                    RDM(tospat(FCIDetList(k,i)),tospat(FCIDetList(k,i))) =  &
+                                        RDM(tospat(FCIDetList(k,i)),tospat(FCIDetList(k,i))) &
+                                        + Bra(i)*Ket(j)
+                                else
+                                    RDM_Beta(tospat(FCIDetList(k,i)),tospat(FCIDetList(k,i))) =     &
+                                        RDM_Beta(tospat(FCIDetList(k,i)),tospat(FCIDetList(k,i))) &
+                                        + Bra(i)*Ket(j)
+                                endif
+                            else
+                                RDM(tospat(FCIDetList(k,i)),tospat(FCIDetList(k,i))) =  &
+                                    RDM(tospat(FCIDetList(k,i)),tospat(FCIDetList(k,i))) &
+                                    + Bra(i)*Ket(j)
+                            endif
                         enddo
                     endif
 
@@ -1166,6 +1318,13 @@ module solvers
                 if(abs(RDM(i,j)-RDM(j,i)).gt.1.0e-7_dp) call stop_all(t_r,'1RDM not symmetric')
             enddo
         enddo
+        if(tUHF) then
+            do i=1,EmbSize
+                do j=1,EmbSize
+                    if(abs(RDM_Beta(i,j)-RDM_Beta(j,i)).gt.1.0e-7_dp) call stop_all(t_r,'1RDM beta space not symmetric')
+                enddo
+            enddo
+        endif
 
     end subroutine FindFull1RDM
 
@@ -1183,8 +1342,8 @@ module solvers
         integer :: Ex(2,2),i,j,k,IC,kel,lel,l,temp
         logical :: tSign
         character(len=*), parameter :: t_r='FindFull2RDM'
-
-        RDM(:,:,:,:) = 0.0_dp
+        
+        RDM(:,:,:,:) = zero
 
         if(tGroundState) then
             Bra => HL_Vec(1:nFCIDet)

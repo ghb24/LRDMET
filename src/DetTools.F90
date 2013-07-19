@@ -441,7 +441,7 @@ module DetTools
         complex(dp) :: hel
 
         do i=1,NEl
-            id(i) = gtID(nI(i))   !turn to spatial orbital representation
+            id(i) = gtID(nI(i))   !turn to spatial orbital representation if necessary
         enddo
 
         hel = zzero
@@ -648,7 +648,7 @@ module DetTools
     end function sltcnd_2_comp
 
     !In physical notation and spatial orbitals
-    function umatind(i,j,k,l) result(ind)
+    pure function umatind(i,j,k,l) result(ind)
         implicit none
         integer, intent(in) :: i,j,k,l
         integer :: ind,a,b
@@ -677,7 +677,7 @@ module DetTools
     end function umatind
 
     !In physical notation and spatial orbitals
-    function umatel(i,j,k,l) result(hel)
+    pure function umatel(i,j,k,l) result(hel)
         use const
         use DetToolsData, only: UMat
         implicit none
@@ -686,12 +686,25 @@ module DetTools
          hel = umat(umatind(i,j,k,l))
     end function umatel
 
-    function gtid(gind) result(id)
+    pure function gtid(gind) result(id)
+        use globals, only: tUHF
+        implicit none
+        integer, intent(in) :: gind
+        integer :: id
+        if(tUHF) then
+            id = gind
+        else
+            id = (gind-1)/2 + 1
+        endif
+    end function gtid
+        
+
+    pure function tospat(gind) result(id)
         implicit none
         integer, intent(in) :: gind
         integer :: id
         id = (gind-1)/2 + 1
-    end function gtid
+    end function tospat
         
     !Get antisymmetrized integral in the spinorbital basis given by a set of spatial orbitals from the AO basis
     !This orbital transformation matrix is given by AOBasisTransform

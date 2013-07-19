@@ -11,9 +11,9 @@ module Globals
     integer :: nSites_y   !The number of sites in the y direction
     integer :: nImp     !The number of impurity sites
     integer :: nImp_x,nImp_y    !Number of impurities in each direction for the 2D system
-    integer :: nSys     !The number of bath sites
     real(dp) :: U       !Hubbard U
     integer :: nU_Vals  !Number of explicitly specified U values to loop over
+    logical :: tUHF     !UHF
     logical :: tPeriodic !Use PBEs
     logical :: tAntiPeriodic !Use Anti-PBEs
     integer :: iMaxIterDMET !Maximum iterations for DMET self-consistency
@@ -29,10 +29,10 @@ module Globals
     integer :: nElecFill    !The input number of electrons in the entire system
     integer :: nOcc     !The number of CS orbitals in the entire system
     integer :: EmbSize  !The total size of the embedded system
+    integer :: EmbSizeSpin  ! = EmbSize for RHF, and EmbSize*2 for UHF
     real(dp) :: StartU,EndU,UStep   !The range and increment of U
     logical :: tRampDownOcc     !Whether to go up or down in filling fraction
     logical :: tSaveCorrPot     !Use the previous correlation potential in the initialization of the next GS DMET calculation
-    logical :: tFlipUTiling     !When constructing the mean-field hamiltonian through the space, flip the tiling of the correlation potential
     logical :: tReadInCorrPot   !Read in the correlation potential to use. No DMET SCF
     logical :: tFCIQMC          !Run FCIQMC as solver
     integer :: nNECICores        !Number of cores to run FCIQMC on
@@ -115,6 +115,25 @@ module Globals
     real(dp) , allocatable, target :: HL_Vec(:)         !The ground state eigenvector
     real(dp) , allocatable, target :: FullHamil(:,:)    !In case we do a complete diagonalization
     real(dp) , allocatable :: Spectrum(:)       !Eigenvalues in case of a complete diagonalization
+
+    !Analogous Beta space arrays
+    real(dp), allocatable :: v_loc_b(:,:) 
+    real(dp), allocatable :: h0_b(:,:)
+    real(dp), allocatable :: h0v_b(:,:)
+    real(dp), allocatable :: HFEnergies_b(:)
+    real(dp), allocatable :: HFOrbs_b(:,:)
+    real(dp), allocatable :: MeanfieldDM_b(:,:)
+    real(dp), allocatable :: FullSchmidtBasis_b(:,:) 
+    real(dp), allocatable :: HFtoSchmidtTransform_b(:,:)
+    real(dp), allocatable :: FockSchmidt_b(:,:)
+    real(dp), allocatable :: EmbeddedBasis_b(:,:)
+    real(dp), allocatable :: Emb_h0_b(:,:)
+    real(dp), allocatable :: Emb_MF_DM_b(:,:)
+    real(dp), allocatable :: Emb_FockPot_b(:,:)
+    real(dp), allocatable :: Emb_CorrPot_b(:,:)
+    real(dp), allocatable :: Emb_Fock_b(:,:)
+    real(dp), allocatable :: Emb_h0v_b(:,:)
+    real(dp), allocatable :: HL_1RDM_b(:,:)
 
     !Linear response options
     real(dp) :: dDelta      !Broadening for spectral functions

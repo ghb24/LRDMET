@@ -28,6 +28,7 @@ Program RealHub
         tChemPot = .false.
         tReadSystem = .false.
         tHalfFill = .true. 
+        tUHF = .false.
         nSites = 24  
         LatticeDim = 1
         nImp = 1
@@ -48,7 +49,6 @@ Program RealHub
         tDiagFullSystem = .false.
         tSCFHF = .false.
         tWriteout = .false.
-        tFlipUTiling = .false.
         tReadInCorrPot = .false.
         CorrPot_file = 'CORRPOTS'
         tContinueConvergence = .true.
@@ -175,6 +175,11 @@ Program RealHub
         else
             write(6,"(A,I9)") "            o Number of lattice sites: ",nSites
         endif
+        if(tUHF) then
+            write(6,"(A)") "            o *Unrestricted* bath construction: (Anti-)Ferromagnetic phase"
+        else
+            write(6,"(A)") "            o *Restricted* bath construction: Paramagnetic phase"
+        endif
         write(6,"(A)") "            o Range of U values to consider: " 
         if(nU_Vals.eq.0) then
             !Sweeping through
@@ -205,9 +210,6 @@ Program RealHub
                         endif
                     endif
                 endif
-            endif
-            if(tFlipUTiling) then
-                write(6,"(A)") "            o Correlation potential flipped in tiling through space"
             endif
         endif
         if(tHalfFill) then
@@ -374,6 +376,8 @@ Program RealHub
                         call stop_all(t_r,'Can only deal with lattice dimensions =< 2')
                     endif
                 endif
+            case("UHF")
+                tUHF = .true.
             case("U_VALS")
                 do while(item.lt.nitems) 
                     i = i+1
@@ -385,8 +389,6 @@ Program RealHub
                 call readf(UStep)
             case("REUSE_CORRPOT")
                 tSaveCorrPot = .true.
-            case("FLIP_CORRPOT_TILING")
-                tFlipUTiling = .true.
             case("READ_CORRPOT")
                 tReadInCorrPot = .true.
                 tContinueConvergence = .false.
@@ -473,10 +475,10 @@ Program RealHub
                 write(6,"(A)") "ALLOWED KEYWORDS IN MODEL BLOCK: "
                 write(6,"(A)") "SYSTEM"
                 write(6,"(A)") "SITES"
+                write(6,"(A)") "UHF"
                 write(6,"(A)") "U"
                 write(6,"(A)") "U_VALS"
                 write(6,"(A)") "REUSE_CORRPOT"
-                write(6,"(A)") "FLIP_CORRPOT_TILING"
                 write(6,"(A)") "FITTING_STEPSIZE"
                 write(6,"(A)") "SCF_HF"
                 write(6,"(A)") "PBC"
@@ -779,7 +781,15 @@ Program RealHub
         if(tWriteMats.and..not.tCompressedMats) then
             call stop_all(t_r,'Cannot write matrices if not if compressed form')
         endif
-
+        if(tUHF.and..not.tReadSystem) then
+            call stop_all(t_r,'UHF currently only working with systems which are read in')
+        endif
+        if(tUHF.and..not.(tCompleteDiag.or.tNonDirDavidson)) then
+            call stop_all(t_r,'Cannot currently solve UHF impurity problem without complete or non-direct davidson solvers')
+        endif
+        if(tUHF.and.(tWriteMats.or.tReadMats)) then
+            call stop_all(t_r,'Cannot currently read/write matrices to disk with UHF - fix me')
+        endif
 
     end subroutine check_input
 
@@ -963,10 +973,20 @@ Program RealHub
         allocate(h0(nSites,nSites))     !The core hamiltonian
         allocate(h0v(nSites,nSites))    !The core hamiltonian with the local potential
         allocate(HFEnergies(nSites))    !The fock energies
-        v_loc = 0.0_dp
-        h0(:,:) = 0.0_dp
-        h0v(:,:) = 0.0_dp
-        HFEnergies(:) = 0.0_dp
+        v_loc(:,:) = zero 
+        h0(:,:) = zero 
+        h0v(:,:) = zero 
+        HFEnergies(:) = zero 
+        if(tUHF) then
+            allocate(v_loc_b(nImp,nImp))
+            allocate(h0_b(nSites,nSites))
+            allocate(h0v_b(nSites,nSites))
+            allocate(HFEnergies_b(nSites))
+            v_loc_b(:,:) = zero 
+            h0_b(:,:) = zero 
+            h0v_b(:,:) = zero 
+            HFEnergies_b(:) = zero 
+        endif
 
         CurrU = 0
         do while(.true.)
@@ -977,7 +997,11 @@ Program RealHub
             write(6,*) "Running DMET calculation with U = ",U
         
             allocate(MeanFieldDM(nSites,nSites))    !DM from mean-field
-            MeanFieldDM(:,:) = 0.0_dp
+            MeanFieldDM(:,:) = zero
+            if(tUHF) then
+                allocate(MeanFieldDM_b(nSites,nSites))
+                MeanFieldDM_b(:,:) = zero
+            endif
 
             !Calculate the core hamiltonian based on the hopping matrix of the hubbard model in real space
             !If reading in the hopping matrix, it is done here and stored in h0
@@ -1051,7 +1075,7 @@ Program RealHub
                     write(6,"(A,I6)") "Iteration: ",it
 
                     !Do iMaxIterDMET microiterations to converge the DMET for this occupation number
-                    call add_localpot(h0,h0v,v_loc)
+                    call add_localpot(h0,h0v,v_loc,core_b=h0_b,core_v_b=h0v_b,CorrPot_b=v_loc_b)
 
                     !Now run a HF calculation by constructing and diagonalizing the fock matrix
                     !This will also return the RDM in the AO basis
@@ -1070,7 +1094,10 @@ Program RealHub
                     else
                         call CalcEmbedding()
                     endif
-                    if(tWriteOut) call writematrix(EmbeddedBasis,'EmbeddedBasis',.true.)
+                    if(tWriteOut) then
+                        call writematrix(EmbeddedBasis,'EmbeddedBasis',.true.)
+                        if(tUHF) call writematrix(EmbeddedBasis_b,'BetaEmbeddedBasis',.true.)
+                    endif
                     call halt_timer(ConstEmb)
                     
                     !Now transform the 1 electron quantities into the embedded basis
@@ -1149,12 +1176,14 @@ Program RealHub
                 endif
         
                 deallocate(MeanFieldDM)
+                if(tUHF) deallocate(MeanFieldDM_b)
                 
                 if(tLR_DMET) then
                     !Perform linear response on the resulting DMET state
                     call MR_LinearResponse()
                 endif
                 deallocate(HFOrbs)
+                if(tUHF) deallocate(HFOrbs_b)
 
                 !Set potential for the next occupation number, or wipe it?
                 if(.not.tSaveCorrPot) then
@@ -1354,7 +1383,7 @@ Program RealHub
         deallocate(work)
 
         if(tWriteOut) then
-            call writevector(ProjOverlapEVals,'Projected overlap eigenvalues')
+            call writevector(ProjOverlapEVals,'Projected overlap eigenvalues alpha')
         endif
 
         !We should only have nImp non-zero eigenvalues
@@ -1395,7 +1424,7 @@ Program RealHub
         enddo
 
         !We now have all the orbitals. Which are orthogonal to which?
-        write(6,*) "All impurity/bath orbitals orthogonal by construction"
+        write(6,*) "All alpha impurity/bath orbitals orthogonal by construction"
         do i=nOcc,nOcc-nImp+1,-1
             do j=nOcc,nOcc-nImp+1,-1
                 Overlap = DDOT(nSites,RotOccOrbs(:,i),1,RotOccOrbs(:,j),1)
@@ -1410,7 +1439,7 @@ Program RealHub
                 endif
             enddo
         enddo
-        write(6,*) "All bath/bath orbitals orthonormal"
+        write(6,*) "All alpha bath/bath orbitals orthonormal"
 
         !Now, consider the rotated core orbitals
         !Are they orthonormal to the bath orbitals (they are othogonal to impurity, since they have no component on them)
@@ -1544,13 +1573,247 @@ Program RealHub
         if(allocated(FockSchmidt)) deallocate(FockSchmidt)
         allocate(FockSchmidt(nSites,nSites))
         !Set up FockSchmidt to temperarily to be the HF basis fock operator (i.e. diagonal)
-        FockSchmidt(:,:) = 0.0_dp
+        FockSchmidt(:,:) = zero
         do i=1,nSites
             FockSchmidt(i,i) = HFEnergies(i)
         enddo
-        call DGEMM('T','N',nSites,nSites,nSites,1.0_dp,HFtoSchmidtTransform,nSites,FockSchmidt,nSites,0.0_dp,temp,nSites)
-        call DGEMM('N','N',nSites,nSites,nSites,1.0_dp,temp,nSites,HFtoSchmidtTransform,nSites,0.0_dp,FockSchmidt,nSites)
+        call DGEMM('T','N',nSites,nSites,nSites,one,HFtoSchmidtTransform,nSites,FockSchmidt,nSites,zero,temp,nSites)
+        call DGEMM('N','N',nSites,nSites,nSites,one,temp,nSites,HFtoSchmidtTransform,nSites,zero,FockSchmidt,nSites)
+            
+        if(allocated(EmbeddedBasis)) deallocate(EmbeddedBasis)
+        allocate(EmbeddedBasis(nSites,2*nImp))
+        EmbeddedBasis(:,:) = 0.0_dp
+        EmbeddedBasis(:,1:nImp) = ImpurityOrbs(:,:)
+        EmbeddedBasis(:,nImp+1:2*nImp) = FullSchmidtBasis(:,nOcc+1:nOcc+nImp)
+
+        if(tUHF) then
+            !Do all the same for the beta orbital space
+            write(6,"(A)") "Constructing beta bath space"
+            !HFOrbs defines HF basis.
+            !Construct full projected overlap basis and diagonalize to see redundancies
+            !Just do this for the occupied orbitals, and check orthogonality to the core HF and virtual orbitals
+            call DGEMM('T','N',nOcc,nOcc,nImp,one,HFOrbs_b(1:nImp,1:nOcc),nImp,HFOrbs_b(1:nImp,1:nOcc),nImp,zero,ProjOverlap,nOcc)
+
+            !Diagonalize this
+            deallocate(ProjOverlapEVals)
+            allocate(ProjOverlapEVals(nOcc))
+            ProjOverlapEVals(:) = zero
+            allocate(Work(1))
+            lWork=-1
+            info=0
+            call dsyev('V','U',nOcc,ProjOverlap,nOcc,ProjOverlapEVals,Work,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'Workspace queiry failed')
+            lwork=int(work(1))+1
+            deallocate(work)
+            allocate(work(lwork))
+            call dsyev('V','U',nOcc,ProjOverlap,nOcc,ProjOverlapEVals,Work,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'Diag failed')
+            deallocate(work)
+
+            if(tWriteOut) then
+                call writevector(ProjOverlapEVals,'Projected overlap eigenvalues beta')
+            endif
+
+            !We should only have nImp non-zero eigenvalues
+            nbath = 0
+            do i=1,nOcc
+                if(abs(ProjOverlapEVals(i)).gt.1.0e-7_dp) then
+                    nbath = nbath + 1
+                endif
+            enddo
+            if(nbath.gt.nImp) call stop_all(t_r,'error here')
+
+            !Now rotate original beta occupied orbitals into this new orthogonal basis
+            call DGEMM('N','N',nSites,nOcc,nOcc,one,HFOrbs_b(1:nSites,1:nOcc),nSites,ProjOverlap,nOcc,zero,RotOccOrbs,nSites)
+
+            !RotOccOrbs now represents the rotated occupied orbitals into the bath basis. 
+            !Only the last nImp orbitals will have any coupling to the impurity on them.
+            !These RotOccOrbs constitute a legitamate HF wavefunction, are orthonormal to all other orbitals. Just simple rotation.
+    !        call writematrix(RotOccOrbs,'Occupied Orbs in schmidt basis',.true.)
+
+            !Construct bath states by projecting out component on impurity and renormalizing
+            !Assume last nImp states are the states with overlap with impurity only
+            !Also normalize these orbitals
+            do i=nOcc,nOcc-nImp+1,-1
+                RotOccOrbs(1:nImp,i) = zero
+                norm = DDOT(nSites,RotOccOrbs(:,i),1,RotOccOrbs(:,i),1)
+                norm = sqrt(norm)
+                RotOccOrbs(:,i) = RotOccOrbs(:,i)/norm
+            enddo
+
+            !These states are now the bath states.
+    !        call writematrix(RotOccOrbs(:,nOcc-nImp+1:nOcc),'Bath orbitals',.true.)
+
+            ImpurityOrbs(:,:) = zero 
+            do i=1,nImp
+                ImpurityOrbs(i,i) = one 
+            enddo
+
+            !We now have all the orbitals. Which are orthogonal to which?
+            write(6,*) "All beta impurity/bath orbitals orthogonal by construction"
+            do i=nOcc,nOcc-nImp+1,-1
+                do j=nOcc,nOcc-nImp+1,-1
+                    Overlap = DDOT(nSites,RotOccOrbs(:,i),1,RotOccOrbs(:,j),1)
+                    if(i.eq.j) then
+                        if(abs(Overlap-1.0_dp).gt.1.0e-7_dp) then
+                            call stop_all(t_r,'beta bath orbitals not normalized set')
+                        endif
+                    else
+                        if(abs(Overlap).gt.1.0e-7_dp) then
+                            call stop_all(t_r,'beta bath orbitals not orthogonal set')
+                        endif
+                    endif
+                enddo
+            enddo
+            write(6,*) "All beta bath/bath orbitals orthonormal"
+
+            !Now, consider the rotated core orbitals
+            !Are they orthonormal to the bath orbitals (they are othogonal to impurity, since they have no component on them)
+            !They must also be orthogonal to the bath orbitals, since they never had any component on the impurity, 
+            !which is the only bit which has changed in constructing the bath (norm doesn't affect)
+            do i=1,nOcc-nImp
+                do j=nOcc,nOcc-nImp+1,-1
+                    !Overlap of core (i) with bath (j)
+                    Overlap = DDOT(nSites,RotOccOrbs(:,i),1,RotOccOrbs(:,j),1)
+                    if(abs(Overlap).gt.1.0e-7_dp) then
+                        call stop_all(t_r,'beta bath orbitals with core not orthogonal set')
+                    endif
+                enddo
+            enddo
+
+            !However, the virtual space is *not* orthogonal to the embedded system (though it is wrt the core).
+            !Now create orthogonal set of orbitals from the virtual space. There will now be a redundancy.
+            !Calculate the overlap of the virtual space with a projection onto the embedded system.
+            !From the diagonalization of this, we expect exactly *nImp* non-zero eigenvalues, which are the redundant orbitals.
+            !Remove these, and the rest are the now non-canonical virtual orbital space.
+            nVirt = nSites - nOcc
+            !allocate(ProjOverlapVirt(nVirt,nVirt))
+
+            !This array is used to calculate the overlap of each virtual space function with each impurity
+            !function
+            !allocate(OverlapVirt(2*nImp,nVirt))
+            !The first nImp correspond to the impurity orbital, and the next two correspond to the bath orbitals
+            OverlapVirt(:,:) = zero
+            do i=nOcc+1,nSites  !run through virtual space
+                do j=1,nImp     !run through impurity orbitals
+                    OverlapVirt(j,i-nOcc) = HFOrbs_b(j,i)
+                enddo
+            enddo
+
+            !Now calculate overlap with bath orbitals
+            call DGEMM('T','N',nImp,nVirt,nSites,one,RotOccOrbs(:,nOcc-nImp+1:nOcc),nSites,HFOrbs_b(:,nOcc+1:nSites), &
+                nSites,zero,OverlapVirt(nImp+1:2*nImp,1:nVirt),2*nImp-nImp)
+
+            !Combine overlaps to get full projected overlap matrix
+            call DGEMM('T','N',nVirt,nVirt,2*nImp,one,OverlapVirt,2*nImp,OverlapVirt,2*nImp,zero,ProjOverlapVirt,nVirt)
+
+            !Diagonalize this
+            deallocate(ProjOverlapEVals)
+            allocate(ProjOverlapEVals(nVirt))
+            ProjOverlapEVals(:) = zero
+            allocate(Work(1))
+            lWork=-1
+            info=0
+            call dsyev('V','U',nVirt,ProjOverlapVirt,nVirt,ProjOverlapEVals,Work,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'Workspace queiry failed')
+            lwork=int(work(1))+1
+            deallocate(work)
+            allocate(work(lwork))
+            call dsyev('V','U',nVirt,ProjOverlapVirt,nVirt,ProjOverlapEVals,Work,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'Diag failed')
+            deallocate(work)
+
+    !        call writevector(ProjOverlapEVals,'virtual overlap eigenvalues')
+
+            nbath = 0   !Count the number of virtual functions which span the space of the embedded system
+            do i=1,nVirt
+                if(abs(ProjOverlapEVals(i)).gt.1.0e-7_dp) then
+                    nbath = nbath + 1
+                endif
+            enddo
+            if(nbath.ne.nImp) then
+                call stop_all(t_r,'Virtual beta space redundancy not as expected')
+            endif
+
+            !Now rotate orbitals such that they are orthogonal, while deleting the redundant ones
+            !Assume the last nImp are redundant
+            !allocate(VirtSpace(nSites,nVirt-nImp))
+            call DGEMM('N','N',nSites,nVirt-nImp,nVirt,one,HFOrbs_b(:,nOcc+1:nSites),nSites,   &
+                ProjOverlapVirt(1:nVirt,1:nVirt-nImp),nVirt,zero,VirtSpace,nSites)
+
+            !Check now that the virtual space is now orthogonal to all occupied HF orbitals, as well as the impurity and bath sites
+
+            !First against the impurity sites
+            do i=1,nImp
+                do j=1,nVirt-nImp
+                    Overlap = DDOT(nSites,ImpurityOrbs(:,i),1,VirtSpace(:,j),1)
+                    if(abs(Overlap).gt.1.0e-7_dp) then
+                        call stop_all(t_r,'virtual beta orbitals not orthogonal to impurity orbitals')
+                    endif
+                enddo
+            enddo
+
+            do i=1,nOcc
+                do j=1,nVirt-nImp
+                    Overlap = DDOT(nSites,RotOccOrbs(:,i),1,VirtSpace(:,j),1)
+                    if(abs(Overlap).gt.1.0e-7_dp) then
+                        if(i.gt.(nOcc-nImp)) then
+                            call stop_all(t_r,'virtual beta orbitals not orthogonal to bath orbitals')
+                        else
+                            call stop_all(t_r,'virtual beta orbitals not orthogonal to core orbitals')
+                        endif
+                    endif
+                enddo
+            enddo
+
+            if(allocated(FullSchmidtBasis_b)) deallocate(FullSchmidtBasis_b)
+            allocate(FullSchmidtBasis_b(nSites,nSites))   ! (Atomicbasis,SchmidtBasis)
+            FullSchmidtBasis_b(:,:) = zero 
+            FullSchmidtBasis_b(:,1:nOcc-nImp) = RotOccOrbs(:,1:nOcc-nImp)    !The first orbitals consist of core  
+            FullSchmidtBasis_b(:,nOcc-nImp+1:nOcc) = ImpurityOrbs(:,:)    !Impurity Orbs
+            FullSchmidtBasis_b(:,nOcc+1:nOcc+nImp) = RotOccOrbs(:,nOcc-nImp+1:nOcc)   !Bath
+            FullSchmidtBasis_b(:,nOcc+nImp+1:nSites) = VirtSpace(:,:)     !Virtual space
+
+            !call writematrix(FullSchmidtBasis,'FullSchmidtBasis',.true.)
+
+            !Construct unitary basis transformation matrix from HF to embedded basis
+            if(allocated(HFtoSchmidtTransform_b)) deallocate(HFtoSchmidtTransform_b)
+            allocate(HFtoSchmidtTransform_b(nSites,nSites))
+            call DGEMM('T','N',nSites,nSites,nSites,one,HFOrbs_b,nSites,FullSchmidtBasis_b, &
+                nSites,zero,HFtoSchmidtTransform_b,nSites)
+
+            !Check that this operator is unitary
+            !call DGEMM('N','T',nSites,nSites,nSites,1.0_dp,HFtoSchmidtTransform,nSites,HFtoSchmidtTransform,nSites,0.0_dp,temp,nSites)
+            !call writematrix(temp,'Test of unitarity of HF to Schmidt Transform',.true.)
+            !do i=1,nSites
+            !    do j=1,nSites
+            !        if((i.ne.j).and.(abs(temp(i,j)).gt.1.0e-7_dp)) then
+            !            call stop_all(t_r,'Transformation matrix not unitary')
+            !        elseif((i.eq.j).and.(abs(temp(i,j)-1.0_dp).gt.1.0e-7)) then
+            !            call stop_all(t_r,'Transformation matrix not unitary')
+            !        endif
+            !    enddo
+            !enddo
+
+            !Use this to rotate the fock operator into this new basis
+            if(allocated(FockSchmidt_b)) deallocate(FockSchmidt_b)
+            allocate(FockSchmidt_b(nSites,nSites))
+            !Set up FockSchmidt to temperarily to be the HF basis fock operator (i.e. diagonal)
+            FockSchmidt_b(:,:) = zero 
+            do i=1,nSites
+                FockSchmidt_b(i,i) = HFEnergies_b(i)
+            enddo
+            call DGEMM('T','N',nSites,nSites,nSites,one,HFtoSchmidtTransform_b,nSites,FockSchmidt_b,nSites,zero,temp,nSites)
+            call DGEMM('N','N',nSites,nSites,nSites,one,temp,nSites,HFtoSchmidtTransform_b,nSites,zero,FockSchmidt_b,nSites)
+        
+            if(allocated(EmbeddedBasis_b)) deallocate(EmbeddedBasis_b)
+            allocate(EmbeddedBasis_b(nSites,2*nImp))
+            EmbeddedBasis_b(:,:) = zero
+            EmbeddedBasis_b(:,1:nImp) = ImpurityOrbs(:,:)
+            EmbeddedBasis_b(:,nImp+1:2*nImp) = FullSchmidtBasis_b(:,nOcc+1:nOcc+nImp)
+        endif
         deallocate(temp)
+
         !do i=1,nSites
         !    write(6,*) "FOCKSCHMIDT: ",i,FockSchmidt(i,i)
         !enddo
@@ -1558,22 +1821,20 @@ Program RealHub
 !        call writematrix(FockSchmidt,'Fock in schmidt basis',.true.)
 
 !       Calculate the non-interacting core energy of the DMET wavefunction
-        CoreEnergy = 0.0_dp
+        CoreEnergy = zero
         do i = 1,nOcc-nImp
-            CoreEnergy = CoreEnergy + FockSchmidt(i,i) 
+            CoreEnergy = CoreEnergy + FockSchmidt(i,i)
+            if(tUHF) CoreEnergy = CoreEnergy + FockSchmidt_b(i,i)
         enddo
-        CoreEnergy = CoreEnergy * 2.0_dp
+        if(.not.tUHF) CoreEnergy = CoreEnergy * 2.0_dp
         write(6,*) "Non-interacting core energy for DMET wavefunction is: ",CoreEnergy
 
-        nSys = nImp !Fix this here
-        
-        if(allocated(EmbeddedBasis)) deallocate(EmbeddedBasis)
-        allocate(EmbeddedBasis(nSites,nImp+nSys))
-        EmbeddedBasis(:,:) = 0.0_dp
-        EmbeddedBasis(:,1:nImp) = ImpurityOrbs(:,:)
-        EmbeddedBasis(:,nImp+1:2*nImp) = FullSchmidtBasis(:,nOcc+1:nOcc+nImp)
-
-        EmbSize = nImp+nSys !This is the total size of the embedded system with which to do the high-level calculation on 
+        EmbSize = 2*nImp      !This is the total size of the embedded system with which to do the high-level calculation on 
+        if(tUHF) then
+            EmbSizeSpin = 2*EmbSize
+        else
+            EmbSizeSpin = EmbSize
+        endif
         
         !Calculate some paramters which will be used later, which define the size of triangular packed arrays over the impurity sites, or
         !the entire embedding sites.
@@ -1581,14 +1842,13 @@ Program RealHub
         EmbCombs = (EmbSize*(EmbSize+1))/2
 
         deallocate(ProjOverlap,ProjOverlapEVals,RotOccOrbs,ImpurityOrbs,ProjOverlapVirt,OverlapVirt,VirtSpace)
-
     end subroutine ConstructFullSchmidtBasis
 
 
     !Transform the one-electron integrals into the embedded basis by unitary transformation
     subroutine Transform1e()
         implicit none
-        real(dp), allocatable :: CorrPotential(:,:),temp(:,:)
+        real(dp), allocatable :: CorrPotential(:,:),temp(:,:),CorrPotential_b(:,:)
 !        real(dp), allocatable :: FockPotential(:,:)
         integer :: i,j
 !        character(len=*), parameter :: t_r="Transform1e"
@@ -1601,7 +1861,6 @@ Program RealHub
         !Emb_h0v is the core hamiltonian in the embedded basis, with correlation potential (not over the impurity sites)
         if(allocated(Emb_h0v)) deallocate(Emb_h0v)
 
-
         !Transform all of these quantities into the embedded basis
         allocate(Emb_h0(EmbSize,EmbSize))
         allocate(Emb_MF_DM(EmbSize,EmbSize))
@@ -1613,9 +1872,6 @@ Program RealHub
         !Rotate them
         allocate(temp(EmbSize,nSites))
         !Core hamiltonian
-
-!        call writematrix(EmbeddedBasis,'EmbBasis',.true.)
-
         call DGEMM('T','N',EmbSize,nSites,nSites,1.0_dp,EmbeddedBasis,nSites,h0,nSites,0.0_dp,temp,EmbSize)
         call DGEMM('N','N',EmbSize,EmbSize,nSites,1.0_dp,temp,EmbSize,EmbeddedBasis,nSites,0.0_dp,Emb_h0,EmbSize)
 
@@ -1665,6 +1921,79 @@ Program RealHub
         Emb_h0v(:,:) = Emb_CorrPot(:,:)
         Emb_h0v(1:nImp,1:nImp) = 0.0_dp     !Set correlation potential over the impurity sites to zero
         Emb_h0v(:,:) = Emb_h0v(:,:) + Emb_h0(:,:)    !Add the embedded core hamiltonian over all sites
+
+        if(tUHF) then
+            !Now for the beta orbitals!!
+            if(allocated(Emb_Fock_b)) deallocate(Emb_Fock_b)
+            if(allocated(Emb_h0_b)) deallocate(Emb_h0_b)                 !Core hamiltonian
+            if(allocated(Emb_MF_DM_b)) deallocate(Emb_MF_DM_b)        !Mean field RDM
+            if(allocated(Emb_FockPot_b)) deallocate(Emb_FockPot_b)      !The fock potential transforms h0v into the fock matrix in the AO basis
+            if(allocated(Emb_CorrPot_b)) deallocate(Emb_CorrPot_b)      !The correlation potential is the block diagonal v_pot in the AO basis
+            !Emb_h0v is the core hamiltonian in the embedded basis, with correlation potential (not over the impurity sites)
+            if(allocated(Emb_h0v_b)) deallocate(Emb_h0v_b)
+
+            !Transform all of these quantities into the embedded basis
+            allocate(Emb_h0_b(EmbSize,EmbSize))
+            allocate(Emb_MF_DM_b(EmbSize,EmbSize))
+            allocate(Emb_FockPot_b(EmbSize,EmbSize))
+            allocate(Emb_CorrPot_b(EmbSize,EmbSize))
+            allocate(Emb_Fock_b(EmbSize,EmbSize))     !For hub, this is just the core + corrPot
+            allocate(Emb_h0v_b(EmbSize,EmbSize))
+
+            !Rotate them
+            allocate(temp(EmbSize,nSites))
+            !Core hamiltonian
+            call DGEMM('T','N',EmbSize,nSites,nSites,1.0_dp,EmbeddedBasis_b,nSites,h0_b,nSites,0.0_dp,temp,EmbSize)
+            call DGEMM('N','N',EmbSize,EmbSize,nSites,1.0_dp,temp,EmbSize,EmbeddedBasis_b,nSites,0.0_dp,Emb_h0_b,EmbSize)
+
+            if(tDebug) call writematrix(Emb_h0_b,'Embedded Core beta hamil',.true.)
+
+            !Mean field RDM
+            call DGEMM('T','N',EmbSize,nSites,nSites,1.0_dp,EmbeddedBasis_b,nSites,MeanFieldDM_b,nSites,0.0_dp,temp,EmbSize)
+            call DGEMM('N','N',EmbSize,EmbSize,nSites,1.0_dp,temp,EmbSize,EmbeddedBasis_b,nSites,0.0_dp,Emb_MF_DM_b,EmbSize)
+            
+            if(tDebug) call writematrix(Emb_MF_DM_b,'Embedded beta RDM',.true.)
+
+            !Since we don't actually store the fock potential (the diagonal repulsion/2 electron terms), construct it here in the AO basis
+            !This is the bit of the fock matrix not in the core hamiltonian
+    !        allocate(FockPotential(nSites,nSites))
+    !        FockPotential(:,:) = 0.0_dp
+    !        do i=1,nSites
+    !            !Include the on-site repulsion
+    !            FockPotential(i,i) = FockPotential(i,i) + U * 0.5_dp * (NEl/real(nSites))
+    !        enddo
+    !        call DGEMM('T','N',EmbSize,nSites,nSites,1.0_dp,EmbeddedBasis,nSites,FockPotential,nSites,0.0_dp,temp,EmbSize)
+    !        call DGEMM('N','N',EmbSize,EmbSize,nSites,1.0_dp,temp,EmbSize,EmbeddedBasis,nSites,0.0_dp,Emb_FockPot,EmbSize)
+    !        deallocate(FockPotential)
+            Emb_FockPot_b(:,:)=0.0_dp     !We don't include the 2e terms in the fock matrix here, instead, leaving them to be captured by the correlation potential
+    !        call writematrix(Emb_FockPot,"Embedded Fock potential",.true.)
+
+            !We also do not store the "Correlation potential", which is the potential which is added to the fock matrix to make the DMs match
+            allocate(CorrPotential_b(nSites,nSites))
+            CorrPotential_b(:,:) = 0.0_dp
+            !It is just h0v - h0
+            do i=1,nSites
+                do j=1,nSites
+                    CorrPotential_b(i,j) = h0v_b(i,j) - h0_b(i,j)
+                enddo
+            enddo
+            call DGEMM('T','N',EmbSize,nSites,nSites,1.0_dp,EmbeddedBasis_b,nSites,CorrPotential_b,nSites,0.0_dp,temp,EmbSize)
+            call DGEMM('N','N',EmbSize,EmbSize,nSites,1.0_dp,temp,EmbSize,EmbeddedBasis_b,nSites,0.0_dp,Emb_CorrPot_b,EmbSize)
+            deallocate(CorrPotential_b)
+            deallocate(temp)
+
+            if(tDebug) call writematrix(Emb_CorrPot_b,"Embedded beta correlation potential",.true.)
+
+            !The 2e terms left out of fock matrix everywhere, although included basically in CorrPot
+            Emb_Fock_b(:,:) = Emb_h0_b(:,:) + Emb_CorrPot_b(:,:) ! + Emb_FockPot  
+            
+            !Set the correlation potential to zero over the impurity, since we do not need to include the fitted potential over the 
+            !orbitals that we are going to do the high-level calculation on.
+            Emb_h0v_b(:,:) = Emb_CorrPot_b(:,:)
+            Emb_h0v_b(1:nImp,1:nImp) = 0.0_dp     !Set correlation potential over the impurity sites to zero
+            Emb_h0v_b(:,:) = Emb_h0v_b(:,:) + Emb_h0_b(:,:)    !Add the embedded core hamiltonian over all sites
+
+        endif
         
     end subroutine Transform1e
 
@@ -1673,9 +2002,9 @@ Program RealHub
         implicit none
         real(dp) :: ImpurityOverlap(nImp,nImp),OverlapEVs(nImp)
         real(dp), allocatable :: RDMonImp(:,:),Work(:),SminHalf(:,:),temp(:,:)
-        integer :: info,lWork,i,j,nDelete
+        integer :: info,lWork,i,j,nDelete,nSys
         character(len=*), parameter :: t_r="CalcEmbedding"
-
+            
         !Take density matrix over impurity: nSites-nImp x nImp
         allocate(RDMonImp(nSites-nImp,nImp))
         do i=nImp+1,nSites
@@ -1761,8 +2090,106 @@ Program RealHub
         !Here, we only want to add orbitals on the bath which haven't been removed due to being linearly dependent
         !Which orbitals in temp are the removed linear dependent ones? TODO: Check this is being done correctly
         !Currently, we are just taking the first nSys of them
-        EmbSize = nImp+nSys !This is the total size of the embedded system with which to do the high-level calculation on 
-        EmbeddedBasis(nImp+1:nSites,nImp+1:EmbSize) = temp(:,1:nSys)
+        EmbeddedBasis(nImp+1:nSites,nImp+1:2*nImp) = temp(:,1:nSys)
+
+        if(tUHF) then
+            !Now for beta orbitals
+            !Take density matrix over impurity: nSites-nImp x nImp
+            RDMonImp = zero
+            do i=nImp+1,nSites
+                do j=1,nImp
+                    RDMonImp(i-nImp,j) = MeanFieldDM_b(i,j)
+                enddo
+            enddo
+
+    !        call writematrix(RDMonImp,'RDMonImp',.true.)
+
+            !Now, we want to Lowdin orthogonalize these orbitals, i.e. |psi_alpha> = |psi_beta> S_beta,alpha^(-1/2)
+
+            !Find overlap of this density over the impurity (contract out nSites-nImp)
+            call DGEMM('T','N',nImp,nImp,nSites-nImp,one,RDMonImp,nSites-nImp,RDMonImp,nSites-nImp,zero,ImpurityOverlap,nImp)
+    !        call writematrix(ImpurityOverlap,'s',.true.)
+            !Now find the eigenbasis of this overlap in order to raise it to the power of -1/2
+            !Diagonalize the system over the impurity sites
+            allocate(Work(1))
+            lWork=-1
+            info=0
+            call dsyev('V','U',nImp,ImpurityOverlap,nImp,OverlapEVs,Work,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'Workspace queiry failed')
+            lwork=int(work(1))+1
+            deallocate(work)
+            allocate(work(lwork))
+            call dsyev('V','U',nImp,ImpurityOverlap,nImp,OverlapEVs,Work,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'Diag failed')
+            deallocate(work)
+            if(nImp.eq.1) then
+                if(abs(ImpurityOverlap(1,1)-1.0_dp).gt.1.0e-7_dp) call stop_all(t_r,'Diag error')
+            endif
+            !call writevector(OverlapEVs,'S_EVs')
+
+            nSys = 0    !nSys is the number of orbitals in the bath having removed linear dependencies
+            nDelete = 0
+            do i=1,nImp
+                if(OverlapEVs(i).lt.1.0e-10_dp) then
+                    write(6,*) "Warning: Bath basis linearly dependent"
+                    write(6,*) "Overlap eigenvalue: ",OverlapEVs(i)
+                    nDelete = nDelete + 1
+                else
+                    nSys = nSys + 1
+                endif
+            enddo
+
+            if(nSys.ne.nImp) write(6,*) "Bath orbitals removed due to linear dependency: ",nDelete
+            write(6,*) "Total beta bath orbitals: ",nSys
+            if(nDelete.ne.(nImp-nSys)) call stop_all(t_r,'nDelete.ne.(nImp-nSys)')
+
+            !Now, we need to construct the full embedded basis including orbitals on the impurity sites
+            !The orbitals to remove if necessary will be first.
+            !Construct S^(-1/2), and then rotate back into the original basis
+            SminHalf = zero 
+            do i=1,nSys
+                SminHalf(i,i) = OverlapEVs(i+nDelete)**(-0.5_dp)
+            enddo
+    !        call writematrix(ImpurityOverlap(1:nImp,nDelete+1:nImp),'ImpOverlap',.true.)
+            !Now rotate back into original basis as U D U^T (Having removed the first nDelete orbitals from the Impurity overlap eigenvectors
+            deallocate(temp)
+            allocate(temp(nImp,nSys))
+            call DGEMM('N','N',nImp,nSys,nSys,1.0_dp,ImpurityOverlap(1:nImp,nDelete+1:nImp),nImp,SminHalf,nSys,0.0_dp,temp,nImp)
+            call DGEMM('N','T',nImp,nImp,nSys,1.0_dp,temp,nImp,ImpurityOverlap(1:nImp,nDelete+1:nImp),nImp,0.0_dp,SminHalf,nImp)
+            deallocate(temp)
+            !SminHalf in now in the original basis
+    !        call writematrix(SminHalf,'SminHalf',.true.)
+
+            !Now, we need to multiply the original bath orbitals extracted from the RDM on the impurity by this matrix to complete the Lowdin orthogonalization
+            allocate(temp(nSites-nImp,nImp))
+            call DGEMM('N','N',nSites-nImp,nImp,nImp,1.0_dp,RDMonImp,nSites-nImp,SminHalf,nImp,0.0_dp,temp,nSites-nImp)
+            !temp now holds the orthogonalized bath orbitals
+    !        call writematrix(temp,'Orthog bath',.true.)
+
+            !Now include the impurity sites along with the bath orbitals to make the final embedded basis
+            !The system orbitals are represented by the first nImp orbitals, and the bath orbitals are the last nSys
+            if(allocated(EmbeddedBasis_b)) deallocate(EmbeddedBasis_b)
+            allocate(EmbeddedBasis_b(nSites,nImp+nSys))
+            EmbeddedBasis_b(:,:) = zero 
+            do i=1,nImp
+                EmbeddedBasis_b(i,i) = one 
+            enddo
+
+            if(nImp.ne.nSys) call stop_all(t_r,'You need to check in the code here to make sure we have the right bath orbitals')
+            !Here, we only want to add orbitals on the bath which haven't been removed due to being linearly dependent
+            !Which orbitals in temp are the removed linear dependent ones? TODO: Check this is being done correctly
+            !Currently, we are just taking the first nSys of them
+            EmbeddedBasis_b(nImp+1:nSites,nImp+1:2*nImp) = temp(:,1:nSys)
+
+        endif
+        
+        
+        EmbSize = 2*nImp      !This is the total size of the embedded system with which to do the high-level calculation on 
+        if(tUHF) then
+            EmbSizeSpin = 2*EmbSize
+        else
+            EmbSizeSpin = EmbSize
+        endif
         
         !Calculate some paramters which will be used later, which define the size of triangular packed arrays over the impurity sites, or
         !the entire embedding sites.
