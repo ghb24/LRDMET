@@ -1241,7 +1241,7 @@ module solvers
                         if(i.ne.j) call stop_all(t_r,'Error here')
                         do k=1,Elec
                             if(tUHF) then
-                                if(mod(Ex(1),2).eq.1) then
+                                if(mod(FCIDetList(k,i),2).eq.1) then
                                     RDM(tospat(FCIDetList(k,i)),tospat(FCIDetList(k,i))) =  &
                                         RDM(tospat(FCIDetList(k,i)),tospat(FCIDetList(k,i))) &
                                         + Bra(i)*Ket(j)
@@ -1304,7 +1304,7 @@ module solvers
                         if(i.ne.j) call stop_all(t_r,'Error here')
                         do k=1,Elec
                             if(tUHF) then
-                                if(mod(Ex(1),2).eq.1) then
+                                if(mod(FCIDetList(k,i),2).eq.1) then
                                     RDM(tospat(FCIDetList(k,i)),tospat(FCIDetList(k,i))) =  &
                                         RDM(tospat(FCIDetList(k,i)),tospat(FCIDetList(k,i))) &
                                         + Bra(i)*Ket(j)
