@@ -111,7 +111,7 @@ module LinearResponse
         use zminresqlpModule, only: MinresQLP  
         use DetToolsData
         use DetTools, only: gtid,umatind,GenDets,GetHElement
-        use solvers, only: CountSizeCompMat,StoreCompMat
+        use solvers, only: CountSizeCompMat,StoreCompMat,CreateIntMats
         implicit none
         integer :: a,i,j,k,OrbPairs,UMatSize,b,beta
         integer :: CoreEnd,VirtStart,VirtEnd,iunit
@@ -178,31 +178,7 @@ module LinearResponse
             write(6,"(A,I8)") "Number of krylov subspace vectors to store: ",nKrylov
         endif
         !umat and tmat for the active space
-        OrbPairs = (EmbSize*(EmbSize+1))/2
-        UMatSize = (OrbPairs*(OrbPairs+1))/2
-        if(allocated(UMat)) deallocate(UMat)
-        allocate(UMat(UMatSize))
-        UMat(:) = 0.0_dp
-        if(tAnderson) then
-            umat(umatind(1,1,1,1)) = U
-        else
-            do i=1,nImp
-                umat(umatind(i,i,i,i)) = U
-            enddo
-        endif
-        if(allocated(tmat)) deallocate(tmat)
-        allocate(tmat(EmbSize,EmbSize))
-        tmat(:,:) = 0.0_dp
-        do i=1,EmbSize
-            do j=1,EmbSize
-                if(abs(Emb_h0v(i,j)).gt.1.0e-10_dp) then
-                    tmat(i,j) = Emb_h0v(i,j)
-                endif
-            enddo
-        enddo
-        if(tChemPot) then
-            tmat(1,1) = tmat(1,1) - U/2.0_dp
-        endif
+        call CreateIntMats()
         if(tMinRes_NonDir) then
             minres_unit = get_free_unit()
             open(minres_unit,file='zMinResQLP.txt',status='unknown')
@@ -5462,8 +5438,14 @@ module LinearResponse
             endif
         endif
 
+        write(6,"(A,F15.5,A)") "Memory required for GMRES solver: ",real(lwork,dp)*ComptoMb," Mb"
+
         allocate(work(lwork),stat=ierr)
-        if(ierr.ne.0) call stop_all(t_r,'Alloc error')
+        if(ierr.ne.0) then
+            write(6,*) "Memory requirements too much. Allocation error for GMRES"
+            write(6,*) "To reduce memory requirements, reduce NKRYLOV"
+        endif
+            call stop_all(t_r,'Alloc error')
         work(:) = zzero
         
         !Are we inputting a guess solution?
