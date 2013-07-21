@@ -5439,6 +5439,7 @@ module LinearResponse
         endif
 
         write(6,"(A,F15.5,A)") "Memory required for GMRES solver: ",real(lwork,dp)*ComptoMb," Mb"
+        call flush(6)
 
         allocate(work(lwork),stat=ierr)
         if(ierr.ne.0) then
