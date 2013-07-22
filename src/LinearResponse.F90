@@ -158,6 +158,7 @@ module LinearResponse
         zDirMV_Mat => null()
 
         write(6,*) "Calculating non-interacting EC MR-TDA LR system for DD excitations..."
+        write(6,*) "Perturbation is number operator for spatial orbitals"
         if(.not.tConstructFullSchmidtBasis) call stop_all(t_r,'To solve LR, must construct full schmidt basis')
         if(tMinRes_NonDir) then
             if(tPreCond_MinRes) then
@@ -1515,16 +1516,16 @@ module LinearResponse
     subroutine NonIntExCont_TDA_MCLR_Charged_Cmprs()
         use mat_tools, only: add_localpot_comp_inplace
         use utils, only: get_free_unit,append_ext_real,append_ext
-        use DetBitOps, only: DecodeBitDet,SQOperator,CountBits
         use Davidson, only: Comp_NonDir_Davidson
         use fitting, only: Fit_SE
         use zminresqlpModule, only: MinresQLP  
         use DetToolsData
         use solvers, only: CountSizeCompMat,CreateIntMats
         use DetTools, only: tospat,umatind,gendets
+        use DetBitOps, only: CountBits
         implicit none
-        complex(dp), allocatable :: NFCIHam_cmps(:),Np1FCIHam_alpha_cmps(:),Nm1FCIHam_beta_cmps(:)
-        integer, allocatable :: NFCIHam_inds(:),Np1FCIHam_alpha_inds(:),Nm1FCIHam_beta_inds(:)
+        complex(dp), allocatable :: NFCIHam_cmps(:),Np1FCIHam_cmps(:),Nm1FCIHam_cmps(:)
+        integer, allocatable :: NFCIHam_inds(:),Np1FCIHam_inds(:),Nm1FCIHam_inds(:)
         real(dp), allocatable :: dNorm_p(:),dNorm_h(:)
         complex(dp), allocatable , target :: LinearSystem_p(:),LinearSystem_h(:)
         integer, allocatable , target :: LinearSystem_p_inds(:),LinearSystem_h_inds(:)
@@ -1534,21 +1535,21 @@ module LinearResponse
         complex(dp), allocatable :: Psi1_p(:),Psi1_h(:),Ga_i_F_xi_Bra(:,:),Ga_i_F_ij(:,:),ni_lr_Mat(:,:)
         complex(dp), allocatable :: Psi_0(:),RHS(:)
         complex(dp), allocatable :: NI_LRMat_Cre(:,:),NI_LRMat_Ann(:,:)
-        integer, allocatable :: Coup_Ann_alpha(:,:),Coup_Create_alpha(:,:),Coup_Create_alpha_inds(:)
-        integer, allocatable :: Coup_Ann_alpha_inds(:),Coup_Create_alpha_cum(:),Coup_Ann_alpha_cum(:)
-        integer, allocatable :: Coup_Create_alpha_T(:,:),Coup_Ann_alpha_T(:,:),Coup_Create_alpha_inds_T(:)
-        integer, allocatable :: Coup_Ann_alpha_inds_T(:),Coup_Create_alpha_cum_T(:),Coup_Ann_alpha_cum_T(:)
-        integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,ierr,info,iunit,nCore
-        integer :: nLinearSystem,nOrbs,nVirt,tempK,VIndex,VirtStart,VirtEnd,ind_p,ind_h
-        integer :: orbdum(1),nLinearSystem_h,nGSSpace,Np1GSInd,Nm1GSInd,minres_unit
-        integer :: maxminres_iter,nImp_GF,pertsite,isize,iunit_tmp
-        integer :: Nmax_N,Nmax_Nm1b,Nmax_Np1,Nmax_Coup_Create,Nmax_Coup_Ann,Nmax_Lin_p,Nmax_Lin_h,i_Ann
+        integer, allocatable :: Coup_Ann(:,:),Coup_Create(:,:),Coup_Create_inds(:)
+        integer, allocatable :: Coup_Ann_inds(:),Coup_Create_cum(:),Coup_Ann_cum(:)
+        integer, allocatable :: Coup_Create_T(:,:),Coup_Ann_T(:,:),Coup_Create_inds_T(:)
+        integer, allocatable :: Coup_Ann_inds_T(:),Coup_Create_cum_T(:),Coup_Ann_cum_T(:)
+        integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,ierr,info,iunit,nCore
+        integer :: nLinearSystem,nOrbs,nVirt,VIndex,VirtStart,VirtEnd,ind_p,ind_h
+        integer :: nLinearSystem_h,nGSSpace,Np1GSInd,Nm1GSInd,minres_unit
+        integer :: maxminres_iter,nImp_GF,pertsite,isize,iunit_tmp,DiffOrb
+        integer :: Nmax_N,Nmax_Nm1,Nmax_Np1,Nmax_Coup_Create,Nmax_Coup_Ann,Nmax_Lin_p,Nmax_Lin_h
         integer(ip) :: nLinearSystem_ip,minres_unit_ip,info_ip,maxminres_iter_ip,iters_p,iters_h
         real(dp) :: Omega,GFChemPot,mu,SpectralWeight,Prev_Spec,AvdNorm_p,AvdNorm_h
         real(dp) :: Diff_GF
         complex(dp) :: ResponseFn,tempel,ni_lr,ni_lr_p,ni_lr_h,AvResFn_p,AvResFn_h
         complex(dp) :: zdotc,VNorm,CNorm,matel
-        logical :: tParity,tFirst,texist
+        logical :: tFirst,texist
         character(64) :: filename,filename2
         character(len=*), parameter :: t_r='NonIntExCont_TDA_MCLR_Charged_Cmprs'
 
@@ -1563,7 +1564,11 @@ module LinearResponse
 
         call set_timer(LR_EC_GF_Precom)
 
-        write(6,"(A)") "Calculating non-interacting EC MR-TDA LR system for *hole* & *particle* alpha spin-orbital perturbations..."
+        if(tBetaExcit) then
+            write(6,"(A)") "Calculating non-interacting EC MR-TDA LR system for *hole* & *particle* alpha spin-orbital pert..."
+        else
+            write(6,"(A)") "Calculating non-interacting EC MR-TDA LR system for *hole* & *particle* beta spin-orbital pert..."
+        endif
         if(.not.tConstructFullSchmidtBasis) call stop_all(t_r,'To solve LR, must construct full schmidt basis')
         if(tMinRes_NonDir) then
             if(tPreCond_MinRes) then
@@ -1621,29 +1626,46 @@ module LinearResponse
             call CountSizeCompMat(FCIDetList,Elec,nFCIDet,Nmax_N,FCIBitList)
         endif
         !Nmax_N = 22275793
-        call CountSizeCompMat(Nm1bFCIDetList,Elec-1,nNm1bFCIDet,Nmax_Nm1b,Nm1bBitList)
+        if(tBetaExcit) then
+            call CountSizeCompMat(Nm1FCIDetList,Elec-1,nNm1FCIDet,Nmax_Nm1,Nm1bBitList)
+        else
+            call CountSizeCompMat(Nm1bFCIDetList,Elec-1,nNm1bFCIDet,Nmax_Nm1,Nm1bBitList)
+        endif
 !        Nmax_Nm1b = 18838522
 !        write(6,*) "ASSUMING NMAX_Nm1b = ",Nmax_Nm1b
-        call CountSizeCompMat(Np1FCIDetList,Elec+1,nNp1FCIDet,Nmax_Np1,Np1BitList)
+        if(tBetaExcit) then
+            call CountSizeCompMat(Np1bFCIDetList,Elec+1,nNp1bFCIDet,Nmax_Np1,Np1bBitList)
+        else
+            call CountSizeCompMat(Np1FCIDetList,Elec+1,nNp1FCIDet,Nmax_Np1,Np1BitList)
+        endif
         !Nmax_Np1 = 18838522
         !write(6,*) "ASSUMING NMAX_N = ",Nmax_Np1
         write(6,"(A,F12.5,A)") "Memory required for N-electron hamil: ",(real(Nmax_N,dp)*2)*ComptoMb, " Mb"
-        write(6,"(A,F12.5,A)") "Memory required for N+1-electron hamil: ",(real(Nmax_Nm1b,dp)*2)*ComptoMb, " Mb"
+        write(6,"(A,F12.5,A)") "Memory required for N+1-electron hamil: ",(real(Nmax_Nm1,dp)*2)*ComptoMb, " Mb"
         write(6,"(A,F12.5,A)") "Memory required for N-1-electron hamil: ",(real(Nmax_Np1,dp)*2)*ComptoMb, " Mb"
         call flush(6)
         allocate(NFCIHam_cmps(Nmax_N),stat=ierr)
-        allocate(Np1FCIHam_alpha_cmps(Nmax_Np1),stat=ierr)
-        allocate(Nm1FCIHam_beta_cmps(Nmax_Nm1b),stat=ierr)
         allocate(NFCIHam_inds(Nmax_N),stat=ierr)
-        allocate(Np1FCIHam_alpha_inds(Nmax_Np1),stat=ierr)
-        allocate(Nm1FCIHam_beta_inds(Nmax_Nm1b),stat=ierr)
+        !Want Np1b for particle and Nm1 for hole if tBetaExcit, or vice versa otherwise
+        !We have removed the distinction, and so will have to remember...
+        allocate(Np1FCIHam_cmps(Nmax_Np1),stat=ierr)
+        allocate(Np1FCIHam_inds(Nmax_Np1),stat=ierr)
+        allocate(Nm1FCIHam_cmps(Nmax_Nm1),stat=ierr)
+        allocate(Nm1FCIHam_inds(Nmax_Nm1),stat=ierr)
         if(ierr.ne.0) call stop_all(t_r,'Allocation fail')
-        call Fill_N_Np1_Nm1b_FCIHam(Elec,Nmax_N,Nmax_Np1,Nmax_Nm1b,NHam_cmps=NFCIHam_cmps,Np1Ham_cmps=Np1FCIHam_alpha_cmps, &
-            Nm1bHam_cmps=Nm1FCIHam_beta_cmps,NHam_inds=NFCIHam_inds,Np1Ham_inds=Np1FCIHam_alpha_inds,   &
-            Nm1bHam_inds=Nm1FCIHam_beta_inds)
+        !Want Np1b for particle and Nm1 for hole if tBetaExcit, or vice versa otherwise
+        !We have removed the distinction, and so will have to remember...
+        call Fill_N_Np1_Nm1b_FCIHam(Elec,Nmax_N,Nmax_Np1,Nmax_Nm1,NHam_cmps=NFCIHam_cmps,Np1Ham_cmps=Np1FCIHam_cmps, &
+            Nm1Ham_cmps=Nm1FCIHam_cmps,NHam_inds=NFCIHam_inds,Np1Ham_inds=Np1FCIHam_inds,   &
+            Nm1Ham_inds=Nm1FCIHam_inds,tSwapExcits = tBetaExcit)
 
-        nLinearSystem = nNp1FCIDet + nFCIDet
-        nLinearSystem_h = nNm1bFCIDet + nFCIDet
+        if(tBetaExcit) then
+            nLinearSystem = nNp1bFCIDet + nFCIDet
+            nLinearSystem_h = nNm1FCIDet + nFCIDet
+        else
+            nLinearSystem = nNp1FCIDet + nFCIDet
+            nLinearSystem_h = nNm1bFCIDet + nFCIDet
+        endif
 
         if(nLinearSystem.ne.nLinearSystem_h) then
             call stop_all(t_r,'Should change restriction on the Linear system size being the same for particle/hole addition')
@@ -1651,7 +1673,7 @@ module LinearResponse
 
         if(tWriteOut) then
             call writevectorcomp(NFCIHam_cmps,'NFCIHam_cmps')
-            call writevectorcomp(Np1FCIHam_alpha_cmps,'Np1FCIHam_alpha_cmps')
+            call writevectorcomp(Np1FCIHam_cmps,'Np1FCIHam_cmps')
         endif
         
         !If doing full optimization of the GS problem
@@ -1750,7 +1772,7 @@ module LinearResponse
             Psi_0(1:nFCIDet) = HL_Vec(:)    
             GFChemPot = HL_Energy
             do i = 1,nImp_GF
-                call ApplySP_PertGS_EC(Psi_0,nGSSpace,Cre_0(:,i),Ann_0(:,i),nLinearSystem,i)
+                call ApplySP_PertGS_EC(Psi_0,nGSSpace,Cre_0(:,i),Ann_0(:,i),nLinearSystem,i,tSwapExcits=tBetaExcit)
             enddo
         endif
         
@@ -1769,12 +1791,20 @@ module LinearResponse
         
         !Set the impurity parts to the correct values (even though we don't access them from FockSchmidt)
         !They are different since the correlation potential is not defined over the impurity sites.
-        FockSchmidt(nOcc-nImp+1:nOcc+nImp,nOcc-nImp+1:nOcc+nImp) = Emb_h0v(:,:)
+        if(tBetaExcit) then
+            FockSchmidt(nOcc-nImp+1:nOcc+nImp,nOcc-nImp+1:nOcc+nImp) = Emb_h0v_b(:,:)
+        else
+            FockSchmidt(nOcc-nImp+1:nOcc+nImp,nOcc-nImp+1:nOcc+nImp) = Emb_h0v(:,:)
+        endif
         !If we are doing self-consistent linear response, with a self-energy in the HL part, 
         !then this is calculated later, since it is now omega and iteration dependent
         do i = 1,nSites
             do j = 1,nSites
-                FockSchmidt_SE(j,i) = dcmplx(FockSchmidt(j,i),0.0_dp)
+                if(tBetaExcit) then
+                    FockSchmidt_SE(j,i) = dcmplx(FockSchmidt_b(j,i),0.0_dp)
+                else
+                    FockSchmidt_SE(j,i) = dcmplx(FockSchmidt(j,i),0.0_dp)
+                endif
             enddo
         enddo
         FockSchmidt_SE_CC(1:CoreEnd,1:CoreEnd) = FockSchmidt_SE(1:CoreEnd,1:CoreEnd)
@@ -1801,7 +1831,7 @@ module LinearResponse
         Nmax_Coup_Create = 0
         Nmax_Coup_Ann = 0
         do J = 1,nFCIDet
-            !Start with the creation of an alpha orbital
+            !Start with the creation of a spin orbital
             do K = 1,nNm1bFCIDet
                 DiffOrb = ieor(Nm1bBitList(K),FCIBitList(J))
                 nOrbs = CountBits(DiffOrb)
@@ -1809,7 +1839,7 @@ module LinearResponse
                     Nmax_Coup_Create = Nmax_Coup_Create + 1
                 endif
             enddo
-            !Now, annihilation of an alpha orbital
+            !Now, annihilation of a spin orbital
             do K = 1,nNp1FCIDet
                 DiffOrb = ieor(Np1BitList(K),FCIBitList(J))
                 nOrbs = CountBits(DiffOrb)
@@ -1818,200 +1848,33 @@ module LinearResponse
                 endif
             enddo
         enddo
-
-        allocate(Coup_Create_alpha(2,Nmax_Coup_Create))
-        allocate(Coup_Ann_alpha(2,Nmax_Coup_Ann))
+        
+        allocate(Coup_Create(2,Nmax_Coup_Create))
+        allocate(Coup_Ann(2,Nmax_Coup_Ann))
         !Also indexing arrays
-        allocate(Coup_Create_alpha_inds(Nmax_Coup_Create))
-        allocate(Coup_Ann_alpha_inds(Nmax_Coup_Ann))
+        allocate(Coup_Create_inds(Nmax_Coup_Create))
+        allocate(Coup_Ann_inds(Nmax_Coup_Ann))
         !_cum arrays index start of row block
-        allocate(Coup_Create_alpha_cum(nFCIDet+1))
-        allocate(Coup_Ann_alpha_cum(nFCIDet+1))
-
-        Coup_Create_alpha(:,:) = 0
-        Coup_Ann_alpha(:,:) = 0
-        Coup_Create_alpha_inds(:) = 0
-        Coup_Ann_alpha_inds(:) = 0
-        Coup_Create_alpha_cum(:) = 0
-        Coup_Ann_alpha_cum(:) = 0
-        Coup_Create_alpha_cum(1) = 1
-        Coup_Ann_alpha_cum(1) = 1
-
-        i = 0
-        i_Ann = 0
-        do J = 1,nFCIDet
-            !Start with the creation of an alpha orbital
-            do K = 1,nNm1bFCIDet
-                DiffOrb = ieor(Nm1bBitList(K),FCIBitList(J))
-                nOrbs = CountBits(DiffOrb)
-                if(mod(nOrbs,2).ne.1) then 
-                    !There must be an odd number of orbital differences between the determinants
-                    !since they are of different electron number by one
-                    call stop_all(t_r,'Not odd number of electrons')
-                endif
-                if(nOrbs.ne.1) then
-                    !We only want one orbital different
-                    cycle
-                endif
-                !Now, find out what SPINorbital this one is from the bit number set
-                call DecodeBitDet(orbdum,1,DiffOrb)
-                gam = orbdum(1)
-                if(mod(gam,2).ne.1) then
-                    call stop_all(t_r,'differing orbital should be an alpha spin orbital')
-                endif
-                !Now find out the parity change when applying this creation operator to the original determinant
-                tempK = Nm1bBitList(K)
-                call SQOperator(tempK,gam,tParity,.false.)
-
-                i = i + 1
-                if(i.gt.Nmax_Coup_Create) call stop_all(t_r,'Compressed array size too small')
-                Coup_Create_alpha(1,i) = tospat(gam)+CoreEnd
-                if(tParity) then
-                    Coup_Create_alpha(2,i) = -1
-                else
-                    Coup_Create_alpha(2,i) = 1
-                endif
-                Coup_Create_alpha_inds(i) = K
-            enddo
-            !Now, annihilation of an alpha orbital
-            do K = 1,nNp1FCIDet
-                DiffOrb = ieor(Np1BitList(K),FCIBitList(J))
-                nOrbs = CountBits(DiffOrb)
-                if(mod(nOrbs,2).ne.1) then 
-                    !There must be an odd number of orbital differences between the determinants
-                    !since they are of different electron number by one
-                    call stop_all(t_r,'Not odd number of electrons 3')
-                endif
-                if(nOrbs.ne.1) then
-                    !We only want one orbital different
-                    cycle
-                endif
-                !Now, find out what SPINorbital this one is from the bit number set
-                call DecodeBitDet(orbdum,1,DiffOrb)
-                gam = orbdum(1)
-                if(mod(gam,2).ne.1) then
-                    call stop_all(t_r,'differing orbital should be an alpha spin orbital')
-                endif
-                !Now find out the parity change when applying this creation operator to the original determinant
-                tempK = Np1BitList(K)
-                call SQOperator(tempK,gam,tParity,.true.)
-
-                i_Ann = i_Ann + 1
-                if(i_Ann.gt.Nmax_Coup_Ann) call stop_all(t_r,'Compressed array size too small')
-                Coup_Ann_alpha(1,i_Ann) = tospat(gam)+CoreEnd
-                if(tParity) then
-                    Coup_Ann_alpha(2,i_Ann) = -1
-                else
-                    Coup_Ann_alpha(2,i_Ann) = 1
-                endif
-                Coup_Ann_alpha_inds(i_Ann) = K
-            enddo
-            Coup_Create_alpha_cum(J+1) = i+1
-            Coup_Ann_alpha_cum(J+1) = i_Ann + 1
-        enddo
+        allocate(Coup_Create_cum(nFCIDet+1))
+        allocate(Coup_Ann_cum(nFCIDet+1))
 
         !Unfortunately, it is not easy to calculate the transpose. Do it explicitly now (matrices are at least of the same size)
-        allocate(Coup_Create_alpha_T(2,Nmax_Coup_Create))
-        allocate(Coup_Ann_alpha_T(2,Nmax_Coup_Ann))
+        allocate(Coup_Create_T(2,Nmax_Coup_Create))
+        allocate(Coup_Ann_T(2,Nmax_Coup_Ann))
         !Also indexing arrays
-        allocate(Coup_Create_alpha_inds_T(Nmax_Coup_Create))
-        allocate(Coup_Ann_alpha_inds_T(Nmax_Coup_Ann))
-        allocate(Coup_Create_alpha_cum_T(nNm1bFCIDet+1))
-        allocate(Coup_Ann_alpha_cum_T(nNp1FCIDet+1))
-
-        Coup_Create_alpha_T(:,:) = 0
-        Coup_Ann_alpha_T(:,:) = 0
-        Coup_Create_alpha_inds_T(:) = 0
-        Coup_Ann_alpha_inds_T(:) = 0
-        Coup_Create_alpha_cum_T(:) = 0
-        Coup_Ann_alpha_cum_T(:) = 0
-        Coup_Create_alpha_cum_T(1) = 1
-        Coup_Ann_alpha_cum_T(1) = 1
-
-        i = 0
-        do J = 1,nNm1bFCIDet
-            !Start with the creation of an alpha orbital
-            do K = 1,nFCIDet
-                DiffOrb = ieor(Nm1bBitList(J),FCIBitList(K))
-                nOrbs = CountBits(DiffOrb)
-                if(mod(nOrbs,2).ne.1) then 
-                    !There must be an odd number of orbital differences between the determinants
-                    !since they are of different electron number by one
-                    call stop_all(t_r,'Not odd number of electrons')
-                endif
-                if(nOrbs.ne.1) then
-                    !We only want one orbital different
-                    cycle
-                endif
-                !Now, find out what SPINorbital this one is from the bit number set
-                call DecodeBitDet(orbdum,1,DiffOrb)
-                gam = orbdum(1)
-                if(mod(gam,2).ne.1) then
-                    call stop_all(t_r,'differing orbital should be an alpha spin orbital')
-                endif
-                !Now find out the parity change when applying this creation operator to the original determinant
-                tempK = FCIBitList(K)
-                call SQOperator(tempK,gam,tParity,.true.)
-
-                i = i + 1
-                if(i.gt.Nmax_Coup_Create) call stop_all(t_r,'Compressed array size too small')
-                Coup_Create_alpha_T(1,i) = tospat(gam)+CoreEnd
-                if(tParity) then
-                    Coup_Create_alpha_T(2,i) = -1
-                else
-                    Coup_Create_alpha_T(2,i) = 1
-                endif
-                Coup_Create_alpha_inds_T(i) = K
-            enddo
-            Coup_Create_alpha_cum_T(J+1) = i+1
-        enddo
-
-        i = 0
-        do J = 1,nNp1FCIDet
-            !Annihilation of an alpha orbital
-            do K = 1,nFCIDet
-                DiffOrb = ieor(Np1BitList(J),FCIBitList(K))
-                nOrbs = CountBits(DiffOrb)
-                if(mod(nOrbs,2).ne.1) then 
-                    !There must be an odd number of orbital differences between the determinants
-                    !since they are of different electron number by one
-                    call stop_all(t_r,'Not odd number of electrons')
-                endif
-                if(nOrbs.ne.1) then
-                    !We only want one orbital different
-                    cycle
-                endif
-                !Now, find out what SPINorbital this one is from the bit number set
-                call DecodeBitDet(orbdum,1,DiffOrb)
-                gam = orbdum(1)
-                if(mod(gam,2).ne.1) then
-                    call stop_all(t_r,'differing orbital should be an alpha spin orbital')
-                endif
-                !Now find out the parity change when applying this creation operator to the original determinant
-                tempK = FCIBitList(K)
-                call SQOperator(tempK,gam,tParity,.false.)
-
-                i = i + 1
-                if(i.gt.Nmax_Coup_Ann) call stop_all(t_r,'Compressed array size too small')
-                Coup_Ann_alpha_T(1,i) = tospat(gam)+CoreEnd
-                if(tParity) then
-                    Coup_Ann_alpha_T(2,i) = -1
-                else
-                    Coup_Ann_alpha_T(2,i) = 1
-                endif
-                Coup_Ann_alpha_inds_T(i) = K
-            enddo
-            Coup_Ann_alpha_cum_T(J+1) = i+1
-        enddo
-
-        i = 6*Nmax_Coup_Create + 6*Nmax_Coup_Ann + 2*nFCIDet + nNm1bFCIDet + nNp1FCIDet
-        write(6,"(A,F12.5,A)") "Memory required for coupling coefficient matrices: ",real(i,dp)*RealtoMb, " Mb"
-        i = 2*nFCIDet*nNm1bFCIDet + 2*nFCIDet*nNp1FCIDet
-        write(6,"(A,F12.5,A)") "Uncompressed memory required for coupling coefficient matrices: ",real(i,dp)*RealtoMb, " Mb"
+        allocate(Coup_Create_inds_T(Nmax_Coup_Create))
+        allocate(Coup_Ann_inds_T(Nmax_Coup_Ann))
+        allocate(Coup_Create_cum_T(nNm1bFCIDet+1))
+        allocate(Coup_Ann_cum_T(nNp1FCIDet+1))
+        
+        !Create coupling matrices of the appropriate spin
+        call CreateCmprsCouplingMatrices(NMax_Coup_Create,NMax_Coup_Ann,Coup_Create,Coup_Ann,Coup_Create_inds,  &
+            Coup_Ann_inds,Coup_Create_cum,Coup_Ann_cum,Coup_Create_T,Coup_Ann_T,Coup_Create_inds_T, &
+            Coup_Ann_inds_T,Coup_Create_cum_T,Coup_Ann_cum_T,tSwapSpins=tBetaExcit)
 
         !Now allocate the compressed matrices for the linear systems.
         Nmax_Lin_p = Nmax_Np1 + Nmax_N + 2*Nmax_Coup_Ann
-        Nmax_Lin_h = Nmax_Nm1b + Nmax_N + 2*Nmax_Coup_Create
+        Nmax_Lin_h = Nmax_Nm1 + Nmax_N + 2*Nmax_Coup_Create
         write(6,"(A,F14.6,A)") "Memory required for compressed LR systems: ",   &
             (3*(real(Nmax_Lin_p,dp)*8)+3*(real(Nmax_Lin_h,dp)*8))/1048576.0_dp," Mb"
         write(6,"(A,F14.6,A)") "Compare to memory required for the uncompressed system: ",  &
@@ -2040,7 +1903,7 @@ module LinearResponse
 
             !First, find the non-interacting solution expressed in the schmidt basis
             !This will only calculate it over the first impurity site
-            call FindSchmidtPert_Charged(Omega+mu,NI_LRMat_Cre,NI_LRMat_Ann)
+            call FindSchmidtPert_Charged(Omega+mu,NI_LRMat_Cre,NI_LRMat_Ann,tSwapSpins=tBetaExcit)
 
             !Construct useful intermediates, using zgemm
             !sum_a Gc_a^* F_ax (Creation)
@@ -2085,7 +1948,7 @@ module LinearResponse
                 tempel = tempel / VNorm
 
                 !First, store diagonals
-                LinearSystem_p(1:nNp1FCIDet) = Np1FCIHam_alpha_cmps(1:nNp1FCIDet)
+                LinearSystem_p(1:nNp1FCIDet) = Np1FCIHam_cmps(1:nNp1FCIDet)
                 j = 0
                 do i = nNp1FCIDet+1,nLinearSystem
                     j = j + 1
@@ -2105,7 +1968,7 @@ module LinearResponse
                 tempel = -tempel / CNorm
                 
                 !Store diagonals
-                LinearSystem_h(1:nNm1bFCIDet) = Nm1FCIHam_beta_cmps(1:nNm1bFCIDet)
+                LinearSystem_h(1:nNm1bFCIDet) = Nm1FCIHam_cmps(1:nNm1bFCIDet)
                 j = 0
                 do i = nNm1bFCIDet + 1,nLinearSystem
                     j = j + 1
@@ -2123,37 +1986,37 @@ module LinearResponse
                 !First - the top rows (np1 rows)
                 do i = 1,nNp1FCIDet
                     !Loop through rows - first through block 1
-                    do k = Np1FCIHam_alpha_inds(i),Np1FCIHam_alpha_inds(i+1)-1
+                    do k = Np1FCIHam_inds(i),Np1FCIHam_inds(i+1)-1
                         !k indexes the non-zero, off-diagonal matrix elements moving along the row of i
-                        if(abs(Np1FCIHam_alpha_cmps(k)).ge.CompressThresh) then
+                        if(abs(Np1FCIHam_cmps(k)).ge.CompressThresh) then
                             ind_p = ind_p + 1
                             if(ind_p.gt.Nmax_Lin_p) call stop_all(t_r,'Compressed array p size too small')
-                            LinearSystem_p(ind_p) = Np1FCIHam_alpha_cmps(k)
+                            LinearSystem_p(ind_p) = Np1FCIHam_cmps(k)
                             !But what determinant do these correspond to? This is given by Np1FCIHam_alpha_inds(k)
-                            LinearSystem_p_inds(ind_p) = Np1FCIHam_alpha_inds(k)
+                            LinearSystem_p_inds(ind_p) = Np1FCIHam_inds(k)
                         endif
                     enddo
                     !Now loop through the same row of block 3
-                    do k = Coup_Ann_alpha_cum_T(i),Coup_Ann_alpha_cum_T(i+1)-1
-                        matel = Gc_a_F_ax_Ket(Coup_Ann_alpha_T(1,k),pertsite)*Coup_Ann_alpha_T(2,k)/sqrt(VNorm)
+                    do k = Coup_Ann_cum_T(i),Coup_Ann_cum_T(i+1)-1
+                        matel = Gc_a_F_ax_Ket(Coup_Ann_T(1,k),pertsite)*Coup_Ann_T(2,k)/sqrt(VNorm)
                         if(abs(matel).ge.CompressThresh) then
                             ind_p = ind_p + 1
                             if(ind_p.gt.Nmax_Lin_p) call stop_all(t_r,'Compressed array p size too small 2')
                             LinearSystem_p(ind_p) = matel 
-                            LinearSystem_p_inds(ind_p) = Coup_Ann_alpha_inds_T(k) + nNp1FCIDet  !Add on cols from block 1
+                            LinearSystem_p_inds(ind_p) = Coup_Ann_inds_T(k) + nNp1FCIDet  !Add on cols from block 1
                         endif
                     enddo
                     LinearSystem_p_inds(i+1) = ind_p + 1
                 enddo
                 !Now, the rows from block 3_T and 2
                 do i = 1,nFCIDet
-                    do k = Coup_Ann_alpha_cum(i),Coup_Ann_alpha_cum(i+1)-1
-                        matel = Gc_a_F_ax_Bra(Coup_Ann_alpha(1,k),pertsite)*Coup_Ann_alpha(2,k)/sqrt(VNorm)
+                    do k = Coup_Ann_cum(i),Coup_Ann_cum(i+1)-1
+                        matel = Gc_a_F_ax_Bra(Coup_Ann(1,k),pertsite)*Coup_Ann(2,k)/sqrt(VNorm)
                         if(abs(matel).gt.CompressThresh) then
                             ind_p = ind_p + 1
                             if(ind_p.gt.Nmax_Lin_p) call stop_all(t_r,'Compressed array p size too small 3')
                             LinearSystem_p(ind_p) = matel 
-                            LinearSystem_p_inds(ind_p) = Coup_Ann_alpha_inds(k)
+                            LinearSystem_p_inds(ind_p) = Coup_Ann_inds(k)
                         endif
                     enddo
                     !Now loop through the same row of block 2
@@ -2171,34 +2034,34 @@ module LinearResponse
                 !Now for hole hamiltonian
                 do i = 1,nNm1bFCIDet
                     !Loop through rows
-                    do k = Nm1FCIHam_beta_inds(i),Nm1FCIHam_beta_inds(i+1)-1
-                        if(abs(Nm1FCIHam_beta_cmps(k)).ge.CompressThresh) then
+                    do k = Nm1FCIHam_inds(i),Nm1FCIHam_inds(i+1)-1
+                        if(abs(Nm1FCIHam_cmps(k)).ge.CompressThresh) then
                             ind_h = ind_h + 1
                             if(ind_h.gt.Nmax_Lin_h) call stop_all(t_r,'Compressed array h size too small')
-                            LinearSystem_h(ind_h) = Nm1FCIHam_beta_cmps(k)
-                            LinearSystem_h_inds(ind_h) = Nm1FCIHam_beta_inds(k)
+                            LinearSystem_h(ind_h) = Nm1FCIHam_cmps(k)
+                            LinearSystem_h_inds(ind_h) = Nm1FCIHam_inds(k)
                         endif
                     enddo
-                    do k = Coup_Create_alpha_cum_T(i),Coup_Create_alpha_cum_T(i+1)-1
-                        matel = - Ga_i_F_xi_Ket(Coup_Create_alpha_T(1,k),pertsite)*Coup_Create_alpha_T(2,k)/sqrt(CNorm)
+                    do k = Coup_Create_cum_T(i),Coup_Create_cum_T(i+1)-1
+                        matel = - Ga_i_F_xi_Ket(Coup_Create_T(1,k),pertsite)*Coup_Create_T(2,k)/sqrt(CNorm)
                         if(abs(matel).gt.CompressThresh) then
                             ind_h = ind_h + 1
                             if(ind_h.gt.Nmax_Lin_p) call stop_all(t_r,'Compressed array h size too small 2')
                             LinearSystem_h(ind_h) = matel 
-                            LinearSystem_h_inds(ind_h) = Coup_Create_alpha_inds_T(k) + nNm1bFCIDet
+                            LinearSystem_h_inds(ind_h) = Coup_Create_inds_T(k) + nNm1bFCIDet
                         endif
                     enddo
                     LinearSystem_h_inds(i+1) = ind_h + 1
                 enddo
                 !Now, the rows from block 3^T and 2
                 do i = 1,nFCIDet
-                    do k = Coup_Create_alpha_cum(i),Coup_Create_alpha_cum(i+1)-1
-                        matel = - Ga_i_F_xi_Bra(Coup_Create_alpha(1,k),pertsite)*Coup_Create_alpha(2,k)/sqrt(CNorm)
+                    do k = Coup_Create_cum(i),Coup_Create_cum(i+1)-1
+                        matel = - Ga_i_F_xi_Bra(Coup_Create(1,k),pertsite)*Coup_Create(2,k)/sqrt(CNorm)
                         if(abs(matel).gt.CompressThresh) then
                             ind_h = ind_h + 1
                             if(ind_h.gt.Nmax_Lin_h) call stop_all(t_r,'Compressed array h size too small 3')
                             LinearSystem_h(ind_h) = matel 
-                            LinearSystem_h_inds(ind_h) = Coup_Create_alpha_inds(k)
+                            LinearSystem_h_inds(ind_h) = Coup_Create_inds(k)
                         endif
                     enddo
                     !Now loop through the same row of block 2
@@ -2397,11 +2260,11 @@ module LinearResponse
         if(allocated(Np1bBitList)) deallocate(Np1bBitList)
 
         !Stored intermediates
-        deallocate(NFCIHam_cmps,Nm1FCIHam_beta_cmps,Np1FCIHam_alpha_cmps)
-        deallocate(NFCIHam_inds,Nm1FCIHam_beta_inds,Np1FCIHam_alpha_inds)
-        deallocate(Coup_Create_alpha,Coup_Ann_alpha,Coup_Create_alpha_inds,Coup_Ann_alpha_inds)
-        deallocate(Coup_Create_alpha_cum,Coup_Ann_alpha_cum,Coup_Create_alpha_T,Coup_Ann_alpha_T)
-        deallocate(Coup_Create_alpha_inds_T,Coup_Ann_alpha_inds_T,Coup_Create_alpha_cum_T,Coup_Ann_alpha_cum_T)
+        deallocate(NFCIHam_cmps,Nm1FCIHam_cmps,Np1FCIHam_cmps)
+        deallocate(NFCIHam_inds,Nm1FCIHam_inds,Np1FCIHam_inds)
+        deallocate(Coup_Create,Coup_Ann,Coup_Create_inds,Coup_Ann_inds)
+        deallocate(Coup_Create_cum,Coup_Ann_cum,Coup_Create_T,Coup_Ann_T)
+        deallocate(Coup_Create_inds_T,Coup_Ann_inds_T,Coup_Create_cum_T,Coup_Ann_cum_T)
         deallocate(FockSchmidt_SE,FockSchmidt_SE_VV,FockSchmidt_SE_CC)
         deallocate(FockSchmidt_SE_VX,FockSchmidt_SE_CX,FockSchmidt_SE_XV,FockSchmidt_SE_XC)
         deallocate(Gc_a_F_ax_Bra,Gc_a_F_ax_Ket,Gc_b_F_ab,Ga_i_F_xi_Bra,Ga_i_F_xi_Ket,Ga_i_F_ij)
@@ -2517,7 +2380,7 @@ module LinearResponse
         allocate(NFCIHam(nFCIDet,nFCIDet))
         allocate(Np1FCIHam_alpha(nNp1FCIDet,nNp1FCIDet))
         allocate(Nm1FCIHam_beta(nNm1bFCIDet,nNm1bFCIDet))
-        call Fill_N_Np1_Nm1b_FCIHam(Elec,1,1,1,NHam=NFCIHam,Np1Ham=Np1FCIHam_alpha,Nm1bHam=Nm1FCIHam_beta)
+        call Fill_N_Np1_Nm1b_FCIHam(Elec,1,1,1,NHam=NFCIHam,Np1Ham=Np1FCIHam_alpha,Nm1Ham=Nm1FCIHam_beta)
 
         nLinearSystem = nNp1FCIDet + nFCIDet
         nLinearSystem_h = nNm1bFCIDet + nFCIDet
@@ -2817,7 +2680,7 @@ module LinearResponse
                     !Update tmat with the new one-electron hamiltonian, with self-energy contribution
                     tmat_comp(:,:) = Emb_h0v_SE(:,:)
                     if(tChemPot) tmat_comp(1,1) = tmat_comp(1,1) - dcmplx(U/2.0_dp,0.0_dp)
-                    call Fill_N_Np1_Nm1b_FCIHam(Elec,1,1,1,NHam=NFCIHam,Np1Ham=Np1FCIHam_alpha,Nm1bHam=Nm1FCIHam_beta)
+                    call Fill_N_Np1_Nm1b_FCIHam(Elec,1,1,1,NHam=NFCIHam,Np1Ham=Np1FCIHam_alpha,Nm1Ham=Nm1FCIHam_beta)
                 else
                     !First, find the non-interacting solution expressed in the schmidt basis
                     !This will only calculate it over the first impurity site
@@ -4710,29 +4573,40 @@ module LinearResponse
 
     end subroutine NonIntExContracted_TDA_MCLR
         
-    !Calculate n-electron hamiltonian
-    subroutine Fill_N_Np1_Nm1b_FCIHam(nElec,Nmax_N,Nmax_Np1,Nmax_Nm1b,NHam,Np1Ham,Nm1bHam,  &
-            NHam_cmps,Np1Ham_cmps,Nm1bHam_cmps,NHam_inds,Np1Ham_inds,Nm1bHam_inds)
+    !Calculate n-electron hamiltonians
+    subroutine Fill_N_Np1_Nm1b_FCIHam(nElec,Nmax_N,Nmax_Np1,Nmax_Nm1,NHam,Np1Ham,Nm1Ham,  &
+            NHam_cmps,Np1Ham_cmps,Nm1Ham_cmps,NHam_inds,Np1Ham_inds,Nm1Ham_inds,tSwapExcits)
         use DetToolsData
         use DetTools, only : GetHElement_comp
         use solvers, only: StoreCompMat_comp
         use utils, only: get_free_unit
         implicit none
         integer, intent(in) :: nElec
-        integer, intent(in) :: Nmax_N,Nmax_Np1,Nmax_Nm1b
+        integer, intent(in) :: Nmax_N,Nmax_Np1,Nmax_Nm1
         complex(dp), intent(out), optional :: NHam(nFCIDet,nFCIDet)
         complex(dp), intent(out), optional :: Np1Ham(nNp1FCIDet,nNp1FCIDet)
-        complex(dp), intent(out), optional :: Nm1bHam(nNm1bFCIDet,nNm1bFCIDet)
+        complex(dp), intent(out), optional :: Nm1Ham(nNm1bFCIDet,nNm1bFCIDet)
         complex(dp), intent(out), optional :: NHam_cmps(Nmax_N) 
         complex(dp), intent(out), optional :: Np1Ham_cmps(Nmax_Np1)
-        complex(dp), intent(out), optional :: Nm1bHam_cmps(Nmax_Nm1b)
+        complex(dp), intent(out), optional :: Nm1Ham_cmps(Nmax_Nm1)
         integer, intent(out), optional :: NHam_inds(Nmax_N)
         integer, intent(out), optional :: Np1Ham_inds(Nmax_Np1)
-        integer, intent(out), optional :: Nm1bHam_inds(Nmax_Nm1b)
+        integer, intent(out), optional :: Nm1Ham_inds(Nmax_Nm1)
+        logical, intent(in), optional :: tSwapExcits
         real(dp) :: rtmp
         integer :: i,j,iSize,iunit_tmp
-        logical :: tCmprsMats,tExist
+        logical :: tCmprsMats,tExist,tSwapExcits_
         character(len=*), parameter :: t_r='Fill_N_Np1_Nm1b_FCIHam'
+
+        !If tSwapexcits = T, then we want to calculate the N+1_beta and N-1_alpha hamiltonians
+        !Otherwise, calculate N+1_alpha and N-1_beta
+        if(present(tSwapExcits)) then
+            !Want Np1b for particle and Nm1 for hole if tBetaExcit, or vice versa otherwise
+            !We have removed the distinction, and so will have to remember...
+            tSwapExcits_ = tSwapExcits
+        else
+            tSwapExcits_ = .false.
+        endif
 
         if(present(NHam)) then
             tCmprsMats = .false.
@@ -4744,10 +4618,10 @@ module LinearResponse
         if(tCmprsMats) then
             NHam_cmps(:) = zzero
             Np1Ham_cmps(:) = zzero
-            Nm1bHam_cmps(:) = zzero
+            Nm1Ham_cmps(:) = zzero
             NHam_inds(:) = 0
             Np1Ham_inds(:) = 0
-            Nm1bHam_inds(:) = 0
+            Nm1Ham_inds(:) = 0
 
             if(tReadMats) then
                 inquire(file='CompressHam_N',exist=texist)
@@ -4769,12 +4643,17 @@ module LinearResponse
             else
                 call StoreCompMat_comp(FCIDetList,nElec,nFCIDet,Nmax_N,NHam_cmps,NHam_inds,FCIBitList)
             endif
-            call StoreCompMat_comp(Np1FCIDetList,nElec+1,nNp1FCIDet,Nmax_Np1,Np1Ham_cmps,Np1Ham_inds,Np1BitList)
-            call StoreCompMat_comp(Nm1bFCIDetList,nElec-1,nNm1bFCIDet,Nmax_Nm1b,Nm1bHam_cmps,Nm1bHam_inds,Nm1bBitList)
+            if(tSwapExcits_) then
+                call StoreCompMat_comp(Np1bFCIDetList,nElec+1,nNp1bFCIDet,Nmax_Np1,Np1Ham_cmps,Np1Ham_inds,Np1bBitList)
+                call StoreCompMat_comp(Nm1FCIDetList,nElec-1,nNm1FCIDet,Nmax_Nm1,Nm1Ham_cmps,Nm1Ham_inds,Nm1BitList)
+            else
+                call StoreCompMat_comp(Np1FCIDetList,nElec+1,nNp1FCIDet,Nmax_Np1,Np1Ham_cmps,Np1Ham_inds,Np1BitList)
+                call StoreCompMat_comp(Nm1bFCIDetList,nElec-1,nNm1bFCIDet,Nmax_Nm1,Nm1Ham_cmps,Nm1Ham_inds,Nm1bBitList)
+            endif
         else
             NHam(:,:) = zzero
             Np1Ham(:,:) = zzero
-            Nm1bHam(:,:) = zzero
+            Nm1Ham(:,:) = zzero
             !Beware - these can be non-hermitian. Ensure that the indices are the right way around!
             do i = 1,nFCIDet
                 do j = 1,nFCIDet
@@ -4782,18 +4661,33 @@ module LinearResponse
                         ilutnI=FCIBitList(i),ilutnJ=FCIBitList(j))
                 enddo
             enddo
-            do i = 1,nNp1FCIDet
-                do j = 1,nNp1FCIDet
-                    call GetHElement_comp(Np1FCIDetList(:,i),Np1FCIDetList(:,j),nElec+1,Np1Ham(i,j),    &
-                        ilutnI=Np1BitList(i),ilutnJ=Np1BitList(j))
+            if(tSwapExcits_) then
+                do i = 1,nNp1bFCIDet
+                    do j = 1,nNp1bFCIDet
+                        call GetHElement_comp(Np1bFCIDetList(:,i),Np1bFCIDetList(:,j),nElec+1,Np1Ham(i,j),    &
+                            ilutnI=Np1bBitList(i),ilutnJ=Np1bBitList(j))
+                    enddo
                 enddo
-            enddo
-            do i = 1,nNm1bFCIDet
-                do j = 1,nNm1bFCIDet
-                    call GetHElement_comp(Nm1bFCIDetList(:,i),Nm1bFCIDetList(:,j),nElec-1,Nm1bHam(i,j), &
-                        ilutnI=Nm1bBitList(i),ilutnJ=Nm1bBitList(j))
+                do i = 1,nNm1FCIDet
+                    do j = 1,nNm1FCIDet
+                        call GetHElement_comp(Nm1FCIDetList(:,i),Nm1FCIDetList(:,j),nElec-1,Nm1Ham(i,j), &
+                            ilutnI=Nm1BitList(i),ilutnJ=Nm1BitList(j))
+                    enddo
                 enddo
-            enddo
+            else
+                do i = 1,nNp1FCIDet
+                    do j = 1,nNp1FCIDet
+                        call GetHElement_comp(Np1FCIDetList(:,i),Np1FCIDetList(:,j),nElec+1,Np1Ham(i,j),    &
+                            ilutnI=Np1BitList(i),ilutnJ=Np1BitList(j))
+                    enddo
+                enddo
+                do i = 1,nNm1bFCIDet
+                    do j = 1,nNm1bFCIDet
+                        call GetHElement_comp(Nm1bFCIDetList(:,i),Nm1bFCIDetList(:,j),nElec-1,Nm1Ham(i,j), &
+                            ilutnI=Nm1bBitList(i),ilutnJ=Nm1bBitList(j))
+                    enddo
+                enddo
+            endif
         endif
 
     end subroutine Fill_N_Np1_Nm1b_FCIHam
@@ -5045,20 +4939,28 @@ module LinearResponse
             
     !It is only trying to create/destroy the alpha orbital applied to the ground state wavefunction
     !Will return the ground state, with a particle created or destroyed in pertsite
-    subroutine ApplySP_PertGS_EC(Psi_0,SizeGS,V0_Cre,V0_Ann,nSizeLR,pertsite)
+    subroutine ApplySP_PertGS_EC(Psi_0,SizeGS,V0_Cre,V0_Ann,nSizeLR,pertsite,tSwapExcits)
         use DetToolsData
         use DetBitOps, only: SQOperator 
         implicit none
         integer, intent(in) :: SizeGS,nSizeLR,pertsite
         complex(dp), intent(in) :: Psi_0(SizeGS)
         complex(dp), intent(out) :: V0_Cre(nSizeLR),V0_Ann(nSizeLR)
-        integer :: ilut,pertsitealpha,i,j,GSInd
-        logical :: tParity
+        logical, intent(in), optional :: tSwapExcits
+        integer :: ilut,pertsitespin,i,j,GSInd
+        logical :: tParity,tSwapExcits_
         character(len=*), parameter :: t_r='ApplySP_PertGS_EC'
 
+        !if tSwapExcits_, then the perturbation is applied to the beta orbital
+        !Otherwise, it is applied to the alpha orbital
+        if(present(tSwapExcits)) then
+            tSwapExcits_ = tSwapExcits
+        else
+            tSwapExcits_ = .false.
+        endif
 
-        V0_Ann(:) = dcmplx(0.0_dp,0.0_dp)
-        V0_Cre(:) = dcmplx(0.0_dp,0.0_dp)
+        V0_Ann(:) = zzero
+        V0_Cre(:) = zzero 
 
         if(SizeGS.ne.(nFCIDet+nNp1FCIDet+nNm1bFCIDet)) then
             call stop_all(t_r,'Zeroth order wavefunction not expected size')
@@ -5070,50 +4972,87 @@ module LinearResponse
             call stop_all(t_r,"V0's are different sizes for particle/hole creation - not half filled active space")
         endif
 
-        pertsitealpha = 2*pertsite-1
+        if(tSwapExcits_) then
+            !apply to beta spin 
+            pertsitespin = 2*pertsite
+        else
+            !Apply to alpha spin
+            pertsitespin = 2*pertsite-1
+        endif
 
         !This is going to be done in a very slow N^2 loop, rather than 
         do i=1,nFCIDet
             !We want to create a particle
-            if(.not.btest(FCIBitList(i),pertsitealpha-1)) then
+            if(.not.btest(FCIBitList(i),pertsitespin-1)) then
                 !spin-orbital is not occupied, we can create in it
 
                 ilut = FCIBitList(i)
                 !Create it, and check parity
-                call SQOperator(ilut,pertsitealpha,tParity,.false.)
+                call SQOperator(ilut,pertsitespin,tParity,.false.)
 
                 !This should really be binary searched here for efficiency
-                do j = 1,nNp1FCIDet
-                    if(Np1BitList(j).eq.ilut) then
-                        !Found corresponding determinant
-                        if(tParity) then
-                            V0_Cre(j) = -Psi_0(i)
-                        else
-                            V0_Cre(j) = Psi_0(i)
+                if(tSwapExcits_) then
+                    do j = 1,nNp1bFCIDet
+                        if(Np1bBitList(j).eq.ilut) then
+                            !Found corresponding determinant
+                            if(tParity) then
+                                V0_Cre(j) = -Psi_0(i)
+                            else
+                                V0_Cre(j) = Psi_0(i)
+                            endif
+                            exit
                         endif
-                        exit
-                    endif
-                enddo
-                if(j.eq.(nNp1FCIDet+1)) call stop_all(t_r,'Could not find corresponding determinant')
+                    enddo
+                    if(j.eq.(nNp1bFCIDet+1)) call stop_all(t_r,'Could not find corresponding determinant')
+                else
+                    do j = 1,nNp1FCIDet
+                        if(Np1BitList(j).eq.ilut) then
+                            !Found corresponding determinant
+                            if(tParity) then
+                                V0_Cre(j) = -Psi_0(i)
+                            else
+                                V0_Cre(j) = Psi_0(i)
+                            endif
+                            exit
+                        endif
+                    enddo
+                    if(j.eq.(nNp1FCIDet+1)) call stop_all(t_r,'Could not find corresponding determinant')
+                endif
             else
                 !Spin-orbital occupied, we can destroy it
                 ilut = FCIBitList(i)
                 !Annihilate it, and check parity
-                call SQOperator(ilut,pertsitealpha,tParity,.true.)
+                call SQOperator(ilut,pertsitespin,tParity,.true.)
 
-                !This should really be binary searched here for efficiency
-                do j = 1,nNm1bFCIDet
-                    if(Nm1bBitList(j).eq.ilut) then
-                        !Found corresponding determinant
-                        if(tParity) then
-                            V0_Ann(j) = -Psi_0(i)
-                        else
-                            V0_Ann(j) = Psi_0(i)
+                if(tSwapExcits_) then
+                    !This should really be binary searched here for efficiency
+                    do j = 1,nNm1FCIDet
+                        if(Nm1BitList(j).eq.ilut) then
+                            !Found corresponding determinant
+                            if(tParity) then
+                                V0_Ann(j) = -Psi_0(i)
+                            else
+                                V0_Ann(j) = Psi_0(i)
+                            endif
+                            exit
                         endif
-                        exit
-                    endif
-                enddo
-                if(j.eq.(nNm1bFCIDet+1)) call stop_all(t_r,'Could not find corresponding determinant')
+                    enddo
+                    if(j.eq.(nNm1FCIDet+1)) call stop_all(t_r,'Could not find corresponding determinant')
+                else
+                    !This should really be binary searched here for efficiency
+                    do j = 1,nNm1bFCIDet
+                        if(Nm1bBitList(j).eq.ilut) then
+                            !Found corresponding determinant
+                            if(tParity) then
+                                V0_Ann(j) = -Psi_0(i)
+                            else
+                                V0_Ann(j) = Psi_0(i)
+                            endif
+                            exit
+                        endif
+                    enddo
+                    if(j.eq.(nNm1bFCIDet+1)) call stop_all(t_r,'Could not find corresponding determinant')
+                endif
             endif
         enddo
 
@@ -5122,45 +5061,87 @@ module LinearResponse
             return
         endif
 
-        !This is part of the GS which will contribute to the particle removal (V0_Ann) wavefunction
-        do i = 1,nNp1FCIDet
-            if(btest(Np1BitList(i),pertsitealpha-1)) then
-                ilut = Np1BitList(i)
-                call SQOperator(ilut,pertsitealpha,tParity,.true.)
-                GSInd = nFCIDet + i
-                do j = 1,nFCIDet
-                    if(FCIBitList(j).eq.ilut) then
-                        if(tParity) then
-                            V0_Ann(nNm1bFCIDet+j) = -Psi_0(GSInd)
-                        else
-                            V0_Ann(nNm1bFCIDet+j) = Psi_0(GSInd)
+        if(tSwapExcits_) then
+            !This is part of the GS which will contribute to the particle removal (V0_Ann) wavefunction
+            do i = 1,nNp1bFCIDet
+                if(btest(Np1bBitList(i),pertsitespin-1)) then
+                    ilut = Np1bBitList(i)
+                    call SQOperator(ilut,pertsitespin,tParity,.true.)
+                    GSInd = nFCIDet + i
+                    do j = 1,nFCIDet
+                        if(FCIBitList(j).eq.ilut) then
+                            if(tParity) then
+                                V0_Ann(nNm1FCIDet+j) = -Psi_0(GSInd)
+                            else
+                                V0_Ann(nNm1FCIDet+j) = Psi_0(GSInd)
+                            endif
+                            exit
                         endif
-                        exit
-                    endif
-                enddo
-                if(j.gt.nFCIDet) call stop_all(t_r,'Could not find corresponding determinant 3')
-            endif
-        enddo
+                    enddo
+                    if(j.gt.nFCIDet) call stop_all(t_r,'Could not find corresponding determinant 3')
+                endif
+            enddo
 
-        !This is the n-1 active space which will be operated on my the particle creation operator
-        do i = 1,nNm1bFCIDet
-            if(.not.btest(Nm1bBitList(i),pertsitealpha-1)) then
-                ilut = Nm1bBitList(i)
-                call SQOperator(ilut,pertsitealpha,tParity,.false.)
-                GSInd = nFCIDet + nNp1FCIDet + i 
-                do j = 1,nFCIDet
-                    if(FCIBitList(j).eq.ilut) then
-                        if(tParity) then
-                            V0_Cre(nNp1FCIDet+j) = -Psi_0(GSInd)
-                        else
-                            V0_Cre(nNp1FCIDet+j) = Psi_0(GSInd)
+            !This is the n-1 active space which will be operated on my the particle creation operator
+            do i = 1,nNm1FCIDet
+                if(.not.btest(Nm1BitList(i),pertsitespin-1)) then
+                    ilut = Nm1BitList(i)
+                    call SQOperator(ilut,pertsitespin,tParity,.false.)
+                    GSInd = nFCIDet + nNp1bFCIDet + i 
+                    do j = 1,nFCIDet
+                        if(FCIBitList(j).eq.ilut) then
+                            if(tParity) then
+                                V0_Cre(nNp1bFCIDet+j) = -Psi_0(GSInd)
+                            else
+                                V0_Cre(nNp1bFCIDet+j) = Psi_0(GSInd)
+                            endif
+                            exit
                         endif
-                        exit
-                    endif
-                enddo
-                if(j.gt.nFCIDet) call stop_all(t_r,'Could not find corresponding determinant 2')
-            endif
-        enddo
+                    enddo
+                    if(j.gt.nFCIDet) call stop_all(t_r,'Could not find corresponding determinant 2')
+                endif
+            enddo
+        else
+            !This is part of the GS which will contribute to the particle removal (V0_Ann) wavefunction
+            do i = 1,nNp1FCIDet
+                if(btest(Np1BitList(i),pertsitespin-1)) then
+                    ilut = Np1BitList(i)
+                    call SQOperator(ilut,pertsitespin,tParity,.true.)
+                    GSInd = nFCIDet + i
+                    do j = 1,nFCIDet
+                        if(FCIBitList(j).eq.ilut) then
+                            if(tParity) then
+                                V0_Ann(nNm1bFCIDet+j) = -Psi_0(GSInd)
+                            else
+                                V0_Ann(nNm1bFCIDet+j) = Psi_0(GSInd)
+                            endif
+                            exit
+                        endif
+                    enddo
+                    if(j.gt.nFCIDet) call stop_all(t_r,'Could not find corresponding determinant 3')
+                endif
+            enddo
+
+            !This is the n-1 active space which will be operated on my the particle creation operator
+            do i = 1,nNm1bFCIDet
+                if(.not.btest(Nm1bBitList(i),pertsitespin-1)) then
+                    ilut = Nm1bBitList(i)
+                    call SQOperator(ilut,pertsitespin,tParity,.false.)
+                    GSInd = nFCIDet + nNp1FCIDet + i 
+                    do j = 1,nFCIDet
+                        if(FCIBitList(j).eq.ilut) then
+                            if(tParity) then
+                                V0_Cre(nNp1FCIDet+j) = -Psi_0(GSInd)
+                            else
+                                V0_Cre(nNp1FCIDet+j) = Psi_0(GSInd)
+                            endif
+                            exit
+                        endif
+                    enddo
+                    if(j.gt.nFCIDet) call stop_all(t_r,'Could not find corresponding determinant 2')
+                endif
+            enddo
+        endif
 
     end subroutine ApplySP_PertGS_EC
 
@@ -5540,7 +5521,248 @@ module LinearResponse
         deallocate(work)
 
     end subroutine GMRES_Solve
+
+    subroutine CreateCmprsCouplingMatrices(NMax_Coup_Create,NMax_Coup_Ann,Coup_Create,Coup_Ann, &
+            Coup_Create_inds,Coup_Ann_inds,Coup_Create_cum,Coup_Ann_cum,Coup_Create_T,Coup_Ann_T,   &
+            Coup_Create_inds_T,Coup_Ann_inds_T,Coup_Create_cum_T,Coup_Ann_cum_T,tSwapSpins)
+        use DetToolsData
+        use DetTools, only: tospat
+        use DetBitOps, only: DecodeBitDet,SQOperator,CountBits
+        implicit none
+        integer, intent(in) :: NMax_Coup_Create,NMax_Coup_Ann
+        integer, intent(out) :: Coup_Create(2,Nmax_Coup_Create),Coup_Ann(2,Nmax_Coup_Ann)
+        integer, intent(out) :: Coup_Create_inds(Nmax_Coup_Create),Coup_Ann_inds(Nmax_Coup_Ann)
+        integer, intent(out) :: Coup_Create_cum(nFCIDet+1),Coup_Ann_cum(nFCIDet+1)
+        integer, intent(out) :: Coup_Create_T(2,Nmax_Coup_Create),Coup_Ann_T(2,Nmax_Coup_Ann)
+        integer, intent(out) :: Coup_Create_inds_T(Nmax_Coup_Create),Coup_Ann_inds_T(Nmax_Coup_Ann)
+        integer, intent(out) :: Coup_Create_cum_T(nNm1FCIDet+1),Coup_Ann_cum_T(nNp1FCIDet+1)
+        logical, intent(in), optional :: tSwapSpins
+        logical :: tSwapSpins_,tParity
+        integer :: i,j,k,i_Ann,nOrbs,DiffOrb,orbdum(1),gam,CoreEnd,tempK
+        character(len=*), parameter :: t_r='CreateCmprsCouplingMatrices'
+        
+        CoreEnd = nOcc-nImp
+
+        if(nNm1FCIDet.ne.nNm1bFCIDet) call stop_all(t_r,'Cannot do different spins like this if spaces different size')
+
+        !if tSwapSpins_ = T, then want to compute the coupling matrices for the creation and annihilation of an *alpha* spin orbital.
+        !Otherwise, a beta spin orbital
+        if(present(tSwapSpins)) then
+            tSwapSpins_ = tSwapSpins
+        else
+            tSwapSpins_ = .false.
+        endif
+
+        Coup_Create(:,:) = 0
+        Coup_Ann(:,:) = 0
+        Coup_Create_inds(:) = 0
+        Coup_Ann_inds(:) = 0
+        Coup_Create_cum(:) = 0
+        Coup_Ann_cum(:) = 0
+        Coup_Create_cum(1) = 1
+        Coup_Ann_cum(1) = 1
+        
+        Coup_Create_T(:,:) = 0
+        Coup_Ann_T(:,:) = 0
+        Coup_Create_inds_T(:) = 0
+        Coup_Ann_inds_T(:) = 0
+        Coup_Create_cum_T(:) = 0
+        Coup_Ann_cum_T(:) = 0
+        Coup_Create_cum_T(1) = 1
+        Coup_Ann_cum_T(1) = 1
+
+
+        i = 0
+        i_Ann = 0
+        do J = 1,nFCIDet
+            do K = 1,nNm1FCIDet
+                if(tSwapSpins_) then
+                    !Start with the creation of an beta orbital
+                    DiffOrb = ieor(Nm1BitList(K),FCIBitList(J))
+                else
+                    !Start with the creation of an alpha orbital
+                    DiffOrb = ieor(Nm1bBitList(K),FCIBitList(J))
+                endif
+                nOrbs = CountBits(DiffOrb)
+                if(mod(nOrbs,2).ne.1) then 
+                    !There must be an odd number of orbital differences between the determinants
+                    !since they are of different electron number by one
+                    call stop_all(t_r,'Not odd number of electrons')
+                endif
+                if(nOrbs.ne.1) then
+                    !We only want one orbital different
+                    cycle
+                endif
+                !Now, find out what SPINorbital this one is from the bit number set
+                call DecodeBitDet(orbdum,1,DiffOrb)
+                gam = orbdum(1)
+                if((mod(gam,2).ne.1).and.(.not.tSwapSpins_)) then
+                    call stop_all(t_r,'differing orbital should be an alpha spin orbital')
+                elseif((mod(gam,2).ne.0).and.(tSwapSpins_)) then
+                    call stop_all(t_r,'differing orbital should be a beta spin orbital')
+                endif
+                !Now find out the parity change when applying this creation operator to the original determinant
+                if(tSwapSpins_) then
+                    tempK = Nm1BitList(K)
+                else
+                    tempK = Nm1bBitList(K)
+                endif
+                call SQOperator(tempK,gam,tParity,.false.)
+
+                i = i + 1
+                if(i.gt.Nmax_Coup_Create) call stop_all(t_r,'Compressed array size too small')
+                Coup_Create(1,i) = tospat(gam)+CoreEnd
+                if(tParity) then
+                    Coup_Create(2,i) = -1
+                else
+                    Coup_Create(2,i) = 1
+                endif
+                Coup_Create_inds(i) = K
+            enddo
+            !Now, annihilation of an alpha orbital
+            do K = 1,nNp1FCIDet
+                if(tSwapSpins_) then
+                    DiffOrb = ieor(Np1bBitList(K),FCIBitList(J))
+                else
+                    DiffOrb = ieor(Np1BitList(K),FCIBitList(J))
+                endif
+                nOrbs = CountBits(DiffOrb)
+                if(mod(nOrbs,2).ne.1) then 
+                    !There must be an odd number of orbital differences between the determinants
+                    !since they are of different electron number by one
+                    call stop_all(t_r,'Not odd number of electrons 3')
+                endif
+                if(nOrbs.ne.1) then
+                    !We only want one orbital different
+                    cycle
+                endif
+                !Now, find out what SPINorbital this one is from the bit number set
+                call DecodeBitDet(orbdum,1,DiffOrb)
+                gam = orbdum(1)
+                if(mod(gam,2).ne.1.and.(.not.tSwapSpins_)) then
+                    call stop_all(t_r,'differing orbital should be an alpha spin orbital')
+                elseif(mod(gam,2).ne.0.and.tSwapSpins_) then
+                    call stop_all(t_r,'differing orbital should be a beta spin orbital')
+                endif
+                !Now find out the parity change when applying this creation operator to the original determinant
+                if(tSwapSpins_) then
+                    tempK = Np1bBitList(K)
+                else
+                    tempK = Np1BitList(K)
+                endif
+                call SQOperator(tempK,gam,tParity,.true.)
+
+                i_Ann = i_Ann + 1
+                if(i_Ann.gt.Nmax_Coup_Ann) call stop_all(t_r,'Compressed array size too small')
+                Coup_Ann(1,i_Ann) = tospat(gam)+CoreEnd
+                if(tParity) then
+                    Coup_Ann(2,i_Ann) = -1
+                else
+                    Coup_Ann(2,i_Ann) = 1
+                endif
+                Coup_Ann_inds(i_Ann) = K
+            enddo
+            Coup_Create_cum(J+1) = i+1
+            Coup_Ann_cum(J+1) = i_Ann + 1
+        enddo
+
+        i = 0
+        do J = 1,nNm1FCIDet
+            do K = 1,nFCIDet
+                if(tSwapSpins_) then
+                    !Start with the creation of a beta orbital
+                    DiffOrb = ieor(Nm1BitList(J),FCIBitList(K))
+                else
+                    !Start with the creation of an alpha orbital
+                    DiffOrb = ieor(Nm1bBitList(J),FCIBitList(K))
+                endif
+                nOrbs = CountBits(DiffOrb)
+                if(mod(nOrbs,2).ne.1) then 
+                    !There must be an odd number of orbital differences between the determinants
+                    !since they are of different electron number by one
+                    call stop_all(t_r,'Not odd number of electrons')
+                endif
+                if(nOrbs.ne.1) then
+                    !We only want one orbital different
+                    cycle
+                endif
+                !Now, find out what SPINorbital this one is from the bit number set
+                call DecodeBitDet(orbdum,1,DiffOrb)
+                gam = orbdum(1)
+                if(mod(gam,2).ne.1.and.(.not.tSwapSpins_)) then
+                    call stop_all(t_r,'differing orbital should be an alpha spin orbital')
+                elseif(mod(gam,2).ne.0.and.(tSwapSpins_)) then
+                    call stop_all(t_r,'differing orbital should be a beta spin orbital')
+                endif
+                !Now find out the parity change when applying this creation operator to the original determinant
+                tempK = FCIBitList(K)
+                call SQOperator(tempK,gam,tParity,.true.)
+
+                i = i + 1
+                if(i.gt.Nmax_Coup_Create) call stop_all(t_r,'Compressed array size too small')
+                Coup_Create_T(1,i) = tospat(gam)+CoreEnd
+                if(tParity) then
+                    Coup_Create_T(2,i) = -1
+                else
+                    Coup_Create_T(2,i) = 1
+                endif
+                Coup_Create_inds_T(i) = K
+            enddo
+            Coup_Create_cum_T(J+1) = i+1
+        enddo
+
+        i = 0
+        do J = 1,nNp1FCIDet
+            do K = 1,nFCIDet
+                if(tSwapSpins_) then
+                    !Annihilation of a beta orbital
+                    DiffOrb = ieor(Np1bBitList(J),FCIBitList(K))
+                else
+                    !Annihilation of an alpha orbital
+                    DiffOrb = ieor(Np1BitList(J),FCIBitList(K))
+                endif
+                nOrbs = CountBits(DiffOrb)
+                if(mod(nOrbs,2).ne.1) then 
+                    !There must be an odd number of orbital differences between the determinants
+                    !since they are of different electron number by one
+                    call stop_all(t_r,'Not odd number of electrons')
+                endif
+                if(nOrbs.ne.1) then
+                    !We only want one orbital different
+                    cycle
+                endif
+                !Now, find out what SPINorbital this one is from the bit number set
+                call DecodeBitDet(orbdum,1,DiffOrb)
+                gam = orbdum(1)
+                if(mod(gam,2).ne.1.and.(.not.tSwapSpins_)) then
+                    call stop_all(t_r,'differing orbital should be an alpha spin orbital')
+                elseif(mod(gam,2).ne.0.and.(tSwapSpins_)) then
+                    call stop_all(t_r,'differing orbital should be a beta spin orbital')
+                endif
+                !Now find out the parity change when applying this creation operator to the original determinant
+                tempK = FCIBitList(K)
+                call SQOperator(tempK,gam,tParity,.false.)
+
+                i = i + 1
+                if(i.gt.Nmax_Coup_Ann) call stop_all(t_r,'Compressed array size too small')
+                Coup_Ann_T(1,i) = tospat(gam)+CoreEnd
+                if(tParity) then
+                    Coup_Ann_T(2,i) = -1
+                else
+                    Coup_Ann_T(2,i) = 1
+                endif
+                Coup_Ann_inds_T(i) = K
+            enddo
+            Coup_Ann_cum_T(J+1) = i+1
+        enddo
+        
+        i = 6*Nmax_Coup_Create + 6*Nmax_Coup_Ann + 2*nFCIDet + nNm1bFCIDet + nNp1FCIDet
+        write(6,"(A,F12.5,A)") "Memory required for coupling coefficient matrices: ",real(i,dp)*RealtoMb, " Mb"
+        i = 2*nFCIDet*nNm1bFCIDet + 2*nFCIDet*nNp1FCIDet
+        write(6,"(A,F12.5,A)") "Uncompressed memory required for coupling coefficient matrices: ",real(i,dp)*RealtoMb, " Mb"
     
+    end subroutine CreateCmprsCouplingMatrices
+
     !Contract the basis of single excitations, by summing together all the uncontracted parts with the non-interacting LR coefficients
     !This results in requiring the solution of a system which *only* scales with the size of the active hilbert space, not the lattice
     subroutine NonIntContracted_TDA_MCLR()
@@ -8233,16 +8455,23 @@ module LinearResponse
     !This is done seperately for electron addition and removal (SchmidtPertGF_Cre and SchmidtPertGF_Add)
     ! G_0^+
     ! This is ONLY done for the local greens functions at site 1
-    subroutine FindSchmidtPert_Charged(Omega,NI_LRMat_Cre,NI_LRMat_Ann)
+    subroutine FindSchmidtPert_Charged(Omega,NI_LRMat_Cre,NI_LRMat_Ann,tSwapSpins)
         use mat_tools, only: add_localpot
         implicit none
         real(dp), intent(in) :: Omega
         complex(dp), intent(out) :: NI_LRMat_Cre(1,1),NI_LRMat_Ann(1,1)
+        logical, intent(in), optional :: tSwapSpins
+        logical :: tSwapSpins_
         complex(dp), allocatable :: HFPertBasis_Cre(:),HFPertBasis_Ann(:)
         integer :: i,j,a,b,pertsite
         character(len=*), parameter :: t_r='FindSchmidtPert_Charged'
-        real(dp), allocatable :: Temph0v(:,:),Temph0(:,:),Work(:)
-        integer :: info,lwork
+
+        !tSwapSpins = T means that the non-interacting excitations will be over the *beta* space, not the alpha space
+        if(present(tSwapSpins)) then
+            tSwapSpins_ = tSwapSpins
+        else
+            tSwapSpins_ = .false.
+        endif
 
         if(tAllImp_LR) then
             call stop_all(t_r,'Should not be in this routine if you need to calculate all nImp GFs')
@@ -8255,59 +8484,62 @@ module LinearResponse
         NI_LRMat_Cre(1,1) = zzero 
         NI_LRMat_Ann(1,1) = zzero 
 
-        if(.false.) then
-            !Rediagonalise the NI hamiltonian, with an increased t value
-            allocate(Temph0v(nSites,nSites))
-            allocate(Temph0(nSites,nSites))
-            Temph0(:,:) = 2.0_dp*h0(:,:)
-            call add_localpot(Temph0,Temph0v,v_loc,.true.)
-            deallocate(Temph0)
-            !Diagonalize
-            HFOrbs(:,:) = Temph0v(:,:)
-            HFEnergies(:) = zero
-            allocate(Work(1))
-            lWork=-1
-            info=0
-            call dsyev('V','U',nSites,HFOrbs,nSites,HFEnergies,Work,lWork,info)
-            if(info.ne.0) call stop_all(t_r,'Workspace queiry failed')
-            lwork=int(work(1))+1
-            deallocate(work)
-            allocate(work(lwork))
-            call dsyev('V','U',nSites,HFOrbs,nSites,HFEnergies,Work,lWork,info)
-            if(info.ne.0) call stop_all(t_r,'Diag failed')
-            deallocate(work,Temph0v)
-
-            !Also need to create a new HFtoSchmidtTransform
-            call DGEMM('T','N',nSites,nSites,nSites,1.0_dp,HFOrbs,nSites,FullSchmidtBasis,nSites,0.0_dp,HFtoSchmidtTransform,nSites)
-        endif
-
         !Assume perturbation is local to the first impurity site (pertsite = 1).
         pertsite = 1
-        !Assuming that MF GF operator is V_ia/w-e_a, V_ia/w-e_i+w
-        do i = 1,nOcc
-            HFPertBasis_Ann(i) = dcmplx(HFOrbs(pertsite,i),0.0_dp)/(dcmplx(Omega,dDelta)-HFEnergies(i))
-            NI_LRMat_Ann(1,1) = NI_LRMat_Ann(1,1) + dcmplx(HFOrbs(pertsite,i)**2,0.0_dp)/(dcmplx(Omega,dDelta)-HFEnergies(i))
-        enddo
-        do a = nOcc+1,nSites
-            HFPertBasis_Cre(a) = dcmplx(HFOrbs(pertsite,a),0.0_dp)/(dcmplx(Omega,dDelta)-HFEnergies(a))
-            NI_LRMat_Cre(1,1) = NI_LRMat_Cre(1,1) + dcmplx(HFOrbs(pertsite,a)**2,0.0_dp)/(dcmplx(Omega,dDelta)-HFEnergies(a))
-        enddo
+        if(tSwapSpins_) then
+            !Assuming that MF GF operator is V_ia/w-e_a, V_ia/w-e_i+w
+            do i = 1,nOcc
+                HFPertBasis_Ann(i) = dcmplx(HFOrbs_b(pertsite,i),0.0_dp)/(dcmplx(Omega,dDelta)-HFEnergies_b(i))
+                NI_LRMat_Ann(1,1) = NI_LRMat_Ann(1,1) + dcmplx(HFOrbs_b(pertsite,i)**2,0.0_dp) /    &
+                    (dcmplx(Omega,dDelta)-HFEnergies_b(i))
+            enddo
+            do a = nOcc+1,nSites
+                HFPertBasis_Cre(a) = dcmplx(HFOrbs_b(pertsite,a),0.0_dp)/(dcmplx(Omega,dDelta)-HFEnergies_b(a))
+                NI_LRMat_Cre(1,1) = NI_LRMat_Cre(1,1) + dcmplx(HFOrbs_b(pertsite,a)**2,0.0_dp) /    &
+                    (dcmplx(Omega,dDelta)-HFEnergies_b(a))
+            enddo
+        else
+            !Assuming that MF GF operator is V_ia/w-e_a, V_ia/w-e_i+w
+            do i = 1,nOcc
+                HFPertBasis_Ann(i) = dcmplx(HFOrbs(pertsite,i),0.0_dp)/(dcmplx(Omega,dDelta)-HFEnergies(i))
+                NI_LRMat_Ann(1,1) = NI_LRMat_Ann(1,1) + dcmplx(HFOrbs(pertsite,i)**2,0.0_dp) /  &
+                    (dcmplx(Omega,dDelta)-HFEnergies(i))
+            enddo
+            do a = nOcc+1,nSites
+                HFPertBasis_Cre(a) = dcmplx(HFOrbs(pertsite,a),0.0_dp)/(dcmplx(Omega,dDelta)-HFEnergies(a))
+                NI_LRMat_Cre(1,1) = NI_LRMat_Cre(1,1) + dcmplx(HFOrbs(pertsite,a)**2,0.0_dp) /  &
+                    (dcmplx(Omega,dDelta)-HFEnergies(a))
+            enddo
+        endif
 
 !        call writevectorcomp(HFPertBasis_Cre,'HFPertBasis_Cre')
         SchmidtPertGF_Cre_Ket(:,1) = zzero 
         SchmidtPertGF_Ann_Ket(:,1) = zzero 
 
         !Transform into schmidt basis
-        do a = nOcc+nImp+1,nSites
-            do b = nOcc+1,nSites
-                SchmidtPertGF_Cre_Ket(a,1) = SchmidtPertGF_Cre_Ket(a,1) + HFtoSchmidtTransform(b,a)*HFPertBasis_Cre(b)
+        if(tSwapSpins_) then
+            do a = nOcc+nImp+1,nSites
+                do b = nOcc+1,nSites
+                    SchmidtPertGF_Cre_Ket(a,1) = SchmidtPertGF_Cre_Ket(a,1) + HFtoSchmidtTransform_b(b,a)*HFPertBasis_Cre(b)
+                enddo
             enddo
-        enddo
-        do i = 1,nOcc-nImp
-            do j = 1,nOcc
-                SchmidtPertGF_Ann_Ket(i,1) = SchmidtPertGF_Ann_Ket(i,1) + HFtoSchmidtTransform(j,i)*HFPertBasis_Ann(j)
+            do i = 1,nOcc-nImp
+                do j = 1,nOcc
+                    SchmidtPertGF_Ann_Ket(i,1) = SchmidtPertGF_Ann_Ket(i,1) + HFtoSchmidtTransform_b(j,i)*HFPertBasis_Ann(j)
+                enddo
             enddo
-        enddo
+        else
+            do a = nOcc+nImp+1,nSites
+                do b = nOcc+1,nSites
+                    SchmidtPertGF_Cre_Ket(a,1) = SchmidtPertGF_Cre_Ket(a,1) + HFtoSchmidtTransform(b,a)*HFPertBasis_Cre(b)
+                enddo
+            enddo
+            do i = 1,nOcc-nImp
+                do j = 1,nOcc
+                    SchmidtPertGF_Ann_Ket(i,1) = SchmidtPertGF_Ann_Ket(i,1) + HFtoSchmidtTransform(j,i)*HFPertBasis_Ann(j)
+                enddo
+            enddo
+        endif
 
         SchmidtPertGF_Cre_Bra(:,:) = dconjg(SchmidtPertGF_Cre_Ket(:,:))
         SchmidtPertGF_Ann_Bra(:,:) = dconjg(SchmidtPertGF_Ann_Ket(:,:))

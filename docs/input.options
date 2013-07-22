@@ -58,10 +58,12 @@ MODEL
 END
 
 LINEAR_RESPONSE
-(Calculate density-density response functions)
+(Calculate density-density response functions over both spins)
     DD_RESPONSE
-(Calculate charged particle + hole response functions)
+(Calculate charged particle + hole response functions - by default for alpha spins only)
     GF_RESPONSE
+(Calculate the one-electron greens function over the beta excitation space)
+    BETA_GF
 (Solve linear system with a non-direct MINRES iterative solver)
     NONDIR_MINRES
 (Solve linear system with a non-direct GMRES iterative solver (preferable))

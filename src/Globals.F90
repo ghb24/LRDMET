@@ -134,6 +134,7 @@ module Globals
     real(dp), allocatable :: Emb_Fock_b(:,:)
     real(dp), allocatable :: Emb_h0v_b(:,:)
     real(dp), allocatable :: HL_1RDM_b(:,:)
+    logical :: tBetaExcit   !For beta spin-orbital greens function excitations
 
     !Linear response options
     real(dp) :: dDelta      !Broadening for spectral functions

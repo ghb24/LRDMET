@@ -104,6 +104,7 @@ Program RealHub
         DampingExponent = huge(0.0_dp)
         tConvergeMicroSE = .false.
         iMinRes_MaxIter = 20000
+        tBetaExcit = .false.
 
     end subroutine set_defaults
 
@@ -547,6 +548,8 @@ Program RealHub
                 if(item.le.nitems) then
                     call readi(iSolveLR)
                 endif
+            case("BETA_GF")
+                tBetaExcit = .true.
             case("IC_TDA")
                 tIC_TDA_Response = .true.
             case("NONDIR_MINRES")
@@ -616,6 +619,7 @@ Program RealHub
                 write(6,"(A)") "ALLOWED KEYWORDS IN LINEAR_RESPONSE BLOCK: "
                 write(6,"(A)") "DD_RESPONSE"
                 write(6,"(A)") "GF_RESPONSE"
+                write(6,"(A)") "BETA_GF"
                 write(6,"(A)") "NONDIR_MINRES"
                 write(6,"(A)") "NONDIR_GMRES"
                 write(6,"(A)") "MINRES_MAXITER"
@@ -789,6 +793,15 @@ Program RealHub
         endif
         if(tUHF.and.(tWriteMats.or.tReadMats)) then
             call stop_all(t_r,'Cannot currently read/write matrices to disk with UHF - fix me')
+        endif
+        if(tBetaExcit.and.(.not.tChargedResponse)) then
+            call stop_all(t_r,'Can only be beta space correlators with GFs - DD response is a spatial orbital')
+        endif
+        if(tBetaExcit.and.(.not.tCompressedMats)) then
+            call stop_all(t_r,'Cannot do beta space correlator without compressed matrices - sorry!')
+        endif
+        if(tBetaExcit.and.(.not.tUHF)) then
+            call stop_all(t_r,'Must use UHF for beta greens functions (otherwise same as alpha space')
         endif
 
     end subroutine check_input
