@@ -2,7 +2,7 @@ module solvers
     use const
     use errors, only: stop_all
     use globals
-    use mat_tools, only: WriteVector,WriteMatrix
+    use mat_tools, only: WriteVector,WriteMatrix,writematrixcomp
     implicit none
 
     contains
@@ -1077,11 +1077,22 @@ module solvers
     !This subroutine will fill the integral arrays, tmat and umat,
     !used by the sltcnd routines, from the contents of Emb_h0v, and
     !put U over the impurity sites.
-    subroutine CreateIntMats()
+    !If tComp = .true., then the 1-electron array tmat_comp is filled, and the elements complex
+    !Umat is real either way
+    subroutine CreateIntMats(tComp)
         use DetToolsData
         use DetTools, only: umatind
         implicit none
+        logical, intent(in), optional :: tComp
+        logical :: tComp_
         integer :: OrbPairs,UMatSize,j,i
+
+        if(present(tComp)) then
+            tComp_ = tComp
+        else
+            !Assume that we want real 1-electron matrices if not specified otherwise.
+            tComp_ = .false.
+        endif
 
         !First, allocate and fill the umat and tmat for the FCI space
         OrbPairs = (EmbSizeSpin*(EmbSizeSpin+1))/2
@@ -1115,30 +1126,57 @@ module solvers
         endif
 
         !EmbSizeSpin = EmbSize for RHF, or EmbSize*2 for UHF
-        if(allocated(tmat)) deallocate(tmat)
-        allocate(tmat(EmbSizeSpin,EmbSizeSpin))
-        tmat(:,:) = 0.0_dp
+        if(tComp_) then
+            if(allocated(tmat_comp)) deallocate(tmat_comp)
+            allocate(tmat_comp(EmbSizeSpin,EmbSizeSpin))
+            tmat_comp(:,:) = zzero
+        else
+            if(allocated(tmat)) deallocate(tmat)
+            allocate(tmat(EmbSizeSpin,EmbSizeSpin))
+            tmat(:,:) = zero
+        endif
         do i=1,EmbSizeSpin
             do j=1,EmbSizeSpin
                 if(tUHF) then
                     if(mod(i,2).ne.mod(j,2)) cycle
                     if(mod(i,2).eq.1) then
                         !alpha orbital
-                        tmat(i,j) = Emb_h0v((i-1)/2 + 1,(j-1)/2 + 1)
+                        if(tComp_) then
+                            tmat_comp(i,j) = dcmplx(Emb_h0v((i-1)/2 + 1,(j-1)/2 + 1),0.0_dp)
+                        else
+                            tmat(i,j) = Emb_h0v((i-1)/2 + 1,(j-1)/2 + 1)
+                        endif
                     else
-                        tmat(i,j) = Emb_h0v_b(i/2,j/2)
+                        if(tComp_) then
+                            tmat_comp(i,j) = dcmplx(Emb_h0v_b(i/2,j/2),0.0_dp)
+                        else
+                            tmat(i,j) = Emb_h0v_b(i/2,j/2)
+                        endif
                     endif
                 else
-                    tmat(i,j) = Emb_h0v(i,j)
+                    if(tComp_) then
+                        tmat_comp(i,j) = dcmplx(Emb_h0v(i,j),0.0_dp)
+                    else
+                        tmat(i,j) = Emb_h0v(i,j)
+                    endif
                 endif
             enddo
         enddo
         if(tChemPot) then
-            tmat(1,1) = tmat(1,1) - U/2.0_dp
-            if(tUHF) tmat(2,2) = tmat(2,2) - U/2.0_dp
+            if(tComp_) then
+                tmat_comp(1,1) = tmat_comp(1,1) - dcmplx(U/2.0_dp,0.0_dp)
+                if(tUHF) tmat_comp(2,2) = tmat_comp(2,2) - dcmplx(U/2.0_dp)
+            else
+                tmat(1,1) = tmat(1,1) - U/2.0_dp
+                if(tUHF) tmat(2,2) = tmat(2,2) - U/2.0_dp
+            endif
         endif
         if(tWriteOut) then
-            call writematrix(tmat,'tmat',.true.)
+            if(tComp_) then
+                call writematrixcomp(tmat_comp,'tmat_comp',.true.)
+            else
+                call writematrix(tmat,'tmat',.true.)
+            endif
         endif
     end subroutine CreateIntMats
 

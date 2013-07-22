@@ -529,7 +529,7 @@ module mat_tools
         real(dp) , intent(out), optional :: core_v_b(nSites,nSites)
         real(dp) , intent(in), optional :: CorrPot_b(nImp,nImp)
         real(dp), allocatable :: temp(:,:)
-        integer :: i,j,k,i_ind,j_ind,a,b
+        integer :: i,j,k,a,b
         logical :: tAdd_
         character(len=*) , parameter :: t_r='add_localpot'
 
@@ -676,7 +676,7 @@ module mat_tools
         complex(dp) , intent(inout) :: core_v(nSites,nSites)
         complex(dp) , intent(in) :: CorrPot(nImp,nImp)
         logical , intent(in), optional :: tAdd
-        integer :: i,j,k,i_ind,j_ind,a,b
+        integer :: i,j,k,a,b
         logical :: tAdd_
 
         if(tReadSystem) then
@@ -742,7 +742,7 @@ module mat_tools
         complex(dp) , intent(in) :: CorrPot(nImp,nImp)
         logical , intent(in), optional :: tAdd
         complex(dp), allocatable :: temp(:,:)
-        integer :: i,j,k,i_ind,j_ind,a,b
+        integer :: i,j,k,a,b
         logical :: tAdd_
 
         if(tReadSystem) then
@@ -1094,10 +1094,10 @@ module mat_tools
         implicit none
         integer, intent(in) :: it
         real(dp), allocatable :: fock(:,:),OccOrbs(:,:),fock_b(:,:)
-        integer :: iFirst,iLast,i
-        real(dp) :: ThrDeg,Occupancy
+        integer :: i
+        real(dp) :: Occupancy
         !complex(dp), allocatable :: k_ham(:,:)
-        character(len=*), parameter :: t_r="run_hf"
+        !character(len=*), parameter :: t_r="run_hf"
 
         !Construct fock matrix
         !The fock matrix is just the core hamiltonian (with the fitted potential) + diag(1/2 U * rdm(i,i)) on the diagonals

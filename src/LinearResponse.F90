@@ -113,7 +113,7 @@ module LinearResponse
         use DetTools, only: gtid,umatind,GenDets,GetHElement
         use solvers, only: CountSizeCompMat,StoreCompMat,CreateIntMats
         implicit none
-        integer :: a,i,j,k,OrbPairs,UMatSize,b,beta
+        integer :: a,i,j,k,b,beta
         integer :: CoreEnd,VirtStart,VirtEnd,iunit
         integer :: DiffOrb,nOrbs,gam,gam1_ind,gam1_spat,gam2,gam2_ind,gam2_spat,ierr
         integer :: gam_spat,nLinearSystem,tempK,ActiveEnd,ActiveStart
@@ -178,7 +178,7 @@ module LinearResponse
             write(6,"(A,I8)") "Number of krylov subspace vectors to store: ",nKrylov
         endif
         !umat and tmat for the active space
-        call CreateIntMats()
+        call CreateIntMats(tComp=.false.)
         if(tMinRes_NonDir) then
             minres_unit = get_free_unit()
             open(minres_unit,file='zMinResQLP.txt',status='unknown')
@@ -1520,7 +1520,7 @@ module LinearResponse
         use fitting, only: Fit_SE
         use zminresqlpModule, only: MinresQLP  
         use DetToolsData
-        use solvers, only: CountSizeCompMat
+        use solvers, only: CountSizeCompMat,CreateIntMats
         use DetTools, only: gtid,umatind,gendets
         implicit none
         complex(dp), allocatable :: NFCIHam_cmps(:),Np1FCIHam_alpha_cmps(:),Nm1FCIHam_beta_cmps(:)
@@ -1539,7 +1539,7 @@ module LinearResponse
         integer, allocatable :: Coup_Create_alpha_T(:,:),Coup_Ann_alpha_T(:,:),Coup_Create_alpha_inds_T(:)
         integer, allocatable :: Coup_Ann_alpha_inds_T(:),Coup_Create_alpha_cum_T(:),Coup_Ann_alpha_cum_T(:)
         integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,ierr,info,iunit,nCore
-        integer :: nLinearSystem,nOrbs,nVirt,OrbPairs,tempK,UMatSize,VIndex,VirtStart,VirtEnd,ind_p,ind_h
+        integer :: nLinearSystem,nOrbs,nVirt,tempK,VIndex,VirtStart,VirtEnd,ind_p,ind_h
         integer :: orbdum(1),nLinearSystem_h,nGSSpace,Np1GSInd,Nm1GSInd,minres_unit
         integer :: maxminres_iter,nImp_GF,pertsite,isize,iunit_tmp
         integer :: Nmax_N,Nmax_Nm1b,Nmax_Np1,Nmax_Coup_Create,Nmax_Coup_Ann,Nmax_Lin_p,Nmax_Lin_h,i_Ann
@@ -1589,27 +1589,7 @@ module LinearResponse
         if(tSC_LR) call stop_all(t_r,'Cannot use compressed matrices with self-consistent greens functions currently')
 
         !umat and tmat for the active space
-        OrbPairs = (EmbSize*(EmbSize+1))/2
-        UMatSize = (OrbPairs*(OrbPairs+1))/2
-        if(allocated(UMat)) deallocate(UMat)
-        allocate(UMat(UMatSize))
-        write(6,"(A,F12.5,A)") "Memory required for umat storage: ",UMatSize*RealtoMb, " Mb"
-        UMat(:) = zero
-        if(tAnderson) then
-            umat(umatind(1,1,1,1)) = U
-        else
-            do i=1,nImp
-                umat(umatind(i,i,i,i)) = U
-            enddo
-        endif
-        if(allocated(tmat_comp)) deallocate(tmat_comp)
-        allocate(tmat_comp(EmbSize,EmbSize))
-        do i = 1,EmbSize
-            do j = 1,EmbSize
-                tmat_comp(j,i) = dcmplx(Emb_h0v(j,i),0.0_dp)
-            enddo
-        enddo
-        if(tChemPot) tmat_comp(1,1) = tmat_comp(1,1) - dcmplx(U/2.0_dp,0.0_dp)
+        call CreateIntMats(tComp=.true.)
         
         !Enumerate excitations for fully coupled space
         !Seperate the lists into different Ms sectors in the N+- lists
@@ -2401,6 +2381,7 @@ module LinearResponse
         if(allocated(FCIBitList)) deallocate(FCIBitList)
         if(allocated(UMat)) deallocate(UMat)
         if(allocated(TMat)) deallocate(TMat)
+        if(allocated(TMat_Comp)) deallocate(TMat_Comp)
         if(allocated(Nm1FCIDetList)) deallocate(Nm1FCIDetList)
         if(allocated(Nm1BitList)) deallocate(Nm1BitList)
         if(allocated(Np1FCIDetList)) deallocate(Np1FCIDetList)
@@ -2432,6 +2413,7 @@ module LinearResponse
         use zminresqlpModule, only: MinresQLP  
         use DetToolsData
         use DetTools, only: gtid,umatind,gendets
+        use solvers, only: CreateIntMats
         implicit none
         complex(dp), allocatable :: NFCIHam(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
         real(dp), allocatable :: W(:),dNorm_p(:),dNorm_h(:)
@@ -2444,7 +2426,7 @@ module LinearResponse
         complex(dp), allocatable :: NI_LRMat_Cre(:,:),NI_LRMat_Ann(:,:)
         integer, allocatable :: Coup_Ann_alpha(:,:,:),Coup_Create_alpha(:,:,:)
         integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,ierr,info,iunit,nCore
-        integer :: nLinearSystem,nOrbs,nVirt,OrbPairs,tempK,UMatSize,VIndex,VirtStart,VirtEnd
+        integer :: nLinearSystem,nOrbs,nVirt,tempK,VIndex,VirtStart,VirtEnd
         integer :: orbdum(1),nLinearSystem_h,nGSSpace,Np1GSInd,Nm1GSInd,lWork,minres_unit
         integer :: maxminres_iter,nImp_GF,pertsite,SE_Fit_Iter,nNR_Iters
         integer(ip) :: nLinearSystem_ip,minres_unit_ip,info_ip,maxminres_iter_ip,iters_p,iters_h
@@ -2512,27 +2494,7 @@ module LinearResponse
         endif
 
         !umat and tmat for the active space
-        OrbPairs = (EmbSize*(EmbSize+1))/2
-        UMatSize = (OrbPairs*(OrbPairs+1))/2
-        if(allocated(UMat)) deallocate(UMat)
-        allocate(UMat(UMatSize))
-        write(6,"(A,F12.5,A)") "Memory required for umat storage: ",UMatSize*RealtoMb, " Mb"
-        UMat(:) = zero
-        if(tAnderson) then
-            umat(umatind(1,1,1,1)) = U
-        else
-            do i=1,nImp
-                umat(umatind(i,i,i,i)) = U
-            enddo
-        endif
-        if(allocated(tmat_comp)) deallocate(tmat_comp)
-        allocate(tmat_comp(EmbSize,EmbSize))
-        do i = 1,EmbSize
-            do j = 1,EmbSize
-                tmat_comp(j,i) = dcmplx(Emb_h0v(j,i),0.0_dp)
-            enddo
-        enddo
-        if(tChemPot) tmat_comp(1,1) = tmat_comp(1,1) - dcmplx(U/2.0_dp,0.0_dp)
+        call CreateIntMats(tComp=.true.)
         
         !Enumerate excitations for fully coupled space
         !Seperate the lists into different Ms sectors in the N+- lists
@@ -3350,6 +3312,7 @@ module LinearResponse
         if(allocated(FCIBitList)) deallocate(FCIBitList)
         if(allocated(UMat)) deallocate(UMat)
         if(allocated(TMat)) deallocate(TMat)
+        if(allocated(TMat_Comp)) deallocate(TMat_Comp)
         if(allocated(Nm1FCIDetList)) deallocate(Nm1FCIDetList)
         if(allocated(Nm1BitList)) deallocate(Nm1BitList)
         if(allocated(Np1FCIDetList)) deallocate(Np1FCIDetList)
@@ -3374,8 +3337,9 @@ module LinearResponse
         use zminresqlpModule, only: MinresQLP  
         use DetToolsData
         use DetTools, only: gtid,umatind,GenDets,GetHElement
+        use solvers, only: CreateIntMats
         implicit none
-        integer :: a,i,j,k,OrbPairs,UMatSize,AVInd_tmp,b,beta
+        integer :: a,i,j,k,AVInd_tmp,b,beta
         integer :: CoreEnd,VirtStart,VirtEnd,CVInd_tmp,iunit,iunit2
         integer :: DiffOrb,nOrbs,gam,gam1,gam1_ind,gam1_spat,gam2,gam2_ind,gam2_spat,ierr
         integer :: gam_spat,nLinearSystem,tempK,nSpan,ActiveEnd,ActiveStart
@@ -3436,32 +3400,10 @@ module LinearResponse
         else
             write(6,"(A)") "Hamiltonian will not have ground state explicitly removed. Should remain hermitian"
         endif
+
         !umat and tmat for the active space
-        OrbPairs = (EmbSize*(EmbSize+1))/2
-        UMatSize = (OrbPairs*(OrbPairs+1))/2
-        if(allocated(UMat)) deallocate(UMat)
-        allocate(UMat(UMatSize))
-        UMat(:) = 0.0_dp
-        if(tAnderson) then
-            umat(umatind(1,1,1,1)) = U
-        else
-            do i=1,nImp
-                umat(umatind(i,i,i,i)) = U
-            enddo
-        endif
-        if(allocated(tmat)) deallocate(tmat)
-        allocate(tmat(EmbSize,EmbSize))
-        tmat(:,:) = 0.0_dp
-        do i=1,EmbSize
-            do j=1,EmbSize
-                if(abs(Emb_h0v(i,j)).gt.1.0e-10_dp) then
-                    tmat(i,j) = Emb_h0v(i,j)
-                endif
-            enddo
-        enddo
-        if(tChemPot) then
-            tmat(1,1) = tmat(1,1) - U/2.0_dp
-        endif
+        call CreateIntMats(tComp=.false.)
+
         if(tMinRes_NonDir) then
             minres_unit = get_free_unit()
             open(minres_unit,file='zMinResQLP.txt',status='unknown',position='append')
@@ -5445,8 +5387,8 @@ module LinearResponse
         if(ierr.ne.0) then
             write(6,*) "Memory requirements too much. Allocation error for GMRES"
             write(6,*) "To reduce memory requirements, reduce NKRYLOV"
-        endif
             call stop_all(t_r,'Alloc error')
+        endif
         work(:) = zzero
         
         !Are we inputting a guess solution?
