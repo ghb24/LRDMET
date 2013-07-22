@@ -803,6 +803,9 @@ Program RealHub
         if(tBetaExcit.and.(.not.tUHF)) then
             call stop_all(t_r,'Must use UHF for beta greens functions (otherwise same as alpha space')
         endif
+        if(tUHF.and.tDDResponse) then
+            call stop_all(t_r,'UHF not yet working for DD response')
+        endif
 
     end subroutine check_input
 
