@@ -110,7 +110,7 @@ module LinearResponse
         use DetBitOps, only: DecodeBitDet,SQOperator,CountBits
         use zminresqlpModule, only: MinresQLP  
         use DetToolsData
-        use DetTools, only: gtid,umatind,GenDets,GetHElement
+        use DetTools, only: tospat,umatind,GenDets,GetHElement
         use solvers, only: CountSizeCompMat,StoreCompMat,CreateIntMats
         implicit none
         integer :: a,i,j,k,b,beta
@@ -388,7 +388,7 @@ module LinearResponse
 
                 i_Create = i_Create + 1
                 if(i_Create.gt.Nmax_Coup) call stop_all(t_r,'Compressed array size too small')
-                Coup_Create_alpha(1,i_Create) = gtid(gam)+CoreEnd
+                Coup_Create_alpha(1,i_Create) = tospat(gam)+CoreEnd
                 if(tParity) then
                     Coup_Create_alpha(2,i_Create) = -1
                 else
@@ -421,7 +421,7 @@ module LinearResponse
 
                 i_Create_b = i_Create_b + 1
                 if(i_Create_b.gt.Nmax_Coup) call stop_all(t_r,'Compressed array size too small')
-                Coup_Create_beta(1,i_Create_b) = gtid(gam)+CoreEnd
+                Coup_Create_beta(1,i_Create_b) = tospat(gam)+CoreEnd
                 if(tParity) then
                     Coup_Create_beta(2,i_Create_b) = -1
                 else
@@ -454,7 +454,7 @@ module LinearResponse
 
                 i_Ann = i_Ann + 1
                 if(i_Ann.gt.Nmax_Coup) call stop_all(t_r,'Compressed array size too small')
-                Coup_Ann_alpha(1,i_Ann) = gtid(gam)+CoreEnd
+                Coup_Ann_alpha(1,i_Ann) = tospat(gam)+CoreEnd
                 if(tParity) then
                     Coup_Ann_alpha(2,i_Ann) = -1
                 else
@@ -487,7 +487,7 @@ module LinearResponse
 
                 i_Ann_b = i_Ann_b + 1
                 if(i_Ann_b.gt.Nmax_Coup) call stop_all(t_r,'Compressed array size too small')
-                Coup_Ann_beta(1,i_Ann_b) = gtid(gam)+CoreEnd
+                Coup_Ann_beta(1,i_Ann_b) = tospat(gam)+CoreEnd
                 if(tParity) then
                     Coup_Ann_beta(2,i_Ann_b) = -1
                 else
@@ -534,7 +534,7 @@ module LinearResponse
 
                 i = i + 1
                 if(i.gt.Nmax_Coup) call stop_all(t_r,'Compressed array size too small')
-                Coup_Create_alpha_T(1,i) = gtid(gam)+CoreEnd
+                Coup_Create_alpha_T(1,i) = tospat(gam)+CoreEnd
                 if(tParity) then
                     Coup_Create_alpha_T(2,i) = -1
                 else
@@ -572,7 +572,7 @@ module LinearResponse
 
                 i = i + 1
                 if(i.gt.Nmax_Coup) call stop_all(t_r,'Compressed array size too small')
-                Coup_Create_beta_T(1,i) = gtid(gam)+CoreEnd
+                Coup_Create_beta_T(1,i) = tospat(gam)+CoreEnd
                 if(tParity) then
                     Coup_Create_beta_T(2,i) = -1
                 else
@@ -610,7 +610,7 @@ module LinearResponse
 
                 i = i + 1
                 if(i.gt.Nmax_Coup) call stop_all(t_r,'Compressed array size too small')
-                Coup_Ann_alpha_T(1,i) = gtid(gam)+CoreEnd
+                Coup_Ann_alpha_T(1,i) = tospat(gam)+CoreEnd
                 if(tParity) then
                     Coup_Ann_alpha_T(2,i) = -1
                 else
@@ -648,7 +648,7 @@ module LinearResponse
 
                 i = i + 1
                 if(i.gt.Nmax_Coup) call stop_all(t_r,'Compressed array size too small')
-                Coup_Ann_beta_T(1,i) = gtid(gam)+CoreEnd
+                Coup_Ann_beta_T(1,i) = tospat(gam)+CoreEnd
                 if(tParity) then
                     Coup_Ann_beta_T(2,i) = -1
                 else
@@ -1521,7 +1521,7 @@ module LinearResponse
         use zminresqlpModule, only: MinresQLP  
         use DetToolsData
         use solvers, only: CountSizeCompMat,CreateIntMats
-        use DetTools, only: gtid,umatind,gendets
+        use DetTools, only: tospat,umatind,gendets
         implicit none
         complex(dp), allocatable :: NFCIHam_cmps(:),Np1FCIHam_alpha_cmps(:),Nm1FCIHam_beta_cmps(:)
         integer, allocatable :: NFCIHam_inds(:),Np1FCIHam_alpha_inds(:),Nm1FCIHam_beta_inds(:)
@@ -1647,6 +1647,11 @@ module LinearResponse
 
         if(nLinearSystem.ne.nLinearSystem_h) then
             call stop_all(t_r,'Should change restriction on the Linear system size being the same for particle/hole addition')
+        endif
+
+        if(tWriteOut) then
+            call writevectorcomp(NFCIHam_cmps,'NFCIHam_cmps')
+            call writevectorcomp(Np1FCIHam_alpha_cmps,'Np1FCIHam_alpha_cmps')
         endif
         
         !If doing full optimization of the GS problem
@@ -1860,7 +1865,7 @@ module LinearResponse
 
                 i = i + 1
                 if(i.gt.Nmax_Coup_Create) call stop_all(t_r,'Compressed array size too small')
-                Coup_Create_alpha(1,i) = gtid(gam)+CoreEnd
+                Coup_Create_alpha(1,i) = tospat(gam)+CoreEnd
                 if(tParity) then
                     Coup_Create_alpha(2,i) = -1
                 else
@@ -1893,7 +1898,7 @@ module LinearResponse
 
                 i_Ann = i_Ann + 1
                 if(i_Ann.gt.Nmax_Coup_Ann) call stop_all(t_r,'Compressed array size too small')
-                Coup_Ann_alpha(1,i_Ann) = gtid(gam)+CoreEnd
+                Coup_Ann_alpha(1,i_Ann) = tospat(gam)+CoreEnd
                 if(tParity) then
                     Coup_Ann_alpha(2,i_Ann) = -1
                 else
@@ -1950,7 +1955,7 @@ module LinearResponse
 
                 i = i + 1
                 if(i.gt.Nmax_Coup_Create) call stop_all(t_r,'Compressed array size too small')
-                Coup_Create_alpha_T(1,i) = gtid(gam)+CoreEnd
+                Coup_Create_alpha_T(1,i) = tospat(gam)+CoreEnd
                 if(tParity) then
                     Coup_Create_alpha_T(2,i) = -1
                 else
@@ -1988,7 +1993,7 @@ module LinearResponse
 
                 i = i + 1
                 if(i.gt.Nmax_Coup_Ann) call stop_all(t_r,'Compressed array size too small')
-                Coup_Ann_alpha_T(1,i) = gtid(gam)+CoreEnd
+                Coup_Ann_alpha_T(1,i) = tospat(gam)+CoreEnd
                 if(tParity) then
                     Coup_Ann_alpha_T(2,i) = -1
                 else
@@ -2412,7 +2417,7 @@ module LinearResponse
         use fitting, only: Fit_SE
         use zminresqlpModule, only: MinresQLP  
         use DetToolsData
-        use DetTools, only: gtid,umatind,gendets
+        use DetTools, only: tospat,umatind,gendets
         use solvers, only: CreateIntMats
         implicit none
         complex(dp), allocatable :: NFCIHam(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
@@ -2721,7 +2726,7 @@ module LinearResponse
                 !Now find out the parity change when applying this creation operator to the original determinant
                 tempK = Nm1bBitList(K)
                 call SQOperator(tempK,gam,tParity,.false.)
-                Coup_Create_alpha(1,J,K) = gtid(gam)+CoreEnd
+                Coup_Create_alpha(1,J,K) = tospat(gam)+CoreEnd
                 if(tParity) then
                     Coup_Create_alpha(2,J,K) = -1
                 else
@@ -2750,7 +2755,7 @@ module LinearResponse
                 !Now find out the parity change when applying this creation operator to the original determinant
                 tempK = Np1BitList(K)
                 call SQOperator(tempK,gam,tParity,.true.)
-                Coup_Ann_alpha(1,J,K) = gtid(gam)+CoreEnd
+                Coup_Ann_alpha(1,J,K) = tospat(gam)+CoreEnd
                 if(tParity) then
                     Coup_Ann_alpha(2,J,K) = -1
                 else
@@ -3336,7 +3341,7 @@ module LinearResponse
         use DetBitOps, only: DecodeBitDet,SQOperator,CountBits
         use zminresqlpModule, only: MinresQLP  
         use DetToolsData
-        use DetTools, only: gtid,umatind,GenDets,GetHElement
+        use DetTools, only: tospat,umatind,GenDets,GetHElement
         use solvers, only: CreateIntMats
         implicit none
         integer :: a,i,j,k,AVInd_tmp,b,beta
@@ -3556,7 +3561,7 @@ module LinearResponse
                 !Now find out the parity change when applying this creation operator to the original determinant
                 tempK = Nm1bBitList(K)
                 call SQOperator(tempK,gam,tParity,.false.)
-                Coup_Create_alpha(1,J,K) = gtid(gam)+CoreEnd
+                Coup_Create_alpha(1,J,K) = tospat(gam)+CoreEnd
                 if(tParity) then
                     Coup_Create_alpha(2,J,K) = -1
                 else
@@ -3585,7 +3590,7 @@ module LinearResponse
                 !Now find out the parity change when applying this creation operator to the original determinant
                 tempK = Nm1BitList(K)
                 call SQOperator(tempK,gam,tParity,.false.)
-                Coup_Create_beta(1,J,K) = gtid(gam)+CoreEnd
+                Coup_Create_beta(1,J,K) = tospat(gam)+CoreEnd
                 if(tParity) then
                     Coup_Create_beta(2,J,K) = -1
                 else
@@ -3614,7 +3619,7 @@ module LinearResponse
                 !Now find out the parity change when applying this creation operator to the original determinant
                 tempK = Np1BitList(K)
                 call SQOperator(tempK,gam,tParity,.true.)
-                Coup_Ann_alpha(1,J,K) = gtid(gam)+CoreEnd
+                Coup_Ann_alpha(1,J,K) = tospat(gam)+CoreEnd
                 if(tParity) then
                     Coup_Ann_alpha(2,J,K) = -1
                 else
@@ -3643,7 +3648,7 @@ module LinearResponse
                 !Now find out the parity change when applying this creation operator to the original determinant
                 tempK = Np1bBitList(K)
                 call SQOperator(tempK,gam,tParity,.true.)
-                Coup_Ann_beta(1,J,K) = gtid(gam)+CoreEnd
+                Coup_Ann_beta(1,J,K) = tospat(gam)+CoreEnd
                 if(tParity) then
                     Coup_Ann_beta(2,J,K) = -1
                 else
@@ -6734,6 +6739,8 @@ module LinearResponse
         integer :: IC,Ex(2),k,i
         character(len=*), parameter :: t_r='FindDeterminantTransRDM'
 
+        if(tUHF) call stop_all(t_r,"Not sure this routine works with UHF")
+
         Trans1RDM(:,:) = 0.0_dp
 
         do i=1,nFCIDet
@@ -6776,6 +6783,8 @@ module LinearResponse
         integer :: Ex(2,2),i,j,IC,orbdiffs,k,l,kel,lel,temp
         logical :: tSign
         character(len=*), parameter :: t_r='CalcNp1_2RDM'
+        
+        if(tUHF) call stop_all(t_r,"Not sure this routine works with UHF")
 
         RDM(:,:,:,:) = 0.0_dp
 
@@ -7022,6 +7031,8 @@ module LinearResponse
         logical :: tSign
         character(len=*), parameter :: t_r='CalcNm1_2RDM'
 
+        if(tUHF) call stop_all(t_r,"Not sure this routine works with UHF")
+
         RDM(:,:,:,:) = 0.0_dp
 
         do i=1,nNm1FCIDet
@@ -7264,7 +7275,9 @@ module LinearResponse
         !real(dp) :: trace
         integer :: nCore,i,j,ex(2),k,i_spat,a_spat,k_spat,IC
         logical :: tSign
-        !character(len=*), parameter :: t_r='Calc1RDM'
+        character(len=*), parameter :: t_r='Calc1RDM'
+        
+        if(tUHF) call stop_all(t_r,"Not sure this routine works with UHF")
 
         nCore = nOcc-nImp
 
@@ -8392,7 +8405,7 @@ module LinearResponse
 
     subroutine NonInteractingLR()
         use utils, only: get_free_unit,append_ext_real,append_ext
-        use DetTools, only: gtid
+        use DetTools, only: tospat
         implicit none
         integer :: ov_space,virt_start,i,a,a_spat,i_spat,ai_ind,iunit
         integer :: highbound,pertsite 
@@ -8417,8 +8430,8 @@ module LinearResponse
             do a=virt_start,2*nSites
                 if(mod(i,2).ne.mod(a,2)) cycle      !Only want same spin excitations 
                 ai_ind = ov_space_spinind(a,i)
-                i_spat = gtid(i)
-                a_spat = gtid(a)
+                i_spat = tospat(i)
+                a_spat = tospat(a)
 
                 transitions(ai_ind,1) = FullHFEnergies(a_spat)-FullHFEnergies(i_spat)
                 !Now calculate the moment
@@ -8482,8 +8495,8 @@ module LinearResponse
             do i=1,nel
                 do a=virt_start,2*nSites
                     if(mod(i,2).ne.mod(a,2)) cycle      !Only want same spin excitations 
-                    i_spat = gtid(i)
-                    a_spat = gtid(a)
+                    i_spat = tospat(i)
+                    a_spat = tospat(a)
 
                     EDiff = FullHFEnergies(a_spat)-FullHFEnergies(i_spat)
                     ResponseFn = ResponseFn + dcmplx((FullHFOrbs(pertsite,a_spat)* &
@@ -8512,7 +8525,7 @@ module LinearResponse
     subroutine TDA_LR()
         use utils, only: get_free_unit,append_ext_real,append_ext
         use DetToolsData, only: tmat,umat
-        use DetTools, only: gtid,GetHFAntisymInt_spinorb,GetExcitation,GetHFInt_spinorb,umatind,GetHElement
+        use DetTools, only: tospat,GetHFAntisymInt_spinorb,GetExcitation,GetHFInt_spinorb,umatind,GetHElement
         implicit none
         integer :: ov_space,virt_start,ierr,i,j,n,m,nj_ind,mi_ind,ex(2,2)
         integer :: m_spat,i_spat,lwork,info,k,l,orbpairs,umatsize,ai_ind,a
@@ -8679,8 +8692,8 @@ module LinearResponse
                 if(mod(i,2).ne.mod(m,2)) cycle  !Only want same spin excitations
                 mi_ind = ov_space_spinind(m,i)
 
-                m_spat = gtid(m)
-                i_spat = gtid(i)
+                m_spat = tospat(m)
+                i_spat = tospat(i)
 
                 A_mat(mi_ind,mi_ind) = A_mat(mi_ind,mi_ind) + (FullHFEnergies(m_spat)-FullHFEnergies(i_spat))
             enddo
@@ -8745,8 +8758,8 @@ module LinearResponse
                     endif
                 enddo
                 call sort_int(detL(:),nel)
-                i_spat = gtid(i)
-                a_spat = gtid(a)
+                i_spat = tospat(i)
+                a_spat = tospat(a)
 
                 !Calculate permutation
                 ex(1,1) = 1
@@ -8841,7 +8854,7 @@ module LinearResponse
     subroutine RPA_LR()
         use utils, only: get_free_unit,append_ext_real,append_ext
         use matrixops, only: d_inv
-        use DetTools, only: gtid,GetHFAntisymInt_spinorb
+        use DetTools, only: tospat,GetHFAntisymInt_spinorb
         implicit none
         integer :: ov_space,virt_start,ierr,j,ex(2,2),ex2(2,2),n,i,m,nj_ind,mi_ind,info,lwork
         integer :: m_spat,i_spat,StabilitySize,mu,j_spat,ai_ind,iunit,a,excit,highbound
@@ -8853,6 +8866,8 @@ module LinearResponse
         real(dp), allocatable :: trans_moment(:),AOMO_Spin(:,:),DM(:,:)
         character(64) :: filename,filename2
         character(len=*), parameter :: t_r='RPA_LR'
+
+        if(tUHF) call stop_all(t_r,'Not sure this routine works with UHF')
 
         !Assume that the perturbation is local to site 1. This condition may want to be changed in the future
         pertsite = 1
@@ -8901,8 +8916,8 @@ module LinearResponse
                 if(mod(i,2).ne.mod(m,2)) cycle  !Only want same spin excitations
                 mi_ind = ov_space_spinind(m,i)
 
-                m_spat = gtid(m)
-                i_spat = gtid(i)
+                m_spat = tospat(m)
+                i_spat = tospat(i)
 
                 A_mat(mi_ind,mi_ind) = A_mat(mi_ind,mi_ind) + (FullHFEnergies(m_spat)-FullHFEnergies(i_spat))
             enddo
@@ -9235,9 +9250,9 @@ module LinearResponse
         AOMO_Spin(:,:) = 0.0_dp
         do i=1,nSites*2
             do j=1,nSites*2
-                i_spat = gtid(i)
-                j_spat = gtid(j)
-                AOMO_Spin(j,i) = FullHFOrbs(gtid(j),gtid(i))
+                i_spat = tospat(i)
+                j_spat = tospat(j)
+                AOMO_Spin(j,i) = FullHFOrbs(tospat(j),tospat(i))
             enddo
         enddo
         allocate(DM(nSites*2,nSites*2))
@@ -9349,7 +9364,7 @@ module LinearResponse
     !First list all alpha excitations, then beta excitations
     !Within each spin-type, it is virtual fast
     integer function ov_space_spinind(a,i)
-        use DetTools, only: gtid
+        use DetTools, only: tospat
         implicit none
         integer, intent(in) :: i,a
         integer :: a_spat,i_spat,nVirt_spat
@@ -9357,8 +9372,8 @@ module LinearResponse
         if(mod(i,2).ne.mod(a,2)) ov_space_spinind = -1  !*Should* be easy to see where this goes wrong
 
         !Convert to spatial. Index the virtual excitations starting at 1
-        a_spat = gtid(a-NEl)    !Runs from 1 -> number of spatial virtual orbitals
-        i_spat = gtid(i)        !Runs from 1 -> nOcc
+        a_spat = tospat(a-NEl)    !Runs from 1 -> number of spatial virtual orbitals
+        i_spat = tospat(i)        !Runs from 1 -> nOcc
         nVirt_spat = nSites - nOcc
 
         if(mod(i,2).eq.1) then
