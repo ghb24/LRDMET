@@ -785,9 +785,9 @@ Program RealHub
         if(tWriteMats.and..not.tCompressedMats) then
             call stop_all(t_r,'Cannot write matrices if not if compressed form')
         endif
-!        if(tUHF.and..not.tReadSystem) then
-!            call stop_all(t_r,'UHF currently only working with systems which are read in')
-!        endif
+        if(tUHF.and..not.tReadSystem) then
+            call stop_all(t_r,'UHF currently only working with systems which are read in')
+        endif
         if(tUHF.and..not.(tCompleteDiag.or.tNonDirDavidson)) then
             call stop_all(t_r,'Cannot currently solve UHF impurity problem without complete or non-direct davidson solvers')
         endif
@@ -801,7 +801,7 @@ Program RealHub
             call stop_all(t_r,'Cannot do beta space correlator without compressed matrices - sorry!')
         endif
         if(tBetaExcit.and.(.not.tUHF)) then
-            call stop_all(t_r,'Must use UHF for beta greens functions (otherwise same as alpha space')
+            call stop_all(t_r,'Must use UHF for beta greens functions (otherwise same as alpha space!)')
         endif
         if(tUHF.and.tDDResponse) then
             call stop_all(t_r,'UHF not yet working for DD response')
@@ -1150,7 +1150,7 @@ Program RealHub
 
                         !Write out stats:
                         !   Iter    E/Site  d[V]    Initial_ERR[RDM]    ERR[Filling]    mean[corr_pot]      Some RDM stuff...?
-                        write(6,*) it,TotalE_Imp,VarVloc,ErrRDM,FillingError,mean_vloc
+                        write(6,"(I7,5G22.10)") it,TotalE_Imp,VarVloc,ErrRDM,FillingError,mean_vloc
                         write(DMETfile,"(I7,7G22.10)") it,TotalE_Imp,HL_Energy,VarVloc,ErrRDM,  &
                             Actualfilling_Imp,FillingError,mean_vloc
 
@@ -1203,7 +1203,8 @@ Program RealHub
 
                 !Set potential for the next occupation number, or wipe it?
                 if(.not.tSaveCorrPot) then
-                    v_loc(:,:) = 0.0_dp
+                    v_loc(:,:) = zero
+                    if(tUHF) v_loc_b(:,:) = zero
                 endif
 
             enddo   !Loop over occupations
@@ -1211,7 +1212,8 @@ Program RealHub
             if(.not.tHalfFill) then
                 !Wipe correlation potential if we have ramped through occupations
                 !We can potentially keep it though if we are just doing half-filling
-                v_loc(:,:) = 0.0_dp
+                v_loc(:,:) = zero
+                if(tUHF) v_loc_b(:,:) = zero
             endif
 
         enddo   !Loop over U values
@@ -1278,10 +1280,12 @@ Program RealHub
 
     subroutine read_in_corrpot()
         use utils, only: get_free_unit
+        use DetTools, only: tospat
         implicit none
         integer :: iunit,Occ_val,ios,i,j,k
         logical :: texist,tFoundCorrPot
         real(dp) :: U_val,CorrPot_tmp(nImp*nImp)
+        real(dp), allocatable :: temp(:)
         character(len=*), parameter :: t_r='read_in_corrpot'
 
         write(6,*) "Reading in correlation potential..."
@@ -1292,9 +1296,36 @@ Program RealHub
             if(.not.texist) call stop_all(t_r,'Correlation potential file cannot be found') 
             iunit = get_free_unit()
             open(iunit,file='FinalVCorr.dat',status='old',action='read')
-            do i = 1,nImp
-                read(iunit,*) v_loc(i,:)
-            enddo
+            if(tUHF) then
+                allocate(temp(nImp*2))
+                do i = 1,nImp*2
+                    read(iunit,*) temp(:)
+                    do j = 1,nImp*2
+                        if(mod(i,2).eq.1) then
+                            !i is alpha spin-orbital
+                            if((mod(j,2).eq.0).and.(abs(temp(j)).gt.1.0e-8_dp)) then
+                                call stop_all(t_r,'Coupling between different spin types in correlation potential?!')
+                            elseif(mod(j,2).eq.1) then
+                                !j is also alpha
+                                v_loc(tospat(i),tospat(j)) = temp(j)
+                            endif
+                        else
+                            !i is beta spin-orbital
+                            if((mod(j,2).eq.1).and.(abs(temp(j)).gt.1.0e-8)) then
+                                call stop_all(t_r,'Coupling between different spin types in correlation potential?!')
+                            elseif(mod(j,2).eq.0) then
+                                !j is also beta
+                                v_loc_b(tospat(i),tospat(j)) = temp(j)
+                            endif
+                        endif
+                    enddo
+                enddo
+                deallocate(temp)
+            else
+                do i = 1,nImp
+                    read(iunit,*) v_loc(i,:)
+                enddo
+            endif
             close(iunit)
         else
             iunit = get_free_unit()
@@ -1335,7 +1366,6 @@ Program RealHub
 
         write(6,"(A)") "Read in correlation potential: "
         call writematrix(v_loc,"v_loc",.true.)
-
         do i=1,nImp
             do j=1,nImp
                 if(abs(v_loc(i,j)-v_loc(j,i)).gt.1.0e-6_dp) then
@@ -1343,6 +1373,17 @@ Program RealHub
                 endif
             enddo
         enddo
+        if(tUHF) then
+            !Test beta component too
+            call writematrix(v_loc_b,"v_loc_b",.true.)
+            do i=1,nImp
+                do j=1,nImp
+                    if(abs(v_loc_b(i,j)-v_loc_b(j,i)).gt.1.0e-6_dp) then
+                        call stop_all(t_r,'beta correlation potential not symmetric')
+                    endif
+                enddo
+            enddo
+        endif
 
     end subroutine read_in_corrpot
 
@@ -2198,7 +2239,6 @@ Program RealHub
             EmbeddedBasis_b(nImp+1:nSites,nImp+1:2*nImp) = temp(:,1:nSys)
 
         endif
-        
         
         EmbSize = 2*nImp      !This is the total size of the embedded system with which to do the high-level calculation on 
         if(tUHF) then

@@ -1671,10 +1671,10 @@ module LinearResponse
             call stop_all(t_r,'Should change restriction on the Linear system size being the same for particle/hole addition')
         endif
 
-        if(tWriteOut) then
-            call writevectorcomp(NFCIHam_cmps,'NFCIHam_cmps')
-            call writevectorcomp(Np1FCIHam_cmps,'Np1FCIHam_cmps')
-        endif
+!        if(tWriteOut) then
+!            call writevectorcomp(NFCIHam_cmps,'NFCIHam_cmps')
+!            call writevectorcomp(Np1FCIHam_cmps,'Np1FCIHam_cmps')
+!        endif
         
         !If doing full optimization of the GS problem
         nGSSpace = nFCIDet + nNp1FCIDet + nNm1bFCIDet

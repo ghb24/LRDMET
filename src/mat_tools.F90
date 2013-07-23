@@ -139,14 +139,16 @@ module mat_tools
     
     !Make mean-field real-space hubbard matrix
     subroutine make_hop_mat()
+        use DetTools, only: tospat
         use utils, only: get_free_unit
         implicit none
         integer :: i,j,k,x,y,li,lj,ij_link,site,dx,dy,iunit
         real(dp) :: phase,t
+        real(dp), allocatable :: temp(:)
         logical :: exists
         character(len=*), parameter :: t_r='make_hop_mat'
 
-        h0(:,:) = 0.0_dp
+        h0(:,:) = zero  
         t = -1.0_dp
         if(tReadSystem) then
             !Read in the hopping matrix
@@ -154,18 +156,79 @@ module mat_tools
             if(.not.exists) call stop_all(t_r,'Core Hamiltonian file cannot be found')
             iunit = get_free_unit()
             open(iunit,file='CoreHam.dat',status='old',action='read')
-            do i=1,nSites
-                read(iunit,*) h0(:,i)
-            enddo
+            if(tUHF) then
+                allocate(temp(nSites*2))
+                !Ordered as alpha, beta
+                do i = 1,nSites*2
+                    read(iunit,*) temp(:)
+
+                    !Now split into respective components
+                    do j = 1,nSites*2
+                        if(mod(i,2).eq.1) then
+                            !i is alpha spin-orbital
+
+                            if((mod(j,2).eq.0).and.(abs(temp(j)).gt.1.0e-8_dp)) then
+                                call stop_all(t_r,'Coupling between different spin types in core hamiltonian??')
+                            elseif(mod(j,2).eq.1) then
+                                !j is also alpha
+                                h0(tospat(j),tospat(i)) = temp(j)
+                            endif
+
+                        else
+                            !i is beta spin-orbital
+                            if((mod(j,2).eq.1).and.(abs(temp(j)).gt.1.0e-8_dp)) then
+                                call stop_all(t_r,'Coupling between different spin types in core hamiltonian??')
+                            elseif(mod(j,2).eq.0) then
+                                !j is also beta 
+                                h0_b(tospat(j),tospat(i)) = temp(j)
+                            endif
+                        endif
+                    enddo
+                enddo
+            else
+                do i=1,nSites
+                    read(iunit,*) h0(:,i)
+                enddo
+            endif
             close(iunit)
             !Also read in lattice matrix with correlation potential
             inquire(file='FinalFock.dat',exist=exists)
             if(.not.exists) call stop_all(t_r,'Lattice hamiltonian file cannot be found')
             iunit = get_free_unit()
             open(iunit,file='FinalFock.dat',status='old',action='read')
-            do i=1,nSites
-                read(iunit,*) h0v(:,i)
-            enddo
+            if(tUHF) then
+                do i=1,nSites*2
+                    read(iunit,*) temp(:)
+                    !Now split into respective components
+                    do j = 1,nSites*2
+                        if(mod(i,2).eq.1) then
+                            !i is alpha spin-orbital
+
+                            if((mod(j,2).eq.0).and.(abs(temp(j)).gt.1.0e-8_dp)) then
+                                call stop_all(t_r,'Coupling between different spin types in one-e hamiltonian??')
+                            elseif(mod(j,2).eq.1) then
+                                !j is also alpha
+                                h0v(tospat(j),tospat(i)) = temp(j)
+                            endif
+
+                        else
+                            !i is beta spin-orbital
+                            if((mod(j,2).eq.1).and.(abs(temp(j)).gt.1.0e-8_dp)) then
+                                call stop_all(t_r,'Coupling between different spin types in one-e hamiltonian??')
+                            elseif(mod(j,2).eq.0) then
+                                !j is also beta 
+                                h0v_b(tospat(j),tospat(i)) = temp(j)
+                            endif
+                        endif
+                    enddo
+                enddo
+
+                deallocate(temp)
+            else
+                do i=1,nSites
+                    read(iunit,*) h0v(:,i)
+                enddo
+            endif
             close(iunit)
 
         elseif(LatticeDim.eq.1) then
@@ -238,11 +301,10 @@ module mat_tools
             call stop_all(t_r,'Higher dimensional models not coded up')
         endif
 
-        if(tUHF) then
-            !TODO: THIS IS JUST FOR TESTING!!
-            h0_b(:,:) = h0(:,:)
-        endif
-
+!        if(tUHF) then
+!            !TODO: THIS IS JUST FOR TESTING!!
+!            h0_b(:,:) = h0(:,:)
+!        endif
 
     end subroutine make_hop_mat
 
@@ -426,6 +488,7 @@ module mat_tools
             allocate(allowed_occs(N_occs))
             allowed_occs(1) = nElecFill/2
         else
+            if(tUHF) call stop_all(t_r,'Cannot run through all occupations with UHF yet - fix me')
             allocate(h0Eigenvecs(nSites,nSites))
             allocate(h0Eigenvals(nSites))
             h0Eigenvecs = 0.0_dp
@@ -1014,43 +1077,84 @@ module mat_tools
         implicit none
         integer :: i,j,iunit
         real(dp), allocatable :: OccOrbs(:,:),temp(:,:)
+        real(dp) :: Occupancy
         logical :: exists
         character(len=*), parameter :: t_r="read_orbitals"
 
         write(6,*) "Reading HF orbitals from disk..."
 
         if(.not.allocated(HFOrbs)) allocate(HFOrbs(nSites,nSites)) !The orbitals
+        HFOrbs(:,:) = zero  
+        HFEnergies(:) = zero
 
-        HFOrbs(:,:) = 0.0_dp
-        inquire(file='FinalOrbitals.dat',exist=exists)
-        if(.not.exists) call stop_all(t_r,'Orbital file cannot be found')
-        iunit = get_free_unit()
-        open(iunit,file='FinalOrbitals.dat',status='old',action='read')
-        do i=1,nSites
-            read(iunit,*) HFOrbs(i,:)
-        enddo
-        close(iunit)
-        
-        HFEnergies(:) = 0.0_dp
-        inquire(file='FinalEigenvalue.dat',exist=exists)
-        if(.not.exists) call stop_all(t_r,'Eigenvalue file cannot be found')
-        open(iunit,file='FinalEigenvalue.dat',status='old',action='read')
-        read(iunit,*) HFEnergies(:)
-        close(iunit)
+        if(tUHF) then
+            if(.not.allocated(HFOrbs_b)) allocate(HFOrbs_b(nSites,nSites))
+            HFOrbs_b(:,:) = zero
+            HFEnergies_b(:) = zero
+            inquire(file='FinalOrbitals_a.dat',exist=exists)
+            if(.not.exists) call stop_all(t_r,'Alpha orbital file cannot be found')
+            iunit = get_free_unit()
+            open(iunit,file='FinalOrbitals_a.dat',status='old',action='read')
+            do i=1,nSites
+                read(iunit,*) HFOrbs(i,:)
+            enddo
+            close(iunit)
+            inquire(file='FinalOrbitals_b.dat',exist=exists)
+            if(.not.exists) call stop_all(t_r,'Beta orbital file cannot be found')
+            open(iunit,file='FinalOrbitals_b.dat',status='old',action='read')
+            do i=1,nSites
+                read(iunit,*) HFOrbs_b(i,:)
+            enddo
+            close(iunit)
+
+            !Eigenvalues
+            inquire(file='FinalEigenvalue_a.dat',exist=exists)
+            if(.not.exists) call stop_all(t_r,'Alpha eigenvalue file cannot be found')
+            open(iunit,file='FinalEigenvalue_a.dat',status='old',action='read')
+            read(iunit,*) HFEnergies(:)
+            close(iunit)
+            inquire(file='FinalEigenvalue_b.dat',exist=exists)
+            if(.not.exists) call stop_all(t_r,'Beta eigenvalue file cannot be found')
+            open(iunit,file='FinalEigenvalue_b.dat',status='old',action='read')
+            read(iunit,*) HFEnergies_b(:)
+            close(iunit)
+        else
+            inquire(file='FinalOrbitals.dat',exist=exists)
+            if(.not.exists) call stop_all(t_r,'Orbital file cannot be found')
+            iunit = get_free_unit()
+            open(iunit,file='FinalOrbitals.dat',status='old',action='read')
+            do i=1,nSites
+                read(iunit,*) HFOrbs(i,:)
+            enddo
+            close(iunit)
+            
+            inquire(file='FinalEigenvalue.dat',exist=exists)
+            if(.not.exists) call stop_all(t_r,'Eigenvalue file cannot be found')
+            open(iunit,file='FinalEigenvalue.dat',status='old',action='read')
+            read(iunit,*) HFEnergies(:)
+            close(iunit)
+        endif
 
         write(6,*) "nOCC", nOcc
         write(6,*) "Fock eigenvalues around fermi level: "
         do i=max(1,nOcc-7),nOcc
-            write(6,*) HFEnergies(i),"*"
+            if(tUHF) then
+                write(6,*) HFEnergies(i),HFEnergies_b(i),"*"
+            else
+                write(6,*) HFEnergies(i),"*"
+            endif
         enddo
         do i=nOcc+1,min(nSites,nOcc+7)
-            write(6,*) HFEnergies(i)
+            if(tUHF) then
+                write(6,*) HFEnergies(i),HFEnergies_b(i)
+            else
+                write(6,*) HFEnergies(i)
+            endif
         enddo
 
         if(tCheck) then
             !Check that these orbitals are correct
             allocate(temp(nSites,nSites))
-            temp(:,:) = 0.0_dp
             call DGEMM('n','n',nSites,nSites,nSites,one,h0v,nSites,HFOrbs,nSites,zero,temp,nSites)
 
             do i = 1,nSites
@@ -1065,22 +1169,53 @@ module mat_tools
                     endif
                 enddo
             enddo
+            if(tUHF) then
+                call DGEMM('n','n',nSites,nSites,nSites,one,h0v_b,nSites,HFOrbs_b,nSites,zero,temp,nSites)
+
+                do i = 1,nSites
+                    !Loop over orbitals
+                    do j = 1,nSites
+                        !Loop over components of orbitals
+                        if(abs((temp(j,i)/HFEnergies_b(i)) - HFOrbs_b(j,i)).gt.1.0e-8_dp) then
+                            write(6,*) "Orbital: ",i
+                            write(6,*) "Component: ",j
+                            write(6,*) temp(j,i)/HFEnergies_b(i),HFOrbs_b(j,i),abs((temp(j,i)/HFEnergies_b(i)) - HFOrbs_b(j,i))
+                            call stop_all(t_r,'Error in reading beta orbitals')
+                        endif
+                    enddo
+                enddo
+            endif
+
             deallocate(temp)
             write(6,"(A)") "Orbitals read in correctly"
         endif
         
         !Now calculate the density matrix from the calculation based on double occupancy of the lowest lying nOcc orbitals
         !First, extract the occupied orbitals. Since eigenvalues are ordered in increasing order, these will be the first nOcc
+        if(tUHF) then
+            Occupancy = one
+        else
+            Occupancy = 2.0_dp
+        endif
         allocate(OccOrbs(nSites,nOcc))
         OccOrbs(:,:) = HFOrbs(:,1:nOcc)
         !Now construct the density matrix in the original AO basis. The eigenvectors are given as AO x MO, so we want to contract out the
         !MO contributions in order to get the 1DM in the AO basis.
-        call DGEMM('N','T',nSites,nSites,nOcc,2.0_dp,OccOrbs,nSites,OccOrbs,nSites,0.0_dp,MeanFieldDM,nSites)
+        call DGEMM('N','T',nSites,nSites,nOcc,Occupancy,OccOrbs,nSites,OccOrbs,nSites,zero,MeanFieldDM,nSites)
+        if(tUHF) then
+            OccOrbs(:,:) = HFOrbs_b(:,1:nOcc)
+            call DGEMM('N','T',nSites,nSites,nOcc,Occupancy,OccOrbs,nSites,OccOrbs,nSites,zero,MeanFieldDM_b,nSites)
+        endif
 
         ChemPot = (HFEnergies(nOcc) + HFEnergies(nOcc+1))/2.0_dp  !Chemical potential is half way between HOMO and LUMO
         HLGap = HFEnergies(nOcc+1)-HFEnergies(nOcc)   !one body HOMO-LUMO Gap
+        if(tUHF) then
+            ChemPot_b = (HFEnergies_b(nOcc) + HFEnergies_b(nOcc+1))/2.0_dp  !Chemical potential is half way between HOMO and LUMO
+            HLGap_b = HFEnergies_b(nOcc+1)-HFEnergies_b(nOcc)   !one body HOMO-LUMO Gap
+        endif
 
         write(6,"(A,F20.10)") "One-electron eigenvalue band-gap: ",HLGap
+        if(tUHF) write(6,"(A,F20.10)") "One-electron beta eigenvalue band-gap: ",HLGap_b
         if(HLGap.lt.1.0e-6_dp) then
             write(6,"(A,G15.5,A)") "Warning. HL gap is: ",HLGap," Possible failure in assigning orbitals in degenerate set."
         endif
@@ -1129,7 +1264,7 @@ module mat_tools
         !Now just diagonalise this fock matrix, rather than use diis
         !First, diagonalize one-body hamiltonian
         HFOrbs(:,:) = Fock(:,:)
-        HFEnergies(:) = 0.0_dp
+        HFEnergies(:) = zero  
         if(tDiag_kspace) then
             call DiagOneEOp(HFOrbs,HFEnergies,nImp,nSites,tDiag_kspace)
         else
@@ -1186,6 +1321,10 @@ module mat_tools
 
         ChemPot = (HFEnergies(nOcc) + HFEnergies(nOcc+1))/2.0_dp  !Chemical potential is half way between HOMO and LUMO
         HLGap = HFEnergies(nOcc+1)-HFEnergies(nOcc)   !one body HOMO-LUMO Gap
+        if(tUHF) then
+            ChemPot_b = (HFEnergies_b(nOcc) + HFEnergies_b(nOcc+1))/2.0_dp  !Chemical potential is half way between HOMO and LUMO
+            HLGap_b = HFEnergies_b(nOcc+1)-HFEnergies_b(nOcc)   !one body HOMO-LUMO Gap
+        endif
 
         if(HLGap.lt.1.0e-6_dp) then
             write(6,"(A,G15.5,A)") "Warning. HL gap is: ",HLGap," Possible failure in assigning orbitals in degenerate set."
