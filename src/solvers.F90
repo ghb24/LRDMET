@@ -20,7 +20,7 @@ module solvers
         character(len=73) :: cmd2
         character(len=67) :: cmd1
         character(len=6) :: StrPSpace
-        real(dp) :: Emb_nElec,Hel!,DD_Response,ZerothH(4,4)
+        real(dp) :: Emb_nElec,Hel,AFOrder!,DD_Response,ZerothH(4,4)
 !        real(dp), allocatable :: FullH1(:,:),LR_State(:)
 !        real(dp) ::DDOT,Overlap
         real(dp) :: Check2eEnergy,trace
@@ -515,6 +515,20 @@ module solvers
         write(6,"(A,F15.7)") "Target filling per site: ",Targetfilling_Imp
         write(6,"(A,F15.7)") "Actual filling per site: ",Actualfilling_Imp
         write(6,"(A,F15.7)") "Filling error  per site: ",Fillingerror
+        write(6,"(A)") ""
+        write(6,"(A)") "Impurity RDMs: "
+        call writematrix(HL_1RDM(1:nImp,1:nImp),'hl_1RDM_Imp',.true.)
+        if(tUHF) call writematrix(HL_1RDM_b(1:nImp,1:nImp),'hl_1RDM_Imp_b',.true.)
+
+        if(tUHF) then
+            call writematrix(HL_1RDM(1:nImp,1:nImp)-HL_1RDM_b(1:nImp,1:nImp),'Spin Density',.true.)
+            AFOrder = zero
+            do i = 1,nImp
+                AFOrder = AFOrder + abs(HL_1RDM(i,i)-HL_1RDM_b(i,i))
+            enddo
+            AFOrder = AFOrder/nImp
+            write(6,"(A,F15.7)") "AFM order: ",AFOrder
+        endif
         call flush(6)
 
 !        if(tDebug) call writematrix(HL_1RDM,'hl_1rdm',.true.)

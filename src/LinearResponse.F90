@@ -151,6 +151,13 @@ module LinearResponse
         character(len=*), parameter :: t_r='NonIntExCont_TDA_MCLR_DD_Cmprs'
         integer(ip) :: maxminres_iter_ip,minres_unit_ip,nLinearSystem_ip,info_ip
 
+        if(tUHF) then
+            !What needs to be done for this:
+            !   Construct G(w) for aa and bb excitations, and use appropriately
+            !   Different fock sectors for aa and bb
+            call stop_all(t_r,'UHF not yet correctly implemented for DD response - bug ghb')
+        endif
+
         call set_timer(LR_EC_TDA_Precom)
         
         maxminres_iter = iMinRes_MaxIter
