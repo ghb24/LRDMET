@@ -791,9 +791,6 @@ Program RealHub
         if(tUHF.and..not.(tCompleteDiag.or.tNonDirDavidson)) then
             call stop_all(t_r,'Cannot currently solve UHF impurity problem without complete or non-direct davidson solvers')
         endif
-        if(tUHF.and.(tWriteMats.or.tReadMats)) then
-            call stop_all(t_r,'Cannot currently read/write matrices to disk with UHF - fix me')
-        endif
         if(tBetaExcit.and.(.not.tChargedResponse)) then
             call stop_all(t_r,'Can only be beta space correlators with GFs - DD response is a spatial orbital')
         endif

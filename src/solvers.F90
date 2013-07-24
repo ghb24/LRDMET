@@ -938,10 +938,14 @@ module solvers
             write(6,"(A)") "Compressing hamiltonian matrix..."
             if(tReadMats) then
                 inquire(file='CompressHam_N',exist=texist)
-                iunit_tmp = get_free_unit()
-                open(iunit_tmp,file='CompressHam_N',status='old')
-                read(iunit_tmp,*) isize
-                Nmax = isize
+                if(.not.texist) then
+                    call CountSizeCompMat(FCIDetList(:,:),Elec,nFCIDet,Nmax,FCIBitList(:))
+                else
+                    iunit_tmp = get_free_unit()
+                    open(iunit_tmp,file='CompressHam_N',status='old')
+                    read(iunit_tmp,*) isize
+                    Nmax = isize
+                endif
             else
                 call CountSizeCompMat(FCIDetList(:,:),Elec,nFCIDet,Nmax,FCIBitList(:))
             endif
@@ -951,16 +955,12 @@ module solvers
             allocate(CompressHam(Nmax),stat=ierr)
             allocate(IndexHam(Nmax),stat=ierr)
             if(ierr.ne.0) call stop_all(t_r,'Allocation failed')
-            if(tReadMats) then
-                if(texist) then
-                    if(isize.ne.Nmax) call stop_all(t_r,'Error here')
-                    do i = 1,iSize
-                        read(iunit_tmp,*) CompressHam(i),IndexHam(i)
-                    enddo
-                    close(iunit_tmp)
-                else
-                    call StoreCompMat(FCIDetList(:,:),Elec,nFCIDet,Nmax,CompressHam,IndexHam,FCIBitList(:))
-                endif
+            if(tReadMats.and.texist) then
+                if(isize.ne.Nmax) call stop_all(t_r,'Error here')
+                do i = 1,iSize
+                    read(iunit_tmp,*) CompressHam(i),IndexHam(i)
+                enddo
+                close(iunit_tmp)
             else
                 call StoreCompMat(FCIDetList(:,:),Elec,nFCIDet,Nmax,CompressHam,IndexHam,FCIBitList(:))
             endif
@@ -987,14 +987,17 @@ module solvers
             if(tCompressedMats) then
                 call Real_NonDir_Davidson(nFCIDet,HL_Energy,HL_Vec,.false.,Nmax,CompressMat=CompressHam,IndexMat=IndexHam)
                 if(tWriteMats) then
-                    write(6,*) "Writing out matrices"
-                    iunit_tmp = get_free_unit()
-                    open(iunit_tmp,file='CompressHam_N',status='unknown')
-                    write(iunit_tmp,*) Nmax
-                    do i = 1,Nmax
-                        write(iunit_tmp,*) CompressHam(i),IndexHam(i)
-                    enddo
-                    close(iunit_tmp)
+                    if(.not.(tReadMats.and.texist)) then
+                        !Do not write out if we have already got them!
+                        write(6,*) "Writing out matrices"
+                        iunit_tmp = get_free_unit()
+                        open(iunit_tmp,file='CompressHam_N',status='unknown')
+                        write(iunit_tmp,*) Nmax
+                        do i = 1,Nmax
+                            write(iunit_tmp,*) CompressHam(i),IndexHam(i)
+                        enddo
+                        close(iunit_tmp)
+                    endif
                 endif
                 deallocate(CompressHam,IndexHam)
             else
@@ -1045,8 +1048,22 @@ module solvers
                     enddo
                 enddo
                 close(iunit_tmp)
+                if(tUHF) then
+                    iunit_tmp = get_free_unit()
+                    open(iunit_tmp,file='RDM_N_b',status='old')
+                    do i = 1,EmbSize
+                        do j = 1,EmbSize
+                            read(iunit_tmp,*) HL_1RDM_b(i,j)
+                        enddo
+                    enddo
+                    close(iunit_tmp)
+                endif
             else
-                call FindFull1RDM(1,1,.true.,HL_1RDM)
+                if(tUHF) then
+                    call FindFull1RDM(1,1,.true.,HL_1RDM,RDM_Beta=HL_1RDM_b)
+                else
+                    call FindFull1RDM(1,1,.true.,HL_1RDM)
+                endif
             endif
         else
             if(tUHF) then
@@ -1056,15 +1073,27 @@ module solvers
             endif
         endif
         if(tWriteMats) then
-            write(6,*) "Writing out RDM"
-            iunit_tmp = get_free_unit()
-            open(iunit_tmp,file='RDM_N',status='unknown')
-            do i = 1,EmbSize
-                do j = 1,EmbSize
-                    write(iunit_tmp,*) HL_1RDM(i,j)
+            if(.not.(tReadMats.and.texist)) then
+                !Do not write them out again if we have just read them in!
+                write(6,*) "Writing out RDM"
+                iunit_tmp = get_free_unit()
+                open(iunit_tmp,file='RDM_N',status='unknown')
+                do i = 1,EmbSize
+                    do j = 1,EmbSize
+                        write(iunit_tmp,*) HL_1RDM(i,j)
+                    enddo
                 enddo
-            enddo
-            close(iunit_tmp)
+                close(iunit_tmp)
+                if(tUHF) then
+                    open(iunit_tmp,file='RDM_N_b',status='unknown')
+                    do i = 1,EmbSize
+                        do j = 1,EmbSize
+                            write(iunit_tmp,*) HL_1RDM_b(i,j)
+                        enddo
+                    enddo
+                    close(iunit_tmp)
+                endif
+            endif
         endif
 
         if(tWriteOut) then
