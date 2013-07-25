@@ -575,7 +575,7 @@ module mat_tools
                 if(abs(h0(i,iImp)).gt.1.0e-8_dp) nHoppingsEnv = nHoppingsEnv + 1
             enddo
         enddo
-        write(6,"(A,I6,A,I6,A)") "Connections of impurity sites via t: ",nHoppingsImp," within emp, ",nHoppingsEnv," to env"
+        write(6,"(A,I6,A,I6,A)") "Connections of impurity sites via t: ",nHoppingsImp," within imp, ",nHoppingsEnv," to env"
 
     end subroutine find_occs
 
@@ -1370,6 +1370,11 @@ module mat_tools
                     tShift_Mesh = .true.
                 endif
             endif
+            if(tShift_Mesh) then
+                write(6,"(A)") "Using a Monkhorst-pack kpoint mesh of 1st BZ - no gamma point"
+            else
+                write(6,"(A)") "Using a gamma-centered kpoint mesh of 1st BZ - gamma point included"
+            endif
 
             RecipLattVecs(1,1) = 2.0_dp*pi/real(SS_Period,dp)
             !Just use equally spaced mesh starting at -pi/SS_Period, and working our way across
@@ -1423,7 +1428,9 @@ module mat_tools
 
         if(tWriteOut) then
             write(6,*) "Writing out kpoint mesh: "
-            write(6,*) "KPnt ",k,KPnts(:,k)
+            do k=1,nKPnts
+                write(6,*) "KPnt ",k,KPnts(:,k)
+            enddo
         endif
     end subroutine setup_kspace
 
@@ -1441,7 +1448,9 @@ module mat_tools
         real(dp), allocatable :: Work(:)
         real(dp) :: PrimLattVec(LatticeDim),SiteVec(LatticeDim),Expo,DDOT,phase
         complex(dp), allocatable :: RotMat(:,:),temp(:,:),CompHam(:,:),RotHam(:,:),cWork(:)
-        integer :: lWork,info,i,j,k,kSpace_ind,ki,kj,bandi,bandj,Ind_i,Ind_j
+        complex(dp), allocatable :: CompHam_2(:,:),ztemp(:,:),k_Ham(:,:),RtoK_Rot(:,:),k_vecs(:,:)
+        complex(dp), allocatable :: r_vecs(:,:)
+        integer :: lWork,info,i,j,k,kSpace_ind,ki,kj,bandi,bandj,Ind_i,Ind_j,ind_1,ind_2
         integer :: ii,jj,xb,yb,impy,impx,impsite
         character(len=*), parameter :: t_r='DiagOneEOp'
 
@@ -1449,6 +1458,152 @@ module mat_tools
             if(LatticeDim.eq.2) then
                 call stop_all(t_r,'Cannot do k-space diagonalizations - impurity site tiling is not same as direct lattice')
             endif
+
+            allocate(CompHam(nLat,nLat))
+            do i=1,nLat
+                do j=1,nLat
+                    CompHam(j,i) = dcmplx(Ham(j,i),zero)
+                enddo
+            enddo
+
+            allocate(RotMat(nLat,SS_Period))
+            allocate(RtoK_Rot(nLat,nLat))
+            allocate(k_Ham(SS_Period,SS_Period))
+            allocate(ztemp(nLat,SS_Period))
+            allocate(k_vecs(SS_Period,nLat))
+            k_vecs(:,:) = zzero
+            RtoK_Rot(:,:) = zzero
+            
+            !Space for diagonalization
+            lwork = max(1,2*SS_Period-1)
+            allocate(cWork(lWork))
+            allocate(Work(max(1,3*SS_Period-2)))
+
+            !Run though all kpoints
+            do k = 1,nKPnts
+                RotMat(:,:) = zzero     !Rot mat will be the rotation into the specfic kpoint of interest
+                !Construct rotation
+                do i = 1,nLat
+                    if(LatticeDim.eq.1) then
+                        PrimLattVec(1) = real(i-1,dp)   !The real-space translation to this site
+                    else
+                        call stop_all(t_r,'Error')
+                    endif
+                    phase = ddot(LatticeDim,KPnts(:,k),1,PrimLattVec,1)
+                    RotMat(i,mod(i,SS_Period)+1) = exp(dcmplx(zero,phase))/sqrt(real(nKPnts,dp))
+                enddo
+
+                !We now have the rotation matrix for the bands on this kpoint.
+                !Rotate the hamiltonian into this basis
+                call ZGEMM('N','N',nLat,SS_Period,nLat,zone,CompHam,nLat,RotMat,nLat,zzero,ztemp,nLat)
+                call ZGEMM('C','N',SS_Period,SS_Period,nLat,zone,RotMat,nLat,ztemp,nLat,zzero,k_Ham,SS_Period)
+
+                !Diagonalize this k-pure hamiltonian
+                info = 0
+                ind_1 = ((k-1)*SS_Period) + 1
+                ind_2 = SS_Period*k
+                call ZHEEV('V','U',SS_Period,k_Ham,SS_Period,Vals(ind_1:ind_2),cWork,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'Diag failed')
+
+                write(6,*) "For kpoint: ",k," Eigenvalues are:"
+                do i = 0,SS_Period-1
+                    write(6,*) Vals(ind_1+i)
+                enddo
+                write(6,*) "Eigenvectors: "
+                call writematrixcomp(k_Ham,'Eigenvec',.true.)
+
+                k_vecs(:,ind_1:ind_2) = k_Ham(:,:)
+                RtoK_Rot(:,ind_1:ind_2) = RotMat(:,:)
+
+            enddo
+            
+            deallocate(RotMat,k_Ham,ztemp,cWork,Work)
+
+            if(tCheck) then
+                !Now, is RtoK_Rot unitary?
+                allocate(temp(nLat,nLat))
+                !Check unitarity of matrix
+                call ZGEMM('C','N',nLat,nLat,nLat,zone,RtoK_Rot,nLat,RtoK_Rot,nLat,zzero,temp,nLat) 
+                do i = 1,nLat
+                    do j = 1,nLat
+                        if((i.eq.j).and.(abs(temp(i,j)-zone).gt.1.0e-7_dp)) then
+                            write(6,*) "i,j: ",i,j
+                            call writematrixcomp(temp,'Identity?',.true.)
+                            call stop_all(t_r,'Rotation matrix not unitary')
+                        elseif((i.ne.j).and.(abs(temp(j,i)).gt.1.0e-7_dp)) then
+                            write(6,*) "i,j: ",i,j
+                            call writematrixcomp(temp,'Identity?',.true.)
+                            call stop_all(t_r,'Rotation matrix not unitary 2')
+                        endif
+                    enddo
+                enddo
+                !Try other way...
+                call ZGEMM('N','C',nLat,nLat,nLat,zone,RtoK_Rot,nLat,RtoK_Rot,nLat,zzero,temp,nLat) 
+                do i = 1,nLat
+                    do j = 1,nLat
+                        if((i.eq.j).and.(abs(temp(i,j)-zone).gt.1.0e-7_dp)) then
+                            write(6,*) "i,j: ",i,j
+                            call writematrixcomp(temp,'Identity?',.true.)
+                            call stop_all(t_r,'Rotation matrix not unitary')
+                        elseif((i.ne.j).and.(abs(temp(j,i)).gt.1.0e-7_dp)) then
+                            write(6,*) "i,j: ",i,j
+                            call writematrixcomp(temp,'Identity?',.true.)
+                            call stop_all(t_r,'Rotation matrix not unitary 2')
+                        endif
+                    enddo
+                enddo
+                write(6,*) "Rotation matrix unitary... :)"
+                deallocate(temp)
+            endif
+
+            !Order the vectors, and the rotation matrix, such that the are in order of increasing eigenvalue
+
+            !Now, rotate the k-space vectors back into r-space
+            allocate(r_vecs(nLat,nLat))
+            r_vecs(:,:) = zzero
+            do k = 1,nKPnts
+                ind_1 = ((k-1)*SS_Period) + 1
+                ind_2 = SS_Period*k
+                call ZGEMM('N','N',nLat,SS_Period,SS_Period,zone,RtoK_Rot(:,ind_1:ind_2),nLat,  &
+                    k_vecs(:,ind_1:ind_2),SS_Period,zzero,r_vecs(:,ind_1:ind_2),nLat)
+            enddo
+            if(tWriteOut) call writematrixcomp(r_vecs,'r_vecs',.true.)
+
+            if(tCheck) then
+                !Do these satisfy the original eigenvalue problem?
+                allocate(cWork(nLat))
+                do i = 1,nLat
+                    call ZGEMV('N',nLat,nLat,zone,CompHam,nLat,r_vecs(:,i),1,zzero,cWork,1)
+                    do j = 1,nLat
+                        if(abs(cWork(j)-(Vals(i)*r_vecs(j,i))).gt.1.0e-8_dp) then
+                            call stop_all(t_r,'Eigensystem not computed correctly in real basis')
+                        endif
+                    enddo
+                enddo
+                deallocate(cWork)
+                write(6,*) "Eigensystem correctly computed and transformed to real space"
+            endif
+
+            !Now, find the appropriate phase, such that the rotation will make the r_vecs real.
+            !Apply the inverse of this rotation to the k_vecs, such that we end up with a complex set of
+            !k-vectors, and real set of r_vecs.
+
+            !Degenerate sets?
+
+            !Check again that these rotated r_vecs are correct eigenfunctions...
+
+
+!            call stop_all(t_r,'stop')
+            deallocate(CompHam)
+
+
+
+
+
+
+
+
+
                 
 !            allocate(RotMat(SS_Period,nLat))
 !            do k = 1,nKPnts
@@ -1470,7 +1625,7 @@ module mat_tools
 !
 !            enddo
 
-            call writematrix(Ham,'Real space matrix',.true.)
+!            call writematrix(Ham,'Real space matrix',.true.)
 
             !Do incredibly naievly to start with by creating the entire rotation matrix and rotating
             !First index in k-space, second in r-space
@@ -1548,11 +1703,13 @@ module mat_tools
             write(6,*) "Rotation matrix unitary... :)"
 
             allocate(CompHam(nLat,nLat))
+            allocate(CompHam_2(nLat,nLat))
             allocate(RotHam(nLat,nLat))
             !Store the hamiltonian in complex form, so we can act on it
             do i = 1,nLat
                 do j = 1,nLat
                     CompHam(j,i) = dcmplx(Ham(j,i),0.0_dp)
+                    CompHam_2(j,i) = dcmplx(Ham(j,i),0.0_dp)
                 enddo
             enddo
 
@@ -1588,6 +1745,7 @@ module mat_tools
             lWork = max(1,2*nLat-1)
             allocate(cWork(lWork))
             allocate(Work(max(1,3*nLat-2)))
+            info = 0
             call ZHEEV('V','U',nLat,RotHam,nLat,Vals,cWork,lWork,Work,info)
             if(info.ne.0) call stop_all(t_r,'Diag failed')
             deallocate(cWork,Work)
@@ -1617,34 +1775,52 @@ module mat_tools
             !Temp now contains the (complex) eigenvectors in r-space
             call writevector(Vals,'Eigenvalues')
             call writematrixcomp(temp,'r-space Eigenvectors',.true.)
+            
+            !Are the eigenvectors meaningful in real space compared to original hamiltonian?
+            allocate(cWork(nLat))
+            do i = 1,nLat
+                call ZGEMV('N',nLat,nLat,zone,CompHam_2,nLat,temp(:,i),1,zzero,cWork,1)
+                do j = 1,nLat
+                    if(abs(cWork(j)-(Vals(i)*temp(j,i))).gt.1.0e-8_dp) then
+                        call stop_all(t_r,'Eigensystem not computed correctly in real basis')
+                    endif
+                enddo
+            enddo
+            deallocate(cWork)
 
             do i = 1,nLat
                 phase = 0.0_dp
+                write(6,*) "Rotating eigenvector : ",i
                 do j = 1,nLat
                     if((abs(aimag(temp(j,i))).gt.1.0e-9_dp).and.(abs(temp(j,i)).gt.1.0e-7_dp)) then
                         !Find the phase factor for this eigenvector
                         phase = atan(aimag(temp(j,i))/real(temp(j,i)))
                         write(6,*) "Eigenvector: ",i,j,phase,temp(j,i) * exp(dcmplx(0.0_dp,-phase))
                         !temp(j,i) = temp(j,i) * exp(dcmplx(0.0_dp,-phase))
-                        exit
+                        !exit
                     endif
                 enddo
-                if(j.le.nLat) then
-                    write(6,*) "phase computed from component: ",j,abs(temp(j,i))
-                    write(6,*) "phase computed to be: ",phase
-                else
-                    write(6,*) "No imaginary component in eigenvector found - no phase being applied"
-                    if(phase.ne.0.0_dp) call stop_all(t_r,'Error here')
-                endif
-
-                !Apply the same phase to all components of the eigenvector
-                do j = 1,nLat
-                    if(abs(phase-(atan(aimag(temp(j,i))/real(temp(j,i))))).gt.1.0e-8_dp) then
-                        call stop_all(t_r,'A consistent phase cannot be found for this eigenvector')
-                    endif
-                    temp(j,i) = temp(j,i) * exp(dcmplx(0.0_dp,-phase))
-                enddo
+!                if(j.le.nLat) then
+!                    write(6,*) "phase computed from component: ",j,abs(temp(j,i))
+!                    write(6,*) "phase computed to be: ",phase
+!                else
+!                    write(6,*) "No imaginary component in eigenvector found - no phase being applied"
+!                    if(phase.ne.0.0_dp) call stop_all(t_r,'Error here')
+!                endif
+!
+!                !Apply the same phase to all components of the eigenvector
+!                do j = 1,nLat
+!                    if(abs(phase-(atan(aimag(temp(j,i))/real(temp(j,i))))).gt.1.0e-8_dp) then
+!                        write(6,*) "Eigenvector: ",i," component: ",j
+!                        write(6,*) phase,atan(aimag(temp(j,i))/real(temp(j,i))),abs(phase-(atan(aimag(temp(j,i))/real(temp(j,i)))))
+!                        write(6,*) temp(j,i)
+!                        call stop_all(t_r,'A consistent phase cannot be found for this eigenvector')
+!                    endif
+!                    temp(j,i) = temp(j,i) * exp(dcmplx(0.0_dp,-phase))
+!                enddo
             enddo
+
+            call stop_all(t_r,'stop')
             
             call writematrixcomp(temp,'rotated r-space Eigenvectors',.true.)
             
