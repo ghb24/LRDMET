@@ -947,7 +947,12 @@ module solvers
                     Nmax = isize
                 endif
             else
-                call CountSizeCompMat(FCIDetList(:,:),Elec,nFCIDet,Nmax,FCIBitList(:))
+                if(iHamSize_N.eq.0) then
+                    call CountSizeCompMat(FCIDetList(:,:),Elec,nFCIDet,Nmax,FCIBitList(:))
+                    iHamSize_N = Nmax
+                else
+                    Nmax = iHamSize_N
+                endif
             endif
             write(6,"(A,2I14)") "Size of Compressed/Full Hamiltonians: ",Nmax,nFCIDet**2
             write(6,"(A,F14.6,A)") "Allocating memory for compressed hamiltonian: ",real(Nmax*16,dp)/1048576.0_dp," Mb"

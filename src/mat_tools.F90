@@ -898,7 +898,7 @@ module mat_tools
         if(.not.tAnderson) then
             do i=1,nSites
                 !Include the on-site repulsion
-                fock(i,i) = fock(i,i) + U * 0.5_dp * (NEl/real(nSites))
+                fock(i,i) = fock(i,i) + U * 0.5_dp * (real(NEl,dp)/real(nSites,dp))
             enddo
         elseif(tChemPot) then
             fock(1,1) = fock(1,1) - (U/2.0_dp)
@@ -1334,6 +1334,99 @@ module mat_tools
 
     end subroutine run_hf
 
+    !Setup the kpoint mesh, and other things needed to work in kspace
+    subroutine setup_kspace()
+        implicit none
+        integer :: SS_Period,k
+        character(len=*), parameter :: t_r='setup_kspace'
+
+        !SS_Period is the size of the supercell repeating unit (e.g. the coupling correlation potential)
+        !This will be equivalent to the number of bands per kpoint
+        SS_Period = nImp
+        if(mod(nSites,SS_Period).ne.0) call stop_all(t_r,'Lattice dimensions not consistent')
+        nKPnts = nSites/SS_Period
+        allocate(KPnts(LatticeDim,nKPnts))
+        KPnts(:,:) = zero  
+        allocate(RecipLattVecs(LatticeDim,LatticeDim))
+        RecipLattVecs(:,:) = zero
+            
+        !Create k-space mesh
+        if(LatticeDim.eq.1) then
+            !Define the reciprocal lattice vector
+            if(mod(nKPnts,2).eq.0) then
+                if(tPeriodic) then
+                    !We want to use a Gamma centered mesh
+                    tShift_Mesh = .false.
+                else
+                    !We want a Monkhort-Pack mesh
+                    tShift_Mesh = .true.
+                endif
+            else
+                if(tPeriodic) then
+                    !We want to use a Gamma centered mesh
+                    tShift_Mesh = .false.
+                else
+                    !Monkhorst-Pack mesh
+                    tShift_Mesh = .true.
+                endif
+            endif
+
+            RecipLattVecs(1,1) = 2.0_dp*pi/real(SS_Period,dp)
+            !Just use equally spaced mesh starting at -pi/SS_Period, and working our way across
+            do k = 1,nKPnts
+                KPnts(1,k) = -RecipLattVecs(1,1)/2.0_dp + (k-1)*RecipLattVecs(1,1)/nKPnts
+                if(tShift_Mesh) then
+                    !Shift kpoint mesh by half the kpoint spacing
+                    KPnts(1,k) = KPnts(1,k) + RecipLattVecs(1,1)/(2.0_dp*real(nKPnts,dp))
+                endif
+            enddo
+        elseif(LatticeDim.eq.2) then
+            call stop_all(t_r,'Cannot do k-space diagonalizations - impurity site tiling is not same as direct lattice')
+            !Below is commented out code to ostensibly create 2D kpoint mesh
+!            if(SS_Period.le.2) then
+!                !1/2 impurity. Tilted lattice with real space lattice vector (1,1) and (1,-1)
+!                !Always have 2 sites per direct unit cell
+!                RecipLattVecs(:,1) = pi
+!                RecipLattVecs(1,2) = pi
+!                RecipLattVecs(2,2) = -pi
+!
+!                tShift = .false.
+!
+!                !Is it a regular grid?
+!                kPerDim = nint(sqrt(real(nKPnts,dp)))
+!                if(abs(real(kPerDim**2,dp)-real(nKPnts,dp)).gt.1.0e-8_dp) then
+!                    write(6,*) "k-points per dimension: ",sqrt(real(nKPnts,dp))
+!                    write(6,*) "Bands (needs to be square number for uniform mesh): ",nKPnts
+!                    call stop_all(t_r,'Cannot do k-space diagonalization with non-uniform mesh (currently?)')
+!                endif
+!
+!                do i = 1,kPerDim
+!                    do j = 1,kPerDim
+!                        kpnt = (i-1)*kPerDim + j
+!
+!                        KPnts(1,kpnt) = -pi    !Start at RHS of tilted FBZ
+!                        KPnts(:,kpnt) = KPnts(:,kpnt) + (i-1)*RecipLattVecs(:,1)/kPerDim + (j-1)*RecipLattVecs(:,2)/kPerDim
+!                        if(tShift) then
+!                            KPnts(:,kpnt) = KPnts(:,kpnt) + RecipLattVecs(:,1)/(2.0_dp*real(kPerDim,dp)) + &
+!                                RecipLattVecs(:,2)/(2.0_dp*real(kPerDim,dp))
+!                        endif
+!                        write(6,*) "KPnt ",kpnt,KPnts(:,kpnt)
+!                    enddo
+!                enddo
+!!            else
+!!                call stop_all(t_r,'Cannot deal with > 2 impurities with k-space diagonalization atm')
+!            endif
+        else
+            !Quoi?
+            call stop_all(t_r,'Error here')
+        endif
+
+        if(tWriteOut) then
+            write(6,*) "Writing out kpoint mesh: "
+            write(6,*) "KPnt ",k,KPnts(:,k)
+        endif
+    end subroutine setup_kspace
+
     !Routine to diagonalize a 1-electron, real operator, with the lattice periodicity.
     !the SS_Period is the size of the supercell repeating unit (e.g. the coupling correlation potential)
     !This will be equivalent to the number of bands per kpoint
@@ -1345,87 +1438,16 @@ module mat_tools
         integer, intent(in) :: SS_Period
         real(dp), intent(inout) :: Ham(nLat,nLat)
         real(dp), intent(out) :: Vals(nLat)
-
         real(dp), allocatable :: Work(:)
-        real(dp), allocatable :: KPnts(:,:)
         real(dp) :: PrimLattVec(LatticeDim),SiteVec(LatticeDim),Expo,DDOT,phase
-        real(dp) :: RecipLattVec(LatticeDim,LatticeDim)
         complex(dp), allocatable :: RotMat(:,:),temp(:,:),CompHam(:,:),RotHam(:,:),cWork(:)
-        integer :: lWork,info,nKPnts,i,j,k,kSpace_ind,ki,kj,bandi,bandj,Ind_i,Ind_j,kPerDim,kpnt
+        integer :: lWork,info,i,j,k,kSpace_ind,ki,kj,bandi,bandj,Ind_i,Ind_j
         integer :: ii,jj,xb,yb,impy,impx,impsite
-        logical :: tShift
         character(len=*), parameter :: t_r='DiagOneEOp'
 
         if(tKSpace_Diag) then
-            !Create k-space mesh
-            if(mod(nLat,SS_Period).ne.0) call stop_all(t_r,'Lattice dimensions not consistent')
-            nKPnts = nLat/SS_Period
-            allocate(KPnts(LatticeDim,nKPnts))
-            KPnts(:,:) = 0.0_dp
-
             if(LatticeDim.eq.2) then
                 call stop_all(t_r,'Cannot do k-space diagonalizations - impurity site tiling is not same as direct lattice')
-                if(SS_Period.le.2) then
-                    !1/2 impurity. Tilted lattice with real space lattice vector (1,1) and (1,-1)
-                    !Always have 2 sites per direct unit cell
-                    RecipLattVec(:,1) = pi
-                    RecipLattVec(1,2) = pi
-                    RecipLattVec(2,2) = -pi
-
-                    tShift = .false.
-
-                    !Is it a regular grid?
-                    kPerDim = nint(sqrt(real(nKPnts,dp)))
-                    if(abs(real(kPerDim**2,dp)-real(nKPnts,dp)).gt.1.0e-8_dp) then
-                        write(6,*) "k-points per dimension: ",sqrt(real(nKPnts,dp))
-                        write(6,*) "Bands (needs to be square number for uniform mesh): ",nKPnts
-                        call stop_all(t_r,'Cannot do k-space diagonalization with non-uniform mesh (currently?)')
-                    endif
-
-                    do i = 1,kPerDim
-                        do j = 1,kPerDim
-                            kpnt = (i-1)*kPerDim + j
-
-                            KPnts(1,kpnt) = -pi    !Start at RHS of tilted FBZ
-                            KPnts(:,kpnt) = KPnts(:,kpnt) + (i-1)*RecipLattVec(:,1)/kPerDim + (j-1)*RecipLattVec(:,2)/kPerDim
-                            if(tShift) then
-                                KPnts(:,kpnt) = KPnts(:,kpnt) + RecipLattVec(:,1)/(2.0_dp*real(kPerDim,dp)) + &
-                                    RecipLattVec(:,2)/(2.0_dp*real(kPerDim,dp))
-                            endif
-                            write(6,*) "KPnt ",kpnt,KPnts(:,kpnt)
-                        enddo
-                    enddo
-!                else
-!                    call stop_all(t_r,'Cannot deal with > 2 impurities with k-space diagonalization atm')
-                endif
-            else
-                if(mod(nKPnts,2).eq.0) then
-                    if(tPeriodic) then
-                        !We want to use a Gamma centered mesh
-                        tShift = .false.
-                    else
-                        !We want a Monkhort-Pack mesh
-                        tShift = .true.
-                    endif
-                else
-                    if(tPeriodic) then
-                        !We want to use a Gamma centered mesh
-                        tShift = .false.
-                    else
-                        !Monkhorst-Pack mesh
-                        tShift = .true.
-                    endif
-                endif
-
-                RecipLattVec(1,1) = 2.0_dp*pi/real(SS_Period,dp)
-                !Just use equally spaced mesh starting at -pi/SS_Period, and working our way across
-                do k = 1,nKPnts
-                    KPnts(1,k) = -RecipLattVec(1,1)/2.0_dp + (k-1)*RecipLattVec(1,1)/nKPnts
-                    if(tShift) then
-                        KPnts(1,k) = KPnts(1,k) + RecipLattVec(1,1)/(2.0_dp*real(nKPnts,dp))
-                    endif
-                    write(6,*) "KPnt ",k,KPnts(:,k)
-                enddo
             endif
                 
 !            allocate(RotMat(SS_Period,nLat))
@@ -1447,7 +1469,6 @@ module mat_tools
 !
 !
 !            enddo
-
 
             call writematrix(Ham,'Real space matrix',.true.)
 

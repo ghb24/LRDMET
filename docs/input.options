@@ -37,6 +37,12 @@ MODEL
     READCMPRSMATS
 (Write compressed N-electron matrices to disk)
     WRITECMPRSMATS
+(Size of compressed N electron hamiltonian (so you don't have to explicitly count - just need to be upper bound))
+    N_CMPRSHAMSIZE XXX
+(Size of compressed N-1 electron hamiltonian (so you don't have to explicitly count - just need to be upper bound))
+    NM1_CMPRSHAMSIZE XXX
+(Size of compressed N+1 electron hamiltonian (so you don't have to explicitly count - just need to be upper bound))
+    NP1_CMPRSHAMSIZE XXX
 (Impurity solver is non-direct davidson diagonalizer via call to 'fci' code)
     DAVIDSON
 (Impurity solver is FCIQMC via call to 'neci' code)

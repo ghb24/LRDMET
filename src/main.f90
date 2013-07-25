@@ -61,6 +61,9 @@ Program RealHub
         CompressThresh = 1.0e-10_dp !Integral threshold for compressed matrices
         tReadMats = .false.
         tWriteMats = .false.
+        iHamSize_N = 0
+        iHamSize_Np1 = 0
+        iHamSize_Nm1 = 0
 
         !General LR options
         Start_Omega = 0.0_dp
@@ -433,6 +436,12 @@ Program RealHub
                 tReadMats = .true.
             case("WRITECMPRSMATS")
                 tWriteMats = .true.
+            case("N_CMPRSHAMSIZE")
+                call readi(iHamSize_N)
+            case("NM1_CMPRSHAMSIZE")
+                call readi(iHamSize_Nm1)
+            case("NP1_CMPRSHAMSIZE")
+                call readi(iHamSize_Np1)
             case("COMPLETE_DIAG")
                 tCompleteDiag = .true.
             case("DAVIDSON")
@@ -488,9 +497,13 @@ Program RealHub
                 write(6,"(A)") "MAXITER"
                 write(6,"(A)") "HALF_FILL"
                 write(6,"(A)") "FILLING"
+                write(6,"(A)") "KSPACE_DIAG"
                 write(6,"(A)") "COMPRESSMATS"
                 write(6,"(A)") "READCMPRSMATS"
                 write(6,"(A)") "WRITECMPRSMATS"
+                write(6,"(A)") "N_CMPRSHAMSIZE"
+                write(6,"(A)") "NM1_CMPRSHAMSIZE"
+                write(6,"(A)") "NP1_CMPRSHAMSIZE"
                 write(6,"(A)") "COMPLETE_DIAG"
                 write(6,"(A)") "DAVIDSON"
                 write(6,"(A)") "FCIQMC"
@@ -803,6 +816,12 @@ Program RealHub
         if(tUHF.and.tDDResponse) then
             call stop_all(t_r,'UHF not yet working for DD response')
         endif
+        if(tDiag_KSpace.and.tReadSystem) then
+            call stop_all(t_r,'Cannot work in k-space if reading in the system')
+        endif
+        if(tDiag_KSpace.and.LatticeDim.eq.2) then
+            call stop_all(t_r,'Cannot currently do k-space diagonalizations for 2D models. Fix me!')
+        endif
 
     end subroutine check_input
 
@@ -1019,6 +1038,10 @@ Program RealHub
             !Calculate the core hamiltonian based on the hopping matrix of the hubbard model in real space
             !If reading in the hopping matrix, it is done here and stored in h0
             call make_hop_mat()
+
+            if(tDiag_KSpace) then
+                call setup_kspace()
+            endif
 
             !Diagonalize the mean-field hamiltonian
             !Get occupations with unique GS

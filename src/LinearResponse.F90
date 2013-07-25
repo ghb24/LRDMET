@@ -207,9 +207,28 @@ module LinearResponse
         if(nNp1FCIDet.ne.nNp1bFCIDet) call stop_all(t_r,'Cannot deal with open shell systems')
         write(6,"(A)") "Computing size of compressed Hamiltonian matrices"
         call flush(6)
-        call CountSizeCompMat(FCIDetList,Elec,nFCIDet,Nmax_N,FCIBitList)
-        call CountSizeCompMat(Nm1bFCIDetList,Elec-1,nNm1bFCIDet,Nmax_Nm1b,Nm1bBitList)
-        call CountSizeCompMat(Np1FCIDetList,Elec+1,nNp1FCIDet,Nmax_Np1,Np1BitList)
+        if(iHamSize_N.eq.0) then
+            call CountSizeCompMat(FCIDetList,Elec,nFCIDet,Nmax_N,FCIBitList)
+            iHamSize_N = Nmax_N
+        else
+            write(6,"(A,I16)") "Assuming size of compressed N electron hamiltonian is: ",iHamSize_N
+            Nmax_N = iHamSize_N
+        endif
+        if(iHamSize_Nm1.eq.0) then
+            call CountSizeCompMat(Nm1bFCIDetList,Elec-1,nNm1bFCIDet,Nmax_Nm1b,Nm1bBitList)
+            iHamSize_Nm1 = Nmax_Nm1b
+        else
+            write(6,"(A,I16)") "Assuming size of compressed N-1 electron hamiltonian is: ",iHamSize_Nm1
+            Nmax_Nm1b = iHamSize_Nm1
+        endif
+        if(iHamSize_Np1.eq.0) then
+            call CountSizeCompMat(Np1FCIDetList,Elec+1,nNp1FCIDet,Nmax_Np1,Np1BitList)
+            iHamSize_Np1 = Nmax_Np1
+        else
+            write(6,"(A,I16)") "Assuming size of compressed N+1 electron hamiltonian is: ",iHamSize_Np1
+            Nmax_Np1  = iHamSize_Np1
+        endif
+
         !Assume flipping spins for the open shells doesn't change the number of off diagonal matrix elements
         Nmax_Nm1 = Nmax_Nm1b
         Nmax_Np1b = Nmax_Np1
@@ -1627,26 +1646,46 @@ module LinearResponse
                 close(iunit_tmp)
                 write(6,*) "Read in NMAX_N = ",Nmax_N
             else
-                call CountSizeCompMat(FCIDetList,Elec,nFCIDet,Nmax_N,FCIBitList)
+                if(iHamSize_N.eq.0) then
+                    call CountSizeCompMat(FCIDetList,Elec,nFCIDet,Nmax_N,FCIBitList)
+                    iHamSize_N = Nmax_N
+                else
+                    write(6,"(A,I16)") "Assuming size of compressed N electron hamiltonian is: ",iHamSize_N
+                    Nmax_N = iHamSize_N
+                endif
             endif
         else
-            call CountSizeCompMat(FCIDetList,Elec,nFCIDet,Nmax_N,FCIBitList)
+            if(iHamSize_N.eq.0) then
+                call CountSizeCompMat(FCIDetList,Elec,nFCIDet,Nmax_N,FCIBitList)
+                iHamSize_N = Nmax_N
+            else
+                write(6,"(A,I16)") "Assuming size of compressed N electron hamiltonian is: ",iHamSize_N
+                Nmax_N = iHamSize_N
+            endif
         endif
-        !Nmax_N = 22275793
-        if(tBetaExcit) then
-            call CountSizeCompMat(Nm1FCIDetList,Elec-1,nNm1FCIDet,Nmax_Nm1,Nm1bBitList)
+        if(iHamSize_Nm1.eq.0) then
+            if(tBetaExcit) then
+                call CountSizeCompMat(Nm1FCIDetList,Elec-1,nNm1FCIDet,Nmax_Nm1,Nm1bBitList)
+            else
+                call CountSizeCompMat(Nm1bFCIDetList,Elec-1,nNm1bFCIDet,Nmax_Nm1,Nm1bBitList)
+            endif
+            iHamSize_Nm1 = Nmax_Nm1
         else
-            call CountSizeCompMat(Nm1bFCIDetList,Elec-1,nNm1bFCIDet,Nmax_Nm1,Nm1bBitList)
+            write(6,"(A,I16)") "Assuming size of compressed N-1 electron hamiltonian is: ",iHamSize_Nm1
+            Nmax_Nm1 = iHamSize_Nm1
         endif
-!        Nmax_Nm1b = 18838522
-!        write(6,*) "ASSUMING NMAX_Nm1b = ",Nmax_Nm1b
-        if(tBetaExcit) then
-            call CountSizeCompMat(Np1bFCIDetList,Elec+1,nNp1bFCIDet,Nmax_Np1,Np1bBitList)
+        if(iHamSize_Np1.eq.0) then
+            if(tBetaExcit) then
+                call CountSizeCompMat(Np1bFCIDetList,Elec+1,nNp1bFCIDet,Nmax_Np1,Np1bBitList)
+            else
+                call CountSizeCompMat(Np1FCIDetList,Elec+1,nNp1FCIDet,Nmax_Np1,Np1BitList)
+            endif
+            iHamSize_Np1 = Nmax_Np1
         else
-            call CountSizeCompMat(Np1FCIDetList,Elec+1,nNp1FCIDet,Nmax_Np1,Np1BitList)
+            write(6,"(A,I16)") "Assuming size of compressed N+1 electron hamiltonian is: ",iHamSize_Np1
+            Nmax_Nm1 = iHamSize_Np1
         endif
-        !Nmax_Np1 = 18838522
-        !write(6,*) "ASSUMING NMAX_N = ",Nmax_Np1
+
         write(6,"(A,F12.5,A)") "Memory required for N-electron hamil: ",(real(Nmax_N,dp)*2)*ComptoMb, " Mb"
         write(6,"(A,F12.5,A)") "Memory required for N+1-electron hamil: ",(real(Nmax_Nm1,dp)*2)*ComptoMb, " Mb"
         write(6,"(A,F12.5,A)") "Memory required for N-1-electron hamil: ",(real(Nmax_Np1,dp)*2)*ComptoMb, " Mb"

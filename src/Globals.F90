@@ -78,6 +78,7 @@ module Globals
 
     real(dp) :: HFEnergy    !Calculated HF energy
     logical :: tReadMats, tWriteMats    !Options for reading/writing the compressed matrices (N-electron only)
+    integer :: iHamSize_N,iHamSize_Nm1,iHamSize_Np1     !Size of the compressed hamiltonians for N,N-1 and N+1 respectively
 
     integer , allocatable :: TD_Imp_Lat(:,:),TD_Imp_Phase(:,:)  !Parameterization of the orbital space for 2D hubbard
     integer , allocatable :: ImpSites(:)    !The list of site indices for the impurity sites
@@ -136,6 +137,12 @@ module Globals
     real(dp), allocatable :: HL_1RDM_b(:,:)
     logical :: tBetaExcit   !For beta spin-orbital greens function excitations
     real(dp) :: ChemPot_b,HLGap_b
+
+    !KSpace parameters
+    integer :: nKPnts                           !Number of kpoints sampled in the 1st BZ
+    logical :: tShift_Mesh                      ! = T <- Gamma centered mesh. = F <- Monkhorst-Pack mesh
+    real(dp), allocatable :: RecipLattVecs(:,:) !Define the reciprocal lattice vectors (nDim,nDim)
+    real(dp), allocatable :: KPnts(:,:)         !Define the kpoint vectors in the reciprocal lattice (nDim,nKPnts)
 
     !Linear response options
     real(dp) :: dDelta      !Broadening for spectral functions
