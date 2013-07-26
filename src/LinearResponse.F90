@@ -1683,12 +1683,12 @@ module LinearResponse
             iHamSize_Np1 = Nmax_Np1
         else
             write(6,"(A,I16)") "Assuming size of compressed N+1 electron hamiltonian is: ",iHamSize_Np1
-            Nmax_Nm1 = iHamSize_Np1
+            Nmax_Np1 = iHamSize_Np1
         endif
 
         write(6,"(A,F12.5,A)") "Memory required for N-electron hamil: ",(real(Nmax_N,dp)*2)*ComptoMb, " Mb"
-        write(6,"(A,F12.5,A)") "Memory required for N+1-electron hamil: ",(real(Nmax_Nm1,dp)*2)*ComptoMb, " Mb"
-        write(6,"(A,F12.5,A)") "Memory required for N-1-electron hamil: ",(real(Nmax_Np1,dp)*2)*ComptoMb, " Mb"
+        write(6,"(A,F12.5,A)") "Memory required for N+1-electron hamil: ",(real(Nmax_Np1,dp)*2)*ComptoMb, " Mb"
+        write(6,"(A,F12.5,A)") "Memory required for N-1-electron hamil: ",(real(Nmax_Nm1,dp)*2)*ComptoMb, " Mb"
         call flush(6)
         allocate(NFCIHam_cmps(Nmax_N),stat=ierr)
         allocate(NFCIHam_inds(Nmax_N),stat=ierr)
