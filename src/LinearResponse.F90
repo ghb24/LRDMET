@@ -18,6 +18,22 @@ module LinearResponse
     contains
     
     !This is the high level routine to work out how we want to do the linear response
+    !These functions are for single-reference (generally non-interacting) spectral functions, but using the correlated one-electron potential in their calculation.
+    !Therefore, they should be pretty good around the ground state.
+    subroutine Correlated_SR_LR()
+        implicit none
+        character(len=*), parameter :: t_r='Correlated_SR_LR'
+
+        if(tCorrNI_LocGF) then
+            call CorrNI_LocalGF()
+        endif
+        if(tCorrNI_LocDD) then
+            call stop_all(t_r,'Not coded up yet!')
+        endif
+
+    end subroutine Correlated_SR_LR
+
+
     !TODO:
     !   Code up all of these options!
     !   Really work out difference between non-interacting LR, TDA and RPA, and look at how quality changes in response functions as U increased

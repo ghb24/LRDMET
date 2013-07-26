@@ -76,6 +76,9 @@ Program RealHub
         tNIResponse = .false.
         tTDAResponse = .false.
         tRPAResponse = .false.
+        tCorrNI_Spectra = .false.
+        tCorrNI_LocGF = .false.
+        tCorrNI_LocDD = .false.
 
         !MR Response
         tDDResponse = .false.
@@ -556,6 +559,12 @@ Program RealHub
                 tTDAResponse = .true.
             case("RPA")
                 tRPAResponse = .true.
+            case("CORR_NI_LOCGF")
+                tCorrNI_Spectra = .true.
+                tCorrNI_LocGF = .true.
+            case("CORR_NI_LOCDD")
+                tCorrNI_Spectra = .true.
+                tCorrNI_LocDD = .true.
             case("EC_TDA")
                 tEC_TDA_Response = .true.
                 if(item.le.nitems) then
@@ -643,6 +652,8 @@ Program RealHub
                 write(6,"(A)") "NONINT"
                 write(6,"(A)") "TDA"
                 write(6,"(A)") "RPA"
+                write(6,"(A)") "CORR_NI_LOCGF"
+                write(6,"(A)") "CORR_NI_LOCDD"
                 write(6,"(A)") "EC_TDA"
                 write(6,"(A)") "IC_TDA"
                 write(6,"(A)") "FREQ"
@@ -1213,6 +1224,11 @@ Program RealHub
         
                 deallocate(MeanFieldDM)
                 if(tUHF) deallocate(MeanFieldDM_b)
+
+                if(tCorrNI_Spectra) then
+                    !Calculates single reference spectral functions using the correlated 1-electron hamiltonian
+                    call Correlated_SR_LR()
+                endif
                 
                 if(tLR_DMET) then
                     !Perform linear response on the resulting DMET state

@@ -57,6 +57,9 @@ module Globals
     logical :: tTDAResponse      !Calculate TDA response
     logical :: tRPAResponse      !Calculate RPA response
     logical :: tLR_DMET     !Attempt linear response based on partitioning of the perturbation into the schmidt basis of phi^0
+    logical :: tCorrNI_Spectra  !Calculate single-reference linear response functions based on correlated 1e hamiltonian
+    logical :: tCorrNI_LocGF    !Calculate local GF based on correlated 1e hamil
+    logical :: tCorrNI_LocDD    !Calculate local DD based on correlated 1e hamil
     logical :: tEC_TDA_Response !Externally contracted response of DMET
     logical :: tIC_TDA_Response !Internall contracted response of DMET
     logical :: tCompleteDiag    !Complete rather than iterative diagonalization of the embedded system

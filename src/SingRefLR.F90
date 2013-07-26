@@ -8,6 +8,78 @@ module SingRefLR
 
     contains
 
+    subroutine CorrNI_LocalGF()
+        use utils, only: get_free_unit,append_ext_real
+        implicit none
+        real(dp) :: Omega,mu
+        integer :: unit_a,unit_b,i,a
+        complex(dp) :: ni_lr_ann,ni_lr_cre,ni_lr,ni_lr_ann_b,ni_lr_cre_b,ni_lr_b
+        character(64) :: filename,filename_b
+
+        write(6,"(A)") "Calculating non-interacting single-particle local greens function including GS correlation potential"
+        if(tUHF) write(6,"(A)") "Doing this for both alpha and beta greens functions..."
+
+        !Open file
+        unit_a = get_free_unit()
+        call append_ext_real('CorrNI_LocalGF',U,filename)
+        open(unit_a,file=filename,status='unknown')
+        write(unit_a,"(A)") "# 1.Omega  2.Re[GF]  3.Im[GF]  4.Im[GF^-]  5.Im[GF^+]"
+        if(tUHF) then
+            !If doing UHF, open file for beta results
+            unit_b = get_free_unit()
+            call append_ext_real('CorrNI_LocalGF_b',U,filename_b)
+            open(unit_a,file=filename_b,status='unknown')
+            write(unit_b,"(A)") "# 1.Omega  2.Re[GF]  3.Im[GF]  4.Im[GF^-]  5.Im[GF^+]"
+        endif
+        
+        if(.not.tAnderson) then
+            !In the hubbard model, apply a chemical potential of U/2
+            mu = U/2.0_dp
+        else
+            mu = 0.0_dp
+        endif
+
+        Omega = Start_Omega
+        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+
+            ni_lr_ann = zzero
+            ni_lr_cre = zzero
+            do i = 1,nOcc
+                ni_lr_ann = ni_lr_ann + dcmplx(HFOrbs(1,i)**2,zero) / &
+                    (dcmplx(Omega+mu,dDelta)-HFEnergies(i))
+            enddo
+            do a = nOcc+1,nSites
+                ni_lr_cre = ni_lr_cre + dcmplx(HFOrbs(1,a)**2,zero) / &
+                    (dcmplx(Omega+mu,dDelta)-HFEnergies(a))
+            enddo
+            ni_lr = ni_lr_ann + ni_lr_cre 
+            if(tUHF) then
+                ni_lr_ann_b = zzero
+                ni_lr_cre_b = zzero
+                do i = 1,nOcc
+                    ni_lr_ann_b = ni_lr_ann_b + dcmplx(HFOrbs_b(1,i)**2,zero) / &
+                        (dcmplx(Omega+mu,dDelta)-HFEnergies_b(i))
+                enddo
+                do a = nOcc+1,nSites
+                    ni_lr_cre_b = ni_lr_cre_b + dcmplx(HFOrbs_b(1,a)**2,zero) / &
+                        (dcmplx(Omega+mu,dDelta)-HFEnergies_b(a))
+                enddo
+                ni_lr_b = ni_lr_ann_b + ni_lr_cre_b
+            endif
+
+            !Write out
+            write(unit_a,"(5G22.10)") Omega,real(ni_lr),-aimag(ni_lr),-aimag(ni_lr_ann),-aimag(ni_lr_cre)
+            if(tUHF) then
+                write(unit_b,"(5G22.10)") Omega,real(ni_lr_b),-aimag(ni_lr_b),-aimag(ni_lr_ann_b),-aimag(ni_lr_cre_b)
+            endif
+
+            Omega = Omega + Omega_Step
+        enddo
+        close(unit_a)
+        if(tUHF) close(unit_b)
+
+    end subroutine CorrNI_LocalGF
+
     subroutine NonInteractingLR()
         use utils, only: get_free_unit,append_ext_real,append_ext
         use DetTools, only: tospat
