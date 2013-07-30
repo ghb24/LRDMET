@@ -79,6 +79,8 @@ Program RealHub
         tCorrNI_Spectra = .false.
         tCorrNI_LocGF = .false.
         tCorrNI_LocDD = .false.
+        tCorrNI_MomGF = .false.
+        tProjectHFKPnts = .false.
 
         !MR Response
         tDDResponse = .false.
@@ -565,6 +567,9 @@ Program RealHub
             case("CORR_NI_LOCDD")
                 tCorrNI_Spectra = .true.
                 tCorrNI_LocDD = .true.
+            case("CORR_NI_MOMGF")
+                tCorrNI_MomGF = .true.
+                tCorrNI_Spectra = .true.
             case("EC_TDA")
                 tEC_TDA_Response = .true.
                 if(item.le.nitems) then
@@ -654,6 +659,7 @@ Program RealHub
                 write(6,"(A)") "RPA"
                 write(6,"(A)") "CORR_NI_LOCGF"
                 write(6,"(A)") "CORR_NI_LOCDD"
+                write(6,"(A)") "CORR_NI_MOMGF"
                 write(6,"(A)") "EC_TDA"
                 write(6,"(A)") "IC_TDA"
                 write(6,"(A)") "FREQ"
@@ -697,6 +703,10 @@ Program RealHub
             endif
         else
             tMFResponse = .false.
+        endif
+        if(tCorrNI_MomGF) then
+            !Project the final orbitals onto the original k-space
+            tProjectHFKPnts = .true.
         endif
 
         !Now check for sanity and implementation of specified options
@@ -1050,7 +1060,7 @@ Program RealHub
             !If reading in the hopping matrix, it is done here and stored in h0
             call make_hop_mat()
 
-            if(tDiag_KSpace) then
+            if((tDiag_KSpace.or.tProjectHFKPnts).and.(.not.allocated(KPnts))) then
                 call setup_kspace()
             endif
 
@@ -1224,6 +1234,10 @@ Program RealHub
         
                 deallocate(MeanFieldDM)
                 if(tUHF) deallocate(MeanFieldDM_b)
+
+                if(tProjectHFKPnts) then
+                    call ProjectHFontoK()
+                endif
 
                 if(tCorrNI_Spectra) then
                     !Calculates single reference spectral functions using the correlated 1-electron hamiltonian

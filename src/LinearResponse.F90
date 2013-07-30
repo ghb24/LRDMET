@@ -28,7 +28,10 @@ module LinearResponse
             call CorrNI_LocalGF()
         endif
         if(tCorrNI_LocDD) then
-            call stop_all(t_r,'Not coded up yet!')
+            call CorrNI_LocalDD()
+        endif
+        if(tCorrNI_MomGF) then
+            call CorrNI_MomGF()
         endif
 
     end subroutine Correlated_SR_LR

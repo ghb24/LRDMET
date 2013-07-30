@@ -60,6 +60,7 @@ module Globals
     logical :: tCorrNI_Spectra  !Calculate single-reference linear response functions based on correlated 1e hamiltonian
     logical :: tCorrNI_LocGF    !Calculate local GF based on correlated 1e hamil
     logical :: tCorrNI_LocDD    !Calculate local DD based on correlated 1e hamil
+    logical :: tCorrNI_MomGF    !Calculate the k-dependent GF based on correlated 1e hamiltonian
     logical :: tEC_TDA_Response !Externally contracted response of DMET
     logical :: tIC_TDA_Response !Internall contracted response of DMET
     logical :: tCompleteDiag    !Complete rather than iterative diagonalization of the embedded system
@@ -146,6 +147,11 @@ module Globals
     logical :: tShift_Mesh                      ! = T <- Gamma centered mesh. = F <- Monkhorst-Pack mesh
     real(dp), allocatable :: RecipLattVecs(:,:) !Define the reciprocal lattice vectors (nDim,nDim)
     real(dp), allocatable :: KPnts(:,:)         !Define the kpoint vectors in the reciprocal lattice (nDim,nKPnts)
+    complex(dp), allocatable :: RtoK_Rot(:,:)   !Rotation matrix from site basis to k-space
+                                                !The order of the k-index is the same as the KPnts array
+    complex(dp), allocatable :: HFtoKOrbs(:,:)  !The transformation matrix from HF orbitals to k-space
+    complex(dp), allocatable :: HFtoKOrbs_b(:,:)    !For beta space
+    logical :: tProjectHFKPnts                  !Whether to construct the rotation matrix from final HF orbitals to original plane wave k-points
 
     !Linear response options
     real(dp) :: dDelta      !Broadening for spectral functions

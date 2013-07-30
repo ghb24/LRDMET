@@ -8,6 +8,101 @@ module SingRefLR
 
     contains
 
+    subroutine CorrNI_MomGF()
+        use utils, only: get_free_unit,append_ext_real
+        implicit none
+        real(dp) :: k_val(LatticeDim),mu,Omega
+        integer :: unit_a,unit_b,k,a,i
+        complex(dp) :: ni_lr,ni_lr_ann,ni_lr_cre,ni_lr_b,ni_lr_ann_b,ni_lr_cre_b
+        character(len=64) :: filename,filename_b
+
+        write(6,"(A)") "Calculating non-interacting single-particle k-dependent greens function, including GS correlation potential"
+        
+        !Open file
+        unit_a = get_free_unit()
+        call append_ext_real('CorrNI_k_depGF',U,filename)
+        open(unit_a,file=filename,status='unknown')
+        write(unit_a,"(A)") "# 1.Omega  2.Re[GF]  3.Im[GF]  4.Im[GF^-]  5.Im[GF^+]"
+        if(tUHF) then
+            !If doing UHF, open file for beta results
+            unit_b = get_free_unit()
+            call append_ext_real('CorrNI_LocalGF_b',U,filename_b)
+            open(unit_a,file=filename_b,status='unknown')
+            write(unit_b,"(A)") "# 1.Omega  2.Re[GF]  3.Im[GF]  4.Im[GF^-]  5.Im[GF^+]"
+        endif
+
+        if(.not.tAnderson) then
+            !In the hubbard model, apply a chemical potential of U/2
+            mu = U/2.0_dp
+        else
+            mu = 0.0_dp
+        endif
+            
+        do k = 1,nKPnts
+
+            k_val = KPnts(:,k)
+            write(unit_a,"(A,F8.4)",advance='no') '"k = ',k_val(1)
+            do i = 2,LatticeDim
+                write(unit_a,"(A,F8.4)",advance='no') ', ',k_val(i)
+            enddo
+            write(unit_a,"(A)") ' "'
+            if(tUHF) then
+                write(unit_b,"(A,F8.4)",advance='no') '"k = ',k_val(1)
+                do i = 2,LatticeDim
+                    write(unit_b,"(A,F8.4)",advance='no') ', ',k_val(i)
+                enddo
+                write(unit_b,"(A)") ' "'
+            endif
+
+            Omega = Start_Omega
+            do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+
+                ni_lr_ann = zzero
+                ni_lr_cre = zzero
+                do i = 1,nOcc
+                    ni_lr_ann = ni_lr_ann + (HFtoKOrbs(k,i)*dconjg(HFtoKOrbs(k,i))) / &
+                        (dcmplx(Omega+mu,dDelta)-HFEnergies(i))
+                enddo
+                do a = nOcc+1,nSites
+                    ni_lr_cre = ni_lr_cre + (HFtoKOrbs(k,a)*dconjg(HFtoKOrbs(k,a))) / &
+                        (dcmplx(Omega+mu,dDelta)-HFEnergies(a))
+                enddo
+                ni_lr = ni_lr_ann + ni_lr_cre 
+                if(tUHF) then
+                    ni_lr_ann_b = zzero
+                    ni_lr_cre_b = zzero
+                    do i = 1,nOcc
+                        ni_lr_ann_b = ni_lr_ann_b + (HFtoKOrbs_b(k,i)*dconjg(HFtoKOrbs_b(k,i))) / &
+                            (dcmplx(Omega+mu,dDelta)-HFEnergies_b(i))
+                    enddo
+                    do a = nOcc+1,nSites
+                        ni_lr_cre_b = ni_lr_cre_b + (HFtoKOrbs_b(k,a)*dconjg(HFtoKOrbs_b(k,a))) / &
+                            (dcmplx(Omega+mu,dDelta)-HFEnergies_b(a))
+                    enddo
+                    ni_lr_b = ni_lr_ann_b + ni_lr_cre_b
+                endif
+
+                !Write out
+                write(unit_a,"(5G22.10)") Omega,real(ni_lr),-aimag(ni_lr),-aimag(ni_lr_ann),-aimag(ni_lr_cre)
+                if(tUHF) then
+                    write(unit_b,"(5G22.10)") Omega,real(ni_lr_b),-aimag(ni_lr_b),-aimag(ni_lr_ann_b),-aimag(ni_lr_cre_b)
+                endif
+
+                Omega = Omega + Omega_Step
+            enddo
+
+            !End of k-point
+            write(unit_a,"(A)") ""
+            write(unit_a,"(A)") ""
+            if(tUHF) then
+                write(unit_b,"(A)") ""
+                write(unit_b,"(A)") ""
+            endif
+
+        enddo   !End k
+
+    end subroutine CorrNI_MomGF
+
     subroutine CorrNI_LocalGF()
         use utils, only: get_free_unit,append_ext_real
         implicit none
@@ -79,6 +174,52 @@ module SingRefLR
         if(tUHF) close(unit_b)
 
     end subroutine CorrNI_LocalGF
+
+    subroutine CorrNI_LocalDD()
+        use utils, only: get_free_unit,append_ext_real
+        implicit none
+        real(dp) :: Omega,EDiff
+        integer :: unit_a,i,a
+        complex(dp) :: ni_lr
+        character(64) :: filename
+
+        write(6,"(A)") "Calculating non-interacting two-particle local greens function including GS correlation potential"
+        write(6,"(A)") "Doing this for combined alpha and beta spins..."
+
+        !Open file
+        unit_a = get_free_unit()
+        call append_ext_real('CorrNI_LocalDD',U,filename)
+        open(unit_a,file=filename,status='unknown')
+        write(unit_a,"(A)") "# 1.Omega  2.Re[GF]  3.Im[GF]  4.Im[GF^-]  5.Im[GF^+]"
+        
+        Omega = Start_Omega
+        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+
+
+            ni_lr = zzero
+            do i = 1,nOcc
+                do a = nOcc+1,nSites
+                    EDiff = HFEnergies(a)-HFEnergies(i)
+                    ni_lr = ni_lr + dcmplx((HFOrbs(1,i)*HFOrbs(1,a))**2,0.0_dp) / &
+                        (dcmplx(Omega-EDiff,dDelta))
+                    if(tUHF) then
+                        EDiff = HFEnergies_b(a)-HFEnergies_b(i)
+                        ni_lr = ni_lr + dcmplx((HFOrbs_b(1,i)*HFOrbs_b(1,a))**2,0.0_dp) / &
+                            (dcmplx(Omega-EDiff,dDelta))
+                    endif
+                enddo
+            enddo
+            if(.not.tUHF) ni_lr = ni_lr * 2.0_dp
+
+            !Write out
+            write(unit_a,"(3G22.10)") Omega,real(ni_lr),-aimag(ni_lr)
+
+            Omega = Omega + Omega_Step
+        enddo
+        close(unit_a)
+
+    end subroutine CorrNI_LocalDD
+
 
     subroutine NonInteractingLR()
         use utils, only: get_free_unit,append_ext_real,append_ext
