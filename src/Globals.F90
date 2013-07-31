@@ -21,6 +21,9 @@ module Globals
     logical :: tWriteOut    !Write out additional info
     logical :: tCheck   !Perform extra checks in various subroutines to ensure correct working
     logical :: tReadSystem  !Read the system from files
+    logical :: tThermal     !Are we calculating the thermal bath?
+    logical :: tSingFiss    !For the Singlet Fission project
+    real(dp) :: Temperature !k_B T In units of t
     real(dp) :: dTolDMET    !Convergence property of DMET calculation
     real(dp) :: ChemPot !The chemical potential of the system
     real(dp) :: HLGap   !The Homo-lumo gap of the system

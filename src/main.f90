@@ -29,6 +29,8 @@ Program RealHub
         tReadSystem = .false.
         tHalfFill = .true. 
         tUHF = .false.
+        tThermal = .false.
+        tSingFiss = .false.
         nSites = 24  
         LatticeDim = 1
         nImp = 1
@@ -155,6 +157,8 @@ Program RealHub
             write(6,"(A)") "Running:    o Anderson Model (single site)"
         elseif(tReadSystem) then
             write(6,"(A)") "Reading unknown system from files..."
+        elseif(tSingFiss) then
+            write(6,"(A)") "Reading Singlet Fission parameters..."
         else
             write(6,"(A)") "Running:    o Hubbard Model"
         endif
@@ -420,6 +424,9 @@ Program RealHub
                 tPeriodic = .true.
             case("APBC")
                 tAntiPeriodic = .true.
+            case("TEMPERATURE")
+                call readf(Temperature)
+                tThermal = .true.
             case("MAXITER_DMET")
                 call readi(iMaxIterDMET)
                 if(item.lt.nitems) then
@@ -496,6 +503,7 @@ Program RealHub
                 write(6,"(A)") "REUSE_CORRPOT"
                 write(6,"(A)") "FITTING_STEPSIZE"
                 write(6,"(A)") "SCF_HF"
+                write(6,"(A)") "TEMPERATURE"
                 write(6,"(A)") "PBC"
                 write(6,"(A)") "APBC"
                 write(6,"(A)") "IMPSITES"
@@ -1146,10 +1154,14 @@ Program RealHub
 
                     !Construct the embedded basis
                     call set_timer(ConstEmb)
-                    if(tConstructFullSchmidtBasis) then
-                        call ConstructFullSchmidtBasis()
+                    if(tThermal) then
+                        call ConstructThermalEmbedding()
                     else
-                        call CalcEmbedding()
+                        if(tConstructFullSchmidtBasis) then
+                            call ConstructFullSchmidtBasis()
+                        else
+                            call CalcEmbedding()
+                        endif
                     endif
                     if(tWriteOut) then
                         call writematrix(EmbeddedBasis,'EmbeddedBasis',.true.)
@@ -1454,6 +1466,143 @@ Program RealHub
         open(unit=iunit,file=filename2,status='unknown')
 
     end subroutine OpenDMETFile
+    
+    !Construct thermal embedding basis. Core and virtual set not included initially
+    subroutine ConstructThermalEmbedding()
+        implicit none
+        real(dp), allocatable :: ProjOverlap(:,:),ProjOverlapEVals(:),Work(:)
+        real(dp), allocatable :: RotOccOrbs(:,:),ImpurityOrbs(:,:)
+        real(dp) :: norm,DDOT,Overlap,ThermoPot
+        integer :: lwork,info,i,j,imp,ispin,jspin,ni,nj
+        character(len=*), parameter :: t_r='ConstructThermalEmbedding'
+        integer :: nbath
+
+        write(6,*) "Constructing schmidt basis of thermal zeroth order wavefunction"
+
+        !First, calculate the thermodynamic potential
+        !Assume that the chemical potential is zero
+        ThermoPot = zero
+        do i = 1,nSites
+            ThermoPot = ThermoPot + log(one + exp(-HFEnergies(i)/Temperature))
+        enddo
+        ThermoPot = -ThermoPot * Temperature
+
+        write(6,*) "Thermodynamic potential (assuming mu=0) : ",ThermoPot
+
+        allocate(ProjOverlap(nSites,nSites))
+        do i = 1,nSites
+            do ispin = 1,2  !Run over spins of i
+                do j = 1,nSites
+                    do jspin = 1,2  !Run over spins of j    (Shouldn't actually make any difference
+                        if(mod(ispin,2).ne.mod(jspin,2)) cycle
+                        do ni = 0,1
+                            do nj = 0,1
+                                do imp = 1,nImp
+                                    ProjOverlap(i,j) = ProjOverlap(i,j) + exp(-HFEnergies(i)*ni)*HFOrbs(imp,i)  &
+                                        *HFOrbs(imp,j)*exp(-HFEnergies(j)*nj)
+                                enddo
+                            enddo
+                        enddo
+                    enddo
+                enddo
+            enddo
+        enddo
+        ProjOverlap(:,:) = ProjOverlap(:,:) * exp(ThermoPot/Temperature)
+
+        !Diagonalize this
+        allocate(ProjOverlapEVals(nSites))
+        ProjOverlapEVals(:)=zero
+        allocate(Work(1))
+        lWork=-1
+        info=0
+        call dsyev('V','U',nSites,ProjOverlap,nSites,ProjOverlapEVals,Work,lWork,info)
+        if(info.ne.0) call stop_all(t_r,'Workspace queiry failed')
+        lwork=int(work(1))+1
+        deallocate(work)
+        allocate(work(lwork))
+        call dsyev('V','U',nSites,ProjOverlap,nSites,ProjOverlapEVals,Work,lWork,info)
+        if(info.ne.0) call stop_all(t_r,'Diag failed')
+        deallocate(work)
+
+        write(6,*) "Largest 2 x nImp Projected overlap eigenvalues:"
+        do i=nSites,nSites-2*nImp,-1
+            write(6,*) ProjOverlapEVals(i)
+        enddo
+
+        if(tWriteOut) then
+            call writevector(ProjOverlapEVals,'Projected overlap eigenvalues alpha')
+        endif
+
+        !We should only have nImp non-zero eigenvalues
+        nbath = 0
+        do i=1,nSites
+            if(abs(ProjOverlapEVals(i)).gt.1.0e-7_dp) then
+                nbath = nbath + 1
+            endif
+        enddo
+        if(nbath.gt.nImp) call stop_all(t_r,'error here')
+
+        !Now rotate original occupied orbitals into this new orthogonal basis
+        allocate(RotOccOrbs(nSites,nSites))
+        call DGEMM('N','N',nSites,nSites,nSites,one,HFOrbs,nSites,ProjOverlap,nSites,zero,RotOccOrbs,nSites)
+
+        !RotOccOrbs now represents the rotated occupied orbitals into the bath basis. 
+        !Only the last nImp orbitals will have any coupling to the impurity on them.
+        !These RotOccOrbs constitute a legitamate wavefunction, are orthonormal to all other orbitals. Just simple rotation.
+
+        !Construct bath states by projecting out component on impurity and renormalizing
+        !Assume last nImp states are the states with overlap with impurity only
+        !Also normalize these orbitals
+        do i=nSites,nSites-nImp+1,-1
+            RotOccOrbs(1:nImp,i) = zero
+            norm = DDOT(nSites,RotOccOrbs(:,i),1,RotOccOrbs(:,i),1)
+            norm = sqrt(norm)
+            RotOccOrbs(:,i) = RotOccOrbs(:,i)/norm
+        enddo
+
+        !These states are now the bath states.
+!        call writematrix(RotOccOrbs(:,nOcc-nImp+1:nOcc),'Bath orbitals',.true.)
+
+        allocate(ImpurityOrbs(nSites,nImp))
+        ImpurityOrbs(:,:) = zero 
+        do i=1,nImp
+            ImpurityOrbs(i,i) = one 
+        enddo
+
+        !We now have all the orbitals. Which are orthogonal to which?
+        write(6,*) "All alpha impurity/bath orbitals orthogonal by construction"
+        do i=nOcc,nOcc-nImp+1,-1
+            do j=nOcc,nOcc-nImp+1,-1
+                Overlap = DDOT(nSites,RotOccOrbs(:,i),1,RotOccOrbs(:,j),1)
+                if(i.eq.j) then
+                    if(abs(Overlap-1.0_dp).gt.1.0e-7_dp) then
+                        call stop_all(t_r,'bath orbitals not normalized set')
+                    endif
+                else
+                    if(abs(Overlap).gt.1.0e-7_dp) then
+                        call stop_all(t_r,'bath orbitals not orthogonal set')
+                    endif
+                endif
+            enddo
+        enddo
+        write(6,*) "All alpha bath/bath orbitals orthonormal"
+
+        if(allocated(EmbeddedBasis)) deallocate(EmbeddedBasis)
+        allocate(EmbeddedBasis(nSites,2*nImp))
+        EmbeddedBasis(:,:) = zero
+        EmbeddedBasis(:,1:nImp) = ImpurityOrbs(:,:)
+        EmbeddedBasis(:,nImp+1:2*nImp) = RotOccOrbs(:,nOcc+1:nOcc+nImp)
+
+        EmbSize = 2*nImp      !This is the total size of the embedded system with which to do the high-level calculation on 
+        EmbSizeSpin = EmbSize
+        
+        !Calculate some paramters which will be used later, which define the size of triangular packed arrays over the impurity sites, or
+        !the entire embedding sites.
+        nImpCombs = (nImp*(nImp+1))/2
+        EmbCombs = (EmbSize*(EmbSize+1))/2
+
+        deallocate(ProjOverlap,ProjOverlapEVals,RotOccOrbs,ImpurityOrbs)
+    end subroutine ConstructThermalEmbedding
             
     !Construct full embedding basis, along with orthogonal core and virtual set, and check orthonormality of orbital space
     subroutine ConstructFullSchmidtBasis()

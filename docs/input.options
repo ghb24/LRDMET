@@ -92,6 +92,8 @@ LINEAR_RESPONSE
     CORR_NI_LOCGF
 (Calculate the non-interacting local DD response, but based on the correlated 1e hamiltonian (should be ok around GS))
     CORR_NI_LOCDD
+(Calculate the non-interacting k-dependent GF, but based on the correlated 1e hamiltonian)
+    CORR_NI_MOMGF
 (Calculate externally contracted DMET response functions with TDA-type excitations (Argument 1-4 changes type of non-iterative solver))
     EC_TDA 1
 (Calculate internally contracted DMET response functions with TDA-type excitations)
