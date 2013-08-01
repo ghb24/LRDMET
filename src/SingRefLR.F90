@@ -12,9 +12,10 @@ module SingRefLR
         use utils, only: get_free_unit,append_ext_real
         implicit none
         real(dp) :: k_val(LatticeDim),mu,Omega
-        integer :: unit_a,unit_b,k,a,i
+        integer :: unit_a,unit_b,k,i,ind_1,ind_2,SS_Period
         complex(dp) :: ni_lr,ni_lr_ann,ni_lr_cre,ni_lr_b,ni_lr_ann_b,ni_lr_cre_b
         character(len=64) :: filename,filename_b
+        character(len=*), parameter :: t_r='CorrNI_MomGF'
 
         write(6,"(A)") "Calculating non-interacting single-particle k-dependent greens function, including GS correlation potential"
         
@@ -37,6 +38,8 @@ module SingRefLR
         else
             mu = 0.0_dp
         endif
+
+        SS_Period = nImp
             
         do k = 1,nKPnts
 
@@ -59,26 +62,45 @@ module SingRefLR
 
                 ni_lr_ann = zzero
                 ni_lr_cre = zzero
-                do i = 1,nOcc
-                    ni_lr_ann = ni_lr_ann + (HFtoKOrbs(k,i)*dconjg(HFtoKOrbs(k,i))) / &
-                        (dcmplx(Omega+mu,dDelta)-HFEnergies(i))
+
+                !Run through the corresponding k-space orbitals
+                !ind_1 and ind_2 define the indices of the orbitals corresponding to this kpoint
+                ind_1 = ((k-1)*SS_Period) + 1
+                ind_2 = SS_Period*k
+
+                do i = ind_1,ind_2  !Run through eigenvectors corresopnding to this kpoint
+                    if(KVec_EMapping(i).lt.nOcc) then
+                        !This corresponds to an occupied orbtials
+                        !Strictly speaking, we want to sum the weight of the vector over the kpoint,
+                        !but since the vector is normalized, we can assume that this is one
+                        ni_lr_ann = ni_lr_ann + zone/(dcmplx(Omega+mu,dDelta)-k_HFEnergies(i))
+                    else
+                        !Virtual orbital
+                        ni_lr_cre = ni_lr_cre + zone/(dcmplx(Omega+mu,dDelta)-k_HFEnergies(i))
+                    endif
                 enddo
-                do a = nOcc+1,nSites
-                    ni_lr_cre = ni_lr_cre + (HFtoKOrbs(k,a)*dconjg(HFtoKOrbs(k,a))) / &
-                        (dcmplx(Omega+mu,dDelta)-HFEnergies(a))
-                enddo
+
+!                do i = 1,nOcc
+!                    ni_lr_ann = ni_lr_ann + (HFtoKOrbs(k,i)*dconjg(HFtoKOrbs(k,i))) / &
+!                        (dcmplx(Omega+mu,dDelta)-HFEnergies(i))
+!                enddo
+!                do a = nOcc+1,nSites
+!                    ni_lr_cre = ni_lr_cre + (HFtoKOrbs(k,a)*dconjg(HFtoKOrbs(k,a))) / &
+!                        (dcmplx(Omega+mu,dDelta)-HFEnergies(a))
+!                enddo
                 ni_lr = ni_lr_ann + ni_lr_cre 
                 if(tUHF) then
+                    call stop_all(t_r,'Not set up yet')
                     ni_lr_ann_b = zzero
                     ni_lr_cre_b = zzero
-                    do i = 1,nOcc
-                        ni_lr_ann_b = ni_lr_ann_b + (HFtoKOrbs_b(k,i)*dconjg(HFtoKOrbs_b(k,i))) / &
-                            (dcmplx(Omega+mu,dDelta)-HFEnergies_b(i))
-                    enddo
-                    do a = nOcc+1,nSites
-                        ni_lr_cre_b = ni_lr_cre_b + (HFtoKOrbs_b(k,a)*dconjg(HFtoKOrbs_b(k,a))) / &
-                            (dcmplx(Omega+mu,dDelta)-HFEnergies_b(a))
-                    enddo
+!                    do i = 1,nOcc
+!                        ni_lr_ann_b = ni_lr_ann_b + (HFtoKOrbs_b(k,i)*dconjg(HFtoKOrbs_b(k,i))) / &
+!                            (dcmplx(Omega+mu,dDelta)-HFEnergies_b(i))
+!                    enddo
+!                    do a = nOcc+1,nSites
+!                        ni_lr_cre_b = ni_lr_cre_b + (HFtoKOrbs_b(k,a)*dconjg(HFtoKOrbs_b(k,a))) / &
+!                            (dcmplx(Omega+mu,dDelta)-HFEnergies_b(a))
+!                    enddo
                     ni_lr_b = ni_lr_ann_b + ni_lr_cre_b
                 endif
 

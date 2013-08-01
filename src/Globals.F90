@@ -155,6 +155,10 @@ module Globals
     complex(dp), allocatable :: HFtoKOrbs(:,:)  !The transformation matrix from HF orbitals to k-space
     complex(dp), allocatable :: HFtoKOrbs_b(:,:)    !For beta space
     logical :: tProjectHFKPnts                  !Whether to construct the rotation matrix from final HF orbitals to original plane wave k-points
+    logical :: tKSpaceOrbs                      !Calculate the kspace orbitals from the final one-electron matrix
+    integer, allocatable :: KVec_EMapping(:)    !This map gives the index of the orbitals in terms of energy
+    complex(dp) , allocatable :: k_vecs(:,:)    !The orbitals, ordered by kpoint ( nImp , nSites) 
+    real(dp), allocatable :: k_HFEnergies(:)    !The HF Energies, ordered by kpoint
 
     !Linear response options
     real(dp) :: dDelta      !Broadening for spectral functions

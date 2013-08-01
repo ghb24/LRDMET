@@ -83,6 +83,7 @@ Program RealHub
         tCorrNI_LocDD = .false.
         tCorrNI_MomGF = .false.
         tProjectHFKPnts = .false.
+        tKSpaceOrbs = .false.
 
         !MR Response
         tDDResponse = .false.
@@ -714,7 +715,8 @@ Program RealHub
         endif
         if(tCorrNI_MomGF) then
             !Project the final orbitals onto the original k-space
-            tProjectHFKPnts = .true.
+            !tProjectHFKPnts = .true.
+            tKSpaceOrbs = .true.
         endif
 
         !Now check for sanity and implementation of specified options
@@ -1068,7 +1070,7 @@ Program RealHub
             !If reading in the hopping matrix, it is done here and stored in h0
             call make_hop_mat()
 
-            if((tDiag_KSpace.or.tProjectHFKPnts).and.(.not.allocated(KPnts))) then
+            if((tDiag_KSpace.or.tProjectHFKPnts.or.tKSpaceOrbs).and.(.not.allocated(KPnts))) then
                 call setup_kspace()
             endif
 
@@ -1248,7 +1250,12 @@ Program RealHub
                 if(tUHF) deallocate(MeanFieldDM_b)
 
                 if(tProjectHFKPnts) then
+
                     call ProjectHFontoK()
+                endif
+
+                if(tKSpaceOrbs) then
+                    call GetKSpaceOrbs()
                 endif
 
                 if(tCorrNI_Spectra) then

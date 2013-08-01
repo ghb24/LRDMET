@@ -1528,7 +1528,96 @@ module mat_tools
 
         deallocate(TempHF_Comp)
 
+        if(tWriteOut) call writematrixcomp(HFtoKOrbs,'HFtoKOrbs(k,i)',.false.)
+
     end subroutine ProjectHFontoK
+
+    !This is for the end of a calculation, to get the kspace 1e orbitals
+    subroutine GetKSpaceOrbs()
+        implicit none
+        complex(dp), allocatable :: CompHam(:,:),k_Ham(:,:),ztemp(:,:),cWork(:)
+        real(dp), allocatable :: Work(:)
+        integer :: i,j,k,SS_Period,lWork,ind_1,ind_2,info
+        character(len=*), parameter :: t_r='GetKSpaceOrbs'
+
+        write(6,"(A)") "Final diagonalization of the hamiltonian in kspace to get the complex orbitals"
+
+        allocate(CompHam(nSites,nSites))
+        do i = 1,nSites
+            do j = 1,nSites
+                CompHam(j,i) = dcmplx(h0v(j,i),zero)
+            enddo
+        enddo
+
+        SS_Period = nImp    !The length of the supercell
+        
+        !Project this hamiltonian into kspace and diagonalize each block at a time
+        allocate(k_Ham(SS_Period,SS_Period))
+        if(.not.allocated(k_vecs)) then
+            allocate(k_vecs(SS_Period,nSites))
+        endif
+        if(.not.allocated(k_HFEnergies)) allocate(k_HFEnergies(nSites))
+        k_vecs(:,:) = zzero
+        
+        !Space for diagonalization
+        allocate(ztemp(nSites,SS_Period))
+        lwork = max(1,2*SS_Period-1)
+        allocate(cWork(lWork))
+        allocate(Work(max(1,3*SS_Period-2)))
+
+        !Run though all kpoints
+        do k = 1,nKPnts
+            ind_1 = ((k-1)*SS_Period) + 1
+            ind_2 = SS_Period*k
+            !We now have the rotation matrix for the bands on this kpoint.
+            !Rotate the hamiltonian into this basis
+            call ZGEMM('N','N',nSites,SS_Period,nSites,zone,CompHam,nSites,RtoK_Rot(:,ind_1:ind_2),nSites,zzero,ztemp,nSites)
+            call ZGEMM('C','N',SS_Period,SS_Period,nSites,zone,RtoK_Rot(:,ind_1:ind_2),nSites,ztemp,nSites,zzero,k_Ham,SS_Period)
+
+            !Diagonalize this k-pure hamiltonian
+            info = 0
+            call ZHEEV('V','U',SS_Period,k_Ham,SS_Period,k_HFEnergies(ind_1:ind_2),cWork,lWork,Work,info)
+            if(info.ne.0) call stop_all(t_r,'Diag failed')
+
+            if(tWriteOut) then
+                write(6,*) "For kpoint: ",k," Eigenvalues are:"
+                do i = 0,SS_Period-1
+                    write(6,*) k_HFEnergies(ind_1+i)
+                enddo
+                write(6,*) "Eigenvectors: "
+                call writematrixcomp(k_Ham,'Eigenvec',.true.)
+            endif
+
+            k_vecs(:,ind_1:ind_2) = k_Ham(:,:)
+        enddo
+        deallocate(work,cWork,ztemp,k_Ham,CompHam)
+
+        !We now have pure k-eigenvectors, as ( pure k-component : orbital number )
+
+        !This map gives the index of the orbitals in terms of energy
+        !KVec_EMapping(i) = index of ith lowest energy orbital
+        if(.not.allocated(KVec_EMapping)) allocate(KVec_EMapping(nSites))
+        do i = 1,nSites
+            KVec_EMapping(i) = i
+        enddo
+        allocate(Work(nSites))
+        Work(:) = k_HFEnergies(:)
+        call sort_d_i(Work,KVec_EMapping,nSites)
+        deallocate(Work)
+
+        if(tWriteOut) then
+            call writevector(HFEnergies,'HFEnergies')
+            call writevector(k_HFEnergies,'k_HFEnergies')
+            call writevectorint(KVec_EMapping,'kVec_EMapping')
+        endif
+
+        do i = 1,nSites
+            if(abs(HFEnergies(i)-k_HFEnergies(KVec_EMapping(i))).gt.1.0e-7) then
+                call stop_all(t_r,'k-space HF energies do not match up with real space ones')
+            endif
+        enddo
+
+    end subroutine GetKSpaceOrbs
 
     !Routine to diagonalize a 1-electron, real operator, with the lattice periodicity.
     !the SS_Period is the size of the supercell repeating unit (e.g. the coupling correlation potential)
@@ -1541,7 +1630,7 @@ module mat_tools
         integer, intent(in) :: SS_Period
         real(dp), intent(inout) :: Ham(nLat,nLat)
         real(dp), intent(out) :: Vals(nLat)
-        real(dp), allocatable :: Work(:)
+        real(dp), allocatable :: Work(:),r_vecs_real(:,:)
         real(dp) :: PrimLattVec(LatticeDim),SiteVec(LatticeDim),Expo,DDOT,phase
         complex(dp), allocatable :: RotMat(:,:),temp(:,:),CompHam(:,:),RotHam(:,:),cWork(:)
         complex(dp), allocatable :: CompHam_2(:,:),ztemp(:,:),k_Ham(:,:),k_vecs(:,:)
@@ -1603,8 +1692,6 @@ module mat_tools
             
             deallocate(RotMat,k_Ham,ztemp,cWork,Work)
 
-            !Order the vectors, and the rotation matrix, such that the are in order of increasing eigenvalue
-
             !Now, rotate the k-space vectors back into r-space
             allocate(r_vecs(nLat,nLat))
             r_vecs(:,:) = zzero
@@ -1631,17 +1718,82 @@ module mat_tools
                 write(6,*) "Eigensystem correctly computed and transformed to real space"
             endif
 
+            write(6,*) "Before sorting..."
+            call writevector(Vals,'Vals')
+            call writematrixcomp(r_vecs,'r_vecs',.true.)
+            
+            !Order the vectors, such that the are in order of increasing eigenvalue
+            call sort_d_a_c(Vals,r_vecs,nSites,nSites)
+            
+            write(6,*) "After sorting..."
+            call writevector(Vals,'Vals')
+            call writematrixcomp(r_vecs,'r_vecs',.true.)
+            
+            if(tCheck) then
+                !Do these satisfy the original eigenvalue problem?
+                allocate(cWork(nLat))
+                do i = 1,nLat
+                    call ZGEMV('N',nLat,nLat,zone,CompHam,nLat,r_vecs(:,i),1,zzero,cWork,1)
+                    do j = 1,nLat
+                        if(abs(cWork(j)-(Vals(i)*r_vecs(j,i))).gt.1.0e-8_dp) then
+                            call stop_all(t_r,'Eigensystem not computed correctly in real basis')
+                        endif
+                    enddo
+                enddo
+                deallocate(cWork)
+                write(6,*) "Eigensystem correctly computed and transformed to real space"
+            endif
+
+            allocate(r_vecs_real(nLat,nLat))
+            r_vecs_real(:,:) = zero
             !Now, find the appropriate phase, such that the rotation will make the r_vecs real.
             !Apply the inverse of this rotation to the k_vecs, such that we end up with a complex set of
-            !k-vectors, and real set of r_vecs.
+            !k-vectors (ordered by k-point), and real set of r_vecs (Ordered by energy).
+            do i = 1,nLat   !Run through eigenvectors
+                phase = zero
+                if(tWriteOut) write(6,*) "Rotating eigenvector : ",i
+                do j = 1,nLat
+                    if((abs(aimag(r_vecs(j,i))).gt.1.0e-9_dp).and.(abs(r_vecs(j,i)).gt.1.0e-7_dp)) then
+                        !Find the phase factor for this eigenvector
+                        phase = atan(aimag(r_vecs(j,i))/real(r_vecs(j,i)))
+                        if(tWriteOut) write(6,*) "Eigenvector: ",i,j,phase,r_vecs(j,i) * exp(dcmplx(0.0_dp,-phase))
+                        !temp(j,i) = temp(j,i) * exp(dcmplx(0.0_dp,-phase))
+                        exit
+                    endif
+                enddo
+                !The phase should be the same for all components of the eigenvector
+                r_vecs(:,i) = r_vecs(:,i) * exp(dcmplx(zero,-phase))
+                do j = 1,nLat
+                    if(abs(aimag(r_vecs(j,i))).gt.1.0e-6) then
+                        write(6,*) "Error rotating component: ",j
+                        write(6,*) phase,r_vecs(j,i)
+                        call stop_all(t_r,'Eigenvectors not rotated correctly - degeneracies?')
+                    endif
+                    r_vecs_real(j,i) = real(r_vecs(j,i),dp)
+                enddo
+            enddo
 
             !Degenerate sets?
 
             !Check again that these rotated r_vecs are correct eigenfunctions...
+            if(tCheck) then
+                !Do these satisfy the original eigenvalue problem?
+                allocate(Work(nLat))
+                do i = 1,nLat
+                    call DGEMV('N',nLat,nLat,one,Ham,nLat,r_vecs_real(:,i),1,zero,Work,1)
+                    do j = 1,nLat
+                        if(abs(Work(j)-(Vals(i)*r_vecs_real(j,i))).gt.1.0e-8_dp) then
+                            call stop_all(t_r,'Eigensystem not computed correctly in real real basis')
+                        endif
+                    enddo
+                enddo
+                deallocate(Work)
+                write(6,*) "Eigensystem correctly computed and transformed to real real space"
+            endif
 
-
-!            call stop_all(t_r,'stop')
-            deallocate(CompHam)
+            Ham(:,:) = r_vecs_real(:,:)
+            deallocate(CompHam,r_vecs_real)
+            return
 
 
 

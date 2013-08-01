@@ -22,7 +22,7 @@ module LinearResponse
     !Therefore, they should be pretty good around the ground state.
     subroutine Correlated_SR_LR()
         implicit none
-        character(len=*), parameter :: t_r='Correlated_SR_LR'
+        !character(len=*), parameter :: t_r='Correlated_SR_LR'
 
         if(tCorrNI_LocGF) then
             call CorrNI_LocalGF()
