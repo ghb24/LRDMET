@@ -23,10 +23,10 @@ module MomSpectra
         complex(dp), allocatable :: FockSchmidt_SE_CX(:,:),FockSchmidt_SE_XC(:,:)
         complex(dp), allocatable :: Gc_a_F_ax_Bra(:),Gc_a_F_ax_Ket(:),Gc_b_F_ab(:),Gz_i_F_xi_Bra(:)
         complex(dp), allocatable :: Ga_i_F_xi_Bra(:),Ga_i_F_xi_Ket(:),Ga_i_F_ij(:)
-        complex(dp), allocatable :: SchmidtkGF_Cre_Ket(:),SchmidtkGF_Ann_Ket(:)
-        complex(dp), allocatable :: SchmidtkGF_Cre_Bra(:),SchmidtkGF_Ann_Bra(:)
-        complex(dp), allocatable :: StatickGF_Cre_Ket(:),StatickGF_Ann_Ket(:)
-        complex(dp), allocatable :: StatickGF_Cre_Bra(:),StatickGF_Ann_Bra(:)
+        complex(dp), allocatable :: SchmidtkGF_Cre_Ket(:,:),SchmidtkGF_Ann_Ket(:,:)
+        complex(dp), allocatable :: SchmidtkGF_Cre_Bra(:,:),SchmidtkGF_Ann_Bra(:,:)
+        complex(dp), allocatable :: StatickGF_Cre_Ket(:,:),StatickGF_Ann_Ket(:,:)
+        complex(dp), allocatable :: StatickGF_Cre_Bra(:,:),StatickGF_Ann_Bra(:,:)
         integer, allocatable :: Coup_Create_alpha(:,:,:),Coup_Ann_alpha(:,:,:)
         integer :: nLinearSystem,nLinearSystem_h,CoreEnd,VirtStart,VirtEnd,ActiveStart,ActiveEnd,nCore,nVirt
         integer :: VIndex,iunit,i,j,k,DiffOrb,nOrbs,orbdum(1),gam,tempK,KPnt,ierr
@@ -124,11 +124,13 @@ module MomSpectra
             call stop_all(t_r,'Error in setting up half filled lattice')
         endif
 
+        nImp_GF = 1 !Only want one perturbation at a time, but keep as matrices
+
         !Set up indices for the block of the linear system
         VIndex = nNp1FCIDet + 1   !Beginning of EC virtual excitations
-        if(VIndex+nFCIDet-1.ne.nLinearSystem) call stop_all(t_r,'Indexing error')
+        VStatIndex = VIndex + nFCIDet
+        if(VStatIndex+nFCIDet-1.ne.nLinearSystem) call stop_all(t_r,'Indexing error')
 
-        write(6,*) "External indices start from: ",VIndex
         write(6,*) "Total size of linear sys: ",nLinearSystem
         
         iunit = get_free_unit()
@@ -145,10 +147,15 @@ module MomSpectra
             & //"10.Particle_Norm  11.Hole_Norm   12.NI_GF(Re)   13.NI_GF(Im)  14.NI_GF_Part(Re)   15.NI_GF_Part(Im)   " &
             & //"16.NI_GF_Hole(Re)   17.NI_GF_Hole(Im)  18.SpectralWeight  19.Iters_p   20.Iters_h    " 
                 
-        allocate(SchmidtkGF_Cre_Ket(VirtStart:nSites))
-        allocate(SchmidtkGF_Cre_Bra(VirtStart:nSites))
-        allocate(SchmidtkGF_Ann_Ket(1:CoreEnd))
-        allocate(SchmidtkGF_Ann_Bra(1:CoreEnd))
+        allocate(SchmidtkGF_Cre_Ket(VirtStart:nSites,nImp_GF))
+        allocate(SchmidtkGF_Cre_Bra(VirtStart:nSites,nImp_GF))
+        allocate(SchmidtkGF_Ann_Ket(1:CoreEnd,nImp_GF))
+        allocate(SchmidtkGF_Ann_Bra(1:CoreEnd,nImp_GF))
+
+        allocate(StatickGF_Cre_Ket(VirtStart:nSites,nImp_GF))
+        allocate(StatickGF_Cre_Bra(VirtStart:nSites,nImp_GF))
+        allocate(StatickGF_Ann_Ket(1:CoreEnd,nImp_GF))
+        allocate(StatickGF_Ann_Bra(1:CoreEnd,nImp_GF))
         
         !Allocate memory for hamiltonian in this system:
         allocate(LinearSystem_p(nLinearSystem,nLinearSystem),stat=ierr)
@@ -194,15 +201,24 @@ module MomSpectra
         FockSchmidt_SE_XV(ActiveStart:ActiveEnd,VirtStart:VirtEnd) = FockSchmidt_SE(ActiveStart:ActiveEnd,VirtStart:VirtEnd)
         FockSchmidt_SE_XC(ActiveStart:ActiveEnd,1:CoreEnd) = FockSchmidt_SE(ActiveStart:ActiveEnd,1:CoreEnd)
 
-        !Space for useful intermediates
+        !Space for useful intermediates for dynamic bath states
         !For particle addition
-        allocate(Gc_a_F_ax_Bra(ActiveStart:ActiveEnd),stat=ierr)
-        allocate(Gc_a_F_ax_Ket(ActiveStart:ActiveEnd),stat=ierr)
-        allocate(Gc_b_F_ab(VirtStart:VirtEnd),stat=ierr)
+        allocate(Gc_a_F_ax_Bra(ActiveStart:ActiveEnd,nImp_GF),stat=ierr)
+        allocate(Gc_a_F_ax_Ket(ActiveStart:ActiveEnd,nImp_GF),stat=ierr)
+        allocate(Gc_b_F_ab(VirtStart:VirtEnd,nImp_GF),stat=ierr)
         !For hole addition
-        allocate(Ga_i_F_xi_Bra(ActiveStart:ActiveEnd),stat=ierr)
-        allocate(Ga_i_F_xi_Ket(ActiveStart:ActiveEnd),stat=ierr)
-        allocate(Ga_i_F_ij(1:nCore),stat=ierr)
+        allocate(Ga_i_F_xi_Bra(ActiveStart:ActiveEnd,nImp_GF),stat=ierr)
+        allocate(Ga_i_F_xi_Ket(ActiveStart:ActiveEnd,nImp_GF),stat=ierr)
+        allocate(Ga_i_F_ij(1:nCore,nImp_GF),stat=ierr)
+        !Space for useful intermediates for static bath states
+        !For particle addition
+        allocate(Xc_a_F_ax_Bra(ActiveStart:ActiveEnd,nImp_GF),stat=ierr)
+        allocate(Xc_a_F_ax_Ket(ActiveStart:ActiveEnd,nImp_GF),stat=ierr)
+        allocate(Xc_b_F_ab(VirtStart:VirtEnd,nImp_GF),stat=ierr)
+        !For hole addition
+        allocate(Xa_i_F_xi_Bra(ActiveStart:ActiveEnd,nImp_GF),stat=ierr)
+        allocate(Xa_i_F_xi_Ket(ActiveStart:ActiveEnd,nImp_GF),stat=ierr)
+        allocate(Xa_i_F_ij(1:nCore,nImp_GF),stat=ierr)
 
         !Allocate and precompute 1-operator coupling coefficients between the different sized spaces.
         !First number is the index of operator, and the second is the parity change when applying the operator
@@ -287,16 +303,153 @@ module MomSpectra
         do while(.true.)
             !call GetNextkVal(kPnt,tFinishedk)
             if(tFinishedk) exit
-            write(6,"(A)") "Calculating spectra with k = ",KPnts(:,kPnt)
+            write(6,*) "Calculating spectra with k = ",KPnts(:,KPnt),KPnt
         
-            call FindStaticMomSchmidtPert(kPnt,StatickGF_Cre_Ket,StatickGF_Ann_Ket)
+            call FindStaticMomSchmidtPert(kPnt,nImp_GF,StatickGF_Cre_Ket,StatickGF_Ann_Ket,StatickGF_Cre_Bra,StatickGF_Ann_Bra)
+
+            !Construct useful intermediates, concerning the *Static* bath orbitals
+            !sum_a Xc_a^* F_ax (Creation)
+            call ZGEMM('T','N',EmbSize,nImp_GF,nVirt,zone,FockSchmidt_SE_VX(VirtStart:VirtEnd,ActiveStart:ActiveEnd),  &
+                nVirt,StatickGF_Cre_Bra(VirtStart:VirtEnd,:),nVirt,zzero,Xc_a_F_ax_Bra,EmbSize)
+            call ZGEMM('N','N',EmbSize,nImp_GF,nVirt,zone,FockSchmidt_SE_XV(ActiveStart:ActiveEnd,VirtStart:VirtEnd),  &
+                EmbSize,StatickGF_Cre_Ket(VirtStart:VirtEnd,:),nVirt,zzero,Xc_a_F_ax_Ket,EmbSize)
+            !sum_b Gc_b F_ab  (Creation)
+            call ZGEMM('N','N',nVirt,nImp_GF,nVirt,zone,FockSchmidt_SE_VV(VirtStart:VirtEnd,VirtStart:VirtEnd),    &
+                nVirt,StatickGF_Cre_Ket(VirtStart:VirtEnd,:),nVirt,zzero,Xc_b_F_ab,nVirt)
+
+            !sum_i Ga_i^bra F_xi (Annihilation)
+            call ZGEMM('N','N',EmbSize,nImp_GF,nCore,zone,FockSchmidt_SE_XC(ActiveStart:ActiveEnd,1:CoreEnd),EmbSize,    &
+                StatickGF_Ann_Bra(1:nCore,:),nCore,zzero,Xa_i_F_xi_Bra,EmbSize)
+            call ZGEMM('T','N',EmbSize,nImp_GF,nCore,zone,FockSchmidt_SE_CX(1:CoreEnd,ActiveStart:ActiveEnd),nCore,    &
+                StatickGF_Ann_Ket(1:nCore,:),nCore,zzero,Xa_i_F_xi_Ket,EmbSize)
+            !sum_i Ga_i F_ij (Annihilation)
+            call ZGEMM('T','N',nCore,nImp_GF,nCore,zone,FockSchmidt_SE_CC(:,:),nCore,StatickGF_Ann_Ket(:,:),nCore,zzero, &
+                Xa_i_F_ij,nCore)
 
             Omega = Start_Omega
             do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
-                write(6,"(A)") "Calculating linear response for frequency: ",Omega
+                write(6,"(A,F12.5,I6)") "Calculating linear response for frequency: ",Omega,KPnt
                 call flush(6)
 
-                call FindMomGFSchmidtPert(Omega,ni_lr_cre,ni_lr_ann,kPnt,SchmidtkGF_Cre_Ket,SchmidtkGF_Ann_Ket)
+                call FindMomGFSchmidtPert(Omega,ni_lr_cre,ni_lr_ann,kPnt,SchmidtkGF_Cre_Ket,SchmidtkGF_Ann_Ket, &
+                    SchmidtkGF_Cre_Bra,SchmidtkGF_Ann_Bra)
+                
+                    
+                !Construct useful intermediates, concerning the *Dynamic* bath orbitals
+                !sum_a Gc_a^* F_ax (Creation)
+                call ZGEMM('T','N',EmbSize,nImp_GF,nVirt,zone,FockSchmidt_SE_VX(VirtStart:VirtEnd,ActiveStart:ActiveEnd),  &
+                    nVirt,SchmidtkGF_Cre_Bra(VirtStart:VirtEnd,:),nVirt,zzero,Gc_a_F_ax_Bra,EmbSize)
+                call ZGEMM('N','N',EmbSize,nImp_GF,nVirt,zone,FockSchmidt_SE_XV(ActiveStart:ActiveEnd,VirtStart:VirtEnd),  &
+                    EmbSize,SchmidtkGF_Cre_Ket(VirtStart:VirtEnd,:),nVirt,zzero,Gc_a_F_ax_Ket,EmbSize)
+                !sum_b Gc_b F_ab  (Creation)
+                call ZGEMM('N','N',nVirt,nImp_GF,nVirt,zone,FockSchmidt_SE_VV(VirtStart:VirtEnd,VirtStart:VirtEnd),    &
+                    nVirt,SchmidtkGF_Cre_Ket(VirtStart:VirtEnd,:),nVirt,zzero,Gc_b_F_ab,nVirt)
+
+                !sum_i Ga_i^bra F_xi (Annihilation)
+                call ZGEMM('N','N',EmbSize,nImp_GF,nCore,zone,FockSchmidt_SE_XC(ActiveStart:ActiveEnd,1:CoreEnd),EmbSize,    &
+                    SchmidtkGF_Ann_Bra(1:nCore,:),nCore,zzero,Ga_i_F_xi_Bra,EmbSize)
+                call ZGEMM('T','N',EmbSize,nImp_GF,nCore,zone,FockSchmidt_SE_CX(1:CoreEnd,ActiveStart:ActiveEnd),nCore,    &
+                    SchmidtkGF_Ann_Ket(1:nCore,:),nCore,zzero,Ga_i_F_xi_Ket,EmbSize)
+                !sum_i Ga_i F_ij (Annihilation)
+                call ZGEMM('T','N',nCore,nImp_GF,nCore,zone,FockSchmidt_SE_CC(:,:),nCore,SchmidtkGF_Ann_Ket(:,:),nCore,zzero, &
+                    Ga_i_F_ij,nCore)
+                StatCoup_Ann = zzero
+                do i = 1,CoreEnd
+                    !sum_i X*_i G_i
+                    StatCoup_Ann = StatCoup + StatickGF_Ann_Bra(i,1)*Schmidtk_Ann_Ket(i,1)
+                enddo
+
+
+                !Now, construct the hessians
+                LinearSystem_h = zzero
+                LinearSystem_p = zzero
+                !Overlap matrix
+                Overlap_h(:,:) = zzero
+                do i = 1,nLinearSystem
+                    Overlap_h(i,i) = zone
+                enddo
+
+                !Block 1
+                !First, construct n + 1 (alpha) FCI space, in determinant basis
+                LinearSystem_p(1:nNp1FCIDet,1:nNp1FCIDet) = Np1FCIHam_alpha(:,:)
+                !Block 1 for hole hamiltonian
+                LinearSystem_h(1:nNm1bFCIDet,1:nNm1bFCIDet) = Nm1FCIHam_beta(:,:)
+
+                !Block 2 for the hole hamiltonian
+                !Copy the N electron FCI hamiltonian to this diagonal blockk
+                LinearSystem_h(VIndex:VStatIndex-1,VIndex:VStatIndex-1) = nFCIHam(:,:)
+
+                CNorm = zzero
+                tempel = zzero 
+                do i = 1,CoreEnd
+                    !Calc normalization
+                    CNorm = CNorm + SchmidtkGF_Ann_Bra(i,1)*SchmidtkGF_Ann_Ket(i,1)
+                    !Calc diagonal correction
+                    tempel = tempel + SchmidtkGF_Ann_Bra(i,1)*Ga_i_F_ij(i,1)
+                enddo
+                tempel = -tempel / CNorm
+                !Add diagonal correction
+                do i = VIndex,VStatIndex-1
+                    LinearSystem_h(i,i) = LinearSystem_h(i,i) + tempel
+                enddo
+
+                !This is essentially the same for block 4, but now for the static bath
+                LinearSystem_h(VStatIndex:nLinearSystem,VStatIndex:nLinearSystem) = nFCIHam(:,:)
+
+                CStatNorm = zzero
+                tempel = zzero 
+                do i = 1,CoreEnd
+                    !Calc normalization
+                    CStatNorm = CStatNorm + StatickGF_Ann_Bra(i,1)*StatickGF_Ann_Ket(i,1)
+                    !Calc diagonal correction
+                    tempel = tempel + StatickGF_Ann_Bra(i,1)*Xa_i_F_ij(i,1)
+                enddo
+                tempel = -tempel / CStatNorm
+                !Add diagonal correction
+                do i = VStatIndex,nLinearSystem
+                    LinearSystem_h(i,i) = LinearSystem_h(i,i) + tempel
+                enddo
+
+                !Block 3 for hole hamiltonian
+                do J = 1,nNm1bFCIDet
+                    do K = 1,nFCIDet
+                        if(Coup_Create_alpha(1,K,J).ne.0) then
+                            !Determinants are connected via a single SQ operator
+                            LinearSystem_h(K+VIndex-1,J) = - Ga_i_F_xi_Bra(Coup_Create_alpha(1,K,J),1)   &
+                                *Coup_Create_alpha(2,K,J)/sqrt(CNorm)
+                            LinearSystem_h(J,K+VIndex-1) = - Ga_i_F_xi_Ket(Coup_Create_alpha(1,K,J),1)   &
+                                *Coup_Create_alpha(2,K,J)/sqrt(CNorm)
+                            !Block 6 is essentially the same
+                            LinearSystem_h(K+VStatIndex-1,J) = - Xa_i_F_xi_Bra(Coup_Create_alpha(1,K,J),1)   &
+                                *Coup_Create_alpha(2,K,J)/sqrt(CStatNorm)
+                            LinearSystem_h(J,K+VStatIndex-1) = - Xa_i_F_xi_Ket(Coup_Create_alpha(1,K,J),1)   &
+                                *Coup_Create_alpha(2,K,J)/sqrt(CStatNorm)
+                        endif
+                    enddo
+                enddo
+
+                !Now, for block 5
+                LinearSystem_h(VIndex:VStatIndex-1,VStatIndex:nLinearSystem) = nFCIHam(:,:)
+                LinearSystem_h(VStatIndex:nLinearSystem,VIndex:VStatIndex-1) = nFCIHam(:,:)
+
+                tempel = zzero 
+                tempel2 = zzero
+                do i = 1,CoreEnd
+                    !Calc diagonal correction
+                    tempel = tempel + StatickGF_Ann_Bra(i,1)*Ga_i_F_ij(i,1)
+                    tempel2 = tempel2 + FockSchmidt_SE(i,i)
+                enddo
+                tempel4 = ((tempel2*StatCoup_Ann)-tempel)/sqrt(CStatNorm*CNorm)
+                !Add diagonal correction
+                do i = VIndex,VStatIndex-1
+                    LinearSystem_h(i+nFCIDet,i) = LinearSystem_h(i+nFCIDet,i) + tempel4
+                    LinearSystem_h(i,i+nFCIDet) = LinearSystem_h(i,i+nFCIDet) + dconjg(tempel4)
+                    Overlap_h(i+nFCIDet,i) = tempel3/sqrt(CStatNorm*CNorm)
+                    Overlap_h(i,i+nFCIDet) = dconjg(tempel3/sqrt(CStatNorm*CNorm))
+                enddo
+
+                call ApplyMomPert_GS(Psi_0,V0_Cre,V0_Ann,nSizeLR,nSizeGS,Coup_Ann_alpha,Coup_Create_alpha,    &
+                    StatCoup_Ann,StatCoup_Cre,CNorm,CStatNorm,ANorm,AStatNorm,StatickGF_Emb_Ket) 
 
                 Omega = Omega + Omega_Step
             enddo
@@ -305,6 +458,51 @@ module MomSpectra
 
 
     end subroutine MomGF_Ex
+
+    !Apply the schmidt decomposed momentum perturbation to the ground state wavefunction.
+    !Since this perturbation is non-local, it will excite to all components of the linear
+    !response basis
+    !If tLR_ReoptGS=F then Psi_0 will be of size nFCIDet, otherwise it must be larger.
+    subroutine ApplyMomPert_GS(Psi_0,V0_Cre,V0_Ann,nSizeLR,nSizeGS,Coup_Ann_alpha,Coup_Create_alpha,    &
+        StatCoup_Ann,StatCoup_Cre,CNorm,CStatNorm,ANorm,AStatNorm,StatickGF_Emb_Ket)
+        implicit none
+        integer, intent(in) :: nSizeLR,nSizeGS
+        complex(dp), intent(in) :: Psi_0(nSizeGS)
+        complex(dp), intent(in) :: StatCoup_Ann,StatCoup_Cre,CNorm,CStatNorm,ANorm,AStatNorm
+        complex(dp), intent(out) :: V0_Cre(nSizeLR),V0_Ann(nSizeLR)
+        integer, intent(in) :: Coup_Ann_alpha(2,nFCIDet,nNp1FCIDet),Coup_Create_alpha(2,nFCIDet,nNm1bFCIDet)
+        complex(dp), intent(in) :: StatickGF_Emb_Ket(nOcc-nImp+1:nOcc+nImp)
+
+        if(.not.tLR_ReoptGS) then
+            if(nSizeGS.ne.nFCIDet) call stop_all(t_r,'Error in GS size')
+        else
+            call stop_all(t_r,'Not ready for reoptimizing GS yet')
+        endif
+
+        V0_Cre(:) = zzero
+        V0_Ann(:) = zzero
+
+        !Projection onto Block 1 of V0
+        do K = 1,nFCIDet
+            do J = 1,nNm1bFCIDet
+                if(Coup_Create_alpha(1,K,J).ne.0) then
+                    !Determinants are connected by a single SQ operator
+                    V0_Ann(J) = V0_Ann(J) + StatickGF_Emb_Ket(Coup_Create_alpha(1,K,J),1)*Psi_0(K)* &
+                        Coup_Create_alpha(2,K,J)
+                endif
+            enddo
+        enddo
+
+        !Projection onto Block 2 of V0
+        do K = 1,nFCIDet
+            V0_Ann(K+nNm1bFCIDet) = (StatCoup_Ann*Psi_0(K))/sqrt(CNorm)
+        enddo
+        !Projection onto Block 3 of V0
+        do K = 1,nFCIDet
+            V0_Ann(K+nNm1bFCIDet+nFCIDet) = sqrt(CStatNorm)*Psi_0(K)
+        enddo
+
+    end subroutine ApplyMomPert_GS
 
     !Construct the contraction coefficients for the action of the static perturbation 
     subroutine FindStaticMomSchmidtPert(kPnt,StatickGF_Cre_Ket,StatickGF_Ann_Ket)
