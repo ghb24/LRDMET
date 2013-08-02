@@ -53,8 +53,8 @@ within an extended environment [PRL {\bf 109} 186404 (2012)].
 %to the dynamical mean-field method, a set of local sites are self-consistently correlated, but with an analytically constructable bath describing the
 %coupling to the rest of the extended system. 
 Despite many formal advantages in the analytic embedding, the method was restricted to static, ground-state properties.
-Here, we generalize the concept of quantum embedding to introduce a frequency dependence and demonstrate accurate spectral functions at a tiny
-computational cost. Through this quantum embedding of a local spectral function within a mean-field response over the whole system, 
+Here, we generalize the concept of quantum embedding to introduce a frequency dependence and demonstrate accurate spectral functions at a small
+computational cost. Through an exact one-electron quantum embedding of a local spectral function within a mean-field response over the whole system, 
 a coupling of the delocalized excitations is captured through a small set of 
 analytically constructed, and now frequency-dependent bath states. In contrast to dynamical mean-field theory, the resultant 
 spectral functions are directly obtained on the real-frequency axis, with no bath discretization error, and allow for straightforward generalization both 
@@ -219,10 +219,11 @@ computational cost of at most a few seconds per frequency point.
     \vspace{-2mm}
 \includegraphics[scale=0.475]{Plots/1D_Spectra/1D_Hub_Spectra.eps}
 \end{center}
-    \vspace{-8mm}
+    \vspace{-5mm}
 \caption{Comparison of the local density of states between a four impurity cluster DMET calculation and a
 (six impurity, six bath) CDMFT calculation for the half-filled 1D Hubbard model. The analytic bath construction
-of DMET renders the spectral functions smooth over the frequency range.}
+of DMET renders the spectral functions smooth over the frequency range, with the same spectral broadening ($\eta=0.05t$) used for
+both the CDMFT and DMET calculations.}
 \label{1D_DOS}
 \end{figure}
 
@@ -290,8 +291,8 @@ on the scale of the plot. However, while not conclusive, this supports the asser
 \includegraphics[scale=0.475]{Plots/2D_Spectra/2DHub_Spectra.eps}
 \end{center}
     \vspace{-8mm}
-\caption{Local density of states of the half-filled 2D Hubbard model from a $2 \times 2$ impurity cluster DMET calculation, with a MIT at $U\approx6.9t$}. 5000 electrons are considered,
-which combined with the exact bath states from $|\phi^{(1)}(\omega)\rangle$ for each frequency allows for smooth spectral functions of real frequencies.
+\caption{Local density of states of the half-filled 2D Hubbard model from a $2 \times 2$ impurity cluster DMET calculation, with a MIT at $U\approx6.9t$. 5000 electrons are considered,
+which combined with the exact bath states from $|\phi^{(1)}(\omega)\rangle$ for each frequency allows for smooth spectral functions of real frequencies.}
 \label{2D_DOS}
 \end{figure}
 
