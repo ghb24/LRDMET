@@ -1536,6 +1536,7 @@ module mat_tools
     subroutine GetKSpaceOrbs()
         implicit none
         complex(dp), allocatable :: CompHam(:,:),k_Ham(:,:),ztemp(:,:),cWork(:)
+        complex(dp), allocatable :: TempSchmidtBasis(:,:),ztemp2(:,:)
         real(dp), allocatable :: Work(:)
         integer :: i,j,k,SS_Period,lWork,ind_1,ind_2,info
         character(len=*), parameter :: t_r='GetKSpaceOrbs'
@@ -1616,6 +1617,31 @@ module mat_tools
                 call stop_all(t_r,'k-space HF energies do not match up with real space ones')
             endif
         enddo
+
+        if(allocated(k_HFtoSchmidtTransform)) deallocate(k_HFtoSchmidtTransform)
+        allocate(k_HFtoSchmidtTransform(nSites,nSites))
+
+        allocate(ztemp(nSites,nSites))
+        ztemp(:,:) = zzero
+        !Construct full block diagonal representation of k-basis MOs
+        do k = 1,nKPnts
+            ind_1 = ((k-1)*SS_Period) + 1
+            ind_2 = SS_Period*k
+            ztemp(ind_1:ind_2,ind_1:ind_2) = k_vecs(:,ind_1:ind_2)
+        enddo
+
+        !First rotate k-space eigenvectors into AO basis
+        call ZGEMM('N','N',nSites,nSites,nSites,zone,RtoK_Rot,nSites,ztemp,nSites,zzero,ztemp2,nSites)
+        !Now rotate eigenvectors in AO basis into schmidt basis
+        allocate(TempSchmidtBasis(nSites,nSites))
+        TempSchmidtBasis(:,:) = zzero
+        do j = 1,nSites
+            do i = 1,nSites
+                TempSchmidtBasis(i,j) = dcmplx(FullSchmidtBasis(i,j),zero)
+            enddo
+        enddo
+        call ZGEMM('C','N',nSites,nSites,nSites,zone,TempSchmidtBasis,nSites,ztemp2,nSites,zzero,k_HFtoSchmidtTransform,nSites)
+        deallocate(ztemp,ztemp2,TempSchmidtBasis)
 
     end subroutine GetKSpaceOrbs
 
