@@ -18,19 +18,26 @@ module MomSpectra
         implicit none
         complex(dp), allocatable :: NFCIHam(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
         complex(dp), allocatable :: LinearSystem_p(:,:),LinearSystem_h(:,:),Psi1_p(:),Psi1_h(:)
+        complex(dp), allocatable :: Overlap_p(:,:),Overlap_h(:,:)
         complex(dp), allocatable :: Cre_0(:),Ann_0(:),FockSchmidt_SE(:,:),FockSchmidt_SE_VV(:,:)
         complex(dp), allocatable :: FockSchmidt_SE_CC(:,:),FockSchmidt_SE_VX(:,:),FockSchmidt_SE_XV(:,:)
         complex(dp), allocatable :: FockSchmidt_SE_CX(:,:),FockSchmidt_SE_XC(:,:)
-        complex(dp), allocatable :: Gc_a_F_ax_Bra(:),Gc_a_F_ax_Ket(:),Gc_b_F_ab(:),Gz_i_F_xi_Bra(:)
-        complex(dp), allocatable :: Ga_i_F_xi_Bra(:),Ga_i_F_xi_Ket(:),Ga_i_F_ij(:)
+        complex(dp), allocatable :: Gc_a_F_ax_Bra(:,:),Gc_a_F_ax_Ket(:,:),Gc_b_F_ab(:,:)
+        complex(dp), allocatable :: Ga_i_F_xi_Bra(:,:),Ga_i_F_xi_Ket(:,:),Ga_i_F_ij(:,:)
+        complex(dp), allocatable :: Xc_a_F_ax_Bra(:,:),Xc_a_F_ax_Ket(:,:),Xc_b_F_ab(:,:)
+        complex(dp), allocatable :: Xa_i_F_xi_Bra(:,:),Xa_i_F_xi_Ket(:,:),Xa_i_F_ij(:,:)
         complex(dp), allocatable :: SchmidtkGF_Cre_Ket(:,:),SchmidtkGF_Ann_Ket(:,:)
         complex(dp), allocatable :: SchmidtkGF_Cre_Bra(:,:),SchmidtkGF_Ann_Bra(:,:)
         complex(dp), allocatable :: StatickGF_Cre_Ket(:,:),StatickGF_Ann_Ket(:,:)
         complex(dp), allocatable :: StatickGF_Cre_Bra(:,:),StatickGF_Ann_Bra(:,:)
+        complex(dp), allocatable :: StatickGF_Ann_Emb_Ket(:,:),StatickGF_Ann_Emb_Bra(:,:)
+        complex(dp), allocatable :: StatickGF_Cre_Emb_Ket(:,:),StatickGF_Cre_Emb_Bra(:,:)
+        complex(dp), allocatable :: Psi_0(:),V0_Ann(:),V0_Cre(:)
         integer, allocatable :: Coup_Create_alpha(:,:,:),Coup_Ann_alpha(:,:,:)
         integer :: nLinearSystem,nLinearSystem_h,CoreEnd,VirtStart,VirtEnd,ActiveStart,ActiveEnd,nCore,nVirt
-        integer :: VIndex,iunit,i,j,k,DiffOrb,nOrbs,orbdum(1),gam,tempK,KPnt,ierr
-        complex(dp) :: ni_lr_ann,ni_lr_cre
+        integer :: VIndex,iunit,i,j,k,DiffOrb,nOrbs,orbdum(1),gam,tempK,KPnt,ierr,nImp_GF,VStatIndex
+        complex(dp) :: ni_lr_ann,ni_lr_cre,CNorm,CStatNorm,ANorm,AStatNorm,GFChemPot,StatCoup_Ann,StatCoup_Cre
+        complex(dp) :: tempel,tempel2,tempel3,tempel4
         real(dp) :: SpectralWeight,Prev_Spec,mu,Omega
         logical :: tFirst,tParity,tFinishedK
         character(64) :: filename,filename2
@@ -101,8 +108,6 @@ module MomSpectra
             enddo
         enddo
 
-
-
         nLinearSystem = nNp1FCIDet + nFCIDet*2
         nLinearSystem_h = nNm1bFCIDet + nFCIDet*2
 
@@ -156,10 +161,17 @@ module MomSpectra
         allocate(StatickGF_Cre_Bra(VirtStart:nSites,nImp_GF))
         allocate(StatickGF_Ann_Ket(1:CoreEnd,nImp_GF))
         allocate(StatickGF_Ann_Bra(1:CoreEnd,nImp_GF))
+        !Also for the Emb space for the static perturbation
+        allocate(StatickGF_Cre_Emb_Ket(ActiveStart:ActiveEnd,nImp_GF))
+        allocate(StatickGF_Cre_Emb_Bra(ActiveStart:ActiveEnd,nImp_GF))
+        allocate(StatickGF_Ann_Emb_Ket(ActiveStart:ActiveEnd,nImp_GF))
+        allocate(StatickGF_Ann_Emb_Bra(ActiveStart:ActiveEnd,nImp_GF))
         
         !Allocate memory for hamiltonian in this system:
         allocate(LinearSystem_p(nLinearSystem,nLinearSystem),stat=ierr)
         allocate(LinearSystem_h(nLinearSystem,nLinearSystem),stat=ierr)
+        allocate(Overlap_p(nLinearSystem,nLinearSystem),stat=ierr)
+        allocate(Overlap_h(nLinearSystem,nLinearSystem),stat=ierr)
         allocate(Psi1_p(nLinearSystem),stat=ierr)
         allocate(Psi1_h(nLinearSystem),stat=ierr)
         Psi1_p = zzero
@@ -168,8 +180,13 @@ module MomSpectra
         
         !Since this does not depend at all on the new basis, since the ground state has a completely
         !disjoint basis to |1>, the RHS of the equations can be precomputed
-        allocate(Cre_0(nLinearSystem))
-        allocate(Ann_0(nLinearSystem))
+        allocate(Psi_0(nFCIDet))
+        do i = 1,nFCIDet
+            Psi_0(i) = dcmplx(HL_Vec(i),zero)
+            GFChemPot = HL_Energy
+        enddo
+        allocate(V0_Cre(nLinearSystem))
+        allocate(V0_Ann(nLinearSystem))
         
         !Store the fock matrix in complex form, so that we can ZGEMM easily
         !Also allocate the subblocks seperately. More memory, but will ensure we don't get stack overflow problems
@@ -304,8 +321,9 @@ module MomSpectra
             !call GetNextkVal(kPnt,tFinishedk)
             if(tFinishedk) exit
             write(6,*) "Calculating spectra with k = ",KPnts(:,KPnt),KPnt
-        
-            call FindStaticMomSchmidtPert(kPnt,nImp_GF,StatickGF_Cre_Ket,StatickGF_Ann_Ket,StatickGF_Cre_Bra,StatickGF_Ann_Bra)
+    
+            call FindStaticMomSchmidtPert(kPnt,nImp_GF,StatickGF_Cre_Ket,StatickGF_Cre_Emb_Ket,StatickGF_Ann_Ket,   &
+                StatickGF_Ann_Emb_Ket,StatickGF_Cre_Bra,StatickGF_Ann_Bra,StatickGF_Cre_Emb_Bra,StatickGF_Ann_Emb_Bra)
 
             !Construct useful intermediates, concerning the *Static* bath orbitals
             !sum_a Xc_a^* F_ax (Creation)
@@ -331,7 +349,7 @@ module MomSpectra
                 write(6,"(A,F12.5,I6)") "Calculating linear response for frequency: ",Omega,KPnt
                 call flush(6)
 
-                call FindMomGFSchmidtPert(Omega,ni_lr_cre,ni_lr_ann,kPnt,SchmidtkGF_Cre_Ket,SchmidtkGF_Ann_Ket, &
+                call FindMomGFSchmidtPert(Omega,ni_lr_cre,ni_lr_ann,kPnt,nImp_GF,SchmidtkGF_Cre_Ket,SchmidtkGF_Ann_Ket, &
                     SchmidtkGF_Cre_Bra,SchmidtkGF_Ann_Bra)
                 
                     
@@ -356,7 +374,7 @@ module MomSpectra
                 StatCoup_Ann = zzero
                 do i = 1,CoreEnd
                     !sum_i X*_i G_i
-                    StatCoup_Ann = StatCoup + StatickGF_Ann_Bra(i,1)*Schmidtk_Ann_Ket(i,1)
+                    StatCoup_Ann = StatCoup_Ann + StatickGF_Ann_Bra(i,1)*SchmidtkGF_Ann_Ket(i,1)
                 enddo
 
 
@@ -448,8 +466,8 @@ module MomSpectra
                     Overlap_h(i,i+nFCIDet) = dconjg(tempel3/sqrt(CStatNorm*CNorm))
                 enddo
 
-                call ApplyMomPert_GS(Psi_0,V0_Cre,V0_Ann,nSizeLR,nSizeGS,Coup_Ann_alpha,Coup_Create_alpha,    &
-                    StatCoup_Ann,StatCoup_Cre,CNorm,CStatNorm,ANorm,AStatNorm,StatickGF_Emb_Ket) 
+                call ApplyMomPert_GS(Psi_0,V0_Cre,V0_Ann,nImp_GF,nLinearSystem,nFCIDet,Coup_Ann_alpha,Coup_Create_alpha,    &
+                    StatCoup_Ann,StatCoup_Cre,CNorm,CStatNorm,ANorm,AStatNorm,StatickGF_Cre_Emb_Ket,StatickGF_Ann_Emb_Ket) 
 
                 Omega = Omega + Omega_Step
             enddo
@@ -463,15 +481,19 @@ module MomSpectra
     !Since this perturbation is non-local, it will excite to all components of the linear
     !response basis
     !If tLR_ReoptGS=F then Psi_0 will be of size nFCIDet, otherwise it must be larger.
-    subroutine ApplyMomPert_GS(Psi_0,V0_Cre,V0_Ann,nSizeLR,nSizeGS,Coup_Ann_alpha,Coup_Create_alpha,    &
-        StatCoup_Ann,StatCoup_Cre,CNorm,CStatNorm,ANorm,AStatNorm,StatickGF_Emb_Ket)
+    subroutine ApplyMomPert_GS(Psi_0,V0_Cre,V0_Ann,nImp_GF,nSizeLR,nSizeGS,Coup_Ann_alpha,Coup_Create_alpha,    &
+        StatCoup_Ann,StatCoup_Cre,CNorm,CStatNorm,ANorm,AStatNorm,StatickGF_Cre_Emb_Ket,StatickGF_Ann_Emb_Ket)
+        use DetToolsData
         implicit none
-        integer, intent(in) :: nSizeLR,nSizeGS
+        integer, intent(in) :: nSizeLR,nSizeGS,nImp_GF
         complex(dp), intent(in) :: Psi_0(nSizeGS)
         complex(dp), intent(in) :: StatCoup_Ann,StatCoup_Cre,CNorm,CStatNorm,ANorm,AStatNorm
         complex(dp), intent(out) :: V0_Cre(nSizeLR),V0_Ann(nSizeLR)
         integer, intent(in) :: Coup_Ann_alpha(2,nFCIDet,nNp1FCIDet),Coup_Create_alpha(2,nFCIDet,nNm1bFCIDet)
-        complex(dp), intent(in) :: StatickGF_Emb_Ket(nOcc-nImp+1:nOcc+nImp)
+        complex(dp), intent(in) :: StatickGF_Ann_Emb_Ket(nOcc-nImp+1:nOcc+nImp,nImp_GF)
+        complex(dp), intent(in) :: StatickGF_Cre_Emb_Ket(nOcc-nImp+1:nOcc+nImp,nImp_GF)
+        integer :: j,k
+        character(len=*), parameter :: t_r='ApplyMomPert_GS'
 
         if(.not.tLR_ReoptGS) then
             if(nSizeGS.ne.nFCIDet) call stop_all(t_r,'Error in GS size')
@@ -487,17 +509,17 @@ module MomSpectra
             do J = 1,nNm1bFCIDet
                 if(Coup_Create_alpha(1,K,J).ne.0) then
                     !Determinants are connected by a single SQ operator
-                    V0_Ann(J) = V0_Ann(J) + StatickGF_Emb_Ket(Coup_Create_alpha(1,K,J),1)*Psi_0(K)* &
+                    V0_Ann(J) = V0_Ann(J) + StatickGF_Ann_Emb_Ket(Coup_Create_alpha(1,K,J),1)*Psi_0(K)* &
                         Coup_Create_alpha(2,K,J)
                 endif
             enddo
         enddo
 
-        !Projection onto Block 2 of V0
+        !Projection onto Block 2 of V0_Ann
         do K = 1,nFCIDet
             V0_Ann(K+nNm1bFCIDet) = (StatCoup_Ann*Psi_0(K))/sqrt(CNorm)
         enddo
-        !Projection onto Block 3 of V0
+        !Projection onto Block 3 of V0_Ann
         do K = 1,nFCIDet
             V0_Ann(K+nNm1bFCIDet+nFCIDet) = sqrt(CStatNorm)*Psi_0(K)
         enddo
@@ -505,10 +527,19 @@ module MomSpectra
     end subroutine ApplyMomPert_GS
 
     !Construct the contraction coefficients for the action of the static perturbation 
-    subroutine FindStaticMomSchmidtPert(kPnt,StatickGF_Cre_Ket,StatickGF_Ann_Ket)
+    subroutine FindStaticMomSchmidtPert(kPnt,nImp_GF,StatickGF_Cre_Ket,StatickGF_Cre_Emb_Ket,   &
+        StatickGF_Ann_Ket,StatickGF_Ann_Emb_Ket,StatickGF_Cre_Bra,   &
+        StatickGF_Ann_Bra,StatickGF_Cre_Emb_Bra,StatickGF_Ann_Emb_Bra)
         implicit none
-        integer, intent(in) :: kPnt
-        complex(dp), intent(out) :: StatickGF_Cre_Ket(nOcc+nImp+1:nSites),StatickGF_Ann_Ket(1:nOcc-nImp)
+        integer, intent(in) :: kPnt,nImp_GF
+        complex(dp), intent(out) :: StatickGF_Cre_Ket(nOcc+nImp+1:nSites,nImp_GF)
+        complex(dp), intent(out) :: StatickGF_Ann_Ket(1:nOcc-nImp,nImp_GF)
+        complex(dp), intent(out) :: StatickGF_Cre_Bra(nOcc+nImp+1:nSites,nImp_GF)
+        complex(dp), intent(out) :: StatickGF_Ann_Bra(1:nOcc-nImp,nImp_GF)
+        complex(dp), intent(out) :: StatickGF_Cre_Emb_Ket(nOcc-nImp+1:nOcc+nImp,nImp_GF)
+        complex(dp), intent(out) :: StatickGF_Cre_Emb_Bra(nOcc-nImp+1:nOcc+nImp,nImp_GF)
+        complex(dp), intent(out) :: StatickGF_Ann_Emb_Ket(nOcc-nImp+1:nOcc+nImp,nImp_GF)
+        complex(dp), intent(out) :: StatickGF_Ann_Emb_Bra(nOcc-nImp+1:nOcc+nImp,nImp_GF)
         complex(dp), allocatable :: HFPertBasis_Ann(:),HFPertBasis_Cre(:)
         integer :: SS_Period,ind_1,ind_2,i,x,n
         
@@ -536,29 +567,44 @@ module MomSpectra
         enddo
 
         !Now rotate from the HF vectors, to the Schmidt basis
-        StatickGF_Ann_Ket(:) = zzero
+        StatickGF_Ann_Ket(:,:) = zzero
         do n = 1,nOcc-nImp  !Loop over schmidt basis of core orbitals
             do i = 1,SS_Period  !Contract over eigenvectors corresponding to this kpoint
-                StatickGF_Ann_Ket(n) = StatickGF_Ann_Ket(n) + k_HFtoSchmidtTransform(n,ind_1+i-1)*HFPertBasis_Ann(i)
+                StatickGF_Ann_Ket(n,1) = StatickGF_Ann_Ket(n,1) + k_HFtoSchmidtTransform(n,ind_1+i-1)*HFPertBasis_Ann(i)
             enddo
         enddo
-        StatickGF_Cre_Ket(:) = zzero
+        StatickGF_Cre_Ket(:,:) = zzero
         do n = nOcc+nImp+1,nSites
             do i = 1,SS_Period
-                StatickGF_Cre_Ket(n) = StatickGF_Cre_Ket(n) + k_HFtoSchmidtTransform(n,ind_1+i-1)*HFPertBasis_Cre(i)
+                StatickGF_Cre_Ket(n,1) = StatickGF_Cre_Ket(n,1) + k_HFtoSchmidtTransform(n,ind_1+i-1)*HFPertBasis_Cre(i)
             enddo
         enddo
+        StatickGF_Cre_Emb_Ket(:,:) = zzero
+        do n = nOcc-nImp+1,nOcc+nImp
+            do i = 1,SS_Period
+                StatickGF_Cre_Emb_Ket(n,1) = StatickGF_Cre_Emb_Ket(n,1) + k_HFtoSchmidtTransform(n,ind_1+i-1)*HFPertBasis_Cre(i)
+                StatickGF_Ann_Emb_Ket(n,1) = StatickGF_Ann_Emb_Ket(n,1) + k_HFtoSchmidtTransform(n,ind_1+i-1)*HFPertBasis_Ann(i)
+            enddo
+        enddo
+
+        StatickGF_Ann_Bra(:,1) = dconjg(StatickGF_Ann_Ket(:,1))
+        StatickGF_Cre_Bra(:,1) = dconjg(StatickGF_Cre_Ket(:,1))
+        StatickGF_Cre_Emb_Bra(:,1) = dconjg(StatickGF_Cre_Emb_Ket(:,1))
+        StatickGF_Ann_Emb_Bra(:,1) = dconjg(StatickGF_Ann_Emb_Ket(:,1))
 
         deallocate(HFPertBasis_Ann,HFPertBasis_Cre)
 
     end subroutine FindStaticMomSchmidtPert
 
-    subroutine FindMomGFSchmidtPert(Omega,ni_lr_cre,ni_lr_ann,kPnt,SchmidtkGF_Cre_Ket,SchmidtkGF_Ann_Ket)
+    subroutine FindMomGFSchmidtPert(Omega,ni_lr_cre,ni_lr_ann,kPnt,nImp_GF,SchmidtkGF_Cre_Ket,SchmidtkGF_Ann_Ket,   &
+        SchmidtkGF_Cre_Bra,SchmidtkGF_Ann_Bra)
         implicit none
         integer, intent(in) :: kPnt !This is the index of the kpoint perturbation
+        integer, intent(in) :: nImp_GF
         real(dp), intent(in) :: Omega
         complex(dp), intent(out) :: ni_lr_cre,ni_lr_ann
-        complex(dp), intent(out) :: SchmidtkGF_Cre_Ket(nOcc+nImp+1:nSites),SchmidtkGF_Ann_Ket(1:nOcc-nImp)
+        complex(dp), intent(out) :: SchmidtkGF_Cre_Ket(nOcc+nImp+1:nSites,nImp_GF),SchmidtkGF_Ann_Ket(1:nOcc-nImp,nImp_GF)
+        complex(dp), intent(out) :: SchmidtkGF_Cre_Bra(nOcc+nImp+1:nSites,nImp_GF),SchmidtkGF_Ann_Bra(1:nOcc-nImp,nImp_GF)
         integer :: ind_1,ind_2,SS_Period,i,x,n
         complex(dp), allocatable :: HFPertBasis_Ann(:),HFPertBasis_Cre(:)
 
@@ -595,18 +641,21 @@ module MomSpectra
         enddo
 
         !Now rotate from the HF vectors, to the Schmidt basis
-        SchmidtkGF_Ann_Ket(:) = zzero
+        SchmidtkGF_Ann_Ket(:,:) = zzero
         do n = 1,nOcc-nImp  !Loop over schmidt basis of core orbitals
             do i = 1,SS_Period  !Contract over eigenvectors corresponding to this kpoint
-                SchmidtkGF_Ann_Ket(n) = SchmidtkGF_Ann_Ket(n) + k_HFtoSchmidtTransform(n,ind_1+i-1)*HFPertBasis_Ann(i)
+                SchmidtkGF_Ann_Ket(n,1) = SchmidtkGF_Ann_Ket(n,1) + k_HFtoSchmidtTransform(n,ind_1+i-1)*HFPertBasis_Ann(i)
             enddo
         enddo
-        SchmidtkGF_Cre_Ket(:) = zzero
+        SchmidtkGF_Cre_Ket(:,:) = zzero
         do n = nOcc+nImp+1,nSites
             do i = 1,SS_Period
-                SchmidtkGF_Cre_Ket(n) = SchmidtkGF_Cre_Ket(n) + k_HFtoSchmidtTransform(n,ind_1+i-1)*HFPertBasis_Cre(i)
+                SchmidtkGF_Cre_Ket(n,1) = SchmidtkGF_Cre_Ket(n,1) + k_HFtoSchmidtTransform(n,ind_1+i-1)*HFPertBasis_Cre(i)
             enddo
         enddo
+
+        SchmidtkGF_Ann_Bra(:,:) = dconjg(SchmidtkGF_Ann_Ket(:,:))
+        SchmidtkGF_Cre_Bra(:,:) = dconjg(SchmidtkGF_Cre_Ket(:,:))
 
         deallocate(HFPertBasis_Ann,HFPertBasis_Cre)
         
