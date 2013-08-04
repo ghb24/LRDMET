@@ -139,7 +139,7 @@ module MomSpectra
         write(6,*) "Total size of linear sys: ",nLinearSystem
         
         iunit = get_free_unit()
-        call append_ext_real('EC-TDA_GFResponse',U,filename)
+        call append_ext_real('Mom_GF',U,filename)
         if(.not.tHalfFill) then
             !Also append occupation of lattice to the filename
             call append_ext(filename,nOcc,filename2)
@@ -147,7 +147,7 @@ module MomSpectra
             filename2 = filename
         endif
         open(unit=iunit,file=filename2,status='unknown')
-        write(iunit,"(A)") "# 1.Frequency     2.GF_LinearResponse(Re)    3.GF_LinearResponse(Im)    " &
+        write(iunit,"(A)") "# 1.Frequency     2.GF(Re)    3.GF(Im)    " &
             & //"4.ParticleGF(Re)   5.ParticleGF(Im)   6.HoleGF(Re)   7.HoleGF(Im)    8.Old_GS    9.New_GS   " &
             & //"10.Particle_Norm  11.Hole_Norm   12.NI_GF(Re)   13.NI_GF(Im)  14.NI_GF_Part(Re)   15.NI_GF_Part(Im)   " &
             & //"16.NI_GF_Hole(Re)   17.NI_GF_Hole(Im)  18.SpectralWeight  19.Iters_p   20.Iters_h    " 
@@ -181,9 +181,9 @@ module MomSpectra
         !Since this does not depend at all on the new basis, since the ground state has a completely
         !disjoint basis to |1>, the RHS of the equations can be precomputed
         allocate(Psi_0(nFCIDet))
+        GFChemPot = dcmplx(HL_Energy,zero)
         do i = 1,nFCIDet
             Psi_0(i) = dcmplx(HL_Vec(i),zero)
-            GFChemPot = HL_Energy
         enddo
         allocate(V0_Cre(nLinearSystem))
         allocate(V0_Ann(nLinearSystem))
@@ -317,11 +317,13 @@ module MomSpectra
 
         call halt_timer(LR_EC_GF_Precom)
 
+        kPnt = 0
         do while(.true.)
-            !call GetNextkVal(kPnt,tFinishedk)
+            call GetNextkVal(kPnt,tFinishedk)
             if(tFinishedk) exit
             write(6,*) "Calculating spectra with k = ",KPnts(:,KPnt),KPnt
-    
+            call WriteKVecHeader(iunit,KPnts(:,KPnt))
+
             call FindStaticMomSchmidtPert(kPnt,nImp_GF,StatickGF_Cre_Ket,StatickGF_Cre_Emb_Ket,StatickGF_Ann_Ket,   &
                 StatickGF_Ann_Emb_Ket,StatickGF_Cre_Bra,StatickGF_Ann_Bra,StatickGF_Cre_Emb_Bra,StatickGF_Ann_Emb_Bra)
 
@@ -497,16 +499,78 @@ module MomSpectra
                         endif
                     enddo
                     if(nSpan.eq.nLinearSystem) then
-                        write(6,"(A)")
+                        write(6,"(A)") "No linear dependencies in basis?!"
+                    else
+                        write(6,"(A,I7,A,I7,A)") "Linearly dependent vectors in space: ",nLinearSystem-nSpan, &
+                            " out of ",nFCIDet," possible."
+                    endif
+                    !I guess we could potentially rotate into this basis, but we don't really want to do that.
+                endif
 
+                !Construct final linear equations
+                do i = 1,nLinearSystem
+                    do j = 1,nLinearSystem
+                        LinearSystem_h(j,i) = LinearSystem_h(j,i) + Overlap_h(j,i)*(dcmplx(Omega+mu,dDelta) - GFChemPot)
+                    enddo
+                enddo
+
+                Psi1_h(:) = V0_Ann(:)
+                call SolveCompLinearSystem(LinearSystem_h,Psi1_h,nLinearSystem,info)
+                if(info.ne.0) then 
+                    write(6,*) "INFO: ",info
+                    call warning(t_r,'Solving linear system failed for hole hamiltonian - skipping this frequency')
+                    Omega = Omega + Omega_Step
+                    cycle
+                endif
+
+                !Now, calculate the spectrum
+                dNorm = zzero
+                !Apply S to |1>
+                allocate(tempc(nLinearSystem))
+                tempc(:) = zzero
+                call ZGEMV('N',nLinearSystem,nLinearSystem,zone,Overlap_h,nLinearSystem,Psi1_h,1,zzero,tempc,1)
+                !Norm is now dot product
+                do i = 1,nLinearSystem
+                    dNorm = dNorm + dconjg(Psi1_h(i))*tempc(i)
+                enddo
+                !Now calculate spectrum
+                Response_h = zzero
+                Response_p = zzero
+                ResponseFn = zzero
+                do i = 1, nLinearSystem
+                    Response_h = Response_h + dconjg(V0_Ann(i))*tempc(i)
+                enddo
+                ResponseFn = Response_h + Response_p
+                deallocate(tempc)
+
+                write(iunit,"(6G22.10)") Omega,real(ResponseFn),-aimag(ResponseFn),real(Response_p),-aimag(Response_p),real(Response_h),-aimag(Response_h),HL_Energy,HL_Energy,abs(dNorm_p),abs(dNorm_h),real(ni_lr),-aimag(ni_lr),real(ni_lr_p),-aimag(ni_lr_p),real(ni_lr_h),-aimag(ni_lr_h),SpectralWeight,1,1
+                call flush(iunit)
 
                 Omega = Omega + Omega_Step
             enddo
-
+            write(iunit,"(A)") ""
         enddo
 
+        deallocate(nLinearSystem_h,Overlap_h)
+        close(iunit)
 
     end subroutine MomGF_Ex
+
+    subroutine GetNextkVal(kPnt,tFinishedk)
+        implicit none
+        integer, intent(inout) :: kPnt
+        logical, intent(out) :: tFinishedk
+
+        tFinishedk = .false.
+        if(kPnt.eq.0) then
+            !First kpoint
+            kPnt = 1
+        else
+            !Initially, just do first kpoint
+            tFinishedk = .true.
+        endif
+
+    end subroutine GetNextkVal
 
     !Apply the schmidt decomposed momentum perturbation to the ground state wavefunction.
     !Since this perturbation is non-local, it will excite to all components of the linear
@@ -691,5 +755,20 @@ module MomSpectra
         deallocate(HFPertBasis_Ann,HFPertBasis_Cre)
         
     end subroutine FindMomGFSchmidtPert
+            
+    subroutine WriteKVecHeader(iunit,KVal)
+        implicit none
+        integer, intent(in) :: iunit
+        real(dp), intent(in) :: KVal(LatticeDim)
+        integer :: i
+
+        write(iunit,"(A,F8.4)",advance='no') '"k = ',KVal(1)
+        do i = 2,LatticeDim
+            write(iunit,"(A,F8.4)",advance='no') ', ',KVal(i)
+        enddo
+        write(iunit,"(A)") ' "'
+
+    end subroutine WriteKVecHeader
+
 
 end module MomSpectra
