@@ -469,6 +469,37 @@ module MomSpectra
                 call ApplyMomPert_GS(Psi_0,V0_Cre,V0_Ann,nImp_GF,nLinearSystem,nFCIDet,Coup_Ann_alpha,Coup_Create_alpha,    &
                     StatCoup_Ann,StatCoup_Cre,CNorm,CStatNorm,ANorm,AStatNorm,StatickGF_Cre_Emb_Ket,StatickGF_Ann_Emb_Ket) 
 
+                if(tCheck) then
+                    !Do a quick diagonalization of the overlap matrix, just to see
+                    !how linearly dependent the basis is...
+                    allocate(S_EigVec(nLinearSystem,nLinearSystem))
+                    allocate(S_EigVal(nLinearSystem))
+                    S_EigVec(:,:) = Overlap_h(:,:)
+                    allocate(Work(max(1,3*nLinearSystem-2)))
+                    allocate(temp_vecc(1))
+                    lWork = -1
+                    info = 0
+                    call zheev('V','U',nLinearSystem,S_EigVec,nLinearSystem,S_EigVal,temp_vecc,lWork,Work,info)
+                    if(info.ne.0) call stop_all(t_r,'Workspace query failed')
+                    lwork = int(temp_vecc(1))+1
+                    deallocate(temp_vecc)
+                    allocate(temp_vecc(lwork))
+                    call zheev('V','U',nLinearSystem,S_EigVec,nLinearSystem,S_EigVal,temp_vecc,lWork,Work,info)
+                    if(info.ne.0) call stop_all(t_r,'S diag failed')
+                    deallocate(work,temp_vecc)
+                    !Count linear dependencies
+                    nSpan = 0
+                    do i = 1,nLinearSystem
+                        if(S_EigVal(i).gt.MinS_Eigval) then
+                            nSpan = nSpan + 1
+                        elseif(S_EigVal(i).lt.(-1.0e-8_dp)) then
+                            call stop_all(t_r,'Overlap eigenvalues less than 0')
+                        endif
+                    enddo
+                    if(nSpan.eq.nLinearSystem) then
+                        write(6,"(A)")
+
+
                 Omega = Omega + Omega_Step
             enddo
 
