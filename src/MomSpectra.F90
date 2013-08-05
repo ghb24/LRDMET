@@ -19,7 +19,7 @@ module MomSpectra
         complex(dp), allocatable :: NFCIHam(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
         complex(dp), allocatable :: LinearSystem_p(:,:),LinearSystem_h(:,:),Psi1_p(:),Psi1_h(:)
         complex(dp), allocatable :: Overlap_p(:,:),Overlap_h(:,:)
-        complex(dp), allocatable :: Cre_0(:),Ann_0(:),FockSchmidt_SE(:,:),FockSchmidt_SE_VV(:,:)
+        complex(dp), allocatable :: FockSchmidt_SE(:,:),FockSchmidt_SE_VV(:,:)
         complex(dp), allocatable :: FockSchmidt_SE_CC(:,:),FockSchmidt_SE_VX(:,:),FockSchmidt_SE_XV(:,:)
         complex(dp), allocatable :: FockSchmidt_SE_CX(:,:),FockSchmidt_SE_XC(:,:)
         complex(dp), allocatable :: Gc_a_F_ax_Bra(:,:),Gc_a_F_ax_Ket(:,:),Gc_b_F_ab(:,:)
@@ -38,10 +38,10 @@ module MomSpectra
         integer, allocatable :: Coup_Create_alpha(:,:,:),Coup_Ann_alpha(:,:,:)
         integer :: nLinearSystem,nLinearSystem_h,CoreEnd,VirtStart,VirtEnd,ActiveStart,ActiveEnd,nCore,nVirt
         integer :: VIndex,iunit,i,j,k,DiffOrb,nOrbs,orbdum(1),gam,tempK,KPnt,ierr,nImp_GF,VStatIndex,info,lWork
-        integer :: nSpan
-        complex(dp) :: ni_lr_h,ni_lr_p,ni_lr,CNorm,CStatNorm,ANorm,AStatNorm,GFChemPot,StatCoup_Ann,StatCoup_Cre
+        integer :: nSpan,a
+        complex(dp) :: ni_lr_h,ni_lr_p,ni_lr,CNorm,CStatNorm,VNorm,VstatNorm,StatCoup_Ann,StatCoup_Cre
         complex(dp) :: tempel,tempel2,tempel4,dNorm_p,dNorm_h,Response_h,Response_p,ResponseFn
-        real(dp) :: SpectralWeight,Prev_Spec,mu,Omega
+        real(dp) :: SpectralWeight,Prev_Spec,mu,Omega,GFChemPot
         logical :: tFirst,tParity,tFinishedK
         character(64) :: filename,filename2
         character(len=*), parameter :: t_r='MomGF_Ex'
@@ -184,7 +184,7 @@ module MomSpectra
         !Since this does not depend at all on the new basis, since the ground state has a completely
         !disjoint basis to |1>, the RHS of the equations can be precomputed
         allocate(Psi_0(nFCIDet))
-        GFChemPot = dcmplx(HL_Energy,zero)
+        GFChemPot = HL_Energy
         do i = 1,nFCIDet
             Psi_0(i) = dcmplx(HL_Vec(i),zero)
         enddo
@@ -377,19 +377,24 @@ module MomSpectra
                 call ZGEMM('T','N',nCore,nImp_GF,nCore,zone,FockSchmidt_SE_CC(:,:),nCore,SchmidtkGF_Ann_Ket(:,:),nCore,zzero, &
                     Ga_i_F_ij,nCore)
                 StatCoup_Ann = zzero
+                StatCoup_Cre = zzero
                 do i = 1,CoreEnd
                     !sum_i X*_i G_i
                     StatCoup_Ann = StatCoup_Ann + StatickGF_Ann_Bra(i,1)*SchmidtkGF_Ann_Ket(i,1)
                 enddo
-
+                do a = VirtStart,VirtEnd
+                    StatCoup_Cre = StatCoup_Cre + StatickGF_Cre_Bra(a,1)*SchmidtkGF_Cre_Ket(a,1)
+                enddo
 
                 !Now, construct the hessians
                 LinearSystem_h = zzero
                 LinearSystem_p = zzero
                 !Overlap matrix
                 Overlap_h(:,:) = zzero
+                Overlap_p(:,:) = zzero
                 do i = 1,nLinearSystem
                     Overlap_h(i,i) = zone
+                    Overlap_p(i,i) = zone
                 enddo
 
                 !Block 1
@@ -398,12 +403,15 @@ module MomSpectra
                 !Block 1 for hole hamiltonian
                 LinearSystem_h(1:nNm1bFCIDet,1:nNm1bFCIDet) = Nm1FCIHam_beta(:,:)
 
-                !Block 2 for the hole hamiltonian
+                !Block 2
                 !Copy the N electron FCI hamiltonian to this diagonal blockk
                 LinearSystem_h(VIndex:VStatIndex-1,VIndex:VStatIndex-1) = nFCIHam(:,:)
+                LinearSystem_p(VIndex:VStatIndex-1,VIndex:VStatIndex-1) = nFCIHam(:,:)
 
                 CNorm = zzero
+                VNorm = zzero
                 tempel = zzero 
+                tempel2 = zzero
                 do i = 1,CoreEnd
                     !Calc normalization
                     CNorm = CNorm + SchmidtkGF_Ann_Bra(i,1)*SchmidtkGF_Ann_Ket(i,1)
@@ -411,16 +419,28 @@ module MomSpectra
                     tempel = tempel + SchmidtkGF_Ann_Bra(i,1)*Ga_i_F_ij(i,1)
                 enddo
                 tempel = -tempel / CNorm
+                do a = VirtStart,VirtEnd
+                    !Calc particle norm
+                    VNorm = VNorm + SchmidtkGF_Cre_Bra(a,1)*SchmidtkGF_Cre_Ket(a,1)
+                    !Diag particle correction
+                    tempel2 = tempel2 + SchmidtkGF_Cre_Bra(a,1)*Gc_b_F_ab(a,1)
+                enddo
+                tempel2 = tempel2 / VNorm
                 !Add diagonal correction
                 do i = VIndex,VStatIndex-1
                     LinearSystem_h(i,i) = LinearSystem_h(i,i) + tempel
+                    LinearSystem_p(i,i) = LinearSystem_p(i,i) + tempel2
                 enddo
 
-                !This is essentially the same for block 4, but now for the static bath
+                !Block 4
+                !This is essentially the same, but now for the static bath
                 LinearSystem_h(VStatIndex:nLinearSystem,VStatIndex:nLinearSystem) = nFCIHam(:,:)
+                LinearSystem_p(VStatIndex:nLinearSystem,VStatIndex:nLinearSystem) = nFCIHam(:,:)
 
                 CStatNorm = zzero
+                VstatNorm = zzero
                 tempel = zzero 
+                tempel2 = zzero
                 do i = 1,CoreEnd
                     !Calc normalization
                     CStatNorm = CStatNorm + StatickGF_Ann_Bra(i,1)*StatickGF_Ann_Ket(i,1)
@@ -428,12 +448,20 @@ module MomSpectra
                     tempel = tempel + StatickGF_Ann_Bra(i,1)*Xa_i_F_ij(i,1)
                 enddo
                 tempel = -tempel / CStatNorm
+                do a = VirtStart,VirtEnd
+                    !Calc particle static normalization
+                    VstatNorm = VstatNorm + StatickGF_Cre_Bra(a,1)*StatickGF_Cre_Ket(a,1)
+                    !Diag particle correction
+                    tempel2 = tempel2 + StatickGF_Cre_Bra(a,1)*Xc_b_F_ab(a,1)
+                enddo
+                tempel2 = tempel2 / VstatNorm
                 !Add diagonal correction
                 do i = VStatIndex,nLinearSystem
                     LinearSystem_h(i,i) = LinearSystem_h(i,i) + tempel
+                    LinearSystem_p(i,i) = LinearSystem_p(i,i) + tempel2
                 enddo
 
-                !Block 3 for hole hamiltonian
+                !Block 3
                 do J = 1,nNm1bFCIDet
                     do K = 1,nFCIDet
                         if(Coup_Create_alpha(1,K,J).ne.0) then
@@ -451,6 +479,26 @@ module MomSpectra
                     enddo
                 enddo
 
+                !Block 3 - particle
+                do J = 1,nNp1FCIDet
+                    do K = 1,nFCIDet
+                        if(Coup_Ann_alpha(1,K,J).ne.0) then
+                            !Determinants are connected via a single SQ operator
+                            !First index is the spatial index, second is parity
+                            LinearSystem_p(K+VIndex-1,J) = Gc_a_F_ax_Bra(Coup_Ann_alpha(1,K,J),1)    &
+                                *Coup_Ann_alpha(2,K,J)/sqrt(VNorm)
+                            !LinearSystem_p(J,K+VIndex-1) = conjg(LinearSystem_p(K+VIndex-1,J))
+                            LinearSystem_p(J,K+VIndex-1) = Gc_a_F_ax_Ket(Coup_Ann_alpha(1,K,J),1)    &
+                                *Coup_Ann_alpha(2,K,J)/sqrt(VNorm)
+                            !Block 6 essentially the same
+                            LinearSystem_p(K+VStatIndex-1,J) = Xc_a_F_ax_Bra(Coup_Ann_alpha(1,K,J),1)    &
+                                *Coup_Ann_alpha(2,K,J)/sqrt(VstatNorm)
+                            LinearSystem_p(J,K+VStatIndex-1) = Xc_a_F_ax_Ket(Coup_Ann_alpha(1,K,J),1)    &
+                                *Coup_Ann_alpha(2,K,J)/sqrt(VstatNorm)
+                        endif
+                    enddo
+                enddo
+
                 !Now, for block 5
                 LinearSystem_h(VIndex:VStatIndex-1,VStatIndex:nLinearSystem) = nFCIHam(:,:)
                 LinearSystem_h(VStatIndex:nLinearSystem,VIndex:VStatIndex-1) = nFCIHam(:,:)
@@ -460,19 +508,26 @@ module MomSpectra
                 do i = 1,CoreEnd
                     !Calc diagonal correction
                     tempel = tempel + StatickGF_Ann_Bra(i,1)*Ga_i_F_ij(i,1)
-                    tempel2 = tempel2 + FockSchmidt_SE(i,i)
                 enddo
-                tempel4 = ((tempel2*StatCoup_Ann)-tempel)/sqrt(CStatNorm*CNorm)
+                tempel4 = -tempel/sqrt(CStatNorm*CNorm)
+                do a = VirtStart,VirtEnd
+                    tempel2 = tempel2 + StatickGF_Cre_Bra(a,1)*Gc_b_F_ab(a,1)
+                enddo
+                tempel2 = tempel2/sqrt(VstatNorm*VNorm)
                 !Add diagonal correction
                 do i = VIndex,VStatIndex-1
                     LinearSystem_h(i+nFCIDet,i) = LinearSystem_h(i+nFCIDet,i) + tempel4
                     LinearSystem_h(i,i+nFCIDet) = LinearSystem_h(i,i+nFCIDet) + dconjg(tempel4)
+                    LinearSystem_p(i+nFCIDet,i) = LinearSystem_p(i+nFCIDet,i) + tempel2
+                    LinearSystem_p(i,i+nFCIDet) = LinearSystem_p(i,i+nFCIDet) + dconjg(tempel2)
                     Overlap_h(i+nFCIDet,i) = StatCoup_Ann/sqrt(CStatNorm*CNorm)
                     Overlap_h(i,i+nFCIDet) = dconjg(StatCoup_Ann/sqrt(CStatNorm*CNorm))
+                    Overlap_p(i+nFCIDet,i) = StatCoup_Cre/sqrt(VstatNorm*VNorm)
+                    Overlap_p(i,i+nFCIDet) = dconjg(StatCoup_Cre/sqrt(VstatNorm*VNorm))
                 enddo
 
                 call ApplyMomPert_GS(Psi_0,V0_Cre,V0_Ann,nImp_GF,nLinearSystem,nFCIDet,Coup_Ann_alpha,Coup_Create_alpha,    &
-                    StatCoup_Ann,StatCoup_Cre,CNorm,CStatNorm,ANorm,AStatNorm,StatickGF_Cre_Emb_Ket,StatickGF_Ann_Emb_Ket) 
+                    StatCoup_Ann,StatCoup_Cre,CNorm,CStatNorm,VNorm,VstatNorm,StatickGF_Cre_Emb_Ket,StatickGF_Ann_Emb_Ket) 
 
                 if(tCheck) then
                     !Do a quick diagonalization of the overlap matrix, just to see
@@ -514,7 +569,12 @@ module MomSpectra
                 !Construct final linear equations
                 do i = 1,nLinearSystem
                     do j = 1,nLinearSystem
-                        LinearSystem_h(j,i) = LinearSystem_h(j,i) + Overlap_h(j,i)*(dcmplx(Omega+mu,dDelta) - GFChemPot)
+                        LinearSystem_h(j,i) = LinearSystem_h(j,i) + Overlap_h(j,i)*dcmplx(Omega+mu-GFChemPot,dDelta)
+                    enddo
+                enddo
+                do i = 1,nLinearSystem
+                    do j = 1,nLinearSystem
+                        LinearSystem_p(j,i) = Overlap_p(j,i)*dcmplx(Omega+mu+GFChemPot,dDelta) - LinearSystem_p(j,i)
                     enddo
                 enddo
 
@@ -527,22 +587,40 @@ module MomSpectra
                     cycle
                 endif
 
-                !Now, calculate the spectrum
-                dNorm_h = zzero
+                Psi1_p(:) = V0_Cre(:)
+                call SolveCompLinearSystem(LinearSystem_p,Psi1_p,nLinearSystem,info)
+                if(info.ne.0) then 
+                    write(6,*) "INFO: ",info
+                    call warning(t_r,'Solving linear system failed for particle hamiltonian - skipping this frequency')
+                    Omega = Omega + Omega_Step
+                    cycle
+                endif
+
                 !Apply S to |1>
                 allocate(tempc(nLinearSystem))
-                tempc(:) = zzero
                 call ZGEMV('N',nLinearSystem,nLinearSystem,zone,Overlap_h,nLinearSystem,Psi1_h,1,zzero,tempc,1)
                 !Norm is now dot product
+                dNorm_h = zzero
                 do i = 1,nLinearSystem
                     dNorm_h = dNorm_h + dconjg(Psi1_h(i))*tempc(i)
                 enddo
                 !Now calculate spectrum
                 Response_h = zzero
-                Response_p = zzero
-                ResponseFn = zzero
                 do i = 1, nLinearSystem
                     Response_h = Response_h + dconjg(V0_Ann(i))*tempc(i)
+                enddo
+
+                !Now for particle
+                call ZGEMV('N',nLinearSystem,nLinearSystem,zone,Overlap_p,nLinearSystem,Psi1_p,1,zzero,tempc,1)
+                !Norm is now dot product
+                dNorm_p = zzero
+                do i = 1,nLinearSystem
+                    dNorm_p = dNorm_p + dconjg(Psi1_p(i))*tempc(i)
+                enddo
+                !Now calculate spectrum
+                Response_p = zzero
+                do i = 1, nLinearSystem
+                    Response_p = Response_p + dconjg(V0_Cre(i))*tempc(i)
                 enddo
                 ResponseFn = Response_h + Response_p
                 ni_lr = ni_lr_p + ni_lr_h
@@ -559,7 +637,7 @@ module MomSpectra
             write(iunit,"(A)") ""
         enddo
 
-        deallocate(LinearSystem_h,Overlap_h)
+        deallocate(LinearSystem_h,Overlap_h,Overlap_p,LinearSystem_p)
         close(iunit)
 
     end subroutine MomGF_Ex
@@ -585,12 +663,12 @@ module MomSpectra
     !response basis
     !If tLR_ReoptGS=F then Psi_0 will be of size nFCIDet, otherwise it must be larger.
     subroutine ApplyMomPert_GS(Psi_0,V0_Cre,V0_Ann,nImp_GF,nSizeLR,nSizeGS,Coup_Ann_alpha,Coup_Create_alpha,    &
-        StatCoup_Ann,StatCoup_Cre,CNorm,CStatNorm,ANorm,AStatNorm,StatickGF_Cre_Emb_Ket,StatickGF_Ann_Emb_Ket)
+        StatCoup_Ann,StatCoup_Cre,CNorm,CStatNorm,VNorm,VstatNorm,StatickGF_Cre_Emb_Ket,StatickGF_Ann_Emb_Ket)
         use DetToolsData
         implicit none
         integer, intent(in) :: nSizeLR,nSizeGS,nImp_GF
         complex(dp), intent(in) :: Psi_0(nSizeGS)
-        complex(dp), intent(in) :: StatCoup_Ann,StatCoup_Cre,CNorm,CStatNorm,ANorm,AStatNorm
+        complex(dp), intent(in) :: StatCoup_Ann,StatCoup_Cre,CNorm,CStatNorm,VNorm,VstatNorm
         complex(dp), intent(out) :: V0_Cre(nSizeLR),V0_Ann(nSizeLR)
         integer, intent(in) :: Coup_Ann_alpha(2,nFCIDet,nNp1FCIDet),Coup_Create_alpha(2,nFCIDet,nNm1bFCIDet)
         complex(dp), intent(in) :: StatickGF_Ann_Emb_Ket(nOcc-nImp+1:nOcc+nImp,nImp_GF)
@@ -620,11 +698,30 @@ module MomSpectra
 
         !Projection onto Block 2 of V0_Ann
         do K = 1,nFCIDet
-            V0_Ann(K+nNm1bFCIDet) = (StatCoup_Ann*Psi_0(K))/sqrt(CNorm)
+            V0_Ann(K+nNm1bFCIDet) = (dconjg(StatCoup_Ann)*Psi_0(K))/sqrt(CNorm)
         enddo
         !Projection onto Block 3 of V0_Ann
         do K = 1,nFCIDet
             V0_Ann(K+nNm1bFCIDet+nFCIDet) = sqrt(CStatNorm)*Psi_0(K)
+        enddo
+
+        !Creation operator
+        do K = 1,nFCIDet
+            do J = 1,nNp1FCIDet
+                if(Coup_Ann_alpha(1,K,J).ne.0) then
+                    !Connected
+                    V0_Cre(J) = V0_Cre(J) + StatickGF_Cre_Emb_Ket(Coup_Ann_alpha(1,K,J),1)*Psi_0(K)* &
+                        Coup_Ann_alpha(2,K,J)
+                endif
+            enddo
+        enddo
+        !Block 2
+        do K = 1,nFCIDet
+            V0_Cre(K+nNp1FCIDet) = (dconjg(StatCoup_Cre)*Psi_0(K))/sqrt(VNorm)
+        enddo
+        !Block 3
+        do K = 1,nFCIDet
+            V0_Cre(K+nNp1FCIDet+nFCIDet) = sqrt(VstatNorm)*Psi_0(K)
         enddo
 
     end subroutine ApplyMomPert_GS
