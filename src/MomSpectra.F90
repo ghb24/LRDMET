@@ -4,6 +4,7 @@ module MomSpectra
     use globals
     use errors, only: stop_all,warning
     use mat_tools, only: WriteVector,WriteMatrix,WriteVectorInt,WriteMatrixComp,WriteVectorComp,znrm2
+    use LRSolvers
     implicit none
 
     contains

@@ -3,8 +3,8 @@ Program RealHub
     use timing
     use errors, only: stop_all
     use globals
-    use LinearResponse
     use Solvers
+    use LRDriver 
     use fitting
     use mat_tools
     use input
