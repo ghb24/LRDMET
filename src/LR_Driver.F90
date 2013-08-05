@@ -65,6 +65,9 @@ module LRDriver
                     call NonIntExCont_TDA_MCLR_Charged()
                 endif
             endif
+            if(tCharged_MomResponse) then
+                call MomGF_Ex()
+            endif
         endif
 
         !Create contracted single excitation space using the non-interacting reference for the contractions

@@ -91,6 +91,7 @@ Program RealHub
         tEC_TDA_Response = .false.
         tIC_TDA_Response = .false.
         tLR_DMET = .false. 
+        tCharged_MomResponse = .false.
         tConstructFullSchmidtBasis = .true. 
         tProjectOutNull = .false.
         tLR_ReoptGS = .false. 
@@ -272,6 +273,10 @@ Program RealHub
             if(tChargedResponse) then
                 write(6,"(A)") "                o Local Greens function calculated" 
             endif
+            if(tCharged_MomResponse) then
+                write(6,"(A)") "                o Momentum-resolved Greens functions calculated" 
+            endif
+
         endif
         if(tIC_TDA_Response) then
             write(6,"(A)") "            o Calculating internally-contracted MC-TDA DMET linear response function" 
@@ -564,6 +569,8 @@ Program RealHub
                 tDDResponse = .true.
             case("GF_RESPONSE")
                 tChargedResponse = .true.
+            case("MOM_GF_RESPONSE")
+                tCharged_MomResponse = .true.
             case("NONINT")
                 tNIResponse = .true.
             case("TDA")
@@ -655,6 +662,7 @@ Program RealHub
                 write(6,"(A)") "ALLOWED KEYWORDS IN LINEAR_RESPONSE BLOCK: "
                 write(6,"(A)") "DD_RESPONSE"
                 write(6,"(A)") "GF_RESPONSE"
+                write(6,"(A)") "MOM_GF_RESPONSE"
                 write(6,"(A)") "BETA_GF"
                 write(6,"(A)") "NONDIR_MINRES"
                 write(6,"(A)") "NONDIR_GMRES"
@@ -713,7 +721,7 @@ Program RealHub
         else
             tMFResponse = .false.
         endif
-        if(tCorrNI_MomGF) then
+        if(tCorrNI_MomGF.or.tCharged_MomResponse) then
             !Project the final orbitals onto the original k-space
             !tProjectHFKPnts = .true.
             tKSpaceOrbs = .true.
@@ -736,7 +744,7 @@ Program RealHub
         if(tChemPot.and.(.not.tAnderson)) then
             call stop_all(t_r,'A chemical potential can only be applied to the 1-site Anderson model')
         endif
-        if(tLR_DMET.and.(.not.(tDDResponse.or.tChargedResponse))) then
+        if(tLR_DMET.and.(.not.(tDDResponse.or.tChargedResponse.or.tCharged_MomResponse))) then
             call stop_all(t_r,'DMET linear response specified, but type of perturbation not')
         endif
         if(tMFResponse.and.(.not.(tDDResponse.or.tChargedResponse))) then
@@ -1250,7 +1258,6 @@ Program RealHub
                 if(tUHF) deallocate(MeanFieldDM_b)
 
                 if(tProjectHFKPnts) then
-
                     call ProjectHFontoK()
                 endif
 

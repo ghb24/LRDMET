@@ -66,6 +66,7 @@ module Globals
     logical :: tCorrNI_MomGF    !Calculate the k-dependent GF based on correlated 1e hamiltonian
     logical :: tEC_TDA_Response !Externally contracted response of DMET
     logical :: tIC_TDA_Response !Internall contracted response of DMET
+    logical :: tCharged_MomResponse !Momentum resolved GFs
     logical :: tCompleteDiag    !Complete rather than iterative diagonalization of the embedded system
     logical :: tNonDirDavidson  !Compute GS with a non-direct davidson algorithm
     logical :: tMinRes_NonDir   !Solve any systems of linear equations with a non-direct linear solver
