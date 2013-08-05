@@ -33,11 +33,14 @@ module MomSpectra
         complex(dp), allocatable :: StatickGF_Ann_Emb_Ket(:,:),StatickGF_Ann_Emb_Bra(:,:)
         complex(dp), allocatable :: StatickGF_Cre_Emb_Ket(:,:),StatickGF_Cre_Emb_Bra(:,:)
         complex(dp), allocatable :: Psi_0(:),V0_Ann(:),V0_Cre(:)
+        complex(dp), allocatable :: S_EigVec(:,:),tempc(:)
+        real(dp), allocatable :: S_EigVal(:),Work(:)
         integer, allocatable :: Coup_Create_alpha(:,:,:),Coup_Ann_alpha(:,:,:)
         integer :: nLinearSystem,nLinearSystem_h,CoreEnd,VirtStart,VirtEnd,ActiveStart,ActiveEnd,nCore,nVirt
-        integer :: VIndex,iunit,i,j,k,DiffOrb,nOrbs,orbdum(1),gam,tempK,KPnt,ierr,nImp_GF,VStatIndex
-        complex(dp) :: ni_lr_ann,ni_lr_cre,CNorm,CStatNorm,ANorm,AStatNorm,GFChemPot,StatCoup_Ann,StatCoup_Cre
-        complex(dp) :: tempel,tempel2,tempel3,tempel4
+        integer :: VIndex,iunit,i,j,k,DiffOrb,nOrbs,orbdum(1),gam,tempK,KPnt,ierr,nImp_GF,VStatIndex,info,lWork
+        integer :: nSpan
+        complex(dp) :: ni_lr_h,ni_lr_p,ni_lr,CNorm,CStatNorm,ANorm,AStatNorm,GFChemPot,StatCoup_Ann,StatCoup_Cre
+        complex(dp) :: tempel,tempel2,tempel4,dNorm_p,dNorm_h,Response_h,Response_p,ResponseFn
         real(dp) :: SpectralWeight,Prev_Spec,mu,Omega
         logical :: tFirst,tParity,tFinishedK
         character(64) :: filename,filename2
@@ -351,7 +354,7 @@ module MomSpectra
                 write(6,"(A,F12.5,I6)") "Calculating linear response for frequency: ",Omega,KPnt
                 call flush(6)
 
-                call FindMomGFSchmidtPert(Omega,ni_lr_cre,ni_lr_ann,kPnt,nImp_GF,SchmidtkGF_Cre_Ket,SchmidtkGF_Ann_Ket, &
+                call FindMomGFSchmidtPert(Omega,ni_lr_p,ni_lr_h,kPnt,nImp_GF,SchmidtkGF_Cre_Ket,SchmidtkGF_Ann_Ket, &
                     SchmidtkGF_Cre_Bra,SchmidtkGF_Ann_Bra)
                 
                     
@@ -464,8 +467,8 @@ module MomSpectra
                 do i = VIndex,VStatIndex-1
                     LinearSystem_h(i+nFCIDet,i) = LinearSystem_h(i+nFCIDet,i) + tempel4
                     LinearSystem_h(i,i+nFCIDet) = LinearSystem_h(i,i+nFCIDet) + dconjg(tempel4)
-                    Overlap_h(i+nFCIDet,i) = tempel3/sqrt(CStatNorm*CNorm)
-                    Overlap_h(i,i+nFCIDet) = dconjg(tempel3/sqrt(CStatNorm*CNorm))
+                    Overlap_h(i+nFCIDet,i) = StatCoup_Ann/sqrt(CStatNorm*CNorm)
+                    Overlap_h(i,i+nFCIDet) = dconjg(StatCoup_Ann/sqrt(CStatNorm*CNorm))
                 enddo
 
                 call ApplyMomPert_GS(Psi_0,V0_Cre,V0_Ann,nImp_GF,nLinearSystem,nFCIDet,Coup_Ann_alpha,Coup_Create_alpha,    &
@@ -478,17 +481,17 @@ module MomSpectra
                     allocate(S_EigVal(nLinearSystem))
                     S_EigVec(:,:) = Overlap_h(:,:)
                     allocate(Work(max(1,3*nLinearSystem-2)))
-                    allocate(temp_vecc(1))
+                    allocate(tempc(1))
                     lWork = -1
                     info = 0
-                    call zheev('V','U',nLinearSystem,S_EigVec,nLinearSystem,S_EigVal,temp_vecc,lWork,Work,info)
+                    call zheev('V','U',nLinearSystem,S_EigVec,nLinearSystem,S_EigVal,tempc,lWork,Work,info)
                     if(info.ne.0) call stop_all(t_r,'Workspace query failed')
-                    lwork = int(temp_vecc(1))+1
-                    deallocate(temp_vecc)
-                    allocate(temp_vecc(lwork))
-                    call zheev('V','U',nLinearSystem,S_EigVec,nLinearSystem,S_EigVal,temp_vecc,lWork,Work,info)
+                    lwork = int(tempc(1))+1
+                    deallocate(tempc)
+                    allocate(tempc(lwork))
+                    call zheev('V','U',nLinearSystem,S_EigVec,nLinearSystem,S_EigVal,tempc,lWork,Work,info)
                     if(info.ne.0) call stop_all(t_r,'S diag failed')
-                    deallocate(work,temp_vecc)
+                    deallocate(work,tempc)
                     !Count linear dependencies
                     nSpan = 0
                     do i = 1,nLinearSystem
@@ -505,6 +508,7 @@ module MomSpectra
                             " out of ",nFCIDet," possible."
                     endif
                     !I guess we could potentially rotate into this basis, but we don't really want to do that.
+                    deallocate(S_EigVec,S_EigVal)
                 endif
 
                 !Construct final linear equations
@@ -524,14 +528,14 @@ module MomSpectra
                 endif
 
                 !Now, calculate the spectrum
-                dNorm = zzero
+                dNorm_h = zzero
                 !Apply S to |1>
                 allocate(tempc(nLinearSystem))
                 tempc(:) = zzero
                 call ZGEMV('N',nLinearSystem,nLinearSystem,zone,Overlap_h,nLinearSystem,Psi1_h,1,zzero,tempc,1)
                 !Norm is now dot product
                 do i = 1,nLinearSystem
-                    dNorm = dNorm + dconjg(Psi1_h(i))*tempc(i)
+                    dNorm_h = dNorm_h + dconjg(Psi1_h(i))*tempc(i)
                 enddo
                 !Now calculate spectrum
                 Response_h = zzero
@@ -541,9 +545,13 @@ module MomSpectra
                     Response_h = Response_h + dconjg(V0_Ann(i))*tempc(i)
                 enddo
                 ResponseFn = Response_h + Response_p
+                ni_lr = ni_lr_p + ni_lr_h
                 deallocate(tempc)
 
-                write(iunit,"(6G22.10)") Omega,real(ResponseFn),-aimag(ResponseFn),real(Response_p),-aimag(Response_p),real(Response_h),-aimag(Response_h),HL_Energy,HL_Energy,abs(dNorm_p),abs(dNorm_h),real(ni_lr),-aimag(ni_lr),real(ni_lr_p),-aimag(ni_lr_p),real(ni_lr_h),-aimag(ni_lr_h),SpectralWeight,1,1
+                write(iunit,"(18G22.10,2I6)") Omega,real(ResponseFn),-aimag(ResponseFn),real(Response_p),   &
+                    -aimag(Response_p),real(Response_h),-aimag(Response_h),HL_Energy,HL_Energy,abs(dNorm_p),    &
+                    abs(dNorm_h),real(ni_lr),-aimag(ni_lr),real(ni_lr_p),   &
+                    -aimag(ni_lr_p),real(ni_lr_h),-aimag(ni_lr_h),SpectralWeight,1,1
                 call flush(iunit)
 
                 Omega = Omega + Omega_Step
@@ -551,7 +559,7 @@ module MomSpectra
             write(iunit,"(A)") ""
         enddo
 
-        deallocate(nLinearSystem_h,Overlap_h)
+        deallocate(LinearSystem_h,Overlap_h)
         close(iunit)
 
     end subroutine MomGF_Ex
