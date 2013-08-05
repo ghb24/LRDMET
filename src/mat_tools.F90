@@ -1617,11 +1617,12 @@ module mat_tools
                 call stop_all(t_r,'k-space HF energies do not match up with real space ones')
             endif
         enddo
-
+        
         if(allocated(k_HFtoSchmidtTransform)) deallocate(k_HFtoSchmidtTransform)
         allocate(k_HFtoSchmidtTransform(nSites,nSites))
 
         allocate(ztemp(nSites,nSites))
+        allocate(ztemp2(nSites,nSites))
         ztemp(:,:) = zzero
         !Construct full block diagonal representation of k-basis MOs
         do k = 1,nKPnts

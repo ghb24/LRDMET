@@ -43,7 +43,7 @@ module MomSpectra
         complex(dp) :: ni_lr_h,ni_lr_p,ni_lr,CNorm,CStatNorm,VNorm,VstatNorm,StatCoup_Ann,StatCoup_Cre
         complex(dp) :: tempel,tempel2,tempel4,dNorm_p,dNorm_h,Response_h,Response_p,ResponseFn
         real(dp) :: SpectralWeight,Prev_Spec,mu,Omega,GFChemPot
-        logical :: tFirst,tParity,tFinishedK
+        logical :: tFirst,tParity,tFinishedK,tNoCre,tNoAnn
         character(64) :: filename,filename2
         character(len=*), parameter :: t_r='MomGF_Ex'
         
@@ -329,7 +329,7 @@ module MomSpectra
             call WriteKVecHeader(iunit,KPnts(:,KPnt))
 
             call FindStaticMomSchmidtPert(kPnt,nImp_GF,StatickGF_Cre_Ket,StatickGF_Cre_Emb_Ket,StatickGF_Ann_Ket,   &
-                StatickGF_Ann_Emb_Ket,StatickGF_Cre_Bra,StatickGF_Ann_Bra,StatickGF_Cre_Emb_Bra,StatickGF_Ann_Emb_Bra)
+                StatickGF_Ann_Emb_Ket,StatickGF_Cre_Bra,StatickGF_Ann_Bra,StatickGF_Cre_Emb_Bra,StatickGF_Ann_Emb_Bra,tNoCre,tNoAnn)
 
             !Construct useful intermediates, concerning the *Static* bath orbitals
             !sum_a Xc_a^* F_ax (Creation)
@@ -530,12 +530,25 @@ module MomSpectra
                 call ApplyMomPert_GS(Psi_0,V0_Cre,V0_Ann,nImp_GF,nLinearSystem,nFCIDet,Coup_Ann_alpha,Coup_Create_alpha,    &
                     StatCoup_Ann,StatCoup_Cre,CNorm,CStatNorm,VNorm,VstatNorm,StatickGF_Cre_Emb_Ket,StatickGF_Ann_Emb_Ket) 
 
+                if(tWriteOut) then
+                    if(tNoCre) then
+                        write(6,"(A)") "No virtual orbitals found at this kpoint"
+                    elseif(tNoAnn) then
+                        write(6,"(A)") "No occupied orbitals found at this kpoint"
+                    endif
+                endif
+
                 if(tCheck) then
                     !Do a quick diagonalization of the overlap matrix, just to see
                     !how linearly dependent the basis is...
                     allocate(S_EigVec(nLinearSystem,nLinearSystem))
                     allocate(S_EigVal(nLinearSystem))
-                    S_EigVec(:,:) = Overlap_h(:,:)
+                    if(tNoCre) then
+                        S_EigVec(:,:) = Overlap_h(:,:)
+                    elseif(tNoAnn) then
+                        S_EigVec(:,:) = Overlap_p(:,:)
+                    endif
+                    !call writematrixcomp(S_EigVec,'S_EigVec',.true.)
                     allocate(Work(max(1,3*nLinearSystem-2)))
                     allocate(tempc(1))
                     lWork = -1
@@ -579,50 +592,61 @@ module MomSpectra
                     enddo
                 enddo
 
-                Psi1_h(:) = V0_Ann(:)
-                call SolveCompLinearSystem(LinearSystem_h,Psi1_h,nLinearSystem,info)
-                if(info.ne.0) then 
-                    write(6,*) "INFO: ",info
-                    call warning(t_r,'Solving linear system failed for hole hamiltonian - skipping this frequency')
-                    Omega = Omega + Omega_Step
-                    cycle
-                endif
-
-                Psi1_p(:) = V0_Cre(:)
-                call SolveCompLinearSystem(LinearSystem_p,Psi1_p,nLinearSystem,info)
-                if(info.ne.0) then 
-                    write(6,*) "INFO: ",info
-                    call warning(t_r,'Solving linear system failed for particle hamiltonian - skipping this frequency')
-                    Omega = Omega + Omega_Step
-                    cycle
-                endif
-
-                !Apply S to |1>
                 allocate(tempc(nLinearSystem))
-                call ZGEMV('N',nLinearSystem,nLinearSystem,zone,Overlap_h,nLinearSystem,Psi1_h,1,zzero,tempc,1)
-                !Norm is now dot product
-                dNorm_h = zzero
-                do i = 1,nLinearSystem
-                    dNorm_h = dNorm_h + dconjg(Psi1_h(i))*tempc(i)
-                enddo
-                !Now calculate spectrum
-                Response_h = zzero
-                do i = 1, nLinearSystem
-                    Response_h = Response_h + dconjg(V0_Ann(i))*tempc(i)
-                enddo
+                if(.not.tNoAnn) then
+                    Psi1_h(:) = V0_Ann(:)
+                    call SolveCompLinearSystem(LinearSystem_h,Psi1_h,nLinearSystem,info)
+                    if(info.ne.0) then 
+                        write(6,*) "INFO: ",info
+                        call warning(t_r,'Solving linear system failed for hole hamiltonian - skipping this frequency')
+                        Omega = Omega + Omega_Step
+                        cycle
+                    endif
+                    !Apply S to |1>
+                    call ZGEMV('N',nLinearSystem,nLinearSystem,zone,Overlap_h,nLinearSystem,Psi1_h,1,zzero,tempc,1)
+                    !Norm is now dot product
+                    dNorm_h = zzero
+                    do i = 1,nLinearSystem
+                        dNorm_h = dNorm_h + dconjg(Psi1_h(i))*tempc(i)
+                    enddo
+                    !Now calculate spectrum
+                    Response_h = zzero
+                    do i = 1, nLinearSystem
+                        Response_h = Response_h + dconjg(V0_Ann(i))*tempc(i)
+                    enddo
+                else
+                    Response_h = zzero
+                    dNorm_h = zzero
+                endif
 
-                !Now for particle
-                call ZGEMV('N',nLinearSystem,nLinearSystem,zone,Overlap_p,nLinearSystem,Psi1_p,1,zzero,tempc,1)
-                !Norm is now dot product
-                dNorm_p = zzero
-                do i = 1,nLinearSystem
-                    dNorm_p = dNorm_p + dconjg(Psi1_p(i))*tempc(i)
-                enddo
-                !Now calculate spectrum
-                Response_p = zzero
-                do i = 1, nLinearSystem
-                    Response_p = Response_p + dconjg(V0_Cre(i))*tempc(i)
-                enddo
+
+                if(.not.tNoCre) then
+                    !Now for particle
+                    Psi1_p(:) = V0_Cre(:)
+                    call SolveCompLinearSystem(LinearSystem_p,Psi1_p,nLinearSystem,info)
+                    if(info.ne.0) then 
+                        write(6,*) "INFO: ",info
+                        call warning(t_r,'Solving linear system failed for particle hamiltonian - skipping this frequency')
+                        Omega = Omega + Omega_Step
+                        cycle
+                    endif
+
+                    call ZGEMV('N',nLinearSystem,nLinearSystem,zone,Overlap_p,nLinearSystem,Psi1_p,1,zzero,tempc,1)
+                    !Norm is now dot product
+                    dNorm_p = zzero
+                    do i = 1,nLinearSystem
+                        dNorm_p = dNorm_p + dconjg(Psi1_p(i))*tempc(i)
+                    enddo
+                    !Now calculate spectrum
+                    Response_p = zzero
+                    do i = 1, nLinearSystem
+                        Response_p = Response_p + dconjg(V0_Cre(i))*tempc(i)
+                    enddo
+                else
+                    Response_p = zzero
+                    dNorm_p = zzero
+                endif
+
                 ResponseFn = Response_h + Response_p
                 ni_lr = ni_lr_p + ni_lr_h
                 deallocate(tempc)
@@ -639,6 +663,30 @@ module MomSpectra
         enddo
 
         deallocate(LinearSystem_h,Overlap_h,Overlap_p,LinearSystem_p)
+        deallocate(NFCIHam,Np1FCIHam_alpha,Nm1FCIHam_beta)
+        deallocate(Psi1_p,Psi1_h,FockSchmidt_SE,FockSchmidt_SE_VV,FockSchmidt_SE_CC,FockSchmidt_SE_VX)
+        deallocate(FockSchmidt_SE_XV,FockSchmidt_SE_CX,FockSchmidt_SE_XC)
+        deallocate(Gc_a_F_ax_Bra,Gc_a_F_ax_Ket,Gc_b_F_ab,Ga_i_F_xi_Bra,Ga_i_F_xi_Ket,Ga_i_F_ij)
+        deallocate(Xc_a_F_ax_Bra,Xc_a_F_ax_Ket,Xc_b_F_ab,Xa_i_F_xi_Bra,Xa_i_F_xi_Ket,Xa_i_F_ij)
+        deallocate(SchmidtkGF_Cre_Ket,SchmidtkGF_Ann_Ket,SchmidtkGF_Cre_Bra,SchmidtkGF_Ann_Bra)
+        deallocate(StatickGF_Cre_Ket,StatickGF_Ann_Ket,StatickGF_Cre_Bra,StatickGF_Ann_Bra)
+        deallocate(StatickGF_Ann_Emb_Ket,StatickGF_Ann_Emb_Bra,StatickGF_Cre_Emb_Ket,StatickGF_Cre_Emb_Bra)
+        deallocate(Psi_0,V0_Ann,V0_Cre)
+        deallocate(Coup_Create_alpha,Coup_Ann_alpha)
+        !Deallocate determinant lists
+        if(allocated(FCIDetList)) deallocate(FCIDetList)
+        if(allocated(FCIBitList)) deallocate(FCIBitList)
+        if(allocated(UMat)) deallocate(UMat)
+        if(allocated(TMat)) deallocate(TMat)
+        if(allocated(TMat_Comp)) deallocate(TMat_Comp)
+        if(allocated(Nm1FCIDetList)) deallocate(Nm1FCIDetList)
+        if(allocated(Nm1BitList)) deallocate(Nm1BitList)
+        if(allocated(Np1FCIDetList)) deallocate(Np1FCIDetList)
+        if(allocated(Np1BitList)) deallocate(Np1BitList)
+        if(allocated(Nm1bFCIDetList)) deallocate(Nm1bFCIDetList)
+        if(allocated(Nm1bBitList)) deallocate(Nm1bBitList)
+        if(allocated(Np1bFCIDetList)) deallocate(Np1bFCIDetList)
+        if(allocated(Np1bBitList)) deallocate(Np1bBitList)
         close(iunit)
 
     end subroutine MomGF_Ex
@@ -730,9 +778,10 @@ module MomSpectra
     !Construct the contraction coefficients for the action of the static perturbation 
     subroutine FindStaticMomSchmidtPert(kPnt,nImp_GF,StatickGF_Cre_Ket,StatickGF_Cre_Emb_Ket,   &
         StatickGF_Ann_Ket,StatickGF_Ann_Emb_Ket,StatickGF_Cre_Bra,   &
-        StatickGF_Ann_Bra,StatickGF_Cre_Emb_Bra,StatickGF_Ann_Emb_Bra)
+        StatickGF_Ann_Bra,StatickGF_Cre_Emb_Bra,StatickGF_Ann_Emb_Bra,tNoCre,tNoAnn)
         implicit none
         integer, intent(in) :: kPnt,nImp_GF
+        logical, intent(out) :: tNoCre,tNoAnn
         complex(dp), intent(out) :: StatickGF_Cre_Ket(nOcc+nImp+1:nSites,nImp_GF)
         complex(dp), intent(out) :: StatickGF_Ann_Ket(1:nOcc-nImp,nImp_GF)
         complex(dp), intent(out) :: StatickGF_Cre_Bra(nOcc+nImp+1:nSites,nImp_GF)
@@ -743,6 +792,11 @@ module MomSpectra
         complex(dp), intent(out) :: StatickGF_Ann_Emb_Bra(nOcc-nImp+1:nOcc+nImp,nImp_GF)
         complex(dp), allocatable :: HFPertBasis_Ann(:),HFPertBasis_Cre(:)
         integer :: SS_Period,ind_1,ind_2,i,x,n
+        logical :: tCreFound,tAnnFound
+        character(len=*), parameter :: t_r='FindStaticMomSchmidtPert'
+
+        tCreFound = .false.
+        tAnnFound = .false.
         
         SS_Period = nImp
         allocate(HFPertBasis_Ann(SS_Period))
@@ -755,18 +809,27 @@ module MomSpectra
 
         do i = 1,SS_Period  !Run over vectors which span this kpoint
             if(KVec_EMapping(ind_1+i-1).le.nOcc) then
+                write(6,*) "For this kpoint, occupied orbital for vector: ",i
                 !i is an occupied orbital
-                do x = 1,SS_Period  !Run over components of this vector
-                    HFPertBasis_Ann(i) = HFPertBasis_Ann(i) + dconjg(k_vecs(x,ind_1 + i - 1))
-                enddo
+                !do x = 1,SS_Period  !Run over components of this vector
+                !    HFPertBasis_Ann(i) = HFPertBasis_Ann(i) + dconjg(k_vecs(x,ind_1 + i - 1))
+                !enddo
+                HFPertBasis_Ann(i) = zone
+                tAnnFound = .true.
             else
+                write(6,*) "For this kpoint, virtual orbital for vector: ",i
                 !i is a virtual orbital
-                do x = 1,SS_Period  !Run over components of this vector
-                    HFPertBasis_Cre(i) = HFPertBasis_Cre(i) + dconjg(k_vecs(x,ind_1 + i - 1))
-                enddo
+                !do x = 1,SS_Period  !Run over components of this vector
+                !    HFPertBasis_Cre(i) = HFPertBasis_Cre(i) + dconjg(k_vecs(x,ind_1 + i - 1))
+                !enddo
+                HFPertBasis_Cre(i) = zone
+                tCreFound = .true.
             endif 
         enddo
 
+        call writevectorcomp(HFPertBasis_Cre,'HFPertBasis_Cre')
+        call writevectorcomp(HFPertBasis_Ann,'HFPertBasis_Ann')
+        
         !Now rotate from the HF vectors, to the Schmidt basis
         StatickGF_Ann_Ket(:,:) = zzero
         do n = 1,nOcc-nImp  !Loop over schmidt basis of core orbitals
@@ -793,7 +856,15 @@ module MomSpectra
         StatickGF_Cre_Emb_Bra(:,1) = dconjg(StatickGF_Cre_Emb_Ket(:,1))
         StatickGF_Ann_Emb_Bra(:,1) = dconjg(StatickGF_Ann_Emb_Ket(:,1))
 
+        call writevectorcomp(StatickGF_Ann_Ket(:,1),'StatickGF_Ann_Ket')
+        call writevectorcomp(StatickGF_Cre_Ket(:,1),'StatickGF_Cre_Ket')
+
         deallocate(HFPertBasis_Ann,HFPertBasis_Cre)
+
+        tNoCre = .not.tCreFound
+        tNoAnn = .not.tAnnFound
+
+        if(tNoCre.and.tNoAnn) call stop_all(t_r,'Cannot have no virtual or occupied bands at a given kpoint')
 
     end subroutine FindStaticMomSchmidtPert
 
@@ -825,19 +896,21 @@ module MomSpectra
             if(KVec_EMapping(ind_1+i-1).le.nOcc) then
                 !i is an occupied orbital
                 do x = 1,SS_Period  !Run over components of this vector
-                    HFPertBasis_Ann(i) = HFPertBasis_Ann(i) + dconjg(k_vecs(x,ind_1 + i - 1)) /     &
-                        (dcmplx(Omega,dDelta)-k_HFEnergies(ind_1 + i - 1))
+!                    HFPertBasis_Ann(i) = HFPertBasis_Ann(i) + dconjg(k_vecs(x,ind_1 + i - 1)) /     &
+!                        (dcmplx(Omega,dDelta)-k_HFEnergies(ind_1 + i - 1))
                     ni_lr_ann = ni_lr_ann + (k_vecs(x,ind_1 + i - 1)*dconjg(k_vecs(x,ind_1 + i - 1))) / &
                         (dcmplx(Omega,dDelta)-k_HFEnergies(ind_1 + i - 1))
                 enddo
+                HFPertBasis_Ann(i) = zone / (dcmplx(Omega,dDelta)-k_HFEnergies(ind_1 + i - 1))
             else
                 !i is a virtual orbital
                 do x = 1,SS_Period  !Run over components of this vector
-                    HFPertBasis_Cre(i) = HFPertBasis_Cre(i) + dconjg(k_vecs(x,ind_1 + i - 1)) /     &
-                        (dcmplx(Omega,dDelta)-k_HFEnergies(ind_1 + i - 1))
+!                    HFPertBasis_Cre(i) = HFPertBasis_Cre(i) + dconjg(k_vecs(x,ind_1 + i - 1)) /     &
+!                        (dcmplx(Omega,dDelta)-k_HFEnergies(ind_1 + i - 1))
                     ni_lr_cre = ni_lr_cre + (k_vecs(x,ind_1 + i - 1)*dconjg(k_vecs(x,ind_1 + i - 1))) / &
                         (dcmplx(Omega,dDelta)-k_HFEnergies(ind_1 + i - 1))
                 enddo
+                HFPertBasis_Cre(i) = zone / (dcmplx(Omega,dDelta)-k_HFEnergies(ind_1 + i - 1))
             endif
         enddo
 
