@@ -158,6 +158,7 @@ module Globals
     logical :: tProjectHFKPnts                  !Whether to construct the rotation matrix from final HF orbitals to original plane wave k-points
     logical :: tKSpaceOrbs                      !Calculate the kspace orbitals from the final one-electron matrix
     integer, allocatable :: KVec_EMapping(:)    !This map gives the index of the orbitals in terms of energy
+    integer, allocatable :: KVec_InvEMap(:)     !This takes the orbital, and returns its energetic index
     complex(dp) , allocatable :: k_vecs(:,:)    !The orbitals, ordered by kpoint ( nImp , nSites) 
     real(dp), allocatable :: k_HFEnergies(:)    !The HF Energies, ordered by kpoint
     complex(dp), allocatable :: k_HFtoSchmidtTransform(:,:) !Transform from the complex k-space eigenvectors (2nd ind) to the schmidt basis (Note: This ordering is the opposite way around to previously)

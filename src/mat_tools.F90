@@ -1606,10 +1606,17 @@ module mat_tools
         call sort_d_i(Work,KVec_EMapping,nSites)
         deallocate(Work)
 
+        if(.not.allocated(KVec_InvEMap)) allocate(KVec_InvEMap(nSites))
+        !KVec_InvEMapping takes as input the k orbital number, and returns its energetic order 
+        do i = 1,nSites
+            KVec_InvEMap(KVec_EMapping(i)) = i
+        enddo
+
         if(tWriteOut) then
             call writevector(HFEnergies,'HFEnergies')
             call writevector(k_HFEnergies,'k_HFEnergies')
             call writevectorint(KVec_EMapping,'kVec_EMapping')
+            call writevectorint(KVec_InvEMap,'kVec_InvEMap')
         endif
 
         do i = 1,nSites
@@ -1643,6 +1650,8 @@ module mat_tools
         enddo
         call ZGEMM('C','N',nSites,nSites,nSites,zone,TempSchmidtBasis,nSites,ztemp2,nSites,zzero,k_HFtoSchmidtTransform,nSites)
         deallocate(ztemp,ztemp2,TempSchmidtBasis)
+
+        if(tWriteOut) call writematrixcomp(k_HFtoSchmidtTransform,'k_HFtoSchmidtTransform',.false.)
 
     end subroutine GetKSpaceOrbs
 

@@ -743,6 +743,7 @@ Program RealHub
             !Project the final orbitals onto the original k-space
             !tProjectHFKPnts = .true.
             tKSpaceOrbs = .true.
+            tConstructFullSchmidtBasis = .true.
         endif
 
         !Now check for sanity and implementation of specified options

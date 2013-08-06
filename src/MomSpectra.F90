@@ -793,7 +793,7 @@ module MomSpectra
         ind_2 = SS_Period * kPnt
 
         do i = 1,SS_Period  !Run over vectors which span this kpoint
-            if(KVec_EMapping(ind_1+i-1).le.nOcc) then
+            if(KVec_InvEMap(ind_1+i-1).le.nOcc) then
                 write(6,*) "For this kpoint, occupied orbital for vector: ",i
                 !i is an occupied orbital
                 !do x = 1,SS_Period  !Run over components of this vector
@@ -878,8 +878,9 @@ module MomSpectra
         ind_2 = SS_Period * kPnt
 
         do i = 1,SS_Period  !Run over vectors which span this kpoint
-            if(KVec_EMapping(ind_1+i-1).le.nOcc) then
+            if(KVec_InvEMap(ind_1+i-1).le.nOcc) then
                 !i is an occupied orbital
+                write(6,*) "Orbital is occupied",i,ind_1+i-1
                 do x = 1,SS_Period  !Run over components of this vector
 !                    HFPertBasis_Ann(i) = HFPertBasis_Ann(i) + dconjg(k_vecs(x,ind_1 + i - 1)) /     &
 !                        (dcmplx(Omega,dDelta)-k_HFEnergies(ind_1 + i - 1))
@@ -889,6 +890,7 @@ module MomSpectra
                 HFPertBasis_Ann(i) = zone / (dcmplx(Omega,dDelta)-k_HFEnergies(ind_1 + i - 1))
             else
                 !i is a virtual orbital
+                write(6,*) "Orbital is virtual",i,ind_1+i-1
                 do x = 1,SS_Period  !Run over components of this vector
 !                    HFPertBasis_Cre(i) = HFPertBasis_Cre(i) + dconjg(k_vecs(x,ind_1 + i - 1)) /     &
 !                        (dcmplx(Omega,dDelta)-k_HFEnergies(ind_1 + i - 1))
@@ -898,6 +900,9 @@ module MomSpectra
                 HFPertBasis_Cre(i) = zone / (dcmplx(Omega,dDelta)-k_HFEnergies(ind_1 + i - 1))
             endif
         enddo
+
+        call writevectorcomp(HFPertBasis_Cre,'HFPertBasis_Cre')
+        call writevectorcomp(HFPertBasis_Ann,'HFPertBasis_Ann')
 
         !Now rotate from the HF vectors, to the Schmidt basis
         SchmidtkGF_Ann_Ket(:,:) = zzero
@@ -915,6 +920,8 @@ module MomSpectra
 
         SchmidtkGF_Ann_Bra(:,:) = dconjg(SchmidtkGF_Ann_Ket(:,:))
         SchmidtkGF_Cre_Bra(:,:) = dconjg(SchmidtkGF_Cre_Ket(:,:))
+        
+        call writevectorcomp(SchmidtkGF_Ann_Ket(:,1),'SchmidtkGF_Ann_Ket')
 
         deallocate(HFPertBasis_Ann,HFPertBasis_Cre)
         

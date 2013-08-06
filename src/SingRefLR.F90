@@ -64,7 +64,7 @@ module SingRefLR
                 ind_2 = SS_Period*k
 
                 do i = ind_1,ind_2  !Run through eigenvectors corresopnding to this kpoint
-                    if(KVec_EMapping(i).lt.nOcc) then
+                    if(KVec_InvEMap(i).lt.nOcc) then
                         !This corresponds to an occupied orbtials
                         !Strictly speaking, we want to sum the weight of the vector over the kpoint,
                         !but since the vector is normalized, we can assume that this is one
