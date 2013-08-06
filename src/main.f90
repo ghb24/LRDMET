@@ -92,6 +92,7 @@ Program RealHub
         tIC_TDA_Response = .false.
         tLR_DMET = .false. 
         tCharged_MomResponse = .false.
+        tNoStatickBasis = .false.
         tConstructFullSchmidtBasis = .true. 
         tProjectOutNull = .false.
         tLR_ReoptGS = .false. 
@@ -581,6 +582,8 @@ Program RealHub
                     i = i+1
                     call readi(Ks(i))
                 enddo
+            case("NOSTATICBASIS")
+                tNoStatickBasis = .true.
             case("NONINT")
                 tNIResponse = .true.
             case("TDA")
@@ -675,6 +678,7 @@ Program RealHub
                 write(6,"(A)") "MOM_GF_RESPONSE"
                 write(6,"(A)") "KPNT_CALCS"
                 write(6,"(A)") "K_VALS"
+                write(6,"(A)") "NOSTATICBASIS"
                 write(6,"(A)") "BETA_GF"
                 write(6,"(A)") "NONDIR_MINRES"
                 write(6,"(A)") "NONDIR_GMRES"

@@ -74,6 +74,8 @@ LINEAR_RESPONSE
     KPNT_CALCS XXX
 (Calculate the momentum resolved GF over the specified kpoint indices)
     K_VALS XXX
+(Remove the basis of the response from the schmidt decomposition of the static perturbation. No longer exact in NI limit.)
+    NOSTATICBASIS
 (Calculate the one-electron greens function over the beta excitation space)
     BETA_GF
 (Solve linear system with a non-direct MINRES iterative solver)

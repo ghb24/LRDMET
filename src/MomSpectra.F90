@@ -34,12 +34,12 @@ module MomSpectra
         complex(dp), allocatable :: StatickGF_Ann_Emb_Ket(:,:),StatickGF_Ann_Emb_Bra(:,:)
         complex(dp), allocatable :: StatickGF_Cre_Emb_Ket(:,:),StatickGF_Cre_Emb_Bra(:,:)
         complex(dp), allocatable :: Psi_0(:),V0_Ann(:),V0_Cre(:)
-        complex(dp), allocatable :: S_EigVec(:,:),tempc(:)
+        complex(dp), allocatable :: S_EigVec(:,:),tempc(:),DynamicLS(:,:)
         real(dp), allocatable :: S_EigVal(:),Work(:)
         integer, allocatable :: Coup_Create_alpha(:,:,:),Coup_Ann_alpha(:,:,:)
         integer :: nLinearSystem,nLinearSystem_h,CoreEnd,VirtStart,VirtEnd,ActiveStart,ActiveEnd,nCore,nVirt
         integer :: VIndex,iunit,i,j,k,DiffOrb,nOrbs,orbdum(1),gam,tempK,KPnt,ierr,nImp_GF,VStatIndex,info,lWork
-        integer :: nSpan,a
+        integer :: nSpan,a,LinSize
         complex(dp) :: ni_lr_h,ni_lr_p,ni_lr,CNorm,CStatNorm,VNorm,VstatNorm,StatCoup_Ann,StatCoup_Cre
         complex(dp) :: tempel,tempel2,tempel4,dNorm_p,dNorm_h,Response_h,Response_p,ResponseFn
         real(dp) :: SpectralWeight,Prev_Spec,mu,Omega,GFChemPot
@@ -358,7 +358,6 @@ module MomSpectra
                 call FindMomGFSchmidtPert(Omega,ni_lr_p,ni_lr_h,kPnt,nImp_GF,SchmidtkGF_Cre_Ket,SchmidtkGF_Ann_Ket, &
                     SchmidtkGF_Cre_Bra,SchmidtkGF_Ann_Bra)
                 
-                    
                 !Construct useful intermediates, concerning the *Dynamic* bath orbitals
                 !sum_a Gc_a^* F_ax (Creation)
                 call ZGEMM('T','N',EmbSize,nImp_GF,nVirt,zone,FockSchmidt_SE_VX(VirtStart:VirtEnd,ActiveStart:ActiveEnd),  &
@@ -595,23 +594,39 @@ module MomSpectra
                 allocate(tempc(nLinearSystem))
                 if(.not.tNoAnn) then
                     Psi1_h(:) = V0_Ann(:)
-                    call SolveCompLinearSystem(LinearSystem_h,Psi1_h,nLinearSystem,info)
+                    if(tNoStatickBasis) then
+                        LinSize = VStatIndex-1
+                        allocate(DynamicLS(LinSize,LinSize))
+                        DynamicLS(:,:) = LinearSystem_h(1:LinSize,1:LinSize)
+                        !call writematrixcomp(DynamicLS,'Hole Hamil',.true.)
+                        !call writevectorcomp(Psi1_h(1:LinSize),'V0_Ann')
+                        call SolveCompLinearSystem(DynamicLS,Psi1_h(1:LinSize),LinSize,info)
+                        !call writevectorcomp(Psi1_h(1:LinSize),'|1>')
+                        deallocate(DynamicLS)
+                    else
+                        LinSize = nLinearSystem
+                        call SolveCompLinearSystem(LinearSystem_h,Psi1_h,nLinearSystem,info)
+                    endif
                     if(info.ne.0) then 
                         write(6,*) "INFO: ",info
                         call warning(t_r,'Solving linear system failed for hole hamiltonian - skipping this frequency')
                         Omega = Omega + Omega_Step
                         cycle
                     endif
-                    !Apply S to |1>
-                    call ZGEMV('N',nLinearSystem,nLinearSystem,zone,Overlap_h,nLinearSystem,Psi1_h,1,zzero,tempc,1)
+                    if(.not.tNoStatickBasis) then
+                        !Apply S to |1>
+                        call ZGEMV('N',nLinearSystem,nLinearSystem,zone,Overlap_h,nLinearSystem,Psi1_h,1,zzero,tempc,1)
+                    else
+                        tempc(1:LinSize) = Psi1_h(1:LinSize)
+                    endif
                     !Norm is now dot product
                     dNorm_h = zzero
-                    do i = 1,nLinearSystem
+                    do i = 1,LinSize
                         dNorm_h = dNorm_h + dconjg(Psi1_h(i))*tempc(i)
                     enddo
                     !Now calculate spectrum
                     Response_h = zzero
-                    do i = 1, nLinearSystem
+                    do i = 1, LinSize
                         Response_h = Response_h + dconjg(V0_Ann(i))*tempc(i)
                     enddo
                 else
@@ -623,7 +638,16 @@ module MomSpectra
                 if(.not.tNoCre) then
                     !Now for particle
                     Psi1_p(:) = V0_Cre(:)
-                    call SolveCompLinearSystem(LinearSystem_p,Psi1_p,nLinearSystem,info)
+                    if(tNoStatickBasis) then
+                        LinSize = VStatIndex-1
+                        allocate(DynamicLS(LinSize,LinSize))
+                        DynamicLS(:,:) = LinearSystem_p(1:LinSize,1:LinSize)
+                        call SolveCompLinearSystem(DynamicLS,Psi1_p(1:LinSize),LinSize,info)
+                        deallocate(DynamicLS)
+                    else
+                        LinSize = nLinearSystem
+                        call SolveCompLinearSystem(LinearSystem_p,Psi1_p,nLinearSystem,info)
+                    endif
                     if(info.ne.0) then 
                         write(6,*) "INFO: ",info
                         call warning(t_r,'Solving linear system failed for particle hamiltonian - skipping this frequency')
@@ -631,15 +655,19 @@ module MomSpectra
                         cycle
                     endif
 
-                    call ZGEMV('N',nLinearSystem,nLinearSystem,zone,Overlap_p,nLinearSystem,Psi1_p,1,zzero,tempc,1)
+                    if(.not.tNoStatickBasis) then
+                        call ZGEMV('N',nLinearSystem,nLinearSystem,zone,Overlap_p,nLinearSystem,Psi1_p,1,zzero,tempc,1)
+                    else
+                        tempc(1:LinSize) = Psi1_p(1:LinSize)
+                    endif
                     !Norm is now dot product
                     dNorm_p = zzero
-                    do i = 1,nLinearSystem
+                    do i = 1,LinSize
                         dNorm_p = dNorm_p + dconjg(Psi1_p(i))*tempc(i)
                     enddo
                     !Now calculate spectrum
                     Response_p = zzero
-                    do i = 1, nLinearSystem
+                    do i = 1,LinSize
                         Response_p = Response_p + dconjg(V0_Cre(i))*tempc(i)
                     enddo
                 else
@@ -718,6 +746,9 @@ module MomSpectra
 
         V0_Cre(:) = zzero
         V0_Ann(:) = zzero
+
+        !call writevectorcomp(Psi_0,'Psi_0')
+        !call writevectorcomp(StatickGF_Ann_Emb_Ket(:,1),'Statick_Ann_Emb')
 
         !Projection onto Block 1 of V0
         do K = 1,nFCIDet
@@ -812,8 +843,8 @@ module MomSpectra
             endif 
         enddo
 
-        call writevectorcomp(HFPertBasis_Cre,'HFPertBasis_Cre')
-        call writevectorcomp(HFPertBasis_Ann,'HFPertBasis_Ann')
+        !call writevectorcomp(HFPertBasis_Cre,'HFPertBasis_Cre')
+        !call writevectorcomp(HFPertBasis_Ann,'HFPertBasis_Ann')
         
         !Now rotate from the HF vectors, to the Schmidt basis
         StatickGF_Ann_Ket(:,:) = zzero
@@ -829,6 +860,7 @@ module MomSpectra
             enddo
         enddo
         StatickGF_Cre_Emb_Ket(:,:) = zzero
+        StatickGF_Ann_Emb_Ket(:,:) = zzero
         do n = nOcc-nImp+1,nOcc+nImp
             do i = 1,SS_Period
                 StatickGF_Cre_Emb_Ket(n,1) = StatickGF_Cre_Emb_Ket(n,1) + k_HFtoSchmidtTransform(n,ind_1+i-1)*HFPertBasis_Cre(i)
@@ -841,8 +873,8 @@ module MomSpectra
         StatickGF_Cre_Emb_Bra(:,1) = dconjg(StatickGF_Cre_Emb_Ket(:,1))
         StatickGF_Ann_Emb_Bra(:,1) = dconjg(StatickGF_Ann_Emb_Ket(:,1))
 
-        call writevectorcomp(StatickGF_Ann_Ket(:,1),'StatickGF_Ann_Ket')
-        call writevectorcomp(StatickGF_Cre_Ket(:,1),'StatickGF_Cre_Ket')
+        !call writevectorcomp(StatickGF_Ann_Ket(:,1),'StatickGF_Ann_Ket')
+        !call writevectorcomp(StatickGF_Cre_Ket(:,1),'StatickGF_Cre_Ket')
 
         deallocate(HFPertBasis_Ann,HFPertBasis_Cre)
 
@@ -901,8 +933,8 @@ module MomSpectra
             endif
         enddo
 
-        call writevectorcomp(HFPertBasis_Cre,'HFPertBasis_Cre')
-        call writevectorcomp(HFPertBasis_Ann,'HFPertBasis_Ann')
+        !call writevectorcomp(HFPertBasis_Cre,'HFPertBasis_Cre')
+        !call writevectorcomp(HFPertBasis_Ann,'HFPertBasis_Ann')
 
         !Now rotate from the HF vectors, to the Schmidt basis
         SchmidtkGF_Ann_Ket(:,:) = zzero
@@ -921,7 +953,7 @@ module MomSpectra
         SchmidtkGF_Ann_Bra(:,:) = dconjg(SchmidtkGF_Ann_Ket(:,:))
         SchmidtkGF_Cre_Bra(:,:) = dconjg(SchmidtkGF_Cre_Ket(:,:))
         
-        call writevectorcomp(SchmidtkGF_Ann_Ket(:,1),'SchmidtkGF_Ann_Ket')
+        !call writevectorcomp(SchmidtkGF_Ann_Ket(:,1),'SchmidtkGF_Ann_Ket')
 
         deallocate(HFPertBasis_Ann,HFPertBasis_Cre)
         
