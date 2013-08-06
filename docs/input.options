@@ -70,6 +70,8 @@ LINEAR_RESPONSE
     GF_RESPONSE
 (Calculate the momentum resolved one-electron greens functions)
     MOM_GF_RESPONSE
+(Number of kpoints to calculate the momentum resolved greens function over)
+    MOM_GF_RESPONSE XXX
 (Calculate the one-electron greens function over the beta excitation space)
     BETA_GF
 (Solve linear system with a non-direct MINRES iterative solver)

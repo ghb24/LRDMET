@@ -10,10 +10,12 @@ module SingRefLR
 
     subroutine CorrNI_MomGF()
         use utils, only: get_free_unit,append_ext_real
+        use LRSolvers, only: WriteKVecHeader,GetNextkVal
         implicit none
         real(dp) :: k_val(LatticeDim),mu,Omega
         integer :: unit_a,unit_b,k,i,ind_1,ind_2,SS_Period
         complex(dp) :: ni_lr,ni_lr_ann,ni_lr_cre,ni_lr_b,ni_lr_ann_b,ni_lr_cre_b
+        logical :: tFinishedk
         character(len=64) :: filename,filename_b
         character(len=*), parameter :: t_r='CorrNI_MomGF'
 
@@ -41,21 +43,14 @@ module SingRefLR
 
         SS_Period = nImp
             
-        do k = 1,nKPnts
+        k = 0
+        do while(.true.)
+            call GetNextkVal(k,tFinishedk)
+            if(tFinishedk) exit
 
             k_val = KPnts(:,k)
-            write(unit_a,"(A,F8.4)",advance='no') '"k = ',k_val(1)
-            do i = 2,LatticeDim
-                write(unit_a,"(A,F8.4)",advance='no') ', ',k_val(i)
-            enddo
-            write(unit_a,"(A)") ' "'
-            if(tUHF) then
-                write(unit_b,"(A,F8.4)",advance='no') '"k = ',k_val(1)
-                do i = 2,LatticeDim
-                    write(unit_b,"(A,F8.4)",advance='no') ', ',k_val(i)
-                enddo
-                write(unit_b,"(A)") ' "'
-            endif
+            call WriteKVecHeader(unit_a,k_val)
+            if(tUHF) call WriteKVecHeader(unit_b,k_val)
 
             Omega = Start_Omega
             do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))

@@ -660,6 +660,7 @@ module MomSpectra
                 Omega = Omega + Omega_Step
             enddo
             write(iunit,"(A)") ""
+            write(iunit,"(A)") ""
         enddo
 
         deallocate(LinearSystem_h,Overlap_h,Overlap_p,LinearSystem_p)
@@ -690,22 +691,6 @@ module MomSpectra
         close(iunit)
 
     end subroutine MomGF_Ex
-
-    subroutine GetNextkVal(kPnt,tFinishedk)
-        implicit none
-        integer, intent(inout) :: kPnt
-        logical, intent(out) :: tFinishedk
-
-        tFinishedk = .false.
-        if(kPnt.eq.0) then
-            !First kpoint
-            kPnt = 1
-        else
-            !Initially, just do first kpoint
-            tFinishedk = .true.
-        endif
-
-    end subroutine GetNextkVal
 
     !Apply the schmidt decomposed momentum perturbation to the ground state wavefunction.
     !Since this perturbation is non-local, it will excite to all components of the linear
@@ -935,19 +920,6 @@ module MomSpectra
         
     end subroutine FindMomGFSchmidtPert
             
-    subroutine WriteKVecHeader(iunit,KVal)
-        implicit none
-        integer, intent(in) :: iunit
-        real(dp), intent(in) :: KVal(LatticeDim)
-        integer :: i
-
-        write(iunit,"(A,F8.4)",advance='no') '"k = ',KVal(1)
-        do i = 2,LatticeDim
-            write(iunit,"(A,F8.4)",advance='no') ', ',KVal(i)
-        enddo
-        write(iunit,"(A)") ' "'
-
-    end subroutine WriteKVecHeader
 
 
 end module MomSpectra

@@ -117,6 +117,7 @@ Program RealHub
         tConvergeMicroSE = .false.
         iMinRes_MaxIter = 20000
         tBetaExcit = .false.
+        nKCalcs = 0
 
     end subroutine set_defaults
 
@@ -571,6 +572,8 @@ Program RealHub
                 tChargedResponse = .true.
             case("MOM_GF_RESPONSE")
                 tCharged_MomResponse = .true.
+            case("KPNT_CALCS")
+                call readi(nKCalcs)
             case("NONINT")
                 tNIResponse = .true.
             case("TDA")
@@ -663,6 +666,7 @@ Program RealHub
                 write(6,"(A)") "DD_RESPONSE"
                 write(6,"(A)") "GF_RESPONSE"
                 write(6,"(A)") "MOM_GF_RESPONSE"
+                write(6,"(A)") "KPNT_CALCS"
                 write(6,"(A)") "BETA_GF"
                 write(6,"(A)") "NONDIR_MINRES"
                 write(6,"(A)") "NONDIR_GMRES"

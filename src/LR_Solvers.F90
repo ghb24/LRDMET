@@ -11,6 +11,50 @@ module LRSolvers
 
     contains
     
+    subroutine WriteKVecHeader(iunit,KVal)
+        implicit none
+        integer, intent(in) :: iunit
+        real(dp), intent(in) :: KVal(LatticeDim)
+        integer :: i
+
+        write(iunit,"(A,F8.4)",advance='no') '"k = ',KVal(1)
+        do i = 2,LatticeDim
+            write(iunit,"(A,F8.4)",advance='no') ', ',KVal(i)
+        enddo
+        write(iunit,"(A)") ' "'
+
+    end subroutine WriteKVecHeader
+
+    subroutine GetNextkVal(kPnt,tFinishedk)
+        implicit none
+        integer, intent(inout) :: kPnt
+        logical, intent(out) :: tFinishedk
+
+        tFinishedk = .false.
+        if(kPnt.eq.0) then
+            !First kpoint
+            if(nKCalcs.eq.0) then
+                !Go through them all
+                kPnt = 1
+            else
+                KIndex = 1
+                kPnt = 1
+            endif
+        else
+            if(nKCalcs.eq.0) then
+                kPnt = kPnt + 1
+                if(kPnt.gt.nKPnts) tFinishedk = .true.
+            else
+                KIndex = KIndex + 1
+                if(KIndex.gt.nKCalcs) then
+                    tFinishedk = .true.
+                endif
+                kPnt = nint(real(KIndex-1,dp)*real(nKPnts,dp)/real(nKCalcs,dp)) + 1
+            endif
+        endif
+
+    end subroutine GetNextkVal
+    
     !Calculate n-electron hamiltonians
     subroutine Fill_N_Np1_Nm1b_FCIHam(nElec,Nmax_N,Nmax_Np1,Nmax_Nm1,NHam,Np1Ham,Nm1Ham,  &
             NHam_cmps,Np1Ham_cmps,Nm1Ham_cmps,NHam_inds,Np1Ham_inds,Nm1Ham_inds,tSwapExcits)
