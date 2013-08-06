@@ -578,6 +578,7 @@ module MomSpectra
                         write(6,"(A,I7,A,I7,A)") "Linearly dependent vectors in space: ",nLinearSystem-nSpan, &
                             " out of ",nFCIDet," possible."
                     endif
+                    !call writevector(S_EigVal,'S_EigVal')
                     !I guess we could potentially rotate into this basis, but we don't really want to do that.
                     deallocate(S_EigVec,S_EigVal)
                 endif
@@ -773,6 +774,8 @@ module MomSpectra
             V0_Ann(K+nNm1bFCIDet+nFCIDet) = sqrt(CStatNorm)*Psi_0(K)
         enddo
 
+        !call writevectorcomp(V0_Ann,'V0_Ann')
+
         !Creation operator
         do K = 1,nFCIDet
             do J = 1,nNp1FCIDet
@@ -961,7 +964,5 @@ module MomSpectra
         deallocate(HFPertBasis_Ann,HFPertBasis_Cre)
         
     end subroutine FindMomGFSchmidtPert
-            
-
 
 end module MomSpectra

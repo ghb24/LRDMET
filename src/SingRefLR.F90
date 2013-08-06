@@ -118,6 +118,9 @@ module SingRefLR
 
         enddo   !End k
 
+        close(unit_a)
+        if(tUHF) close(unit_b)
+
     end subroutine CorrNI_MomGF
 
     subroutine CorrNI_LocalGF()
