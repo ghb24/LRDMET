@@ -521,9 +521,9 @@ module MomSpectra
                     LinearSystem_p(i+nFCIDet,i) = LinearSystem_p(i+nFCIDet,i) + tempel2
                     LinearSystem_p(i,i+nFCIDet) = LinearSystem_p(i,i+nFCIDet) + dconjg(tempel2)
                     Overlap_h(i+nFCIDet,i) = StatCoup_Ann/sqrt(CStatNorm*CNorm)
-                    Overlap_h(i,i+nFCIDet) = dconjg(StatCoup_Ann/sqrt(CStatNorm*CNorm))
+                    Overlap_h(i,i+nFCIDet) = dconjg(StatCoup_Ann)/sqrt(CStatNorm*CNorm)
                     Overlap_p(i+nFCIDet,i) = StatCoup_Cre/sqrt(VstatNorm*VNorm)
-                    Overlap_p(i,i+nFCIDet) = dconjg(StatCoup_Cre/sqrt(VstatNorm*VNorm))
+                    Overlap_p(i,i+nFCIDet) = dconjg(StatCoup_Cre)/sqrt(VstatNorm*VNorm)
                 enddo
 
                 call ApplyMomPert_GS(Psi_0,V0_Cre,V0_Ann,nImp_GF,nLinearSystem,nFCIDet,Coup_Ann_alpha,Coup_Create_alpha,    &
@@ -542,9 +542,11 @@ module MomSpectra
                     !how linearly dependent the basis is...
                     allocate(S_EigVec(nLinearSystem,nLinearSystem))
                     allocate(S_EigVal(nLinearSystem))
-                    if(tNoCre) then
+                    if(.not.tNoAnn) then
+                        write(6,*) "Using Overlap_h"
                         S_EigVec(:,:) = Overlap_h(:,:)
-                    elseif(tNoAnn) then
+                    else
+                        write(6,*) "Using Overlap_p"
                         S_EigVec(:,:) = Overlap_p(:,:)
                     endif
                     !call writematrixcomp(S_EigVec,'S_EigVec',.true.)
