@@ -33,23 +33,25 @@ module LRSolvers
         tFinishedk = .false.
         if(kPnt.eq.0) then
             !First kpoint
-            if(nKCalcs.eq.0) then
-                !Go through them all
-                kPnt = 1
-            else
-                KIndex = 1
-                kPnt = 1
-            endif
+            KIndex = 1
         else
-            if(nKCalcs.eq.0) then
-                kPnt = kPnt + 1
-                if(kPnt.gt.nKPnts) tFinishedk = .true.
-            else
-                KIndex = KIndex + 1
-                if(KIndex.gt.nKCalcs) then
-                    tFinishedk = .true.
-                endif
+            KIndex = KIndex + 1
+            if((nKCalcs.ne.0).and.(KIndex.gt.nKCalcs)) then
+                tFinishedk = .true.
+            elseif(KIndex.gt.nKPnts) then
+                tFinishedk = .true.
+            endif
+        endif
+
+        !If not run through them all, find the next kpoint
+        if(.not.tFinishedk) then
+            if(allocated(KCalcs)) then
+                kPnt = KCalcs(KIndex)
+            elseif(nKCalcs.ne.0) then
                 kPnt = nint(real(KIndex-1,dp)*real(nKPnts,dp)/real(nKCalcs,dp)) + 1
+            else
+                !Just go through all kpoints
+                kPnt = kPnt + 1
             endif
         endif
 

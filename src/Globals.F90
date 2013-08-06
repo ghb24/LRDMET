@@ -163,6 +163,7 @@ module Globals
     complex(dp), allocatable :: k_HFtoSchmidtTransform(:,:) !Transform from the complex k-space eigenvectors (2nd ind) to the schmidt basis (Note: This ordering is the opposite way around to previously)
     integer :: nKCalcs                          !The number of k-space GFs to calculate
     integer :: KIndex                           !The index of the calculational kpoint we are on
+    integer, allocatable :: KCalcs(:)           !The index of the kpoints to calculate the GF over
 
     !Linear response options
     real(dp) :: dDelta      !Broadening for spectral functions

@@ -558,9 +558,11 @@ Program RealHub
         implicit none
         logical :: teof
         character(len=100) :: w
+        integer :: Ks(100),i
         character(len=*), parameter :: t_r='LRReadInput'
 
         !If MR, need full schmidt basis
+        i = 0
         LR: do
             call read_line(teof)
             if(teof) exit
@@ -574,6 +576,11 @@ Program RealHub
                 tCharged_MomResponse = .true.
             case("KPNT_CALCS")
                 call readi(nKCalcs)
+            case("K_VALS")
+                do while(item.lt.nitems) 
+                    i = i+1
+                    call readi(Ks(i))
+                enddo
             case("NONINT")
                 tNIResponse = .true.
             case("TDA")
@@ -667,6 +674,7 @@ Program RealHub
                 write(6,"(A)") "GF_RESPONSE"
                 write(6,"(A)") "MOM_GF_RESPONSE"
                 write(6,"(A)") "KPNT_CALCS"
+                write(6,"(A)") "K_VALS"
                 write(6,"(A)") "BETA_GF"
                 write(6,"(A)") "NONDIR_MINRES"
                 write(6,"(A)") "NONDIR_GMRES"
@@ -701,6 +709,12 @@ Program RealHub
                 call stop_all(t_r,'Keyword '//trim(w)//' not recognized')
             end select
         enddo LR
+        
+        if(i.ne.0) then
+            nKCalcs = i
+            allocate(KCalcs(nKCalcs))
+            KCalcs(1:nKCalcs) = Ks(1:nKCalcs)
+        endif
         
     end subroutine LRReadInput
 
