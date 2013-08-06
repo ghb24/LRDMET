@@ -566,6 +566,7 @@ module MomSpectra
                         if(S_EigVal(i).gt.MinS_Eigval) then
                             nSpan = nSpan + 1
                         elseif(S_EigVal(i).lt.(-1.0e-8_dp)) then
+                            write(6,*) "S_EigVal: ",i,S_EigVal(i)
                             call stop_all(t_r,'Overlap eigenvalues less than 0')
                         endif
                     enddo
@@ -912,7 +913,7 @@ module MomSpectra
         do i = 1,SS_Period  !Run over vectors which span this kpoint
             if(KVec_InvEMap(ind_1+i-1).le.nOcc) then
                 !i is an occupied orbital
-                write(6,*) "Orbital is occupied",i,ind_1+i-1
+!                write(6,*) "Orbital is occupied",i,ind_1+i-1
                 do x = 1,SS_Period  !Run over components of this vector
 !                    HFPertBasis_Ann(i) = HFPertBasis_Ann(i) + dconjg(k_vecs(x,ind_1 + i - 1)) /     &
 !                        (dcmplx(Omega,dDelta)-k_HFEnergies(ind_1 + i - 1))
@@ -922,7 +923,7 @@ module MomSpectra
                 HFPertBasis_Ann(i) = zone / (dcmplx(Omega,dDelta)-k_HFEnergies(ind_1 + i - 1))
             else
                 !i is a virtual orbital
-                write(6,*) "Orbital is virtual",i,ind_1+i-1
+!                write(6,*) "Orbital is virtual",i,ind_1+i-1
                 do x = 1,SS_Period  !Run over components of this vector
 !                    HFPertBasis_Cre(i) = HFPertBasis_Cre(i) + dconjg(k_vecs(x,ind_1 + i - 1)) /     &
 !                        (dcmplx(Omega,dDelta)-k_HFEnergies(ind_1 + i - 1))
