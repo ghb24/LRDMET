@@ -194,6 +194,7 @@ module LRSolvers
     
         if(iSolveLR.eq.1) then
             !Use standard linear equation solver. Solution returned in RHS
+            info = 0
             allocate(Pivots(nLinearSystem))
             call ZGESV(nLinearSystem,1,LHS,nLinearSystem,Pivots,RHS,nLinearSystem,info)
             deallocate(Pivots)
