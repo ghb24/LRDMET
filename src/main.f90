@@ -381,6 +381,8 @@ Program RealHub
                                 call stop_all(t_r,'Keyword after ANDERSON no recognised. Should be "NO_CHEMPOT"')
                             end select
                         endif
+                    case("TWOBAND_LATTICE")
+                        tSingFiss = .true.
                     case("READ")
                         tReadSystem = .true.    !Read the system from files.
                     case default
@@ -1088,7 +1090,7 @@ Program RealHub
             !Find the next U value
             call GetNextUVal(CurrU,tFinishedU)
             if(tFinishedU) exit
-            write(6,*) "Running DMET calculation with U = ",U
+            if(.not.tSingFiss) write(6,*) "Running DMET calculation with U = ",U
         
             allocate(MeanFieldDM(nSites,nSites))    !DM from mean-field
             MeanFieldDM(:,:) = zero
@@ -1328,6 +1330,8 @@ Program RealHub
         character(len=*), parameter :: t_r='GetNextUVal'
 
         tFinished = .false.
+
+        if((CurrU.ne.0).and.(tSingFiss)) return !We don't want to loop through U!
 
         if(nU_Vals.eq.0) then
             !We are sweeping through U values, rather than specifying them individually

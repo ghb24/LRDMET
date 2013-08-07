@@ -1157,6 +1157,20 @@ module solvers
                 umat(umatind(1,2,1,2)) = U
                 umat(umatind(2,1,2,1)) = U
             endif
+        elseif(tSingFiss) then
+            !Store coulomb integrals
+            do i = 1,nImp
+                do j = 1,nImp
+                    umat(umatind(i,j,i,j)) = J_Ints(i,j)
+                enddo
+            enddo
+            !Store exchange integrals
+            do i = 1,nImp
+                do j = 1,nImp
+                    if(i.eq.j) cycle    !The diagonal terms are included in coulomb part
+                    umat(umatind(i,j,j,i)) = X_Ints(i,j)
+                enddo
+            enddo
         else
             do i=1,nImp
                 umat(umatind(i,i,i,i)) = U

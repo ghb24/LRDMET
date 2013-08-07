@@ -125,6 +125,8 @@ module Globals
     real(dp) , allocatable, target :: HL_Vec(:)         !The ground state eigenvector
     real(dp) , allocatable, target :: FullHamil(:,:)    !In case we do a complete diagonalization
     real(dp) , allocatable :: Spectrum(:)       !Eigenvalues in case of a complete diagonalization
+    real(dp) , allocatable :: J_Ints(:,:)       !Coulomb integrals over the impurity space
+    real(dp) , allocatable :: X_Ints(:,:)       !Exchange integrals over the impurity space
 
     !Analogous Beta space arrays
     real(dp), allocatable :: v_loc_b(:,:) 

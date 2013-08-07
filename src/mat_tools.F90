@@ -231,6 +231,10 @@ module mat_tools
             endif
             close(iunit)
 
+        elseif(tSingFiss) then
+            !Read in parameters for a two-band lattice
+            call Read_TwoBandLatt()
+
         elseif(LatticeDim.eq.1) then
             !Tridiagonal matrix
             do i=1,nSites-1
@@ -307,6 +311,95 @@ module mat_tools
 !        endif
 
     end subroutine make_hop_mat
+            
+    subroutine Read_TwoBandLatt()
+        use utils, only: get_free_unit
+        implicit none
+        logical :: exists
+        integer :: iunit,irow,icol,ios
+        real(dp) :: val
+        character(len=*), parameter :: t_r='Read_TwoBandLatt'
+        
+        write(6,"(A)") "Reading in global hopping integrals..."
+    
+        inquire(file='Tfort.dat',exist=exists)
+        if(.not.exists) call stop_all(t_r,'T matrix file cannot be found')
+        iunit = get_free_unit()
+        open(iunit,file='Tfort.dat',status='old',action='read')
+        icol = 1
+        irow = 1
+        do while(.true.)
+            !i  = irow +  4*(icellrow-1) + 108*(icol-1) + 108*4*(icellcol-1)
+            read(iunit,*,iostat=ios) val 
+            if(ios.gt.0) call stop_all(t_r,'Error reading integrals')
+            if(ios.lt.0) exit   !EOF
+
+            h0(irow,icol) = val
+
+            irow = irow + 1
+            if(irow.gt.nSites) then
+                irow = 1
+                icol = icol + 1
+            endif
+
+        enddo
+        close(iunit)
+
+        !Now read in the local coulomb and exchange integrals
+        if(.not.allocated(J_Ints)) allocate(J_Ints(nImp,nImp))
+        if(.not.allocated(X_Ints)) allocate(X_Ints(nImp,nImp))
+        J_Ints(:,:) = zero
+        X_Ints(:,:) = zero
+
+        write(6,"(A)") "Reading in local coulomb integrals..."
+
+        inquire(file='Ufort.dat',exist=exists)
+        if(.not.exists) call stop_all(t_r,'U matrix file cannot be found')
+        open(iunit,file='Ufort.dat',status='old',action='read')
+        icol = 1
+        irow = 1
+        do while(.true.)
+            read(iunit,*,iostat=ios) val
+            if(ios.gt.0) call stop_all(t_r,'Error reading integrals')
+            if(ios.lt.0) exit   !EOF
+
+            if((icol.le.nImp).and.(irow.le.nImp)) then
+                !Store the integral
+                J_Ints(irow,icol) = val
+            endif
+            irow = irow + 1
+            if(irow.gt.nSites) then
+                irow = 1
+                icol = icol + 1
+            endif
+        enddo
+        close(iunit)
+        
+        write(6,"(A)") "Reading in local exchange integrals..."
+
+        inquire(file='Xfort.dat',exist=exists)
+        if(.not.exists) call stop_all(t_r,'X matrix file cannot be found')
+        open(iunit,file='Xfort.dat',status='old',action='read')
+        icol = 1
+        irow = 1
+        do while(.true.)
+            read(iunit,*,iostat=ios) val
+            if(ios.gt.0) call stop_all(t_r,'Error reading integrals')
+            if(ios.lt.0) exit   !EOF
+
+            if((icol.le.nImp).and.(irow.le.nImp)) then
+                !Store the integral
+                X_Ints(irow,icol) = val
+            endif
+            irow = irow + 1
+            if(irow.gt.nSites) then
+                irow = 1
+                icol = icol + 1
+            endif
+        enddo
+        close(iunit)
+
+    end subroutine Read_TwoBandLatt
 
     !Permute the ordering of a real matrix in the lattice ordering, such that it turns into a matrix
     !in the impurity ordering, such that the impurities are defined first.
