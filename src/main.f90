@@ -1331,7 +1331,10 @@ Program RealHub
 
         tFinished = .false.
 
-        if((CurrU.ne.0).and.(tSingFiss)) return !We don't want to loop through U!
+        if((CurrU.ne.0).and.(tSingFiss)) then
+            tFinished = .true.
+            return !We don't want to loop through U!
+        endif
 
         if(nU_Vals.eq.0) then
             !We are sweeping through U values, rather than specifying them individually
