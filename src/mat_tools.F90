@@ -334,7 +334,7 @@ module mat_tools
             if(ios.gt.0) call stop_all(t_r,'Error reading integrals')
             if(ios.lt.0) exit   !EOF
 
-            h0(irow,icol) = val
+            h0(irow,icol) = - val
 
             irow = irow + 1
             if(irow.gt.nSites) then

@@ -949,7 +949,7 @@ module solvers
             else
                 if(iHamSize_N.eq.0) then
                     call CountSizeCompMat(FCIDetList(:,:),Elec,nFCIDet,Nmax,FCIBitList(:))
-                    iHamSize_N = Nmax
+                    !iHamSize_N = Nmax  Cannot strictly do this.
                 else
                     Nmax = iHamSize_N
                 endif
