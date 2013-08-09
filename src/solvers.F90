@@ -1161,14 +1161,14 @@ module solvers
             !Store coulomb integrals
             do i = 1,nImp
                 do j = 1,nImp
-                    umat(umatind(i,j,i,j)) = zero   !J_Ints(i,j)
+                    umat(umatind(i,j,i,j)) = J_Ints(i,j)
                 enddo
             enddo
             !Store exchange integrals
             do i = 1,nImp
                 do j = 1,nImp
                     if(i.eq.j) cycle    !The diagonal terms are included in coulomb part
-                    umat(umatind(i,j,j,i)) = zero   !X_Ints(i,j)
+                    umat(umatind(i,j,j,i)) = X_Ints(i,j)
                 enddo
             enddo
         else
