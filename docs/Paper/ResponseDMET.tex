@@ -121,95 +121,160 @@ phase transitions in the thermodynamic limit, and is closely representative of m
 of high-$T_c$ superconductivity\cite{Anderson87,Sordi2012,Millis2013}. Where possible, we compare to one-dimensional exact results\cite{Lieb68,Ovchinni1970}, as 
 well as large-scale DMFT calculations\cite{Go2009,Kotliar2008}, in addition to demonstrating spectra for the doped system and two-particle Greens functions.
 
-\emph{Method.-} Within the analytic quantum embedding formalism introduced for the ground state with the DMET method (see 
-Ref.~\onlinecite{Chan2012} and \onlinecite{Chan2013} for details), the coupling between the correlated `impurity' sites, $\{ |\alpha \rangle \}$, and the rest 
-of the system is represented via the component of the Schmidt basis of a single Slater determinant, $|\phi^{(0)}\rangle$, which couples the impurity space to 
-the `environment' space external to the impurity. This analytic coupling is represented by a one-electron space of the same dimension as 
-the impurity size, and denoted the ground-state {\em bath}, $\{ |\beta \rangle \}$. This space then spans the exact entanglement of the 
-impurity space to its environment, as defined by the original mean-field function over the entire extended lattice. The interacting Hamiltonian 
-is then projected into this space, which is now independent of the total number of sites in the system, and solved to return a ground-state 
-wavefunction, $|\Psi^{(0)} \rangle$, in the space of $\{ |\alpha \rangle \} \otimes \{ |\beta \rangle \} \otimes \text{\textnormal {det}} \{ | \mu \rangle \}$, where $\{ | \mu \rangle \}$ 
-represents the space of one-electron functions in $|\phi^{(0)}\rangle$ which are uncoupled to the impurity cluster after its Schmidt decomposition. Along with the 
-bath space, a self-consistency procedure designed to match the elements of the one-body reduced density matrix derived from $|\phi^{(0)}\rangle$ and $|\Psi^{(0)} \rangle$ over the impurity sites,
-returns a one-electron interaction potential, $u$, which describes some of the longer-ranged correlation effects, and controls the effective number of electrons in the impurity cluster.
+\emph{Method.-} We first recap the analytic DMET quantum embedding formalism introduced for the ground state, with more details provided in
+Ref.~\onlinecite{Chan2012} and \onlinecite{Chan2013}. The correlated ground state wavefunction, $|\Psi^{(0)} \rangle$, is obtained in the following steps.
+\begin{inparaenum}[\itshape i\upshape)]
+\item From the ground state of a one-electron Hamiltonian over the full space, $h$, a single Slater determinant, $|\phi^{(0)}\rangle$, is variationally minimized.
+\item A set of local `impurity' sites are identified, $\{ |\alpha \rangle \}$, and the formal Schmidt decomposition of $|\phi^{(0)}\rangle = \phi_{\alpha \beta} |\alpha \rangle |\beta \rangle$ into this space
+yields a set of bath states, $\{ |\beta \rangle \}$, whose fock space is the same dimension as the impurity space.
+\item The interacting embedded Hamiltonian is constructed from projection of $H$ into this basis as $H'=PH_{\mathrm emb}P$, with $P = \sum_{i j} |\alpha_i \beta_j \rangle \langle \alpha_i \beta_j |$. This space spans the exact entanglement of the impurity space to its environment, as defined by $|\phi^{(0)}\rangle$, and is now independent of the total number of sites in the system. To avoid double counting
+of correlation effects, $H_{\mathrm emb}$ is defined as the exact $H$ over the impurity sector, while the one-electron $h'$ is used over the rest of the space.
+\item $H'|\Psi^{(0)} \rangle = E_0 |\Psi^{(0)} \rangle$ is solved.
+\item A one-electron potential defined over the impurity space, $u$, is obtained in order to match the elements of the one-body density matrix of $|\phi^{(0)}\rangle$ and $|\Psi^{(0)} \rangle$.
+\item This defines a new one-electron Hamiltonian, $h' = h + u$, from which the process can be repeated until self-consistency.
+\end{inparaenum}
+This interaction potential, $u$, mimics some of the longer-ranged correlation effects, and controls the effective number of electrons in the impurity cluster.
 
-We now generalize this procedure for the construction of a set of now frequency-dependent bath states into which the interacting
-spectral functions can be projected. These bath states define the embedding in the wider system, and are derived from
-a response vector determined from a one-electron Hamiltonian, $h$, which spans the entire lattice.
-The first-order response function across the lattice is constructed as,
+This procedure is now generalized for the construction of a set of frequency-dependent bath states, into which the
+equations for the interacting response are projected. This procedure exactly embeds the local excitation spectrum in the response of the entire (infinte) lattice, 
+as defined by the one-electron, $|\phi^{(1)}(\omega) \rangle$, and can be defined by similar steps.
+\begin{inparaenum}[\itshape i\upshape)]
+\item The one electron response function is obtained from the solution to
+\begin{eqnarray}
+|\phi^{(1)}(\omega) \rangle &= \left[ \omega-(h'-\varepsilon_0)+i\eta \right]^{-1} {\hat V} |\phi^{(0)}\rangle  \nonumber \\ 
+                            &= {\hat R^{(0)}}(\omega) \phi_{\alpha \beta} |\alpha \rangle |\beta \rangle 
+\end{eqnarray}
+\item The {\em operator} $R^{(0)}(\omega)$ is decomposed into seperate operators as $R^{(0)}(\omega) = \sum_i \mathcal{O}^{(i)}_{\alpha}(\omega) \mathcal{O}^{(i)}_{\mathrm{ext}}(\omega)$, 
+which act over the local impurity space of $|\alpha \rangle$, and its orthogonal complement denoted the external space, which spans the bath space of $|\beta\rangle$.
+\item The space $\mathcal{K}(\omega) = \{ |\alpha \rangle \} \otimes \{ \mathcal{O}_{\mathrm{ext}}^{(i)}(\omega) | \beta \rangle \}$ then defines the projector $P(\omega) = |\mathcal{K}(\omega)\rangle \langle \mathcal{K}(\omega) |$, into which the fully-interacting response equations are projected.
+\item The interacting response, $|\Psi^{(1)} (\omega) \rangle$, is calculated from
 \begin{equation}
-|\phi^{(1)}(\omega) \rangle = \left[ \omega-(h-\varepsilon_0)+i\eta \right]^{-1} {\hat V} |\phi^{(0)}\rangle = 
-    {\hat G_0}(\omega) {\hat V} |\phi^{(0)} \rangle  , \label{nonintGF}
+    P \left[ \omega - (H_{\mathrm emb}-E_0) + i \eta \right] P | \Psi^{(1)}(\omega) \rangle = P {\hat V} P |\Psi^{(0)} \rangle   ,   \label{eqn:ExactResponse}
 \end{equation}
-where $h = t + u$ is a static, one-electron Hamiltonian over the lattice, defined by the non-interacting part of the Hamiltonian 
-in Eq.~\ref{eqn:hub}, and the interaction potential obtained from the ground-state self-consistency. 
-Although this is a one-electron Hamiltonian, the inclusion of the interaction potential mimics many of the correlation features of the interacting Hamiltonian.
-For simplicity, we restrict ourselves in this letter to the case of {\em local} spectral functions, where ${\hat V}$ and ${\hat A}$ are both closed operators
-within the impurity space, although extensions to non-local perturbations will be detailed in a forthcoming paper. This means that both the operator 
-${\hat V}$ and $|\phi^{(0)} \rangle$ are spanned by the original ground-state 
-space of $\{ |\alpha \rangle \} \otimes \{ |\beta \rangle \} \otimes \text{\textnormal {det}} \{ | \mu \rangle \}$. The frequency-dependent coupling to the environment 
-results from the ${\hat G_0}$ operator, and we now Schmidt decompose its action onto ${\hat V} |\phi^{(0)} \rangle$, in order to isolate 
-the coupling at each frequency point between the environment and fully correlated space of impurity sites and ground-state bath (i.e. 
-space of $\{|\alpha \rangle \} \oplus \{|\beta \rangle \} \equiv \{ | \gamma \rangle \}$). The space external to this to which the coupling is defined 
-is denoted by $\{| n \rangle \}$, which contains $\{ | \mu \rangle \}$. We choose to partition the response into these spaces to ensure that at all 
-frequencies, we span the correlated ground-state wavefunction, $|\Psi^{(0)} \rangle$.
-
-The action of ${\hat G_0}(\omega){\hat V}$ on $|\phi^{(0)} \rangle$ can be easily found in the eigenbasis of $h$, $\{ |\chi_r \rangle ; \epsilon_r \}$, 
-and rotated such that the operators act solely within the partitioned spaces. For instance, with ${\hat V}=a_{\alpha}$, 
-\begin{equation}
-    {\hat G_0}(\omega){\hat V} = \sum_{\gamma} X_{\gamma}(\omega) a_{\gamma} + \sum_{n} X_{n}(\omega) a_n  ,
-\end{equation}
-with
-\begin{equation}
-    X_n(\omega) = \sum_{r \in \text{\textnormal {occ}}} \frac{\langle n|\chi_r \rangle \langle \chi_r | a_{\alpha} | \phi^{(0)} \rangle}{\omega - \epsilon_r + i \eta}   .
-%    X_n(\omega) = \sum_{r \in \text{\textnormal {occ}}} \frac{|n \rangle \langle n|\chi_r \rangle \langle \chi_r | a_{\alpha} | \phi^{(0)} \rangle}{\omega - \epsilon_r + i \eta}   .
-\end{equation}
-For a two-index perturbation such as ${\hat V}=a_{\alpha}^{\dagger}a_{\alpha}$, the action of operator on $|\phi^{(0)} \rangle$ can be similarly decomposed as,
-\begin{align}
-    {\hat G_0}(\omega){\hat V} =& \sum_{\gamma \gamma'} X_{\gamma \gamma'} a_{\gamma}^{\dagger} a_{\gamma'} + \sum_{n \gamma} X_{n \gamma} a_n^{\dagger} a_{\gamma} \nonumber\\ 
-                               +& \sum_{\gamma n} X_{\gamma n} a_{\gamma}^{\dagger} a_{n}  + \sum_{n n'} X_{n n'} a_n^{\dagger} a_{n'}    .   \label{eqn:2elpert}
-\end{align}
-The frequency-dependent bath states representing the coupling are then formed from the action on the external part of the space, $\{| n \rangle \}$. For instance, in the 
-operator defined by Eq.~\ref{eqn:2elpert}, the action over the external space can be written as a new operator,
-\begin{equation}
-    {\hat B}(\omega) = 1 + \sum_{n \gamma} X_{n \gamma}(\omega) a_n^{\dagger} + \sum_{\gamma n} X_{\gamma n}(\omega) a_{n} + \sum_{n n'} X_{n n'}(\omega) a_n^{\dagger} a_{n'} .   \label{eqn:B}
-\end{equation}
-This operator defines the space, \mbox{$\mathcal{K}(\omega)=\text{\textnormal {span}} \left[ \{|\alpha \rangle \} \otimes \{ |\beta \rangle \} \otimes {\hat B}(\omega) \text{\textnormal {det}} \{ | \mu \rangle \} \right]$}, into which the fully-interacting 
-response equations are then projected. The original ground-state space is included as the unity part of ${\hat B}(\omega)$, and the other states represent 
-the frequency-dependent, many-electron bath states, which exactly span the coupling to the $|\phi^{(1)}(\omega) \rangle$ wavefunction defined in Eq.~\ref{nonintGF}.
-The fully interacting response, $|\Psi^{(1)}(\omega) \rangle$, is calculated from
-\begin{equation}
-    P \left[ \omega - (H-E_0) + i \eta \right] P | \Psi^{(1)}(\omega) \rangle = P {\hat V} P |\Psi^{(0)} \rangle   ,   \label{eqn:ExactResponse}
-\end{equation}
-where $P=|\mathcal{K}(\omega) \rangle \langle \mathcal{K}(\omega) |$ is defined as the projector into the basis $\mathcal{K}(\omega)$. 
+which in this work is done via an exact, iterative procedure\cite{}.
 $|\Psi^{(0)} \rangle$ can be reoptimized in this new basis, however this was found empirically not to qualitatively change results, and 
 so $|\Psi^{(0)}\rangle$ and $E_0$ are taken to be the ground-state wavefunction and energy in the 
-original $\{|\alpha \rangle \} \otimes \{ |\beta \rangle \} \otimes \text{\textnormal {det}} \{ | \mu \rangle \} $ space. 
-Since we are currently only considering local perturbations,
-the projectors on the right-hand side of Eq.~\ref{eqn:ExactResponse} are not necessary, but included for completeness.
-This equation is then solved via an exact, iterative procedure to obtain $| \Psi^{(1)}(\omega) \rangle$, and the correlation function desired is obtained from 
-$G(\omega;{\hat A},{\hat V})=\langle \Psi^{(0)} | {\hat A}^{\dagger} | \Psi^{(1)}(\omega) \rangle$.
+original space of $\{ | \alpha \rangle \} \otimes \{ | \beta \rangle \}$.
+\item The final spectral function is obtained as $G(\omega; \hat{A}, \hat{V}) = \langle \Psi^{(0)} | P \hat{A}^{\dagger} P | \Psi^{(1)}(\omega) \rangle$.
+\end{inparaenum}
 
-The number of individual operators in ${\hat B}(\omega)$ which define the contracted bath states from the Schmidt decomposition 
-of $|\phi^{(1)}(\omega) \rangle$, grow with increasing particle rank of ${\hat V}$. For ${\hat V}=a_{\alpha}$, as required for the single-particle Greens function,
-there is only one additional operator in ${\hat B}(\omega)$, and therefore the resultant dimension of the many-electron space $\mathcal{K}(\omega)$ in 
-which the interacting equations are solved, is only approximately twice as large as the corresponding ground state space. For two-particle functions,
-as shown in Eq.~\ref{eqn:2elpert}, there are $4 \times \text{\textnormal {dim}}\{|\gamma \rangle \} + 1$ operators. The actual increase in the size of the Hilbert
-space in practice compared to the ground state is generally much smaller than this after consideration of particle number symmetry and removal of linear
-dependencies (the basis is not generally orthonormal and the overlap matrix is explicitly considered). However, the key point of the 
-approach is that the analytic construction of the bath states is no more costly than the diagonalization of the one-particle Hamiltonian, $h$, and once the
-fully interacting response equation is projected into this basis, there is no dependence on the size of the underlying lattice, rendering the method
-truly mean-field scaling with the size of the system. 
+There are a number of points which should be made about the above construction. For simplicity, we restrict ourselves here to consider {\em local} spectral functions, where
+${\hat V}$ and ${\hat A}$ are both closed operators within the space of $\{|\alpha \rangle \}$, although extensions to non-local perturbations will be detailed in a forthcoming paper.
+The set of operators $\mathcal{O}_{\mathrm{ext}}^{(i)}(\omega)$ includes the unity operator, where the action of $R^{(0)}(\omega)$ is entirely within the impurity space. This ensures that
+the space of the ground-state DMET is included within $\mathcal{K}(\omega)$. The rest of the $\mathcal{O}_{\mathrm{ext}}^{(i)}(\omega)$ operators then define a set of frequency-dependent
+bath states, which exactly span $|\phi^{(1)}(\omega) \rangle$. This ensures that the spectral functions are exact in the $U=0$ non-interacting limits, where
+$h$, and therefore $|\phi^{(1)}(\omega) \rangle$ are also exact. Away from this limit, 
+$|\phi^{(1)}(\omega) \rangle$ also changes, due to the presence of the interaction potential $u$ in the one-electron Hamiltonian, which includes many of the correlation effects of the system.
+In addition, $|\Psi^{(1)} \rangle $ is also exact for uncoupled, local excitations within the impurity cluster, due
+to the completeness of the $|\alpha \rangle$ space included in $\mathcal{K}(\omega)$.
 
-It should be noted that since the basis spanned by $\mathcal{K}(\omega)$ includes within it the space of $|\phi^{(1)}(\omega) \rangle$ by construction, 
-and since this response is exact in the non-interacting limit (since $h$ is also exact), $|\Psi^{(1)}(\omega)\rangle$ is similarly exact in this limit.
-In addition, for uncoupled, local excitations of the impurity cluster, $|\Psi^{(1)}(\omega)\rangle$ is also exact, due to the completeness of the 
-$|\alpha \rangle$ space included in $\mathcal{K}(\omega)$. It is now necessary to turn to numerical applications of the method to determine the
+The exactness in these limits is a feature that this construction shares with DMFT, but there are constrasting properties which should also be highlighted. The coupling to the environment
+is achieved via a set of bath states, which change continuously with frequency, and which couple the impurity space to the set of non-local excitations appropriate for the frequency considered. 
+In contrast, DMFT constructs bath states which are
+frequency-independent, and whose size must be formally infinite in order to avoid a discretization error which is not present in the above {\em analytic} construction. Furthermore,
+DMFT is formulated in terms of the one-particle Greens function, but the procedure outlined above is suitable for general perturbation of any rank. For one-electron Greens functions,
+the space of $|\phi^{(1)}(\omega) \rangle$ is exactly spanned by a single bath operator in $\mathcal{K}(\omega)$, and therefore the resultant dimension of the space into which the problem
+is projected is only approximately twice as large as the ground state Hilbert space. For two-particle functions, there are $\mathcal{O}[\text{\textnormal {dim}} \{\alpha\}]$ operators, although the actual
+increase in the size of the Hilbert space in practice is generally much smaller than this after consideration of particle number symmetry and optional removal of linear dependencies (the basis
+for more than single particle perturbations is not generally orthonormal, and the overlap matrix is explicitly considered). However, the key point of the approach is that the analytic construction
+of the bath states which exactly span $|\phi^{(1)}(\omega) \rangle$, is no more costly than the diagonalization of the one-particle Hamiltonian, $h$, and once the fully interacting response is
+projected into this basis, there is no dependence on the size of the underlying lattice, rendering the method truely mean-field scaling with the size of the system. 
+
+It is now necessary to turn to numerical applications of the method to determine the
 quality of the results away from these exact limits. 
 In this letter, we restrict ourselves to consider the one- and two-electron local Greens function,
 defining the local density of states, and the density-density spectral functions respectively, while other local dynamic correlation functions can be obtained analogously.
-To underline the small cost at which these thermodynamic limit results were obtained, all calculations presented were achieved on a single computing core at a 
-computational cost of at most a few seconds per frequency point.
+
+%\emph{Method.-} Within the analytic quantum embedding formalism introduced for the ground state with the DMET method (see 
+%Ref.~\onlinecite{Chan2012} and \onlinecite{Chan2013} for details), the coupling between the correlated `impurity' sites, $\{ |\alpha \rangle \}$, and the rest 
+%of the system is represented via the component of the Schmidt basis of a single Slater determinant, $|\phi^{(0)}\rangle$, which couples the impurity space to 
+%the `environment' space external to the impurity. This analytic coupling is represented by a one-electron space of the same dimension as 
+%the impurity size, and denoted the ground-state {\em bath}, $\{ |\beta \rangle \}$. This space then spans the exact entanglement of the 
+%impurity space to its environment, as defined by the original mean-field function over the entire extended lattice. The interacting Hamiltonian 
+%is then projected into this space, which is now independent of the total number of sites in the system, and solved to return a ground-state 
+%wavefunction, $|\Psi^{(0)} \rangle$, in the space of $\{ |\alpha \rangle \} \otimes \{ |\beta \rangle \} \otimes \text{\textnormal {det}} \{ | \mu \rangle \}$, where $\{ | \mu \rangle \}$ 
+%represents the space of one-electron functions in $|\phi^{(0)}\rangle$ which are uncoupled to the impurity cluster after its Schmidt decomposition. Along with the 
+%bath space, a self-consistency procedure designed to match the elements of the one-body reduced density matrix derived from $|\phi^{(0)}\rangle$ and $|\Psi^{(0)} \rangle$ over the impurity sites,
+%returns a one-electron interaction potential, $u$, which describes some of the longer-ranged correlation effects, and controls the effective number of electrons in the impurity cluster.
+%
+%We now generalize this procedure for the construction of a set of now frequency-dependent bath states into which the interacting
+%spectral functions can be projected. These bath states define the embedding in the wider system, and are derived from
+%a response vector determined from a one-electron Hamiltonian, $h$, which spans the entire lattice.
+%The first-order response function across the lattice is constructed as,
+%\begin{equation}
+%|\phi^{(1)}(\omega) \rangle = \left[ \omega-(h-\varepsilon_0)+i\eta \right]^{-1} {\hat V} |\phi^{(0)}\rangle = 
+%    {\hat G_0}(\omega) {\hat V} |\phi^{(0)} \rangle  , \label{nonintGF}
+%\end{equation}
+%where $h = t + u$ is a static, one-electron Hamiltonian over the lattice, defined by the non-interacting part of the Hamiltonian 
+%in Eq.~\ref{eqn:hub}, and the interaction potential obtained from the ground-state self-consistency. 
+%Although this is a one-electron Hamiltonian, the inclusion of the interaction potential mimics many of the correlation features of the interacting Hamiltonian.
+%For simplicity, we restrict ourselves in this letter to the case of {\em local} spectral functions, where ${\hat V}$ and ${\hat A}$ are both closed operators
+%within the impurity space, although extensions to non-local perturbations will be detailed in a forthcoming paper. This means that both the operator 
+%${\hat V}$ and $|\phi^{(0)} \rangle$ are spanned by the original ground-state 
+%space of $\{ |\alpha \rangle \} \otimes \{ |\beta \rangle \} \otimes \text{\textnormal {det}} \{ | \mu \rangle \}$. The frequency-dependent coupling to the environment 
+%results from the ${\hat G_0}$ operator, and we now Schmidt decompose its action onto ${\hat V} |\phi^{(0)} \rangle$, in order to isolate 
+%the coupling at each frequency point between the environment and fully correlated space of impurity sites and ground-state bath (i.e. 
+%space of $\{|\alpha \rangle \} \oplus \{|\beta \rangle \} \equiv \{ | \gamma \rangle \}$). The space external to this to which the coupling is defined 
+%is denoted by $\{| n \rangle \}$, which contains $\{ | \mu \rangle \}$. We choose to partition the response into these spaces to ensure that at all 
+%frequencies, we span the correlated ground-state wavefunction, $|\Psi^{(0)} \rangle$.
+%
+%The action of ${\hat G_0}(\omega){\hat V}$ on $|\phi^{(0)} \rangle$ can be easily found in the eigenbasis of $h$, $\{ |\chi_r \rangle ; \epsilon_r \}$, 
+%and rotated such that the operators act solely within the partitioned spaces. For instance, with ${\hat V}=a_{\alpha}$, 
+%\begin{equation}
+%    {\hat G_0}(\omega){\hat V} = \sum_{\gamma} X_{\gamma}(\omega) a_{\gamma} + \sum_{n} X_{n}(\omega) a_n  ,
+%\end{equation}
+%with
+%\begin{equation}
+%    X_n(\omega) = \sum_{r \in \text{\textnormal {occ}}} \frac{\langle n|\chi_r \rangle \langle \chi_r | a_{\alpha} | \phi^{(0)} \rangle}{\omega - \epsilon_r + i \eta}   .
+%%    X_n(\omega) = \sum_{r \in \text{\textnormal {occ}}} \frac{|n \rangle \langle n|\chi_r \rangle \langle \chi_r | a_{\alpha} | \phi^{(0)} \rangle}{\omega - \epsilon_r + i \eta}   .
+%\end{equation}
+%For a two-index perturbation such as ${\hat V}=a_{\alpha}^{\dagger}a_{\alpha}$, the action of operator on $|\phi^{(0)} \rangle$ can be similarly decomposed as,
+%\begin{align}
+%    {\hat G_0}(\omega){\hat V} =& \sum_{\gamma \gamma'} X_{\gamma \gamma'} a_{\gamma}^{\dagger} a_{\gamma'} + \sum_{n \gamma} X_{n \gamma} a_n^{\dagger} a_{\gamma} \nonumber\\ 
+%                               +& \sum_{\gamma n} X_{\gamma n} a_{\gamma}^{\dagger} a_{n}  + \sum_{n n'} X_{n n'} a_n^{\dagger} a_{n'}    .   \label{eqn:2elpert}
+%\end{align}
+%The frequency-dependent bath states representing the coupling are then formed from the action on the external part of the space, $\{| n \rangle \}$. For instance, in the 
+%operator defined by Eq.~\ref{eqn:2elpert}, the action over the external space can be written as a new operator,
+%\begin{equation}
+%    {\hat B}(\omega) = 1 + \sum_{n \gamma} X_{n \gamma}(\omega) a_n^{\dagger} + \sum_{\gamma n} X_{\gamma n}(\omega) a_{n} + \sum_{n n'} X_{n n'}(\omega) a_n^{\dagger} a_{n'} .   \label{eqn:B}
+%\end{equation}
+%This operator defines the space, \mbox{$\mathcal{K}(\omega)=\text{\textnormal {span}} \left[ \{|\alpha \rangle \} \otimes \{ |\beta \rangle \} \otimes {\hat B}(\omega) \text{\textnormal {det}} \{ | \mu \rangle \} \right]$}, into which the fully-interacting 
+%response equations are then projected. The original ground-state space is included as the unity part of ${\hat B}(\omega)$, and the other states represent 
+%the frequency-dependent, many-electron bath states, which exactly span the coupling to the $|\phi^{(1)}(\omega) \rangle$ wavefunction defined in Eq.~\ref{nonintGF}.
+%The fully interacting response, $|\Psi^{(1)}(\omega) \rangle$, is calculated from
+%\begin{equation}
+%    P \left[ \omega - (H-E_0) + i \eta \right] P | \Psi^{(1)}(\omega) \rangle = P {\hat V} P |\Psi^{(0)} \rangle   ,   \label{eqn:ExactResponse}
+%\end{equation}
+%where $P=|\mathcal{K}(\omega) \rangle \langle \mathcal{K}(\omega) |$ is defined as the projector into the basis $\mathcal{K}(\omega)$. 
+%$|\Psi^{(0)} \rangle$ can be reoptimized in this new basis, however this was found empirically not to qualitatively change results, and 
+%so $|\Psi^{(0)}\rangle$ and $E_0$ are taken to be the ground-state wavefunction and energy in the 
+%original $\{|\alpha \rangle \} \otimes \{ |\beta \rangle \} \otimes \text{\textnormal {det}} \{ | \mu \rangle \} $ space. 
+%Since we are currently only considering local perturbations,
+%the projectors on the right-hand side of Eq.~\ref{eqn:ExactResponse} are not necessary, but included for completeness.
+%This equation is then solved via an exact, iterative procedure to obtain $| \Psi^{(1)}(\omega) \rangle$, and the correlation function desired is obtained from 
+%$G(\omega;{\hat A},{\hat V})=\langle \Psi^{(0)} | {\hat A}^{\dagger} | \Psi^{(1)}(\omega) \rangle$.
+%
+%The number of individual operators in ${\hat B}(\omega)$ which define the contracted bath states from the Schmidt decomposition 
+%of $|\phi^{(1)}(\omega) \rangle$, grow with increasing particle rank of ${\hat V}$. For ${\hat V}=a_{\alpha}$, as required for the single-particle Greens function,
+%there is only one additional operator in ${\hat B}(\omega)$, and therefore the resultant dimension of the many-electron space $\mathcal{K}(\omega)$ in 
+%which the interacting equations are solved, is only approximately twice as large as the corresponding ground state space. For two-particle functions,
+%as shown in Eq.~\ref{eqn:2elpert}, there are $4 \times \text{\textnormal {dim}}\{|\gamma \rangle \} + 1$ operators. The actual increase in the size of the Hilbert
+%space in practice compared to the ground state is generally much smaller than this after consideration of particle number symmetry and removal of linear
+%dependencies (the basis is not generally orthonormal and the overlap matrix is explicitly considered). However, the key point of the 
+%approach is that the analytic construction of the bath states is no more costly than the diagonalization of the one-particle Hamiltonian, $h$, and once the
+%fully interacting response equation is projected into this basis, there is no dependence on the size of the underlying lattice, rendering the method
+%truly mean-field scaling with the size of the system. 
+%
+%It should be noted that since the basis spanned by $\mathcal{K}(\omega)$ includes within it the space of $|\phi^{(1)}(\omega) \rangle$ by construction, 
+%and since this response is exact in the non-interacting limit (since $h$ is also exact), $|\Psi^{(1)}(\omega)\rangle$ is similarly exact in this limit.
+%In addition, for uncoupled, local excitations of the impurity cluster, $|\Psi^{(1)}(\omega)\rangle$ is also exact, due to the completeness of the 
+%$|\alpha \rangle$ space included in $\mathcal{K}(\omega)$. 
+%It is now necessary to turn to numerical applications of the method to determine the
+%quality of the results away from these exact limits. 
+%In this letter, we restrict ourselves to consider the one- and two-electron local Greens function,
+%defining the local density of states, and the density-density spectral functions respectively, while other local dynamic correlation functions can be obtained analogously.
+%To underline the small cost at which these thermodynamic limit results were obtained, all calculations presented were achieved on a single computing core at a 
+%computational cost of at most a few seconds per frequency point.
 
 %+++++++++++++++++++++++++++++++++++++++++++++++++++++++
 %   1D HUBBARD MODEL PLOTS vs. CDMFT
