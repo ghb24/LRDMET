@@ -813,7 +813,7 @@ module MomSpectra
         complex(dp), intent(out) :: StatickGF_Ann_Emb_Ket(nOcc-nImp+1:nOcc+nImp,nImp_GF)
         complex(dp), intent(out) :: StatickGF_Ann_Emb_Bra(nOcc-nImp+1:nOcc+nImp,nImp_GF)
         complex(dp), allocatable :: HFPertBasis_Ann(:),HFPertBasis_Cre(:)
-        integer :: SS_Period,ind_1,ind_2,i,x,n
+        integer :: SS_Period,ind_1,ind_2,i,n
         logical :: tCreFound,tAnnFound
         character(len=*), parameter :: t_r='FindStaticMomSchmidtPert'
 

@@ -745,6 +745,7 @@ Program RealHub
         else
             tMFResponse = .false.
         endif
+        if(tCorrNI_Spectra) tConstructFullSchmidtBasis = .true.
         if(tCorrNI_MomGF.or.tCharged_MomResponse) then
             !Project the final orbitals onto the original k-space
             !tProjectHFKPnts = .true.
@@ -794,11 +795,8 @@ Program RealHub
         if(tDDResponse.and.tSC_LR) then
             call stop_all(t_r,'Self-consistency not yet implemented for density response')
         endif
-        if(tSC_LR.and.(.not.tAllImp_LR)) then
-            call stop_all(t_r,'Self-consistency not yet implemented without considering all impurity response functions')
-        endif
-        if(tAllImp_LR.and.(.not.tSC_LR)) then
-            call stop_all(t_r,'Cannot yet calculate all impurity response functions, without including self-consistency loops')
+        if(tAllImp_LR.and.tLR_DMET) then
+            call stop_all(t_r,'Calculation of all impurity response functions for correlated spectra still buggy - bug ghb24')
         endif
         if((.not.tCompleteDiag).and.(.not.tNonDirDavidson).and.tLR_DMET) then
             call stop_all(t_r,'To solve DMET_LR, must perform complete diag or non-direct davidson, '   &

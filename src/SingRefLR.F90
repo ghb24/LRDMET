@@ -127,8 +127,9 @@ module SingRefLR
         use utils, only: get_free_unit,append_ext_real
         implicit none
         real(dp) :: Omega,mu
-        integer :: unit_a,unit_b,i,a
-        complex(dp) :: ni_lr_ann,ni_lr_cre,ni_lr,ni_lr_ann_b,ni_lr_cre_b,ni_lr_b
+        integer :: unit_a,unit_b,i,a,nImp_GF,imp
+        complex(dp), allocatable :: ni_lr_ann(:),ni_lr_cre(:),ni_lr(:),ni_lr_ann_b(:),ni_lr_cre_b(:),ni_lr_b(:)
+        complex(dp) :: Tr_ni_lr,Tr_ni_lr_b
         character(64) :: filename,filename_b
 
         write(6,"(A)") "Calculating non-interacting single-particle local greens function including GS correlation potential"
@@ -154,44 +155,78 @@ module SingRefLR
             mu = 0.0_dp
         endif
 
+        if(tAllImp_LR) then
+            nImp_GF = nImp
+        else
+            nImp_GF = 1
+        endif
+
+        allocate(ni_lr_ann(nImp_GF))
+        allocate(ni_lr_cre(nImp_GF))
+        allocate(ni_lr_ann_b(nImp_GF))
+        allocate(ni_lr_cre_b(nImp_GF))
+        allocate(ni_lr(nImp_GF))
+        allocate(ni_lr_b(nImp_GF))
+
         Omega = Start_Omega
         do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
 
-            ni_lr_ann = zzero
-            ni_lr_cre = zzero
+            ni_lr_ann(:) = zzero
+            ni_lr_cre(:) = zzero
             do i = 1,nOcc
-                ni_lr_ann = ni_lr_ann + dcmplx(HFOrbs(1,i)**2,zero) / &
-                    (dcmplx(Omega+mu,dDelta)-HFEnergies(i))
+                do imp = 1,nImp_GF
+                    ni_lr_ann(imp) = ni_lr_ann(imp) + dcmplx(HFOrbs(imp,i)**2,zero) / &
+                        (dcmplx(Omega+mu,dDelta)-HFEnergies(i))
+                enddo
             enddo
             do a = nOcc+1,nSites
-                ni_lr_cre = ni_lr_cre + dcmplx(HFOrbs(1,a)**2,zero) / &
-                    (dcmplx(Omega+mu,dDelta)-HFEnergies(a))
+                do imp = 1,nImp_GF
+                    ni_lr_cre(imp) = ni_lr_cre(imp) + dcmplx(HFOrbs(imp,a)**2,zero) / &
+                        (dcmplx(Omega+mu,dDelta)-HFEnergies(a))
+                enddo
             enddo
-            ni_lr = ni_lr_ann + ni_lr_cre 
+            ni_lr(:) = ni_lr_ann(:) + ni_lr_cre(:)
             if(tUHF) then
-                ni_lr_ann_b = zzero
-                ni_lr_cre_b = zzero
+                ni_lr_ann_b(:) = zzero
+                ni_lr_cre_b(:) = zzero
                 do i = 1,nOcc
-                    ni_lr_ann_b = ni_lr_ann_b + dcmplx(HFOrbs_b(1,i)**2,zero) / &
-                        (dcmplx(Omega+mu,dDelta)-HFEnergies_b(i))
+                    do imp = 1,nImp_GF
+                        ni_lr_ann_b(imp) = ni_lr_ann_b(imp) + dcmplx(HFOrbs_b(imp,i)**2,zero) / &
+                            (dcmplx(Omega+mu,dDelta)-HFEnergies_b(i))
+                    enddo
                 enddo
                 do a = nOcc+1,nSites
-                    ni_lr_cre_b = ni_lr_cre_b + dcmplx(HFOrbs_b(1,a)**2,zero) / &
-                        (dcmplx(Omega+mu,dDelta)-HFEnergies_b(a))
+                    do imp = 1,nImp_GF
+                        ni_lr_cre_b(imp) = ni_lr_cre_b(imp) + dcmplx(HFOrbs_b(imp,a)**2,zero) / &
+                            (dcmplx(Omega+mu,dDelta)-HFEnergies_b(a))
+                    enddo
                 enddo
-                ni_lr_b = ni_lr_ann_b + ni_lr_cre_b
+                ni_lr_b(:) = ni_lr_ann_b(:) + ni_lr_cre_b(:)
             endif
 
+            Tr_ni_lr = sum(ni_lr) / nImp_GF
+            Tr_ni_lr_b = sum(ni_lr_b) / nImp_GF
+
             !Write out
-            write(unit_a,"(5G22.10)") Omega,real(ni_lr),-aimag(ni_lr),-aimag(ni_lr_ann),-aimag(ni_lr_cre)
+            write(unit_a,"(3G22.10)",advance='no') Omega,real(Tr_ni_lr),-aimag(Tr_ni_lr)
+            do i = 1,nImp_GF-1
+                write(unit_a,"(2G22.10)",advance='no') -aimag(ni_lr_ann(i)),-aimag(ni_lr_cre(i))
+            enddo
+            write(unit_a,"(2G22.10)") -aimag(ni_lr_ann(nImp_GF)),-aimag(ni_lr_cre(nImp_GF))
+
             if(tUHF) then
-                write(unit_b,"(5G22.10)") Omega,real(ni_lr_b),-aimag(ni_lr_b),-aimag(ni_lr_ann_b),-aimag(ni_lr_cre_b)
+                write(unit_b,"(5G22.10)") Omega,real(Tr_ni_lr_b),-aimag(Tr_ni_lr_b)
+                do i = 1,nImp_GF-1
+                    write(unit_b,"(2G22.10)",advance='no') -aimag(ni_lr_ann_b(i)),-aimag(ni_lr_cre_b(i))
+                enddo
+                write(unit_b,"(2G22.10)") -aimag(ni_lr_ann_b(nImp_GF)),-aimag(ni_lr_cre_b(nImp_GF))
             endif
 
             Omega = Omega + Omega_Step
         enddo
         close(unit_a)
         if(tUHF) close(unit_b)
+        deallocate(ni_lr_ann,ni_lr_ann_b,ni_lr_cre,ni_lr_cre_b,ni_lr,ni_lr_b)
 
     end subroutine CorrNI_LocalGF
 
