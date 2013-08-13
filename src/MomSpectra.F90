@@ -9,6 +9,55 @@ module MomSpectra
 
     contains
 
+    subroutine SC_Mom_LR()
+        use utils, only: get_free_unit,append_ext_real,append_ext
+        implicit none
+        integer :: iunit
+        logical :: exists
+        character(64) :: filename,filename2
+        character(128) :: header
+        character(len=*), parameter :: t_r='SC_Mom_LR'
+
+        !First, read back in the G_00 (real and complex)
+        iunit = get_free_unit()
+        call append_ext_real('EC-TDA_GFResponse',U,filename)
+        if(.not.tHalfFill) then
+            !Also append occupation of lattice to the filename
+            call append_ext(filename,nOcc,filename2)
+        else
+            filename2 = filename
+        endif
+        inquire(file=filename2,exist=exists)
+        if(.not.exists) then
+            call stop_all(t_r,'Cannot find local greens function file')
+        endif
+        open(unit=iunit,file=filename2,status='old',action='read')
+
+        read(iunit,*) header
+        Omega = Start_Omega
+        i = 0
+        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+            i = i + 1
+        enddo
+        allocate(G00(i))    !The correlated greens function
+        G00(:) = zzero
+        Omega = Start_Omega
+        i = 0
+        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+            i = i + 1
+            read(iunit,"(3G22.10)") Omega_val,Re_LR,Im_LR
+            G00(i) = dcmplx(Re_LR,Im_LR)
+        enddo
+        close(iunit)
+
+
+
+
+
+
+
+    end subroutine SC_Mom_LR
+
     subroutine MomGF_Ex()
         use utils, only: get_free_unit,append_ext_real,append_ext
         use DetBitOps, only: DecodeBitDet,SQOperator,CountBits

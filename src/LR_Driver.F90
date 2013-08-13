@@ -9,6 +9,19 @@ module LRDriver
 
     contains
 
+    !Attempt to get k-space spectral functions by self-consistenly calculating k-independent hybridization and self-energy contributions
+    subroutine SC_SRMom_LR()
+        implicit none
+
+        !First, calculate G_00
+        call NonIntExCont_TDA_MCLR_Charged_Cmprs()
+
+        !Now calculate the hybridization and self-energy self-consistently
+        !This will read back in the greens function
+        call SC_Mom_LR()
+
+    end subroutine SC_SRMom_LR
+
     !This is the high level routine to work out how we want to do the linear response
     !These functions are for single-reference (generally non-interacting) spectral functions, but using the correlated one-electron potential in their calculation.
     !Therefore, they should be pretty good around the ground state.
