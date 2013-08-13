@@ -41,7 +41,10 @@ module MomSpectra
         do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
             i = i + 1
         enddo
-        allocate(G00(i))    !The correlated greens function
+        i = nESteps
+        allocate(G00(nESteps))    !The correlated greens function
+        allocate(SE(nESteps))     !The self energy
+        allocate(Hybrid(nESteps)) !The hybridization
         G00(:) = zzero
         Omega = Start_Omega
         i = 0
@@ -51,6 +54,20 @@ module MomSpectra
             G00(i) = dcmplx(Re_LR,Im_LR)
         enddo
         close(iunit)
+
+        SE(:) = zzero
+        Hybrid(:) = zzero
+
+        allocate(LocalMomGF(nESteps))
+
+        do while(.true.)
+
+            !Construct FT of k-space GFs and take zeroth part.
+            call FindLocalMomGF(nESteps,SE,LocalMomGF)
+
+            !This calculates the sum of all the k-space greens functions
+            subroutine FindLocalMomGF(n,SE,LocalMomGF)
+            
 
 
 
