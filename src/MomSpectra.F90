@@ -12,8 +12,10 @@ module MomSpectra
     subroutine SC_Mom_LR()
         use utils, only: get_free_unit,append_ext_real,append_ext
         implicit none
-        integer :: iunit
+        integer :: iunit,i
         logical :: exists
+        complex(dp), allocatable :: G00(:)
+        real(dp) :: Omega,Re_LR,Im_LR,Omega_Val
         character(64) :: filename,filename2
         character(128) :: header
         character(len=*), parameter :: t_r='SC_Mom_LR'
