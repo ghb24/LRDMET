@@ -65,8 +65,48 @@ module MomSpectra
             !Construct FT of k-space GFs and take zeroth part.
             call FindLocalMomGF(nESteps,SE,LocalMomGF)
 
-            !This calculates the sum of all the k-space greens functions
+            !This calculates the sum of all the k-space greens functions over the 'n' frequency points
+            !\sum_k 1/
+            !Assume we want to do this for the sum of the two greens fucntions? (ie retarded & advanced?)
             subroutine FindLocalMomGF(n,SE,LocalMomGF)
+                implicit none
+                integer, intent(in) :: n
+                complex(dp), intent(in) :: SE(n)
+                complex(dp), intent(out) :: LocalMomGF(n)
+
+                LocalMomGF(:) = zzero
+
+                do kPnt = 1,nKPnts
+                    !Run through all k-points
+                    ind_1 = ((kPnt-1)*SS_Period) + 1
+                    ind_2 = SS_Period*kPnt
+                        
+                    !Zero the individual greens functions
+                    ni_lr_ann(:) = zzero
+                    ni_lr_cre(:) = zzero
+
+                    i = 0
+                    Omega = Start_Omega
+                    do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+                        i = i + 1
+                        if(i.gt.n) call stop_all(t_r,'Too many freq points')
+
+                        do j = ind_1,ind_2  !Run throuh eigenvectors corresponding to this kpoint
+                            if(KVec_InvEMap(i).lt.nOcc) then
+                                !Occipied orbital
+                                ni_lr_ann(i) = ni_lr_ann(i) + zone/(dcmplx(Omega+mu,dDelta)-k_HFEnergies(j) - SE(i) )
+                            else
+                                ni_lr_cre(i) = ni_lr_cre(i) + zone/(dcmplx(Omega+mu,dDelta)-k_HFEnergies(j) - SE(i) )
+                            endif
+                        enddo
+
+                        LocalMomGF(i) = LocalMomGF(i) + ni_lr_ann(i) + ni_lr_cre(i)
+
+                        Omega = Omega + Omega_Step
+                    enddo
+
+                enddo
+            end subroutine FindLocalMomGF
             
 
 
