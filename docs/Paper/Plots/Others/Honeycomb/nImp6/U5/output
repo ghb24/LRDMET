@@ -1,0 +1,1535 @@
+***  Starting real-space hubbard/anderson calculation  ***
+ ================================================================
+ Compiled on Aug 06 2013 at 23:04:43
+ VCS BASE repository version:
+     67af6dfa0db3a2637cae145c97d796d88ae744bc
+ Working directory: 
+     /scratch/georgehb/job-1388871.della-pbs
+ Started running on 13/08/2013 at 11:28:44
+ ================================================================
+
+ Reading from file: input.model
+
+****************************************************************
+
+MODEL
+    SYSTEM READ
+    SITES 4950
+    UHF
+    U_VALS 5.0
+(    APBC)
+    IMPSITES 6
+    HALF_FILL
+    NONDIR_DAVIDSON
+    COMPRESSMATS 1.0E-8
+    N_CMPRSHAMSIZE 49000000
+    NP1_CMPRSHAMSIZE 44000000
+    NM1_CMPRSHAMSIZE 44000000
+(    WRITECMPRSMATS)
+(    DEBUGOUTPUT)
+(    CHECK_SANITY)
+END
+
+LINEAR_RESPONSE
+(    DD_RESPONSE)
+    GF_RESPONSE
+(    BETA_GF)
+(    NONDIR_MINRES)
+    NONDIR_GMRES 5.0E-6
+    MINRES_MAXITER 6500
+    REUSE_FIRSTORDER_PSI
+    PRECONDITION_LR
+    NKRYLOV 200
+    EC_TDA 1
+    FREQ -3.0 4.5 0.02
+    BROADENING 0.05
+END
+
+****************************************************************
+
+Reading unknown system from files...
+            o No chemical potential applied at impurity site
+            o Number of lattice sites:      4950
+            o *Unrestricted* bath construction: (Anti-)Ferromagnetic phase
+            o Range of U values to consider: 
+            o U =    5.00000
+            o Only half filling to be considered
+            o Number of impurity sites:       6
+            o Impurity solver: Non-direct iterative Davidson diagonalizer
+            o Calculating externally-contracted MC-TDA DMET linear response function
+                o Local Greens function calculated
+            o Spectral broadening for linear response functions:    0.05000000
+
+
+ Running DMET calculation with U =    5.00000000000000     
+Connections of impurity sites via t:     12 within imp,      6 to env
+ 
+Electrons per site:      1.000 (in  2475 doubly occupied orbitals on  4950 sites)
+Filling Fraction:        0.50000
+Hubbard U:               5.000
+Embedded system size:     6 sites
+1D Hubbard lattice of  4950 sites
+ 
+ nOCC                  2475
+ Fock eigenvalues around fermi level: 
+ -0.111206436646123      -0.111206436646123      *
+ -0.111206436646110      -0.111206436646110      *
+ -0.110240876147256      -0.110240876147256      *
+ -0.110240876147236      -0.110240876147236      *
+ -6.608407933771143E-002 -6.608407933771143E-002 *
+ -6.608407933769878E-002 -6.608407933769878E-002 *
+ -6.499196892983966E-002 -6.499196892983966E-002 *
+ -6.499196892982489E-002 -6.499196892982489E-002 *
+  6.499196892982646E-002  6.499196892982646E-002
+  6.499196892983369E-002  6.499196892983369E-002
+  6.608407933770422E-002  6.608407933770422E-002
+  6.608407933771211E-002  6.608407933771211E-002
+  0.110240876147239       0.110240876147239     
+  0.110240876147244       0.110240876147244     
+  0.111206436646107       0.111206436646107     
+ Reading in correlation potential...
+Read in correlation potential: 
+ Writing out matrix: v_loc
+Size:       6 by       6
+          3.704122620            -0.1806115075            -0.1042874291E-01         0.4790046915E-01        -0.1042874742E-01        -0.1806115382    
+        -0.1806115075              1.295877368            -0.1806115190             0.1042874281E-01         0.4790049353E-01         0.1042874787E-01
+        -0.1042874291E-01        -0.1806115190              3.704122640            -0.1806114949            -0.1042874441E-01         0.4790049254E-01
+         0.4790046915E-01         0.1042874281E-01        -0.1806114949              1.295877365            -0.1806115277             0.1042874649E-01
+        -0.1042874742E-01         0.4790049353E-01        -0.1042874441E-01        -0.1806115277              3.704122600            -0.1806115485    
+        -0.1806115382             0.1042874787E-01         0.4790049254E-01         0.1042874649E-01        -0.1806115485              1.295877406    
+ Writing out matrix: v_loc_b
+Size:       6 by       6
+          1.295877379            -0.1806115089             0.1042874306E-01         0.4790046917E-01         0.1042874791E-01        -0.1806115393    
+        -0.1806115089              3.704122633            -0.1806115186            -0.1042874258E-01         0.4790049317E-01        -0.1042874619E-01
+         0.1042874306E-01        -0.1806115186              1.295877362            -0.1806114938             0.1042874584E-01         0.4790049223E-01
+         0.4790046917E-01        -0.1042874258E-01        -0.1806114938              3.704122635            -0.1806115269            -0.1042874668E-01
+         0.1042874791E-01         0.4790049317E-01         0.1042874584E-01        -0.1806115269              1.295877400            -0.1806115480    
+        -0.1806115393            -0.1042874619E-01         0.4790049223E-01        -0.1042874668E-01        -0.1806115480              3.704122594    
+Iteration:      1
+ Reading HF orbitals from disk...
+ nOCC                  2475
+ Fock eigenvalues around fermi level: 
+   1.25734462296375        1.25734460812167      *
+   1.25734462296375        1.25734460812167      *
+   1.25806406770323        1.25806408458765      *
+   1.25806406770323        1.25806408458765      *
+   1.26175019783399        1.26175021520374      *
+   1.26175019783399        1.26175021520374      *
+   1.26201051161398        1.26201049630547      *
+   1.26201051161398        1.26201049630547      *
+   3.73798950426973        3.73798948739083     
+   3.73798950426973        3.73798948739083     
+   3.73824978342057        3.73824980162156     
+   3.73824978342057        3.73824980162156     
+   3.74193591437080        3.74193593237515     
+   3.74193591437080        3.74193593237516     
+   3.74265539212343        3.74265537542326     
+One-electron eigenvalue band-gap:         2.4759789927
+One-electron beta eigenvalue band-gap:         2.4759789911
+ Constructing full schmidt basis of HF det, including core + virt spaces
+ All alpha impurity/bath orbitals orthogonal by construction
+ All alpha bath/bath orbitals orthonormal
+Constructing beta bath space
+ All beta impurity/bath orbitals orthogonal by construction
+ All beta bath/bath orbitals orthonormal
+ Non-interacting core energy for DMET wavefunction is:    1470.18898153380     
+Number of electrons in full system:  4950
+Number of electrons in alpha spin channel:  6.0000000
+Number of total electrons in embedded system: 12.0000000   12
+ Allocating memory to store 2 electron integrals:                  45150
+Calculating FCI space for     12 electrons in     12 orbitals.
+ Total number of determinants is:                 853776
+Number of determinants in FCI space:         853776
+Compressing hamiltonian matrix...
+Size of Compressed/Full Hamiltonians:       49000000  728933458176
+Allocating memory for compressed hamiltonian:     747.680664 Mb
+Saving in compression of: 5560573.258789 Mb
+Building Mat:        25000      853776
+Building Mat:        50000      853776
+Building Mat:        75000      853776
+Building Mat:       100000      853776
+Building Mat:       125000      853776
+Building Mat:       150000      853776
+Building Mat:       175000      853776
+Building Mat:       200000      853776
+Building Mat:       225000      853776
+Building Mat:       250000      853776
+Building Mat:       275000      853776
+Building Mat:       300000      853776
+Building Mat:       325000      853776
+Building Mat:       350000      853776
+Building Mat:       375000      853776
+Building Mat:       400000      853776
+Building Mat:       425000      853776
+Building Mat:       450000      853776
+Building Mat:       475000      853776
+Building Mat:       500000      853776
+Building Mat:       525000      853776
+Building Mat:       550000      853776
+Building Mat:       575000      853776
+Building Mat:       600000      853776
+Building Mat:       625000      853776
+Building Mat:       650000      853776
+Building Mat:       675000      853776
+Building Mat:       700000      853776
+Building Mat:       725000      853776
+Building Mat:       750000      853776
+Building Mat:       775000      853776
+Building Mat:       800000      853776
+Building Mat:       825000      853776
+Building Mat:       850000      853776
+ Solving for ground state with non-direct davidson diagonalizer...
+ Starting Davidson iteration:                     10   3.80839695495346     
+ Starting Davidson iteration:                     20   2.65172414607772     
+ Starting Davidson iteration:                     30  1.670471118655972E-002
+ Starting Davidson iteration:                     40  3.736307834689698E-005
+ Starting Davidson iteration:                     50  7.120741359507777E-008
+ FCI energy:  -0.537204604670427     
+Finding 1RDM (stupidly...)        25000      853776
+Finding 1RDM (stupidly...)        50000      853776
+Finding 1RDM (stupidly...)        75000      853776
+Finding 1RDM (stupidly...)       100000      853776
+Finding 1RDM (stupidly...)       125000      853776
+Finding 1RDM (stupidly...)       150000      853776
+Finding 1RDM (stupidly...)       175000      853776
+Finding 1RDM (stupidly...)       200000      853776
+Finding 1RDM (stupidly...)       225000      853776
+Finding 1RDM (stupidly...)       250000      853776
+Finding 1RDM (stupidly...)       275000      853776
+Finding 1RDM (stupidly...)       300000      853776
+Finding 1RDM (stupidly...)       325000      853776
+Finding 1RDM (stupidly...)       350000      853776
+Finding 1RDM (stupidly...)       375000      853776
+Finding 1RDM (stupidly...)       400000      853776
+Finding 1RDM (stupidly...)       425000      853776
+Finding 1RDM (stupidly...)       450000      853776
+Finding 1RDM (stupidly...)       475000      853776
+Finding 1RDM (stupidly...)       500000      853776
+Finding 1RDM (stupidly...)       525000      853776
+Finding 1RDM (stupidly...)       550000      853776
+Finding 1RDM (stupidly...)       575000      853776
+Finding 1RDM (stupidly...)       600000      853776
+Finding 1RDM (stupidly...)       625000      853776
+Finding 1RDM (stupidly...)       650000      853776
+Finding 1RDM (stupidly...)       675000      853776
+Finding 1RDM (stupidly...)       700000      853776
+Finding 1RDM (stupidly...)       725000      853776
+Finding 1RDM (stupidly...)       750000      853776
+Finding 1RDM (stupidly...)       775000      853776
+Finding 1RDM (stupidly...)       800000      853776
+Finding 1RDM (stupidly...)       825000      853776
+Finding 1RDM (stupidly...)       850000      853776
+Embedded system energy is:        -0.5372046047
+One electron energy per impurity:      -0.840171
+Two electron energy per impurity:       0.537063
+Coupling energy to bath per impurity:  -0.351221
+Total energy per impurity site:        -0.654329
+Target filling per site:       0.5000000
+Actual filling per site:       0.5000000
+Filling error  per site:       0.0000000
+
+Impurity RDMs: 
+ Writing out matrix: hl_1RDM_Imp
+Size:       6 by       6
+         0.2342614839             0.2100428224             0.2978247949E-01        -0.5504807160E-01         0.2978247929E-01         0.2100428227    
+         0.2100428224             0.7657385160             0.2100428231            -0.2978247952E-01        -0.5504807172E-01        -0.2978247925E-01
+         0.2978247949E-01         0.2100428231             0.2342614840             0.2100428225             0.2978247933E-01        -0.5504807172E-01
+        -0.5504807160E-01        -0.2978247952E-01         0.2100428225             0.7657385160             0.2100428228            -0.2978247933E-01
+         0.2978247929E-01        -0.5504807172E-01         0.2978247933E-01         0.2100428228             0.2342614839             0.2100428225    
+         0.2100428227            -0.2978247925E-01        -0.5504807172E-01        -0.2978247933E-01         0.2100428225             0.7657385161    
+ Writing out matrix: hl_1RDM_Imp_b
+Size:       6 by       6
+         0.7657385161             0.2100428224            -0.2978247948E-01        -0.5504807160E-01        -0.2978247929E-01         0.2100428227    
+         0.2100428224             0.2342614840             0.2100428231             0.2978247952E-01        -0.5504807171E-01         0.2978247925E-01
+        -0.2978247948E-01         0.2100428231             0.7657385160             0.2100428225            -0.2978247933E-01        -0.5504807171E-01
+        -0.5504807160E-01         0.2978247952E-01         0.2100428225             0.2342614840             0.2100428228             0.2978247933E-01
+        -0.2978247929E-01        -0.5504807171E-01        -0.2978247933E-01         0.2100428228             0.7657385160             0.2100428224    
+         0.2100428227             0.2978247925E-01        -0.5504807171E-01         0.2978247933E-01         0.2100428224             0.2342614839    
+ Writing out matrix: Spin Density
+Size:       6 by       6
+        -0.5314770322             0.6006722897E-11         0.5956495897E-01         0.4250592933E-11         0.5956495858E-01         0.8746836588E-11
+         0.6006722897E-11         0.5314770319             0.9272582702E-12        -0.5956495903E-01        -0.9669674783E-11        -0.5956495850E-01
+         0.5956495897E-01         0.9272582702E-12        -0.5314770319            -0.1213057432E-11         0.5956495866E-01        -0.4646470708E-11
+         0.4250592933E-11        -0.5956495903E-01        -0.1213057432E-11         0.5314770321             0.3918337876E-11        -0.5956495866E-01
+         0.5956495858E-01        -0.9669674783E-11         0.5956495866E-01         0.3918337876E-11        -0.5314770321             0.4815037258E-11
+         0.8746836588E-11        -0.5956495850E-01        -0.4646470708E-11        -0.5956495866E-01         0.4815037258E-11         0.5314770321    
+AFM order:       0.5314770
+      1     -0.6543291967           0.000000000           0.000000000         -0.1744160372E-11       0.000000000    
+FINAL energy per site for U=    5.0000 is:    -0.6543291967    
+ Writing out converged correlation potential...
+Calculating non-interacting EC MR-TDA LR system for *hole* & *particle* beta spin-orbital pert...
+Solving linear system with preconditioned iterative non-direct GMRES algorithm
+Tolerance for solution of linear system:       0.5000000000E-05
+Maximum iterations for each solution:                   6500
+Number of krylov subspace vectors to store:      200
+ Allocating memory to store 2 electron integrals:                  45150
+Calculating FCI space for     12 electrons in     12 orbitals.
+ Total number of determinants is:                 853776
+ Calculating N-1 space
+Calculating FCI space for     11 electrons in     12 orbitals.
+ Total number of determinants in N-1 space is:                1463616
+ Calculating N+1 space
+Calculating FCI space for     13 electrons in     12 orbitals.
+ Total number of determinants in N+1 space is:                1463616
+ Number of determinants in {N,N+1,N-1} FCI space:                3781008
+Memory required for det list storage:    459.68774 Mb
+Computing size of compressed Hamiltonian matrices
+Assuming size of compressed N electron hamiltonian is:         49000000
+Assuming size of compressed N-1 electron hamiltonian is:         44000000
+Assuming size of compressed N+1 electron hamiltonian is:         44000000
+Memory required for N-electron hamil:   1495.36133 Mb
+Memory required for N+1-electron hamil:   1342.77344 Mb
+Memory required for N-1-electron hamil:   1342.77344 Mb
+Building Mat:        25000      853776
+Building Mat:        50000      853776
+Building Mat:        75000      853776
+Building Mat:       100000      853776
+Building Mat:       125000      853776
+Building Mat:       150000      853776
+Building Mat:       175000      853776
+Building Mat:       200000      853776
+Building Mat:       225000      853776
+Building Mat:       250000      853776
+Building Mat:       275000      853776
+Building Mat:       300000      853776
+Building Mat:       325000      853776
+Building Mat:       350000      853776
+Building Mat:       375000      853776
+Building Mat:       400000      853776
+Building Mat:       425000      853776
+Building Mat:       450000      853776
+Building Mat:       475000      853776
+Building Mat:       500000      853776
+Building Mat:       525000      853776
+Building Mat:       550000      853776
+Building Mat:       575000      853776
+Building Mat:       600000      853776
+Building Mat:       625000      853776
+Building Mat:       650000      853776
+Building Mat:       675000      853776
+Building Mat:       700000      853776
+Building Mat:       725000      853776
+Building Mat:       750000      853776
+Building Mat:       775000      853776
+Building Mat:       800000      853776
+Building Mat:       825000      853776
+Building Mat:       850000      853776
+Building Mat:        25000      731808
+Building Mat:        50000      731808
+Building Mat:        75000      731808
+Building Mat:       100000      731808
+Building Mat:       125000      731808
+Building Mat:       150000      731808
+Building Mat:       175000      731808
+Building Mat:       200000      731808
+Building Mat:       225000      731808
+Building Mat:       250000      731808
+Building Mat:       275000      731808
+Building Mat:       300000      731808
+Building Mat:       325000      731808
+Building Mat:       350000      731808
+Building Mat:       375000      731808
+Building Mat:       400000      731808
+Building Mat:       425000      731808
+Building Mat:       450000      731808
+Building Mat:       475000      731808
+Building Mat:       500000      731808
+Building Mat:       525000      731808
+Building Mat:       550000      731808
+Building Mat:       575000      731808
+Building Mat:       600000      731808
+Building Mat:       625000      731808
+Building Mat:       650000      731808
+Building Mat:       675000      731808
+Building Mat:       700000      731808
+Building Mat:       725000      731808
+Building Mat:        25000      731808
+Building Mat:        50000      731808
+Building Mat:        75000      731808
+Building Mat:       100000      731808
+Building Mat:       125000      731808
+Building Mat:       150000      731808
+Building Mat:       175000      731808
+Building Mat:       200000      731808
+Building Mat:       225000      731808
+Building Mat:       250000      731808
+Building Mat:       275000      731808
+Building Mat:       300000      731808
+Building Mat:       325000      731808
+Building Mat:       350000      731808
+Building Mat:       375000      731808
+Building Mat:       400000      731808
+Building Mat:       425000      731808
+Building Mat:       450000      731808
+Building Mat:       475000      731808
+Building Mat:       500000      731808
+Building Mat:       525000      731808
+Building Mat:       550000      731808
+Building Mat:       575000      731808
+Building Mat:       600000      731808
+Building Mat:       625000      731808
+Building Mat:       650000      731808
+Building Mat:       675000      731808
+Building Mat:       700000      731808
+Building Mat:       725000      731808
+ External indices start from:                 731809
+ Total size of linear sys:                1585584
+Memory required for wavefunctions:    107.94287 Mb
+Memory required for fock matrix:   1682.45316 Mb
+Memory required for coupling coefficient matrices:    493.18726 Mb
+Uncompressed memory required for coupling coefficient matrices: ************ Mb
+Memory required for compressed LR systems:    4726.195312 Mb
+Compare to memory required for the uncompressed system: ************** Mb
+ Calculating linear response for frequency:   -3.00000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.98000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.96000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.94000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.92000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.90000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.88000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.86000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.84000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.82000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.80000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.78000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.76000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.74000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.72000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.70000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.68000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.66000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.64000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.62000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.60000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.58000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.56000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.54000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.52000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.50000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.48000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.46000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.44000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.42000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.40000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.38000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.36000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.34000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.32000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.30000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.28000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.26000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.24000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.22000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.20000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.18000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.16000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.14000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.12000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.10000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.08000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.06000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.04000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.02000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -2.00000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.98000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.96000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.94000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.92000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.90000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.88000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.86000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.84000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.82000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.80000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.78000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.76000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.74000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.72000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.70000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.68000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.66000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.64000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.62000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.60000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.58000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.56000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.54000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.52000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.50000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.48000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.46000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.44000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.42000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.40000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.38000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.36000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.34000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.32000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.30000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.28000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.26000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.24000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.22000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.20000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.18000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.16000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.14000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.12000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.10000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.08000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.06000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.04000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   -1.02000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.999999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.979999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.959999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.939999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.919999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.899999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.879999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.859999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.839999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.819999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.799999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.779999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.759999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.739999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.719999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.699999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.679999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.659999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.639999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.619999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.599999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.579999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.559999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.539999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.519999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.499999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.479999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.459999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.439999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.419999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.399999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.379999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.359999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.339999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.319999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.299999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.279999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.259999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.239999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.219999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.199999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.179999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.159999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.139999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -0.119999999999998     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -9.999999999999762E-002
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -7.999999999999761E-002
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -5.999999999999761E-002
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -3.999999999999761E-002
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:  -1.999999999999761E-002
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   2.393918396847994E-015
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   2.000000000000239E-002
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   4.000000000000239E-002
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   6.000000000000240E-002
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   8.000000000000240E-002
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.100000000000002     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.120000000000002     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.140000000000002     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.160000000000002     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.180000000000002     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.200000000000002     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.220000000000002     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.240000000000002     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.260000000000002     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.280000000000002     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.300000000000002     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.320000000000002     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.340000000000002     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.360000000000002     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.380000000000002     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.400000000000002     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.420000000000002     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.440000000000003     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.460000000000003     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.480000000000003     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.500000000000003     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.520000000000003     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.540000000000003     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.560000000000003     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.580000000000003     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.600000000000003     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.620000000000003     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.640000000000003     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.660000000000003     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.680000000000003     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.700000000000003     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.720000000000003     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.740000000000003     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.760000000000003     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.780000000000003     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.800000000000003     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.820000000000003     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.840000000000003     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.860000000000003     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.880000000000003     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.900000000000003     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.920000000000003     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.940000000000003     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.960000000000003     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:   0.980000000000003     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.00000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.02000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.04000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.06000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.08000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.10000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.12000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.14000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.16000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.18000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.20000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.22000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.24000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.26000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.28000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.30000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.32000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.34000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.36000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.38000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.40000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.42000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.44000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.46000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.48000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.50000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.52000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.54000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.56000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.58000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.60000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.62000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.64000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.66000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.68000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.70000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.72000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.74000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.76000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.78000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.80000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.82000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.84000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.86000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.88000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.90000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.92000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.94000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.96000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    1.98000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.00000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.02000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.04000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.06000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.08000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.10000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.12000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.14000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.16000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.18000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.20000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.22000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.24000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.26000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.28000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.30000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.32000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.34000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.36000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.38000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.40000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.42000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.44000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.46000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.48000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.50000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.52000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.54000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.56000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.58000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.60000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.62000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.64000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.66000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.68000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.70000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.72000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.74000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.76000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.78000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.80000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.82000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.84000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.86000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.88000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.90000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.92000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.94000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.96000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    2.98000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.00000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.02000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.04000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.06000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.08000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.10000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.12000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.14000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.16000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.18000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.20000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.22000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.24000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.26000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.28000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.30000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.32000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.34000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.36000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.38000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.40000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.42000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.44000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.46000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.48000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.50000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.52000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.54000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.56000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.58000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.60000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.62000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.64000000000001     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.66000000000001     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.68000000000001     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.70000000000001     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.72000000000001     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.74000000000001     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.76000000000001     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.78000000000001     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.80000000000001     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.82000000000001     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.84000000000001     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.86000000000001     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.88000000000001     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.90000000000001     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.92000000000001     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.94000000000001     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.96000000000001     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    3.98000000000001     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    4.00000000000001     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    4.02000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    4.04000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    4.06000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    4.08000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    4.10000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    4.12000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    4.14000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    4.16000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    4.18000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    4.20000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    4.22000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    4.24000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    4.26000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    4.28000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    4.30000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    4.32000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    4.34000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    4.36000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    4.38000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    4.40000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    4.42000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    4.44000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    4.46000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    4.48000000000000     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+ Calculating linear response for frequency:    4.49999999999999     
+Memory required for GMRES solver:      4960.41446 Mb
+Memory required for GMRES solver:      4960.41446 Mb
+Total integrated spectral weight:       0.8237777157    
+
+ ================================================================
+ Timing report.
+
+ Timing of most expensive procedures.
+
+ Procedure                    Calls       CPU    system     total
+ ----------------------------------------------------------------
+ GF_EC_SolveLR                  376  77876.03      0.00  77876.03
+ GF_EC_Precom                     1  56266.72      0.00  56266.72
+ HL_Solver                        1  10283.69      0.00  10283.69
+ GF_EC_HBuild                   376   1567.99      0.00   1567.99
+ FullSCF                          1    445.95      0.00    445.95
+ Const_Emb                        1    301.22      0.00    301.22
+ Main                             1     41.25      0.00     41.25
+ ----------------------------------------------------------------
+ Total                              146782.86      0.00 146782.86
+
+ Global CPU time     146819.06
+ Global system time       0.00
+ Global total time   146819.06
+ ================================================================
+ Calculation ended 15/08/2013 at 04:15:49
+ ================================================================

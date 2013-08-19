@@ -1,0 +1,569 @@
+***  Starting real-space hubbard/anderson calculation  ***
+ ================================================================
+ Compiled on Aug 06 2013 at 23:04:43
+ VCS BASE repository version:
+     67af6dfa0db3a2637cae145c97d796d88ae744bc
+ Working directory: 
+     /scratch/georgehb/job-1389657.della-pbs
+ Started running on 13/08/2013 at 11:40:32
+ ================================================================
+
+ Reading from file: input.model
+
+****************************************************************
+
+MODEL
+    SYSTEM READ
+    SITES 4950
+    UHF
+    U_VALS 6.0
+(    APBC)
+    IMPSITES 6
+    HALF_FILL
+    NONDIR_DAVIDSON
+    COMPRESSMATS 1.0E-7
+    N_CMPRSHAMSIZE 49000000
+    NP1_CMPRSHAMSIZE 44000000
+    NM1_CMPRSHAMSIZE 44000000
+(    WRITECMPRSMATS)
+(    DEBUGOUTPUT)
+(    CHECK_SANITY)
+END
+
+LINEAR_RESPONSE
+(    DD_RESPONSE)
+    GF_RESPONSE
+    BETA_GF
+(    NONDIR_MINRES)
+    NONDIR_GMRES 5.0E-6
+    MINRES_MAXITER 6500
+    REUSE_FIRSTORDER_PSI
+    PRECONDITION_LR
+    NKRYLOV 150
+    EC_TDA 1
+    FREQ 3.44 4.5 0.02
+    BROADENING 0.05
+END
+
+****************************************************************
+
+Reading unknown system from files...
+            o No chemical potential applied at impurity site
+            o Number of lattice sites:      4950
+            o *Unrestricted* bath construction: (Anti-)Ferromagnetic phase
+            o Range of U values to consider: 
+            o U =    6.00000
+            o Only half filling to be considered
+            o Number of impurity sites:       6
+            o Impurity solver: Non-direct iterative Davidson diagonalizer
+            o Calculating externally-contracted MC-TDA DMET linear response function
+                o Local Greens function calculated
+            o Spectral broadening for linear response functions:    0.05000000
+
+
+ Running DMET calculation with U =    6.00000000000000     
+Connections of impurity sites via t:     12 within imp,      6 to env
+ 
+Electrons per site:      1.000 (in  2475 doubly occupied orbitals on  4950 sites)
+Filling Fraction:        0.50000
+Hubbard U:               6.000
+Embedded system size:     6 sites
+1D Hubbard lattice of  4950 sites
+ 
+ nOCC                  2475
+ Fock eigenvalues around fermi level: 
+ -0.111206436646123      -0.111206436646123      *
+ -0.111206436646110      -0.111206436646110      *
+ -0.110240876147256      -0.110240876147256      *
+ -0.110240876147236      -0.110240876147236      *
+ -6.608407933771143E-002 -6.608407933771143E-002 *
+ -6.608407933769878E-002 -6.608407933769878E-002 *
+ -6.499196892983966E-002 -6.499196892983966E-002 *
+ -6.499196892982489E-002 -6.499196892982489E-002 *
+  6.499196892982646E-002  6.499196892982646E-002
+  6.499196892983369E-002  6.499196892983369E-002
+  6.608407933770422E-002  6.608407933770422E-002
+  6.608407933771211E-002  6.608407933771211E-002
+  0.110240876147239       0.110240876147239     
+  0.110240876147244       0.110240876147244     
+  0.111206436646107       0.111206436646107     
+ Reading in correlation potential...
+Read in correlation potential: 
+ Writing out matrix: v_loc
+Size:       6 by       6
+          4.816073012            -0.2538177059            -0.1938195445E-01         0.5002366290E-01        -0.1938196724E-01        -0.2538178020    
+        -0.2538177059              1.183926965            -0.2538177454             0.1938195650E-01         0.5002367210E-01         0.1938196151E-01
+        -0.1938195445E-01        -0.2538177454              4.816073037            -0.2538177064            -0.1938195724E-01         0.5002369122E-01
+         0.5002366290E-01         0.1938195650E-01        -0.2538177064              1.183926979            -0.2538177887             0.1938196686E-01
+        -0.1938196724E-01         0.5002367210E-01        -0.1938195724E-01        -0.2538177887              4.816072976            -0.2538177767    
+        -0.2538178020             0.1938196151E-01         0.5002369122E-01         0.1938196686E-01        -0.2538177767              1.183927031    
+ Writing out matrix: v_loc_b
+Size:       6 by       6
+          1.183926988            -0.2538177059             0.1938195447E-01         0.5002366289E-01         0.1938196722E-01        -0.2538178020    
+        -0.2538177059              4.816073035            -0.2538177454            -0.1938195649E-01         0.5002367208E-01        -0.1938196150E-01
+         0.1938195447E-01        -0.2538177454              1.183926963            -0.2538177064             0.1938195725E-01         0.5002369122E-01
+         0.5002366289E-01        -0.1938195649E-01        -0.2538177064              4.816073021            -0.2538177887            -0.1938196685E-01
+         0.1938196722E-01         0.5002367208E-01         0.1938195725E-01        -0.2538177887              1.183927024            -0.2538177767    
+        -0.2538178020            -0.1938196150E-01         0.5002369122E-01        -0.1938196685E-01        -0.2538177767              4.816072969    
+Iteration:      1
+ Reading HF orbitals from disk...
+ nOCC                  2475
+ Fock eigenvalues around fermi level: 
+   1.13468646588986        1.13468644823553      *
+   1.13468646588986        1.13468644823553      *
+   1.13527727789999        1.13527729908807      *
+   1.13527727790000        1.13527729908807      *
+   1.13785243102790        1.13785245554717      *
+   1.13785243102791        1.13785245554717      *
+   1.13806443139523        1.13806441046604      *
+   1.13806443139524        1.13806441046604      *
+   4.86193558949871        4.86193556856390     
+   4.86193558949872        4.86193556856390     
+   4.86214754446856        4.86214756893737     
+   4.86214754446856        4.86214756893737     
+   4.86472270092460        4.86472272206398     
+   4.86472270092460        4.86472272206398     
+   4.86531355173245        4.86531353407065     
+One-electron eigenvalue band-gap:         3.7238711581
+One-electron beta eigenvalue band-gap:         3.7238711581
+ Constructing full schmidt basis of HF det, including core + virt spaces
+ All alpha impurity/bath orbitals orthogonal by construction
+ All alpha bath/bath orbitals orthonormal
+Constructing beta bath space
+ All beta impurity/bath orbitals orthogonal by construction
+ All beta bath/bath orbitals orthonormal
+ Non-interacting core energy for DMET wavefunction is:    1626.12818659295     
+Number of electrons in full system:  4950
+Number of electrons in alpha spin channel:  6.0000000
+Number of total electrons in embedded system: 12.0000000   12
+ Allocating memory to store 2 electron integrals:                  45150
+Calculating FCI space for     12 electrons in     12 orbitals.
+ Total number of determinants is:                 853776
+Number of determinants in FCI space:         853776
+Compressing hamiltonian matrix...
+Size of Compressed/Full Hamiltonians:       49000000  728933458176
+Allocating memory for compressed hamiltonian:     747.680664 Mb
+Saving in compression of: 5560573.258789 Mb
+Building Mat:        25000      853776
+Building Mat:        50000      853776
+Building Mat:        75000      853776
+Building Mat:       100000      853776
+Building Mat:       125000      853776
+Building Mat:       150000      853776
+Building Mat:       175000      853776
+Building Mat:       200000      853776
+Building Mat:       225000      853776
+Building Mat:       250000      853776
+Building Mat:       275000      853776
+Building Mat:       300000      853776
+Building Mat:       325000      853776
+Building Mat:       350000      853776
+Building Mat:       375000      853776
+Building Mat:       400000      853776
+Building Mat:       425000      853776
+Building Mat:       450000      853776
+Building Mat:       475000      853776
+Building Mat:       500000      853776
+Building Mat:       525000      853776
+Building Mat:       550000      853776
+Building Mat:       575000      853776
+Building Mat:       600000      853776
+Building Mat:       625000      853776
+Building Mat:       650000      853776
+Building Mat:       675000      853776
+Building Mat:       700000      853776
+Building Mat:       725000      853776
+Building Mat:       750000      853776
+Building Mat:       775000      853776
+Building Mat:       800000      853776
+Building Mat:       825000      853776
+Building Mat:       850000      853776
+ Solving for ground state with non-direct davidson diagonalizer...
+ Starting Davidson iteration:                     10   4.76595059672779     
+ Starting Davidson iteration:                     20   2.76895840980256     
+ Starting Davidson iteration:                     30  0.141761863166159     
+ Starting Davidson iteration:                     40  2.536816381900806E-004
+ Starting Davidson iteration:                     50  4.820131859136321E-007
+ FCI energy:  -0.264223206757703     
+Finding 1RDM (stupidly...)        25000      853776
+Finding 1RDM (stupidly...)        50000      853776
+Finding 1RDM (stupidly...)        75000      853776
+Finding 1RDM (stupidly...)       100000      853776
+Finding 1RDM (stupidly...)       125000      853776
+Finding 1RDM (stupidly...)       150000      853776
+Finding 1RDM (stupidly...)       175000      853776
+Finding 1RDM (stupidly...)       200000      853776
+Finding 1RDM (stupidly...)       225000      853776
+Finding 1RDM (stupidly...)       250000      853776
+Finding 1RDM (stupidly...)       275000      853776
+Finding 1RDM (stupidly...)       300000      853776
+Finding 1RDM (stupidly...)       325000      853776
+Finding 1RDM (stupidly...)       350000      853776
+Finding 1RDM (stupidly...)       375000      853776
+Finding 1RDM (stupidly...)       400000      853776
+Finding 1RDM (stupidly...)       425000      853776
+Finding 1RDM (stupidly...)       450000      853776
+Finding 1RDM (stupidly...)       475000      853776
+Finding 1RDM (stupidly...)       500000      853776
+Finding 1RDM (stupidly...)       525000      853776
+Finding 1RDM (stupidly...)       550000      853776
+Finding 1RDM (stupidly...)       575000      853776
+Finding 1RDM (stupidly...)       600000      853776
+Finding 1RDM (stupidly...)       625000      853776
+Finding 1RDM (stupidly...)       650000      853776
+Finding 1RDM (stupidly...)       675000      853776
+Finding 1RDM (stupidly...)       700000      853776
+Finding 1RDM (stupidly...)       725000      853776
+Finding 1RDM (stupidly...)       750000      853776
+Finding 1RDM (stupidly...)       775000      853776
+Finding 1RDM (stupidly...)       800000      853776
+Finding 1RDM (stupidly...)       825000      853776
+Finding 1RDM (stupidly...)       850000      853776
+Embedded system energy is:        -0.2642232068
+One electron energy per impurity:      -0.745064
+Two electron energy per impurity:       0.484784
+Coupling energy to bath per impurity:  -0.297364
+Total energy per impurity site:        -0.557644
+Target filling per site:       0.5000000
+Actual filling per site:       0.5000000
+Filling error  per site:       0.0000000
+
+Impurity RDMs: 
+ Writing out matrix: hl_1RDM_Imp
+Size:       6 by       6
+         0.1860912544             0.1862659345             0.2775557263E-01        -0.3859137196E-01         0.2775557249E-01         0.1862659351    
+         0.1862659345             0.8139087454             0.1862659354            -0.2775557267E-01        -0.3859137196E-01        -0.2775557251E-01
+         0.2775557263E-01         0.1862659354             0.1860912547             0.1862659346             0.2775557254E-01        -0.3859137200E-01
+        -0.3859137196E-01        -0.2775557267E-01         0.1862659346             0.8139087456             0.1862659351            -0.2775557248E-01
+         0.2775557249E-01        -0.3859137196E-01         0.2775557254E-01         0.1862659351             0.1860912543             0.1862659344    
+         0.1862659351            -0.2775557251E-01        -0.3859137200E-01        -0.2775557248E-01         0.1862659344             0.8139087457    
+ Writing out matrix: hl_1RDM_Imp_b
+Size:       6 by       6
+         0.8139087456             0.1862659345            -0.2775557263E-01        -0.3859137196E-01        -0.2775557249E-01         0.1862659351    
+         0.1862659345             0.1860912546             0.1862659354             0.2775557267E-01        -0.3859137196E-01         0.2775557251E-01
+        -0.2775557263E-01         0.1862659354             0.8139087453             0.1862659346            -0.2775557254E-01        -0.3859137200E-01
+        -0.3859137196E-01         0.2775557267E-01         0.1862659346             0.1860912544             0.1862659351             0.2775557249E-01
+        -0.2775557249E-01        -0.3859137196E-01        -0.2775557254E-01         0.1862659351             0.8139087457             0.1862659344    
+         0.1862659351             0.2775557251E-01        -0.3859137200E-01         0.2775557249E-01         0.1862659344             0.1860912543    
+ Writing out matrix: Spin Density
+Size:       6 by       6
+        -0.6278174912             0.5041966844E-11         0.5551114527E-01        -0.1758301837E-11         0.5551114499E-01        -0.7649991751E-12
+         0.5041966844E-11         0.6278174907            -0.2134875610E-11        -0.5551114533E-01        -0.1590741427E-12        -0.5551114502E-01
+         0.5551114527E-01        -0.2134875610E-11        -0.6278174907             0.1779798531E-11         0.5551114507E-01        -0.1507252656E-11
+        -0.1758301837E-11        -0.5551114533E-01         0.1779798531E-11         0.6278174911            -0.2247868558E-11        -0.5551114497E-01
+         0.5551114499E-01        -0.1590741427E-12         0.5551114507E-01        -0.2247868558E-11        -0.6278174914             0.2357114504E-11
+        -0.7649991751E-12        -0.5551114502E-01        -0.1507252656E-11        -0.5551114497E-01         0.2357114504E-11         0.6278174914    
+AFM order:       0.6278175
+      1     -0.5576436389           0.000000000           0.000000000         -0.2520206266E-12       0.000000000    
+FINAL energy per site for U=    6.0000 is:    -0.5576436389    
+ Writing out converged correlation potential...
+Calculating non-interacting EC MR-TDA LR system for *hole* & *particle* alpha spin-orbital pert...
+Solving linear system with preconditioned iterative non-direct GMRES algorithm
+Tolerance for solution of linear system:       0.5000000000E-05
+Maximum iterations for each solution:                   6500
+Number of krylov subspace vectors to store:      150
+ Allocating memory to store 2 electron integrals:                  45150
+Calculating FCI space for     12 electrons in     12 orbitals.
+ Total number of determinants is:                 853776
+ Calculating N-1 space
+Calculating FCI space for     11 electrons in     12 orbitals.
+ Total number of determinants in N-1 space is:                1463616
+ Calculating N+1 space
+Calculating FCI space for     13 electrons in     12 orbitals.
+ Total number of determinants in N+1 space is:                1463616
+ Number of determinants in {N,N+1,N-1} FCI space:                3781008
+Memory required for det list storage:    459.68774 Mb
+Computing size of compressed Hamiltonian matrices
+Assuming size of compressed N electron hamiltonian is:         49000000
+Assuming size of compressed N-1 electron hamiltonian is:         44000000
+Assuming size of compressed N+1 electron hamiltonian is:         44000000
+Memory required for N-electron hamil:   1495.36133 Mb
+Memory required for N+1-electron hamil:   1342.77344 Mb
+Memory required for N-1-electron hamil:   1342.77344 Mb
+Building Mat:        25000      853776
+Building Mat:        50000      853776
+Building Mat:        75000      853776
+Building Mat:       100000      853776
+Building Mat:       125000      853776
+Building Mat:       150000      853776
+Building Mat:       175000      853776
+Building Mat:       200000      853776
+Building Mat:       225000      853776
+Building Mat:       250000      853776
+Building Mat:       275000      853776
+Building Mat:       300000      853776
+Building Mat:       325000      853776
+Building Mat:       350000      853776
+Building Mat:       375000      853776
+Building Mat:       400000      853776
+Building Mat:       425000      853776
+Building Mat:       450000      853776
+Building Mat:       475000      853776
+Building Mat:       500000      853776
+Building Mat:       525000      853776
+Building Mat:       550000      853776
+Building Mat:       575000      853776
+Building Mat:       600000      853776
+Building Mat:       625000      853776
+Building Mat:       650000      853776
+Building Mat:       675000      853776
+Building Mat:       700000      853776
+Building Mat:       725000      853776
+Building Mat:       750000      853776
+Building Mat:       775000      853776
+Building Mat:       800000      853776
+Building Mat:       825000      853776
+Building Mat:       850000      853776
+Building Mat:        25000      731808
+Building Mat:        50000      731808
+Building Mat:        75000      731808
+Building Mat:       100000      731808
+Building Mat:       125000      731808
+Building Mat:       150000      731808
+Building Mat:       175000      731808
+Building Mat:       200000      731808
+Building Mat:       225000      731808
+Building Mat:       250000      731808
+Building Mat:       275000      731808
+Building Mat:       300000      731808
+Building Mat:       325000      731808
+Building Mat:       350000      731808
+Building Mat:       375000      731808
+Building Mat:       400000      731808
+Building Mat:       425000      731808
+Building Mat:       450000      731808
+Building Mat:       475000      731808
+Building Mat:       500000      731808
+Building Mat:       525000      731808
+Building Mat:       550000      731808
+Building Mat:       575000      731808
+Building Mat:       600000      731808
+Building Mat:       625000      731808
+Building Mat:       650000      731808
+Building Mat:       675000      731808
+Building Mat:       700000      731808
+Building Mat:       725000      731808
+Building Mat:        25000      731808
+Building Mat:        50000      731808
+Building Mat:        75000      731808
+Building Mat:       100000      731808
+Building Mat:       125000      731808
+Building Mat:       150000      731808
+Building Mat:       175000      731808
+Building Mat:       200000      731808
+Building Mat:       225000      731808
+Building Mat:       250000      731808
+Building Mat:       275000      731808
+Building Mat:       300000      731808
+Building Mat:       325000      731808
+Building Mat:       350000      731808
+Building Mat:       375000      731808
+Building Mat:       400000      731808
+Building Mat:       425000      731808
+Building Mat:       450000      731808
+Building Mat:       475000      731808
+Building Mat:       500000      731808
+Building Mat:       525000      731808
+Building Mat:       550000      731808
+Building Mat:       575000      731808
+Building Mat:       600000      731808
+Building Mat:       625000      731808
+Building Mat:       650000      731808
+Building Mat:       675000      731808
+Building Mat:       700000      731808
+Building Mat:       725000      731808
+ External indices start from:                 731809
+ Total size of linear sys:                1585584
+Memory required for wavefunctions:    107.94287 Mb
+Memory required for fock matrix:   1682.45316 Mb
+Memory required for coupling coefficient matrices:    493.18726 Mb
+Uncompressed memory required for coupling coefficient matrices: ************ Mb
+Memory required for compressed LR systems:    4726.195312 Mb
+Compare to memory required for the uncompressed system: ************** Mb
+ Calculating linear response for frequency:    3.44000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    3.46000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    3.48000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    3.50000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    3.52000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    3.54000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    3.56000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    3.58000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    3.60000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    3.62000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    3.64000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    3.66000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    3.68000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    3.70000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    3.72000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    3.74000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    3.76000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    3.78000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    3.80000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    3.82000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    3.84000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    3.86000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    3.88000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    3.90000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    3.92000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    3.94000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    3.96000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    3.98000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    4.00000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    4.02000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    4.04000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    4.06000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    4.08000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    4.10000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    4.12000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    4.14000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    4.16000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    4.18000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    4.20000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    4.22000000000000     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    4.23999999999999     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    4.25999999999999     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    4.27999999999999     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    4.29999999999999     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    4.31999999999999     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    4.33999999999999     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    4.35999999999999     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    4.37999999999999     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    4.39999999999999     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    4.41999999999999     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    4.43999999999999     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    4.45999999999999     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    4.47999999999999     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+ Calculating linear response for frequency:    4.49999999999999     
+Memory required for GMRES solver:      3750.43903 Mb
+Memory required for GMRES solver:      3750.43903 Mb
+Total integrated spectral weight:       0.1999834771E-01
+
+ ================================================================
+ Timing report.
+
+ Timing of most expensive procedures.
+
+ Procedure                    Calls       CPU    system     total
+ ----------------------------------------------------------------
+ GF_EC_Precom                     1  55485.68      0.00  55485.68
+ GF_EC_SolveLR                   54  33387.00      0.00  33387.00
+ HL_Solver                        1  10240.72      0.00  10240.72
+ FullSCF                          1    446.94      0.00    446.94
+ Const_Emb                        1    301.80      0.00    301.80
+ GF_EC_HBuild                    54    204.45      0.00    204.45
+ Main                             1     41.54      0.00     41.54
+ ----------------------------------------------------------------
+ Total                              100108.13      0.00 100108.13
+
+ Global CPU time     100144.45
+ Global system time       0.00
+ Global total time   100144.45
+ ================================================================
+ Calculation ended 14/08/2013 at 15:29:38
+ ================================================================

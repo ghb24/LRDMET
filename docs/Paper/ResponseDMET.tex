@@ -238,7 +238,7 @@ general operators ${\hat V}$ of any rank.
 A key point of the approach is that the analytic construction
 of the bath states which exactly span $|\phi^{(1)}(\omega) \rangle$, is no more costly than the diagonalization of the one-particle Hamiltonian, $h$, 
 and once the fully interacting response is projected into this basis, there is no dependence on the size of the underlying lattice, rendering 
-the cost of the method truly mean-field scaling with the size of the system\footnote{The code, along with the inputs used for the results can be found at ...}. 
+the cost of the method truly mean-field scaling with the size of the system\footnote{A pilot implementation, along with the inputs used for the results can be found at https://github.com/ghb24/LRDMET.git}. 
 
 It is now necessary to turn to numerical applications of the method to determine the quality of the results away from these exact limits. 
 In this Letter, we restrict ourselves to consider the one- and two-particle local Greens functions,
@@ -388,31 +388,6 @@ the convergence towards the exact spectral gap as the cluster size is increased
 from two to four sites, and indicating a generally similar quality to CDMFT calculations of similar cluster size.
 
 %+++++++++++++++++++++++++++++++++++++++++++++++++++++++
-%   DD response 
-%+++++++++++++++++++++++++++++++++++++++++++++++++++++++
-\begin{figure}
-\begin{center}
-    \vspace{-2mm}
-\includegraphics[scale=0.425]{Plots/1D_DD/1D_Hub_DD.eps}
-\end{center}
-    \vspace{-8mm}
-\caption{Two impurity DMET calculation of the local density-density response function for the half-filled 1D Hubbard model.}
-\label{1D_DD}
-\end{figure}
-
-Fig.~\ref{1D_DD} shows the local density-density response function of the 1D Hubbard model at half-filling, obtained from the local two-particle Greens 
-function (${\hat V}={\hat X}=a_{\alpha_{\alpha}}^{\dagger}a_{\alpha_{\alpha}} + a_{\alpha_{\beta}}^{\dagger}a_{\alpha_{\beta}}$). The poles of this 
-function correspond to the neutral excitation energies, and as such determine 
-the optical properties of the system\cite{Millis2012,Essler91}.
-Unfortunately, direct comparison of the spectra in Fig.~\ref{1D_DD} to other results is difficult due to the paucity of other comparable 
-calculations for this quantity.
-However, since holons and doublons do not bind in the Hubbard Hamiltonian, 
-%exciton binding is negligable, and 
-the optical and single-particle gaps obtained from system should be the same. The excitation gaps
-obtained from the two-particle Greens functions are included in Fig.~\ref{1D_GAP}, and show that for the same cluster size, the differences between the spectral gaps are negligible 
-on the scale of the plot. While not conclusive, this supports the assertion that the one- and two-particle Greens functions are of similar quality, while also of comparable computational cost.
-
-%+++++++++++++++++++++++++++++++++++++++++++++++++++++++
 %   2D HUBBARD PLOTS 
 %+++++++++++++++++++++++++++++++++++++++++++++++++++++++
 \begin{figure}
@@ -438,7 +413,7 @@ with minimal broadening ($\eta = xxx$).}
 \includegraphics[scale=0.425]{Plots/Doping/2D/nImp4/U8/LargerBroadening/2DHub_Doping.eps}
 \end{center}
     \vspace{-8mm}
-\caption{Local density of states of the hole doped 2D Hubbard model calculated with a four impurity cluster with $U = 8t$. Qualitative
+\caption{Local density of states of the hole doped 2D Hubbard model calculated with a $2 \times 2$ impurity cluster with $U = 8t$. Qualitative
 features present in the CDMFT study of Ref.~\onlinecite{Masatoshi2009} are observed (see Fig. 1(c) and (d)).}
 %Aside: Also look at A. Liebsch DMFT in doped Hubbard.}
 \label{2D_Doped}
@@ -458,6 +433,32 @@ spectral functions from CT-QMC smooth out many of the subtle correlation driven 
 Fig.~\ref{2D_Doped} shows the effect on the 
 spectra upon hole doping the system, which is shown for the insulating phase at $U=8t$. Once doped, the weight is transferred to lower frequencies
 until the system becomes a Fermi liquid phase. The spectra are qualitatively similar to those seen in recent cluster DMFT studies\cite{Masatoshi2009}.
+
+%+++++++++++++++++++++++++++++++++++++++++++++++++++++++
+%   DD response 
+%+++++++++++++++++++++++++++++++++++++++++++++++++++++++
+\begin{figure}
+\begin{center}
+    \vspace{-2mm}
+\includegraphics[scale=0.425]{Plots/2D_DD/2D_DD_Spectra.eps}
+\end{center}
+    \vspace{-8mm}
+\caption{$2 \times 2$ impurity DMET calculation of the local density-density response function for the half-filled 2D Hubbard model.}
+\label{2D_DD}
+\end{figure}
+
+
+Fig.~\ref{2D_DD} shows the local density-density response function of the 2D Hubbard model at half-filling, obtained from the local two-particle Greens 
+function (${\hat V}={\hat X}=a_{\alpha_{\alpha}}^{\dagger}a_{\alpha_{\alpha}} + a_{\alpha_{\beta}}^{\dagger}a_{\alpha_{\beta}}$). The poles of this 
+function correspond to the neutral excitation energies, and as such determine 
+the optical properties of the system\cite{Millis2012,Essler91}.
+Unfortunately, direct comparison of the spectra in Fig.~\ref{2D_DD} to other results is difficult due to the paucity of other comparable 
+calculations for this quantity, but show the expected MIT, and transfer of spectral weight to higher frequencies as $U$ increases.
+However, since holons and doublons do not bind in the 1D Hubbard Hamiltonian, 
+%exciton binding is negligable, and 
+the optical and single-particle gaps obtained should be the same, and these can be tested against the exact Bethe Ansatz results as before\cite{Essler91}. Therefore, excitation gaps
+obtained from the two-particle Greens functions in the 1D model are included in Fig.~\ref{1D_GAP}, and show that for the same cluster size, the differences between the spectral gaps are insignificant.
+While not conclusive, this supports the assertion that the one- and two-particle Greens functions are of similar quality, while also of comparable computational cost, and validating the results shown in Fig.~\ref{2D_DD}.
 
 In conclusion, we have presented a quantum embedding formalism for accurate, zero-temperature spectral functions of extended, strongly correlated systems 
 at a small computational cost, which vastly 
