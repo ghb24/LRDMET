@@ -1,5 +1,5 @@
 %\documentclass[aps,prl,twocolumn,nobibnotes]{revtex4}
-\documentclass[aps,showpacs,twocolumn,nobibnotes]{revtex4}
+\documentclass[aps,twocolumn,nobibnotes]{revtex4}
 %\documentclass[aps,preprint,showpacs,nobibnotes]{revtex4}
 %\documentclass[aps,preprint,nobibnotes]{revtex}
 \usepackage{graphics,graphicx,amsfonts,amsmath,amsbsy,amssymb,color}
@@ -42,7 +42,7 @@
 \begin{document}
 \title{Spectral functions of strongly correlated extended systems via an exact quantum embedding}
 \author{George~H.~Booth}
-%\email{ghb24@cam.ac.uk}
+\email{ghb24@cam.ac.uk}
 \author{Garnet~Kin-Lic~Chan}  
 \affiliation{Department of Chemistry, Frick Laboratory, Princeton University, Princeton, New Jersey 08544, USA}
 
@@ -59,7 +59,7 @@ provided similar physics to dynamical mean-field theory at a tiny fraction of th
 Here, we generalize the concept of quantum embedding to dynamic properties and demonstrate accurate bulk spectral functions at a small
 computational cost. 
 The proposed spectral DMET utilizes the Schmidt decomposition of a response vector, mapping the bulk dynamic correlation functions to that of
-a quantum impurity coupled to a set of frequency dependent bath states.
+a quantum impurity cluster coupled to a set of frequency dependent bath states.
 %Through an exact one-electron quantum embedding of a local spectral function within a mean-field response over the whole system, 
 %a coupling of the delocalized excitations is captured through a small set of 
 %analytically constructed, and now frequency-dependent bath states. 
@@ -91,7 +91,7 @@ A zero-temperature dynamic correlation function can be defined in the frequency 
 \begin{equation}
     G(\omega;{\hat X},{\hat V}) = \langle \Psi^{(0)} | {\hat X}^{\dagger} \frac{1}{\omega-(H-E_0)+i \eta} {\hat V} | \Psi^{(0)} \rangle , \label{eqn:intCorrFunc}
 \end{equation}
-with the one- and two-particle Greens functions defined with $V$ and $X$ being single annihilation/creation or pairs of such operators 
+with the one- and two-particle Greens functions defined with ${\hat V}$ and ${\hat X}$ being single annihilation/creation or pairs of such operators 
 respectively, with appropriate time-ordering of the operators. Spectral functions are defined as $A(\omega)=-\frac{1}{\pi}\Im[G(\omega)]$,
 where the spectral broadening is given by the small imaginary component of the energy, $\eta$, which regularizes the correlation function. The single particle
 density of states is the spectral function of the one-particle Greens function, experimentally measured by STM 
@@ -106,8 +106,8 @@ DMFT, a single unit cell (or site) in the bulk is viewed as a quantum impurity, 
 and is self-consistently embedded in a non-interacting Greens function (hybridization) from its environment.
 %the central variable is the local, one-particle Greens function, which is self-consistently embedded within a non-interacting or 
 %mean-field Greens function over the system. 
-The quantum impurity problem, which is then solved via an `impurity solver', such as exact
-continuous-time quantum Monte Carlo (CT-QMC)\cite{Millis2006} or exact diagonalization (ED)\cite{ZgidPRB}. 
+The quantum impurity problem, which is then solved via an `impurity solver', such as
+continuous-time quantum Monte Carlo (CT-QMC)\cite{Millis2006} or exact diagonalization (ED)\cite{Zgid2012}. 
 However, there are some formal drawbacks of the DMFT formulation. 
 The essential problem is that DMFT maps the infinite bulk onto a quantum impurity plus infinite bath problem, which is not much easier to solve.
 If CT-QMC is used as an 
@@ -115,7 +115,7 @@ impurity solver to integrate over this infinite bath (or indeed general QMC meth
 functions are obtained only on the imaginary frequency 
 axis, requiring unstable analytic continuation onto the real frequency axis, which can wash out subtle or sharp features of the 
 spectra\cite{Thomas2011}. Accessing low temperatures or arbitrary interactions produces Fermion sign problems, which can require millions
-of computer-hours to stabilize, even for a modest number of impurity sites\cite{}.
+of computer-hours to stabilize, even for a modest number of impurity sites.
 Exact diagonalization suffers from bath discretization error in the spectra due to the 
 representation of the hybridization (at all frequencies) by a small number of frequency independent bath sites. In addition, since DMFT
 is formulated using the one-particle Greens function, other spectra such as the two-particle Greens function and optical spectra are 
@@ -134,7 +134,7 @@ very favorably (and often exceeds) that of DMFT.
 Here, we show that for dynamic quantities, the Schmidt decomposition of a mean-field bulk response vector yields a similar finite quantum impurity mapping
 that renders {\em spectra} exact in the non-interacting and local excitation limits. This `spectral DMET' possesses significant advantages compared to
 DMFT. The finite quantum impurity mapping results in numerically simple calculations of spectral functions (no frequency point in these results
-took more than a few seconds on a single computing core), while eliminating bath discretization error of finite DMFT calculations.
+took more than a minute on a single computing core), while eliminating bath discretization error of finite DMFT calculations.
 %This is achieved by embedding a local correlation function defined over a set of `impurity' sites, within an 
 %analytic coupling to the rest of the delocalized excitation space. This is determined through the exact Schmidt decomposition of a mean-field 
 %response computed throughout the bulk system. This renders the spectra exact in the non-interacting and local excitation limits. 
@@ -150,9 +150,9 @@ defined by the Hamiltonian in the site basis as
 H = -t \sum_{\langle ij \rangle, \sigma} (a_{i,\sigma}^{\dagger}a_{j,\sigma} + \text{\textnormal {h.c.}}) + U \sum_i (n_{i,\uparrow} - \frac{1}{2})(n_{i,\downarrow} - \frac{1}{2})  . \label{eqn:hub}
 \end{equation}
 This model encapsulates many of the challenges in the electronic structure of correlated materials, displaying correlation driven 
-phase transitions in the thermodynamic limit, and models the physics of many transition metal oxides\cite{Limelette2003}, including qualitative features 
+phase transitions in the thermodynamic limit, and the physics of many transition metal oxides\cite{Limelette2003}, including qualitative features 
 of high-$T_c$ superconductivity\cite{Anderson87,Sordi2012,Millis2013}. Where possible, we compare to one-dimensional exact results from the Bethe 
-Ansatz\cite{Lieb68,Ovchinni1970}, as well as large-scale 1D and 2D DMFT calculations at half-filling and under doping\cite{Go2009,Kotliar2008,xxx}. 
+Ansatz\cite{Lieb68,Ovchinni1970}, as well as large-scale 1D and 2D DMFT calculations at half-filling and under doping\cite{Go2009,Kotliar2008,Masatoshi2009}. 
 In addition we compute local two-particle Greens functions.
 
 \emph{Method.-} We first recap the DMET quantum embedding formalism introduced for the ground state, with more details provided in
@@ -168,7 +168,7 @@ of $\{ | \alpha \rangle \} \otimes \{ | \beta \rangle \}$ as $H'=PH_{\mathrm emb
 with $P = \sum_{\alpha \beta} |\alpha \beta \rangle \langle \alpha \beta |$. This space spans the exact entanglement of the impurity to its environment 
 within $|\phi^{(0)}\rangle$, and is now independent of the total number of sites in the system. To avoid double counting
 of correlation effects, $H_{\mathrm emb}$ is defined as the exact $H$ over the impurity, while the one-particle $h'$ is used over the rest of the space.
-\item $H'|\Psi^{(0)} \rangle = E_0 |\Psi^{(0)} \rangle$ is solved for the quantum impurity and bath wavefunction, $|\Psi^{(0)} \rangle$.
+\item $H'|\Psi^{(0)} \rangle = E_0 |\Psi^{(0)} \rangle$ is solved for the wavefunction over the quantum impurity and bath, $|\Psi^{(0)} \rangle$.
 \item A one-particle potential defined over the impurity space, $u$, is obtained in order to match the elements of the one-body density matrix of $|\phi^{(0)}\rangle$ and $|\Psi^{(0)} \rangle$.
 \item This defines the new one-particle lattice Hamiltonian, $h' = h + u$ (where $u$ is periodically repeated across the lattice), 
 from which the process can be repeated until self-consistency.
@@ -201,7 +201,7 @@ then defines the projector $P(\omega) = |\mathcal{K}(\omega)\rangle \langle \mat
 \begin{equation}
     P \left[ \omega - (H_{\mathrm emb}-E_0) + i \eta \right] P | \Psi^{(1)}(\omega) \rangle = P {\hat V} P |\Psi^{(0)} \rangle   ,   \label{eqn:ExactResponse}
 \end{equation}
-which in this work is solved via an exact, iterative procedure\cite{}.
+which in this work is solved via an exact, iterative procedure\cite{Langou2005}.
 $|\Psi^{(0)} \rangle$ can be reoptimized in the larger space of $\mathcal{K}(\omega)$, however this was found not to qualitatively change the results, and 
 so $|\Psi^{(0)}\rangle$ and $E_0$ are taken to be the ground-state wavefunction and energy in the 
 original quantum impurity and bath space of $\{ | \alpha \rangle \} \otimes \{ | \beta \rangle \}$.
@@ -215,17 +215,13 @@ The set of operators ${\hat {\mathcal{B}}}^{(i)}(\omega)$ include the unit opera
 This ensures that
 the space of the ground-state DMET is included within $\mathcal{K}(\omega)$. The rest of the ${\hat {\mathcal{B}}}^{(i)}(\omega)$ operators define frequency-dependent
 bath states, which exactly `span' $|\phi^{(1)}(\omega) \rangle$ throughout the lattice. This ensures that the spectral functions are exact in 
-the $U=0$ non-interacting limit, where $h$, and therefore $|\phi^{(1)}(\omega) \rangle$ are also exact. Away from this limit, 
+the $U=0$ non-interacting limit, where $h'$, and therefore $|\phi^{(1)}(\omega) \rangle$ are also exact. Away from this limit, 
 $|\phi^{(1)}(\omega) \rangle$ also changes, due to the presence of the interaction potential $u$ in the one-particle Hamiltonian, which 
 includes local interaction effects of the system.
 In addition, $|\Psi^{(1)} \rangle $ is also exact for uncoupled, local excitations within the impurity cluster, due
 to the completeness of the impurity space $\{ |\alpha \rangle \}$ included in $\mathcal{K}(\omega)$.
 Finally, we note that although the above bath construction was carried out at zero temperature, a similar finite temperature construction exists by carrying 
 out decompositions in the superoperator space.
-
-Code available
-operator in DD response.
-(cluster) impurity
 
 The exactness of the non-interacting and local limits is a feature that this construction shares with DMFT, but there are important properties which 
 DMFT does not posess. The coupling to the environment
@@ -246,7 +242,7 @@ the cost of the method truly mean-field scaling with the size of the system\foot
 
 It is now necessary to turn to numerical applications of the method to determine the quality of the results away from these exact limits. 
 In this Letter, we restrict ourselves to consider the one- and two-particle local Greens functions,
-defining the local density of states, and the density-density spectral functions respectively, while other local dynamic correlation functions can be obtained analogously.
+defining the local density of states, and density-density spectral functions respectively, while other local dynamic correlation functions can be obtained analogously.
 
 %\emph{Method.-} Within the analytic quantum embedding formalism introduced for the ground state with the DMET method (see 
 %Ref.~\onlinecite{Chan2012} and \onlinecite{Chan2013} for details), the coupling between the correlated `impurity' sites, $\{ |\alpha \rangle \}$, and the rest 
@@ -345,7 +341,7 @@ defining the local density of states, and the density-density spectral functions
 \begin{figure}
 \begin{center}
     \vspace{-2mm}
-\includegraphics[scale=0.475]{Plots/1D_Spectra/1D_Hub_Spectra.eps}
+\includegraphics[scale=0.425]{Plots/1D_Spectra/1D_Hub_Spectra.eps}
 \end{center}
     \vspace{-5mm}
 \caption{Comparison of the local density of states between a four impurity cluster DMET calculation and a
@@ -361,7 +357,7 @@ both the CDMFT and DMET calculations.}
 \begin{figure}
 \begin{center}
     \vspace{-2mm}
-\includegraphics[scale=0.475]{Plots/1D_Gap/Hubbard_Gap.eps}
+\includegraphics[scale=0.425]{Plots/1D_Gap/Hubbard_Gap.eps}
 \end{center}
     \vspace{-8mm}
 \caption{Error in the spectral gap from the 1-particle and 2-particle greens functions compared to analytic results
@@ -397,7 +393,7 @@ from two to four sites, and indicating a generally similar quality to CDMFT calc
 \begin{figure}
 \begin{center}
     \vspace{-2mm}
-\includegraphics[scale=0.475]{Plots/1D_DD/1D_Hub_DD.eps}
+\includegraphics[scale=0.425]{Plots/1D_DD/1D_Hub_DD.eps}
 \end{center}
     \vspace{-8mm}
 \caption{Two impurity DMET calculation of the local density-density response function for the half-filled 1D Hubbard model.}
@@ -422,7 +418,7 @@ on the scale of the plot. While not conclusive, this supports the assertion that
 \begin{figure}
 \begin{center}
     \vspace{-2mm}
-\includegraphics[scale=0.475]{Plots/2D_Spectra/2DHub_Spectra.eps}
+\includegraphics[scale=0.425]{Plots/2D_Spectra/2DHub_Spectra.eps}
 \end{center}
     \vspace{-8mm}
 \caption{Local density of states of the half-filled 2D Hubbard model from a $2 \times 2$ impurity cluster DMET calculation, with a 
@@ -439,28 +435,29 @@ with minimal broadening ($\eta = xxx$).}
 \begin{figure}
 \begin{center}
     \vspace{-2mm}
-\includegraphics[scale=0.475]{Plots/Doping/2D/nImp4/U8/LargerBroadening/2DHub_Doping.eps}
+\includegraphics[scale=0.425]{Plots/Doping/2D/nImp4/U8/LargerBroadening/2DHub_Doping.eps}
 \end{center}
     \vspace{-8mm}
 \caption{Local density of states of the hole doped 2D Hubbard model calculated with a four impurity cluster with $U = 8t$. Qualitative
-features present in the CDMFT study of Ref.~\onlinecite{xxx} are observed (see Fig. 1(c) and (d)). Aside: Also look at A. Liebsch DMFT in doped Hubbard.}
+features present in the CDMFT study of Ref.~\onlinecite{Masatoshi2009} are observed (see Fig. 1(c) and (d)).}
+%Aside: Also look at A. Liebsch DMFT in doped Hubbard.}
 \label{2D_Doped}
 \end{figure}
 
 A sterner test comes from the 2D Hubbard model. Cluster DMFT calculations in the paramagnetic phase exhibit a metal-insulator transition (MIT)
-at finite $U$, representative of a Mott transition\cite{Georges1996,Senechal2000,Kotliar2008,Millis2012,Millis2013,ZgidPRB?}.
+at finite $U$, representative of a Mott transition\cite{Georges1996,Senechal2000,Kotliar2008,Millis2012,Millis2013,Zgid2012}.
 %which still receives widespread attention in the condensed matter community\cite{Georges1996,Senechal2000,Kotliar2008,Millis2012,Millis2013}
 %due to its first-order metal-insulator transition (MIT) arising from competing magnetic effects as the correlation strength, $U$, is increased. 
 The DMET local density of
 states are shown in Fig.~\ref{2D_DOS} for a $2 \times 2$ plaquette of impurity sites. In the low $U$ regime, the famous `three-peak' structure 
 is observed, with a central Kondo resonance peak, and the Hubbard bands either side. At $U \approx 6.9t$, there is a transition to an insulating 
 regime, with a Mott gap opening with increased $U$. The spectra then feature prominent coherence peaks at the gap edge, as have been observed 
-elsewhere\cite{}. Cluster DMFT calculations with the same plaquette size observe a MIT at a slightly lower *** Give range - look at PRB *** $U\approx5.5t$, 
-with a coexistence region at low temperatures, which we also observe\cite{Kotliar2008}. However, analytically continued
+elsewhere\cite{Kotliar2008}. Cluster DMFT calculations with the same plaquette size observe a MIT at a slightly lower $U\approx5.5t$, 
+with a coexistence region at low temperatures, which we also observe. However, analytically continued
 spectral functions from CT-QMC smooth out many of the subtle correlation driven substructures observed in Fig.~\ref{2D_DOS}. 
 Fig.~\ref{2D_Doped} shows the effect on the 
 spectra upon hole doping the system, which is shown for the insulating phase at $U=8t$. Once doped, the weight is transferred to lower frequencies
-until the system becomes a Fermi liquid phase. The spectra are qualitatively similar to those seen in recent cluster DMFT studies\cite{PRL 102 056404 (2009)}.
+until the system becomes a Fermi liquid phase. The spectra are qualitatively similar to those seen in recent cluster DMFT studies\cite{Masatoshi2009}.
 
 In conclusion, we have presented a quantum embedding formalism for accurate, zero-temperature spectral functions of extended, strongly correlated systems 
 at a small computational cost, which vastly 
@@ -479,8 +476,10 @@ advantageous formal properties.
 \end{inparaenum}
 The approach was demonstrated on the one- and two-dimensional Hubbard model, and compared favorably to both exact results and cluster DMFT calculations. Extensions are now underway for the
 calculation of non-local operators, an {\em ab initio} formulation, and for the investigation of differently ordered phases by embedding within broken symmetry mean-field Hamiltonians.
+%\vskip 5mm 
 
-\subsection{Acknowledgements}
+{\bf Acknowledgements}
+
 The authors would like to sincerly thank Ara Go for CDMFT results and useful conversations.
 
 \bibliography{SpectralDMETBib}
