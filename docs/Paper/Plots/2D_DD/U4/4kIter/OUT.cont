@@ -1,0 +1,3381 @@
+***  Starting real-space hubbard/anderson calculation  ***
+ ================================================================
+ Compiled on Jul 19 2013 at 16:50:27
+ VCS BASE repository version:
+     c601f5e4af17277bd344da4b8aae4d3045425d68
+ Working directory: 
+     /scratch/ghb24/LRDMET/2D/TDL/DD/5000Sites/U4/4kIter
+ Started running on 19/07/2013 at 17:10:15
+ ================================================================
+
+ Reading from file: input.model
+
+****************************************************************
+
+MODEL
+(    HUBBARD)
+(    ANDERSON)
+(    CHEMPOT)
+    SYSTEM HUBBARD
+    SITES 5000 2
+    U_VALS 4.0
+(    MAXITER_DMET 150 1.0D-6)
+    READ_CORRPOT CORRPOTS_4.00
+(    FITTING_STEPSIZE 1.0D-5)
+    IMPSITES 4
+    HALF_FILL
+(    COMPLETE_DIAG)
+    NONDIR_DAVIDSON
+    COMPRESSMATS 1.0E-9
+(    DAVIDSON)
+(    DIAG_SYSTEM)
+(    REDUCE_OCC)
+(    INCREASE_OCC)
+(    FCIDUMP)
+(    DEBUGOUTPUT)
+(    CHECK_SANITY)
+END
+
+LINEAR_RESPONSE
+    DD_RESPONSE
+(    GF_RESPONSE)
+    NONDIR_GMRES 5.0E-5
+    REUSE_FIRSTORDER_PSI
+    MINRES_MAXITER 4000
+(    PRECONDITION_LR)
+(    NONINT)
+(    TDA)
+(    RPA)
+    EC_TDA 1
+(    IC_TDA)
+    FREQ 1.85 5.0 0.01
+    BROADENING 0.2
+END
+
+****************************************************************
+
+ Updated number of sites in the 2D hubbard model will be:                   5000
+ Anti-Periodic boundary conditions now in use
+ Impurity sites defined as:                   2526                  2575
+                  2576                  2626
+Running:    o Hubbard Model
+            o No chemical potential applied at impurity site
+            o APBCs employed
+            o 2-dimensional model
+            o Size of lattice:      50 x     100 at 45 degrees
+            o Total lattice sites:    5000
+            o Range of U values to consider: 
+            o U =    4.00000
+            o Correlation potentials for system will be read from file: CORRPOTS_4.00
+            o No DMET self-consistency of correlation potential
+            o Only half filling to be considered
+            o Number of impurity sites:       4
+            o Impurity solver: Non-direct iterative Davidson diagonalizer
+            o Calculating externally-contracted MC-TDA DMET linear response function
+                o Local density response calculated
+            o Spectral broadening for linear response functions:    0.20000000
+
+
+ Running DMET calculation with U =    4.00000000000000     
+Connections of impurity sites via t:      8 within emp,      8 to env
+ 
+Electrons per site:      1.000 (in  2500 doubly occupied orbitals on  5000 sites)
+Filling Fraction:        0.50000
+Hubbard U:               4.000
+Embedded system size:     4 sites
+1D Hubbard lattice of  5000 sites
+ 
+ nOCC                  2500
+ Fock eigenvalues around fermi level: 
+ -1.182405422758743E-002 *
+ -1.182405422758706E-002 *
+ -1.182405422758678E-002 *
+ -1.182405422758583E-002 *
+ -3.946543143457624E-003 *
+ -3.946543143457455E-003 *
+ -3.946543143457253E-003 *
+ -3.946543143455591E-003 *
+  3.946543143454131E-003
+  3.946543143456877E-003
+  3.946543143457245E-003
+  3.946543143457719E-003
+  1.182405422758303E-002
+  1.182405422758633E-002
+  1.182405422758718E-002
+ Reading in correlation potential...
+Read in correlation potential: 
+ Writing out matrix: v_loc
+Size:       4 by       4
+          1.999943075             0.1179551989E-02         0.1179552030E-02        -0.1073723792E-05
+         0.1179551989E-02          2.000050098             0.1211235470E-05         0.1179551946E-02
+         0.1179552030E-02         0.1211235470E-05          2.000050098             0.1179552000E-02
+        -0.1073723792E-05         0.1179551946E-02         0.1179552000E-02          1.999943075    
+Iteration:      1
+ nOCC                  2500
+ Fock eigenvalues around fermi level: 
+   1.98817933460300      *
+   1.98817933460300      *
+   1.98817933461479      *
+   1.98817933461479      *
+   1.99605195582826      *
+   1.99605195582827      *
+   1.99605195584010      *
+   1.99605195584011      *
+   2.00394107957427     
+   2.00394107957428     
+   2.00394107958610     
+   2.00394107958611     
+   2.01181370187825     
+   2.01181370187825     
+   2.01181370189004     
+ Constructing full schmidt basis of HF det, including core + virt spaces
+ All impurity/bath orbitals orthogonal by construction
+ All bath/bath orbitals orthonormal
+ Non-interacting core energy for DMET wavefunction is:    1891.03293632504     
+Number of electrons in full system:  5000
+Number of electrons in embedded system:  8.0000000    8
+ Allocating memory to store 2 electron integrals:                    666
+Calculating FCI space for      8 electrons in      8 orbitals.
+ Total number of determinants is:                   4900
+Number of determinants in FCI space:           4900
+Compressing hamiltonian matrix...
+Size of Compressed/Full Hamiltonians:         122501      24010000
+Allocating memory for compressed hamiltonian:       1.869217 Mb
+Saving in compression of:     181.312546 Mb
+ Solving for ground state with non-direct davidson diagonalizer...
+ Starting Davidson iteration:                     10   2.49640187899074     
+ Starting Davidson iteration:                     20  0.126592684126823     
+ Starting Davidson iteration:                     30  2.089858456363286E-004
+ Starting Davidson iteration:                     40  3.652908981815073E-007
+ FCI energy:   0.710556144601149     
+Embedded system energy is:         0.7105561446
+One electron energy per impurity:      -0.742254
+Two electron energy per impurity:       0.676954
+Coupling energy to bath per impurity:  -0.766104
+Total energy per impurity site:        -0.831405
+Target filling per site:       0.5000000
+Actual filling per site:       0.4999997
+Filling error  per site:      -0.0000003
+      1     -0.8314049541           0.000000000           0.000000000         -0.2589826515E-06       0.000000000    
+FINAL energy per site for U=    4.0000 is:    -0.8314049541    
+ Writing out converged correlation potential...
+ Calculating non-interacting EC MR-TDA LR system for DD excitations...
+Solving linear system with iterative non-direct GMRES algorithm
+Tolerance for solution of linear system:       0.5000000000E-04
+Maximum iterations for each solution:                   4000
+Number of krylov subspace vectors to store:      100
+Calculating FCI space for      8 electrons in      8 orbitals.
+ Total number of determinants is:                   4900
+ Calculating N-1 space
+Calculating FCI space for      7 electrons in      8 orbitals.
+ Total number of determinants in N-1 space is:                   7840
+ Calculating N+1 space
+Calculating FCI space for      9 electrons in      8 orbitals.
+ Total number of determinants in N+1 space is:                   7840
+ Number of determinants in {N,N+1,N-1} FCI space:                  20580
+Memory required for det list storage:      1.74957 Mb
+Computing size of compressed Hamiltonian matrices
+Memory required for N-electron hamil:      1.86922 Mb
+Memory required for N+1-electron hamil:      2.90103 Mb
+Memory required for N-1-electron hamil:      2.90103 Mb
+IF uncompressed, memory required for hamiltonians:   652.127 Mb
+ Total size of linear sys:                 135240
+ CV indices start from:                   4901
+ AV indices start from:                   9801
+ CA indices start from:                  72521
+Number of elements in coupling matrices:    19600
+Memory required to store compressed coupling matrices:     3.589 Mb
+Memory required to store uncompressed coupling matrices:  1172.363 Mb
+Coupling matrices calculated.
+Maximum number of elements in linear system:     27099218
+Maximum number of elements in overlap matrix:      1248522
+Memory required to store linear system:       620.252 Mb
+Memory required to store overlap:        28.576 Mb
+Memory required to store fock matrix:   381.470 Mb
+Memory required to store bath states:  1525.879 Mb
+Memory required to store contracted intermediates:   191.352 Mb
+Orthogonality condition between RHS and |0>:     0.9506284648E-15     0.000000000    
+ Calculating linear response for frequency:    1.85000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.8418853107E-03    0.8418853107E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.1675651573E-04
+ Calculating linear response for frequency:    1.86000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4497029810E-03    0.4497029810E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.1345413609E-04
+ Calculating linear response for frequency:    1.87000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2819827685E-03    0.2819827685E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.8306450500E-05
+ Calculating linear response for frequency:    1.88000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2089763650E-03    0.2089763650E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.7462714849E-05
+ Calculating linear response for frequency:    1.89000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1794969707E-03    0.1794969707E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.8553676523E-05
+ Calculating linear response for frequency:    1.90000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1643668124E-03    0.1643668124E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.1000098794E-04
+ Calculating linear response for frequency:    1.91000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1597846360E-03    0.1597846360E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.1092675880E-04
+ Calculating linear response for frequency:    1.92000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1611537209E-03    0.1611537209E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.1148752972E-04
+ Calculating linear response for frequency:    1.93000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1650874669E-03    0.1650874669E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.1162867251E-04
+ Calculating linear response for frequency:    1.94000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1701451836E-03    0.1701451836E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.1144354369E-04
+ Calculating linear response for frequency:    1.95000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1767029834E-03    0.1767029834E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.1106040554E-04
+ Calculating linear response for frequency:    1.96000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1836907037E-03    0.1836907037E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.1053785330E-04
+ Calculating linear response for frequency:    1.97000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1911268586E-03    0.1911268586E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.1008629746E-04
+ Calculating linear response for frequency:    1.98000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1986572635E-03    0.1986572635E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.9687390290E-05
+ Calculating linear response for frequency:    1.99000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2069971886E-03    0.2069971886E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.9796176530E-05
+ Calculating linear response for frequency:    2.00000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2152230879E-03    0.2152230879E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.1059932328E-04
+ Calculating linear response for frequency:    2.01000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2239348981E-03    0.2239348981E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.1195975544E-04
+ Calculating linear response for frequency:    2.02000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2323268243E-03    0.2323268243E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.1405007886E-04
+ Calculating linear response for frequency:    2.03000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2362246942E-03    0.2362246942E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.1701266446E-04
+ Calculating linear response for frequency:    2.04000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2453846487E-03    0.2453846487E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.2020703528E-04
+ Calculating linear response for frequency:    2.05000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2492962445E-03    0.2492962445E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.2442818389E-04
+ Calculating linear response for frequency:    2.06000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2528760547E-03    0.2528760547E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.2919413203E-04
+ Calculating linear response for frequency:    2.07000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2619699060E-03    0.2619699060E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.3375339285E-04
+ Calculating linear response for frequency:    2.08000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2715171822E-03    0.2715171822E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.3840462641E-04
+ Calculating linear response for frequency:    2.09000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2804674697E-03    0.2804674697E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.4311624232E-04
+ Calculating linear response for frequency:    2.10000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2884631579E-03    0.2884631579E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.4781222661E-04
+ Calculating linear response for frequency:    2.11000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2904350031E-03    0.2904350031E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.5288972356E-04
+ Calculating linear response for frequency:    2.12000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2935051462E-03    0.2935051462E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.5840451979E-04
+ Calculating linear response for frequency:    2.13000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2990799954E-03    0.2990799954E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.6394455608E-04
+ Calculating linear response for frequency:    2.14000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3036413997E-03    0.3036413997E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.6958491778E-04
+ Calculating linear response for frequency:    2.15000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3087508147E-03    0.3087508147E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.7525347827E-04
+ Calculating linear response for frequency:    2.16000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3133897004E-03    0.3133897004E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.8120292897E-04
+ Calculating linear response for frequency:    2.17000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3184351575E-03    0.3184351575E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.8741715119E-04
+ Calculating linear response for frequency:    2.18000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3228765747E-03    0.3228765747E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not strictly orthogonal         0.9388487338E-04
+ Calculating linear response for frequency:    2.19000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3276431018E-03    0.3276431018E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.1006747086E-03
+ Calculating linear response for frequency:    2.20000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3308739651E-03    0.3308739651E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.1081352099E-03
+ Calculating linear response for frequency:    2.21000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3321366041E-03    0.3321366041E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.1165312245E-03
+ Calculating linear response for frequency:    2.22000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3321968533E-03    0.3321968533E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.1259296131E-03
+ Calculating linear response for frequency:    2.23000000000000     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3354590245E-03    0.3354590245E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.1352115658E-03
+ Calculating linear response for frequency:    2.23999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3387645085E-03    0.3387645085E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.1449074209E-03
+ Calculating linear response for frequency:    2.24999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3396871092E-03    0.3396871092E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.1555411897E-03
+ Calculating linear response for frequency:    2.25999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3414414363E-03    0.3414414363E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.1664343995E-03
+ Calculating linear response for frequency:    2.26999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3453239042E-03    0.3453239042E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.1770085098E-03
+ Calculating linear response for frequency:    2.27999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3507668016E-03    0.3507668016E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.1873439045E-03
+ Calculating linear response for frequency:    2.28999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3562522242E-03    0.3562522242E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.1973971598E-03
+ Calculating linear response for frequency:    2.29999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3613065822E-03    0.3613065822E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2073187252E-03
+ Calculating linear response for frequency:    2.30999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3658535193E-03    0.3658535193E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2171279664E-03
+ Calculating linear response for frequency:    2.31999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3697103403E-03    0.3697103403E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2268608071E-03
+ Calculating linear response for frequency:    2.32999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3732749972E-03    0.3732749972E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2364330872E-03
+ Calculating linear response for frequency:    2.33999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3764811092E-03    0.3764811092E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2458348657E-03
+ Calculating linear response for frequency:    2.34999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3800135050E-03    0.3800135050E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2549287507E-03
+ Calculating linear response for frequency:    2.35999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3832100538E-03    0.3832100538E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2637983013E-03
+ Calculating linear response for frequency:    2.36999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3858275352E-03    0.3858275352E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2723902476E-03
+ Calculating linear response for frequency:    2.37999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3886045216E-03    0.3886045216E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2806255815E-03
+ Calculating linear response for frequency:    2.38999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3918121492E-03    0.3918121492E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2884139912E-03
+ Calculating linear response for frequency:    2.39999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3940672562E-03    0.3940672562E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2959379989E-03
+ Calculating linear response for frequency:    2.40999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3961454512E-03    0.3961454512E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3031843558E-03
+ Calculating linear response for frequency:    2.41999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3980233725E-03    0.3980233725E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3101856395E-03
+ Calculating linear response for frequency:    2.42999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3996141871E-03    0.3996141871E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3169129100E-03
+ Calculating linear response for frequency:    2.43999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4007742436E-03    0.4007742436E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3234148341E-03
+ Calculating linear response for frequency:    2.44999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4004138981E-03    0.4004138981E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3298353421E-03
+ Calculating linear response for frequency:    2.45999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3998921664E-03    0.3998921664E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3361282698E-03
+ Calculating linear response for frequency:    2.46999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3988230703E-03    0.3988230703E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3423852201E-03
+ Calculating linear response for frequency:    2.47999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3971523027E-03    0.3971523027E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3486172812E-03
+ Calculating linear response for frequency:    2.48999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3955825431E-03    0.3955825431E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3547735033E-03
+ Calculating linear response for frequency:    2.49999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3936326128E-03    0.3936326128E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3608615748E-03
+ Calculating linear response for frequency:    2.50999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3919042563E-03    0.3919042563E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3668322316E-03
+ Calculating linear response for frequency:    2.51999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3902064942E-03    0.3902064942E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3727697314E-03
+ Calculating linear response for frequency:    2.52999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3885611859E-03    0.3885611859E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3786461309E-03
+ Calculating linear response for frequency:    2.53999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3876127899E-03    0.3876127899E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3843382398E-03
+ Calculating linear response for frequency:    2.54999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3868596383E-03    0.3868596383E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3898613639E-03
+ Calculating linear response for frequency:    2.55999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3864255553E-03    0.3864255553E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3950718581E-03
+ Calculating linear response for frequency:    2.56999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3865559038E-03    0.3865559038E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4000169025E-03
+ Calculating linear response for frequency:    2.57999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3873388395E-03    0.3873388395E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4045911784E-03
+ Calculating linear response for frequency:    2.58999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3886003697E-03    0.3886003697E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4087491602E-03
+ Calculating linear response for frequency:    2.59999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3902122046E-03    0.3902122046E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4124835625E-03
+ Calculating linear response for frequency:    2.60999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3920192704E-03    0.3920192704E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4158404090E-03
+ Calculating linear response for frequency:    2.61999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3938968891E-03    0.3938968891E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4186223221E-03
+ Calculating linear response for frequency:    2.62999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3957404463E-03    0.3957404463E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4203842381E-03
+ Calculating linear response for frequency:    2.63999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.3982970264E-03    0.3982970264E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4222230178E-03
+ Calculating linear response for frequency:    2.64999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4012661886E-03    0.4012661886E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4239491777E-03
+ Calculating linear response for frequency:    2.65999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4040784550E-03    0.4040784550E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4257043961E-03
+ Calculating linear response for frequency:    2.66999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4069611716E-03    0.4069611716E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4266022529E-03
+ Calculating linear response for frequency:    2.67999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4098764269E-03    0.4098764269E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4272010585E-03
+ Calculating linear response for frequency:    2.68999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4101896170E-03    0.4101896170E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4275118708E-03
+ Calculating linear response for frequency:    2.69999999999999     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4110781740E-03    0.4110781740E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4276223996E-03
+ Calculating linear response for frequency:    2.70999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4136973685E-03    0.4136973685E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4281396947E-03
+ Calculating linear response for frequency:    2.71999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4167542632E-03    0.4167542632E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4289765192E-03
+ Calculating linear response for frequency:    2.72999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4198695493E-03    0.4198695493E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4298797587E-03
+ Calculating linear response for frequency:    2.73999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4226395274E-03    0.4226395274E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4301637024E-03
+ Calculating linear response for frequency:    2.74999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4250719100E-03    0.4250719100E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4302810999E-03
+ Calculating linear response for frequency:    2.75999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4263030113E-03    0.4263030113E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4303810634E-03
+ Calculating linear response for frequency:    2.76999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4292945405E-03    0.4292945405E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4303490293E-03
+ Calculating linear response for frequency:    2.77999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4348099719E-03    0.4348099719E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4306565804E-03
+ Calculating linear response for frequency:    2.78999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4408893591E-03    0.4408893591E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4307362345E-03
+ Calculating linear response for frequency:    2.79999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4458704354E-03    0.4458704354E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4300259971E-03
+ Calculating linear response for frequency:    2.80999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4526722355E-03    0.4526722355E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4297287949E-03
+ Calculating linear response for frequency:    2.81999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4594558896E-03    0.4594558896E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4294832805E-03
+ Calculating linear response for frequency:    2.82999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4646452658E-03    0.4646452658E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4286855569E-03
+ Calculating linear response for frequency:    2.83999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4690392849E-03    0.4690392849E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4278602713E-03
+ Calculating linear response for frequency:    2.84999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4725321105E-03    0.4725321105E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4270466703E-03
+ Calculating linear response for frequency:    2.85999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4754280357E-03    0.4754280357E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4262706877E-03
+ Calculating linear response for frequency:    2.86999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4798742118E-03    0.4798742118E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4255526184E-03
+ Calculating linear response for frequency:    2.87999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4836217209E-03    0.4836217209E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4248056082E-03
+ Calculating linear response for frequency:    2.88999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4855716487E-03    0.4855716487E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4241722528E-03
+ Calculating linear response for frequency:    2.89999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4857007625E-03    0.4857007625E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4236591440E-03
+ Calculating linear response for frequency:    2.90999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4848878258E-03    0.4848878258E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4233327481E-03
+ Calculating linear response for frequency:    2.91999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4868676544E-03    0.4868676544E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4230267466E-03
+ Calculating linear response for frequency:    2.92999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4887495470E-03    0.4887495470E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4227095786E-03
+ Calculating linear response for frequency:    2.93999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4924918386E-03    0.4924918386E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4223680517E-03
+ Calculating linear response for frequency:    2.94999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4946215934E-03    0.4946215934E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4222241530E-03
+ Calculating linear response for frequency:    2.95999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4965407636E-03    0.4965407636E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4221030149E-03
+ Calculating linear response for frequency:    2.96999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4976260909E-03    0.4976260909E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4220013602E-03
+ Calculating linear response for frequency:    2.97999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4977319741E-03    0.4977319741E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4219338210E-03
+ Calculating linear response for frequency:    2.98999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4965385897E-03    0.4965385897E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4217844535E-03
+ Calculating linear response for frequency:    2.99999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4942582059E-03    0.4942582059E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4214717343E-03
+ Calculating linear response for frequency:    3.00999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4919813737E-03    0.4919813737E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4209772572E-03
+ Calculating linear response for frequency:    3.01999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4901365839E-03    0.4901365839E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4203312730E-03
+ Calculating linear response for frequency:    3.02999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4880454673E-03    0.4880454673E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4197649218E-03
+ Calculating linear response for frequency:    3.03999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4862125789E-03    0.4862125789E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4184616060E-03
+ Calculating linear response for frequency:    3.04999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4849359208E-03    0.4849359208E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4180963914E-03
+ Calculating linear response for frequency:    3.05999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4835967071E-03    0.4835967071E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4168247016E-03
+ Calculating linear response for frequency:    3.06999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4826213294E-03    0.4826213294E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4155612609E-03
+ Calculating linear response for frequency:    3.07999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4811851010E-03    0.4811851010E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4135052664E-03
+ Calculating linear response for frequency:    3.08999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4803164181E-03    0.4803164181E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4111973307E-03
+ Calculating linear response for frequency:    3.09999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4803471072E-03    0.4803471072E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4089636617E-03
+ Calculating linear response for frequency:    3.10999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4809676395E-03    0.4809676395E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4068529292E-03
+ Calculating linear response for frequency:    3.11999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4817571773E-03    0.4817571773E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4044590944E-03
+ Calculating linear response for frequency:    3.12999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4827189887E-03    0.4827189887E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4017357514E-03
+ Calculating linear response for frequency:    3.13999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4839876392E-03    0.4839876392E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3992789130E-03
+ Calculating linear response for frequency:    3.14999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4860758712E-03    0.4860758712E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3966463276E-03
+ Calculating linear response for frequency:    3.15999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4876274171E-03    0.4876274171E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3943215713E-03
+ Calculating linear response for frequency:    3.16999999999998     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4906041433E-03    0.4906041433E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3920371267E-03
+ Calculating linear response for frequency:    3.17999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4933431773E-03    0.4933431773E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3905512012E-03
+ Calculating linear response for frequency:    3.18999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4962072784E-03    0.4962072784E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3887141071E-03
+ Calculating linear response for frequency:    3.19999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.4978036978E-03    0.4978036978E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3876177281E-03
+ Calculating linear response for frequency:    3.20999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.5011063746E-03    0.5011063746E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3867934217E-03
+ Calculating linear response for frequency:    3.21999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.5047297770E-03    0.5047297770E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3868836615E-03
+ Calculating linear response for frequency:    3.22999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.5078293926E-03    0.5078293926E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3871905072E-03
+ Calculating linear response for frequency:    3.23999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.5112196125E-03    0.5112196125E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3881388952E-03
+ Calculating linear response for frequency:    3.24999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.5153842857E-03    0.5153842857E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3895815474E-03
+ Calculating linear response for frequency:    3.25999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.5195102550E-03    0.5195102550E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3916959753E-03
+ Calculating linear response for frequency:    3.26999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.5242133013E-03    0.5242133013E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3943652243E-03
+ Calculating linear response for frequency:    3.27999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.5282925736E-03    0.5282925736E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3974722953E-03
+ Calculating linear response for frequency:    3.28999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.5310014176E-03    0.5310014176E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4014681573E-03
+ Calculating linear response for frequency:    3.29999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.5343166173E-03    0.5343166173E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4061881189E-03
+ Calculating linear response for frequency:    3.30999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.5376713987E-03    0.5376713987E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4113244949E-03
+ Calculating linear response for frequency:    3.31999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.5408933708E-03    0.5408933708E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4171601787E-03
+ Calculating linear response for frequency:    3.32999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.5450699321E-03    0.5450699321E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4233584352E-03
+ Calculating linear response for frequency:    3.33999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.5489622167E-03    0.5489622167E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4305573674E-03
+ Calculating linear response for frequency:    3.34999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.5530009866E-03    0.5530009866E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4370190328E-03
+ Calculating linear response for frequency:    3.35999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.5574745255E-03    0.5574745255E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4456964472E-03
+ Calculating linear response for frequency:    3.36999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.5617070500E-03    0.5617070500E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4542898219E-03
+ Calculating linear response for frequency:    3.37999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.5656419846E-03    0.5656419846E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4633542694E-03
+ Calculating linear response for frequency:    3.38999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.5699304205E-03    0.5699304205E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4723031896E-03
+ Calculating linear response for frequency:    3.39999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.5737730906E-03    0.5737730906E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4822074316E-03
+ Calculating linear response for frequency:    3.40999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.5776887334E-03    0.5776887334E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4919478401E-03
+ Calculating linear response for frequency:    3.41999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.5813639440E-03    0.5813639440E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5018583246E-03
+ Calculating linear response for frequency:    3.42999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.5848423119E-03    0.5848423119E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5121166921E-03
+ Calculating linear response for frequency:    3.43999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.5880799780E-03    0.5880799780E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5222149087E-03
+ Calculating linear response for frequency:    3.44999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.5914329449E-03    0.5914329449E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5319585617E-03
+ Calculating linear response for frequency:    3.45999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.5945308770E-03    0.5945308770E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5415740017E-03
+ Calculating linear response for frequency:    3.46999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.5979022378E-03    0.5979022378E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5504169710E-03
+ Calculating linear response for frequency:    3.47999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.6007801734E-03    0.6007801734E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5582222712E-03
+ Calculating linear response for frequency:    3.48999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.6034900089E-03    0.6034900089E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5663546925E-03
+ Calculating linear response for frequency:    3.49999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.6058985684E-03    0.6058985684E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5732759467E-03
+ Calculating linear response for frequency:    3.50999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.6088031050E-03    0.6088031050E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5793128225E-03
+ Calculating linear response for frequency:    3.51999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.6142040363E-03    0.6142040363E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5840410568E-03
+ Calculating linear response for frequency:    3.52999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.6212471002E-03    0.6212471002E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5882532995E-03
+ Calculating linear response for frequency:    3.53999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.6276174595E-03    0.6276174595E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5913293210E-03
+ Calculating linear response for frequency:    3.54999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.6338064579E-03    0.6338064579E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5936343053E-03
+ Calculating linear response for frequency:    3.55999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.6413534454E-03    0.6413534454E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5950041541E-03
+ Calculating linear response for frequency:    3.56999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.6491303143E-03    0.6491303143E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5955535145E-03
+ Calculating linear response for frequency:    3.57999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.6567874359E-03    0.6567874359E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5954258113E-03
+ Calculating linear response for frequency:    3.58999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.6647732059E-03    0.6647732059E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5947563558E-03
+ Calculating linear response for frequency:    3.59999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.6722529603E-03    0.6722529603E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5932376982E-03
+ Calculating linear response for frequency:    3.60999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.6813415469E-03    0.6813415469E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5913751673E-03
+ Calculating linear response for frequency:    3.61999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.6905214850E-03    0.6905214850E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5890970951E-03
+ Calculating linear response for frequency:    3.62999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.7000959822E-03    0.7000959822E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5867153197E-03
+ Calculating linear response for frequency:    3.63999999999997     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.7102852392E-03    0.7102852392E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5838910397E-03
+ Calculating linear response for frequency:    3.64999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.7208602326E-03    0.7208602326E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5807474095E-03
+ Calculating linear response for frequency:    3.65999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.7313037142E-03    0.7313037142E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5775863402E-03
+ Calculating linear response for frequency:    3.66999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.7414738076E-03    0.7414738076E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5740839620E-03
+ Calculating linear response for frequency:    3.67999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.7519773058E-03    0.7519773058E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5704665019E-03
+ Calculating linear response for frequency:    3.68999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.7619536210E-03    0.7619536210E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5667352255E-03
+ Calculating linear response for frequency:    3.69999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.7705824895E-03    0.7705824895E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5627225657E-03
+ Calculating linear response for frequency:    3.70999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.7797274894E-03    0.7797274894E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5589195477E-03
+ Calculating linear response for frequency:    3.71999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.7893183474E-03    0.7893183474E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5547559710E-03
+ Calculating linear response for frequency:    3.72999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.7991955322E-03    0.7991955322E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5498697757E-03
+ Calculating linear response for frequency:    3.73999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.8081686638E-03    0.8081686638E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5456583383E-03
+ Calculating linear response for frequency:    3.74999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.8186732345E-03    0.8186732345E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5407376174E-03
+ Calculating linear response for frequency:    3.75999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.8277089022E-03    0.8277089022E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5354887675E-03
+ Calculating linear response for frequency:    3.76999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.8362467634E-03    0.8362467634E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5296225754E-03
+ Calculating linear response for frequency:    3.77999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.8439287031E-03    0.8439287031E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5233809958E-03
+ Calculating linear response for frequency:    3.78999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.8500418615E-03    0.8500418615E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5166367155E-03
+ Calculating linear response for frequency:    3.79999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.8549118299E-03    0.8549118299E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5088685601E-03
+ Calculating linear response for frequency:    3.80999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.8588720311E-03    0.8588720311E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4997292617E-03
+ Calculating linear response for frequency:    3.81999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.8616073055E-03    0.8616073055E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4896288779E-03
+ Calculating linear response for frequency:    3.82999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.8658918508E-03    0.8658918508E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4785847703E-03
+ Calculating linear response for frequency:    3.83999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.8699162019E-03    0.8699162019E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4684674334E-03
+ Calculating linear response for frequency:    3.84999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.8759378846E-03    0.8759378846E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4570613501E-03
+ Calculating linear response for frequency:    3.85999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.8857593551E-03    0.8857593551E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4440324944E-03
+ Calculating linear response for frequency:    3.86999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.8931955300E-03    0.8931955300E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4307861984E-03
+ Calculating linear response for frequency:    3.87999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.9019842296E-03    0.9019842296E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4168280470E-03
+ Calculating linear response for frequency:    3.88999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.9098783339E-03    0.9098783339E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4017097737E-03
+ Calculating linear response for frequency:    3.89999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.9200336575E-03    0.9200336575E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3882317103E-03
+ Calculating linear response for frequency:    3.90999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.9339578300E-03    0.9339578300E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3735736541E-03
+ Calculating linear response for frequency:    3.91999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.9504798676E-03    0.9504798676E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3591723229E-03
+ Calculating linear response for frequency:    3.92999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.9673586675E-03    0.9673586675E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3463204234E-03
+ Calculating linear response for frequency:    3.93999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.9882224802E-03    0.9882224802E-03
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3321424525E-03
+ Calculating linear response for frequency:    3.94999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1014530427E-02    0.1014530427E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3203945914E-03
+ Calculating linear response for frequency:    3.95999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1044406851E-02    0.1044406851E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3091431436E-03
+ Calculating linear response for frequency:    3.96999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1073861761E-02    0.1073861761E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2971483335E-03
+ Calculating linear response for frequency:    3.97999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1103211873E-02    0.1103211873E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2882580690E-03
+ Calculating linear response for frequency:    3.98999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1142145566E-02    0.1142145566E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2791433330E-03
+ Calculating linear response for frequency:    3.99999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1175588998E-02    0.1175588998E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2687908910E-03
+ Calculating linear response for frequency:    4.00999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1212254383E-02    0.1212254383E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2609249612E-03
+ Calculating linear response for frequency:    4.01999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1245851202E-02    0.1245851202E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2536458874E-03
+ Calculating linear response for frequency:    4.02999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1277095341E-02    0.1277095341E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2482366952E-03
+ Calculating linear response for frequency:    4.03999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1303443227E-02    0.1303443227E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2419043540E-03
+ Calculating linear response for frequency:    4.04999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1336041667E-02    0.1336041667E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2368279829E-03
+ Calculating linear response for frequency:    4.05999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1367649947E-02    0.1367649947E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2330692456E-03
+ Calculating linear response for frequency:    4.06999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1394413506E-02    0.1394413506E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2299849258E-03
+ Calculating linear response for frequency:    4.07999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1418088707E-02    0.1418088707E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2277658150E-03
+ Calculating linear response for frequency:    4.08999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1440996302E-02    0.1440996302E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2277720271E-03
+ Calculating linear response for frequency:    4.09999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1459010721E-02    0.1459010721E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2278293353E-03
+ Calculating linear response for frequency:    4.10999999999996     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1482545231E-02    0.1482545231E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2295192576E-03
+ Calculating linear response for frequency:    4.11999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1507484127E-02    0.1507484127E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2309182876E-03
+ Calculating linear response for frequency:    4.12999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1527884122E-02    0.1527884122E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2352380140E-03
+ Calculating linear response for frequency:    4.13999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1552302510E-02    0.1552302510E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2404385903E-03
+ Calculating linear response for frequency:    4.14999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1570844046E-02    0.1570844046E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2439551198E-03
+ Calculating linear response for frequency:    4.15999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1594880852E-02    0.1594880852E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2505680242E-03
+ Calculating linear response for frequency:    4.16999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1616476505E-02    0.1616476505E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2573030137E-03
+ Calculating linear response for frequency:    4.17999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1637978664E-02    0.1637978664E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2653367750E-03
+ Calculating linear response for frequency:    4.18999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1656606377E-02    0.1656606377E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2715072701E-03
+ Calculating linear response for frequency:    4.19999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1672717558E-02    0.1672717558E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2782077247E-03
+ Calculating linear response for frequency:    4.20999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1685810107E-02    0.1685810107E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2858728972E-03
+ Calculating linear response for frequency:    4.21999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1706565161E-02    0.1706565161E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.2933296028E-03
+ Calculating linear response for frequency:    4.22999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1723184302E-02    0.1723184302E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3002640280E-03
+ Calculating linear response for frequency:    4.23999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1731397660E-02    0.1731397660E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3087555300E-03
+ Calculating linear response for frequency:    4.24999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1740805226E-02    0.1740805226E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3152834817E-03
+ Calculating linear response for frequency:    4.25999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1751021300E-02    0.1751021300E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3208118729E-03
+ Calculating linear response for frequency:    4.26999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1761025014E-02    0.1761025014E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3246801393E-03
+ Calculating linear response for frequency:    4.27999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1770059450E-02    0.1770059450E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3310589946E-03
+ Calculating linear response for frequency:    4.28999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1775597030E-02    0.1775597030E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3345966635E-03
+ Calculating linear response for frequency:    4.29999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1771119085E-02    0.1771119085E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3384485186E-03
+ Calculating linear response for frequency:    4.30999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1768249784E-02    0.1768249784E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3410256761E-03
+ Calculating linear response for frequency:    4.31999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1761517320E-02    0.1761517320E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3450349010E-03
+ Calculating linear response for frequency:    4.32999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1753518296E-02    0.1753518296E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3450978432E-03
+ Calculating linear response for frequency:    4.33999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1745578330E-02    0.1745578330E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3458028241E-03
+ Calculating linear response for frequency:    4.34999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1736233769E-02    0.1736233769E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3462314654E-03
+ Calculating linear response for frequency:    4.35999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1729873308E-02    0.1729873308E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3461042689E-03
+ Calculating linear response for frequency:    4.36999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1723269133E-02    0.1723269133E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3456778127E-03
+ Calculating linear response for frequency:    4.37999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1717380818E-02    0.1717380818E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3461797961E-03
+ Calculating linear response for frequency:    4.38999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1712519449E-02    0.1712519449E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3459522655E-03
+ Calculating linear response for frequency:    4.39999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1709680768E-02    0.1709680768E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3450930060E-03
+ Calculating linear response for frequency:    4.40999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1708379851E-02    0.1708379851E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3446642902E-03
+ Calculating linear response for frequency:    4.41999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1709034294E-02    0.1709034294E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3453799828E-03
+ Calculating linear response for frequency:    4.42999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1711479483E-02    0.1711479483E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3455975785E-03
+ Calculating linear response for frequency:    4.43999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1715109161E-02    0.1715109161E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3467741162E-03
+ Calculating linear response for frequency:    4.44999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1719969625E-02    0.1719969625E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3484806022E-03
+ Calculating linear response for frequency:    4.45999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1725429095E-02    0.1725429095E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3512868060E-03
+ Calculating linear response for frequency:    4.46999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1732481685E-02    0.1732481685E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3538405077E-03
+ Calculating linear response for frequency:    4.47999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1740640648E-02    0.1740640648E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3569351955E-03
+ Calculating linear response for frequency:    4.48999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1749846248E-02    0.1749846248E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3604178478E-03
+ Calculating linear response for frequency:    4.49999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1759835923E-02    0.1759835923E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3647382591E-03
+ Calculating linear response for frequency:    4.50999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1770396731E-02    0.1770396731E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3700605777E-03
+ Calculating linear response for frequency:    4.51999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1782122598E-02    0.1782122598E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3751967364E-03
+ Calculating linear response for frequency:    4.52999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1794714116E-02    0.1794714116E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3806682427E-03
+ Calculating linear response for frequency:    4.53999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1807840567E-02    0.1807840567E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3875365238E-03
+ Calculating linear response for frequency:    4.54999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1820052768E-02    0.1820052768E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3937356785E-03
+ Calculating linear response for frequency:    4.55999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1832679748E-02    0.1832679748E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.3996487574E-03
+ Calculating linear response for frequency:    4.56999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1844993898E-02    0.1844993898E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4066166815E-03
+ Calculating linear response for frequency:    4.57999999999995     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1856278423E-02    0.1856278423E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4137483616E-03
+ Calculating linear response for frequency:    4.58999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1866841741E-02    0.1866841741E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4210557810E-03
+ Calculating linear response for frequency:    4.59999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1876283351E-02    0.1876283351E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4285558680E-03
+ Calculating linear response for frequency:    4.60999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1884517418E-02    0.1884517418E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4352949341E-03
+ Calculating linear response for frequency:    4.61999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1892121625E-02    0.1892121625E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4431731272E-03
+ Calculating linear response for frequency:    4.62999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1898746906E-02    0.1898746906E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4511266555E-03
+ Calculating linear response for frequency:    4.63999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1905395420E-02    0.1905395420E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4590668345E-03
+ Calculating linear response for frequency:    4.64999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1910620014E-02    0.1910620014E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4677274342E-03
+ Calculating linear response for frequency:    4.65999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1915981679E-02    0.1915981679E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4769023609E-03
+ Calculating linear response for frequency:    4.66999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1920493224E-02    0.1920493224E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4859118141E-03
+ Calculating linear response for frequency:    4.67999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1926804700E-02    0.1926804700E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.4949483712E-03
+ Calculating linear response for frequency:    4.68999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1932607399E-02    0.1932607399E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5059217965E-03
+ Calculating linear response for frequency:    4.69999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1939370424E-02    0.1939370424E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5158844435E-03
+ Calculating linear response for frequency:    4.70999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1946006710E-02    0.1946006710E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5275271463E-03
+ Calculating linear response for frequency:    4.71999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1954157450E-02    0.1954157450E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5387921893E-03
+ Calculating linear response for frequency:    4.72999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1963973080E-02    0.1963973080E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5512613685E-03
+ Calculating linear response for frequency:    4.73999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1975800524E-02    0.1975800524E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5637194060E-03
+ Calculating linear response for frequency:    4.74999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.1987163337E-02    0.1987163337E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5759407146E-03
+ Calculating linear response for frequency:    4.75999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2000060298E-02    0.2000060298E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.5888289164E-03
+ Calculating linear response for frequency:    4.76999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2014291111E-02    0.2014291111E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.6020033616E-03
+ Calculating linear response for frequency:    4.77999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2029558018E-02    0.2029558018E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.6141002679E-03
+ Calculating linear response for frequency:    4.78999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2043785017E-02    0.2043785017E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.6280607198E-03
+ Calculating linear response for frequency:    4.79999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2057560166E-02    0.2057560166E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.6405032878E-03
+ Calculating linear response for frequency:    4.80999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2071318323E-02    0.2071318323E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.6532582611E-03
+ Calculating linear response for frequency:    4.81999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2084461384E-02    0.2084461384E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.6650664085E-03
+ Calculating linear response for frequency:    4.82999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2096206736E-02    0.2096206736E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.6761762821E-03
+ Calculating linear response for frequency:    4.83999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2107357767E-02    0.2107357767E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.6865926010E-03
+ Calculating linear response for frequency:    4.84999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2116939933E-02    0.2116939933E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.6959558393E-03
+ Calculating linear response for frequency:    4.85999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2124181974E-02    0.2124181974E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.7045281721E-03
+ Calculating linear response for frequency:    4.86999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2130018176E-02    0.2130018176E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.7116867308E-03
+ Calculating linear response for frequency:    4.87999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2134671796E-02    0.2134671796E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.7187261949E-03
+ Calculating linear response for frequency:    4.88999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2138609233E-02    0.2138609233E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.7235034209E-03
+ Calculating linear response for frequency:    4.89999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2141369211E-02    0.2141369211E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.7283403129E-03
+ Calculating linear response for frequency:    4.90999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2144119379E-02    0.2144119379E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.7304597851E-03
+ Calculating linear response for frequency:    4.91999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2145615323E-02    0.2145615323E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.7327677535E-03
+ Calculating linear response for frequency:    4.92999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2151476683E-02    0.2151476683E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.7335894968E-03
+ Calculating linear response for frequency:    4.93999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2156957724E-02    0.2156957724E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.7340580994E-03
+ Calculating linear response for frequency:    4.94999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2163041294E-02    0.2163041294E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.7322287864E-03
+ Calculating linear response for frequency:    4.95999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2169211429E-02    0.2169211429E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.7311402030E-03
+ Calculating linear response for frequency:    4.96999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2174666537E-02    0.2174666537E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.7298271212E-03
+ Calculating linear response for frequency:    4.97999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2182603225E-02    0.2182603225E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.7271844813E-03
+ Calculating linear response for frequency:    4.98999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2192776213E-02    0.2192776213E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.7246007380E-03
+ Calculating linear response for frequency:    4.99999999999994     
+ Intermediates formed...
+ Hessian constructed successfully...
+Max iter:       4000
+Convergence:     0.2206375677E-02    0.2206375677E-02
+
+ WARNING: error in GMRES_Solve.
+ Convergence not achieved in number of iterations allowed
+
+First order solution not orthogonal         0.7219937229E-03
+
+ ================================================================
+ Timing report.
+
+ Timing of most expensive procedures.
+
+ Procedure                    Calls       CPU    system     total
+ ----------------------------------------------------------------
+ DD_EC_SolveLR                  316 390432.12      0.00 390432.12
+ DD_EC_HBuild                   316  97885.62      0.00  97885.62
+ DiagHopping                      1    248.88      0.00    248.88
+ Const_Emb                        1    239.29      0.00    239.29
+ FullSCF                          1    233.28      0.00    233.28
+ DD_EC_Precom                     1      3.79      0.00      3.79
+ Main                             1      1.69      0.00      1.69
+ ----------------------------------------------------------------
+ Total                              489044.66      0.00 489044.66
+
+ Global CPU time     489046.09
+ Global system time       0.00
+ Global total time   489046.09
+ ================================================================
+ Calculation ended 25/07/2013 at 11:25:57
+ ================================================================
