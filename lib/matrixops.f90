@@ -64,10 +64,12 @@ CONTAINS
 
   SUBROUTINE d_inv (mat,matinv)
     
+    use const
+    implicit none
     CHARACTER,PARAMETER :: trans='N'
-    REAL(KIND=KIND(1.d0)), INTENT(IN) :: mat(:,:)
+    REAL(KIND=KIND(1.0_dp)), INTENT(IN) :: mat(:,:)
 !    REAL(KIND=KIND(1.d0)), DIMENSION(SIZE(mat(:,1)),SIZE(mat(1,:))) ::&
-    REAL(KIND=KIND(1.d0)), DIMENSION(SIZE(mat,1),SIZE(mat,2)) ::&
+    REAL(KIND=KIND(1.0_dp)), DIMENSION(SIZE(mat,1),SIZE(mat,2)) ::&
         & matinv, matdum
     INTEGER, DIMENSION(SIZE(mat,1)) :: IPIV
     INTEGER :: nsize,msize,i,INFO
@@ -75,9 +77,9 @@ CONTAINS
     msize=SIZE(mat,1)
     nsize=SIZE(mat,2)
     matdum=mat
-    matinv=0.0d0
+    matinv=zero
     DO i=1,msize
-       matinv(i,i)=1.0d0
+       matinv(i,i)=one
     END DO
     INFO=-1
     CALL dGETRF(msize,nsize,matdum,nsize,IPIV,INFO)
