@@ -114,10 +114,10 @@ If CT-QMC is used as an
 impurity solver to integrate over this infinite bath (or indeed general QMC methods used in isolation), then spectral 
 functions are obtained only on the imaginary frequency 
 axis, requiring unstable analytic continuation onto the real frequency axis, which can wash out subtle or sharp features of the 
-spectra\cite{Thomas2011}. Accessing low temperatures or arbitrary interactions produces Fermion sign problems, which can require millions
+spectra\cite{Millis2009}. Accessing low temperatures or arbitrary interactions produces Fermion sign problems, which can require millions
 of computer-hours to stabilize, even for a modest number of impurity sites.
 Exact diagonalization suffers from bath discretization error in the spectra due to the 
-fitting of the hybridization (at all frequencies) to a small number of frequency independent bath sites. In addition, since DMFT
+fitting of the hybridization (at all frequencies) to a small number of frequency independent bath sites\cite{Liebsch2012}. In addition, since DMFT
 is formulated using the one-particle Greens function, other spectra such as the two-particle Greens function and optical spectra are 
 difficult to obtain, formally requiring expensive vertex corrections\cite{Millis2012}. Other methods to calculate 
 spectra of correlated extended systems, such as the dynamical density matrix renormalization group\cite{Jeckelmann2004} or perturbative
@@ -481,7 +481,7 @@ calculation of non-local operators, an {\em ab initio} formulation, and for the 
 
 {\bf Acknowledgements}
 
-The authors would like to sincerly thank Ara Go for sharing her CDMFT results and useful conversations.
+The authors would like to sincerly thank Ara Go for sharing her CDMFT results and useful conversations, and Cedric Weber for useful comments on the manuscript.
 
 \bibliography{SpectralDMETBib}
 
