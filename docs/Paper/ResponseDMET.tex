@@ -68,7 +68,7 @@ finite quantum impurity model. The formalism allows for arbitrary perturbations 
 %, and allow for straightforward generalization both 
 %to impurity clusters and arbitrary electron perturbation operators. 
 We demonstrate the method on the 1D and 2D Hubbard model, where we obtain accurate 
-zero temperature, thermodynamic limit spectral functions, and show the trivial extension to two-particle Greens functions. 
+zero temperature, thermodynamic limit spectral functions, and show the trivial extension to two-particle Green functions. 
 This advance vastly extends the scope and applicability 
 of DMET in condensed matter problems as a computationally tractable route to correlated spectral functions of extended systems, 
 %where perturbative routes and density functional theory will fail.
@@ -91,21 +91,21 @@ A zero-temperature dynamic correlation function can be defined in the frequency 
 \begin{equation}
     G(\omega;{\hat X},{\hat V}) = \langle \Psi^{(0)} | {\hat X}^{\dagger} \frac{1}{\omega-(H-E_0)+i \eta} {\hat V} | \Psi^{(0)} \rangle , \label{eqn:intCorrFunc}
 \end{equation}
-with the one- and two-particle Greens functions defined with ${\hat V}$ and ${\hat X}$ being single annihilation/creation or pairs of such operators 
+with the one- and two-particle Green functions defined with ${\hat V}$ and ${\hat X}$ being single annihilation/creation or pairs of such operators 
 respectively, with appropriate time-ordering of the operators. Spectral functions are defined as $A(\omega)=-\frac{1}{\pi}\Im[G(\omega)]$,
 where the spectral broadening is given by the small imaginary component of the energy, $\eta$, which regularizes the correlation function. The single particle
-density of states is the spectral function of the one-particle Greens function, experimentally measured by STM 
+density of states is the spectral function of the one-particle Green function, experimentally measured by STM 
 and (angle-resolved) photoemission spectroscopy. Two-particle spectral functions are also highly sought after, such as the two-hole propagator 
-probed with Auger spectroscopy\cite{Mona2013}, or the particle-hole Greens function that gives the optical conductivity, polarizability and
+probed with Auger spectroscopy\cite{Mona2013}, or the particle-hole Green function that gives the optical conductivity, polarizability and
 magnetizability, and are key descriptors in 
 Raman spectroscopy and in the mechanism of high-$T_c$ superconductivity\cite{Millis2012,Sordi2012,Millis2013}.
 
 One method which has proved useful in obtaining strongly correlated spectral functions is dynamical mean-field 
 theory (DMFT)\cite{Georges1992,Georges1996,Kotliar2006}. In 
-DMFT, a single unit cell (or site) in the bulk is viewed as a quantum impurity, described by its local, one-particle Greens function,
-and is self-consistently embedded in a non-interacting Greens function (hybridization) from its environment.
-%the central variable is the local, one-particle Greens function, which is self-consistently embedded within a non-interacting or 
-%mean-field Greens function over the system. 
+DMFT, a single unit cell (or site) in the bulk is viewed as a quantum impurity, described by its local, one-particle Green function,
+and is self-consistently embedded in a non-interacting Green function (hybridization) from its environment.
+%the central variable is the local, one-particle Green function, which is self-consistently embedded within a non-interacting or 
+%mean-field Green function over the system. 
 The quantum impurity problem, which is then solved via an `impurity solver', such as
 continuous-time quantum Monte Carlo (CT-QMC)\cite{Millis2006} or exact diagonalization (ED)\cite{Zgid2012}. 
 However, there are some formal drawbacks of the DMFT formulation. 
@@ -118,12 +118,12 @@ spectra\cite{Millis2009}. Accessing low temperatures or arbitrary interactions p
 of computer-hours to stabilize, even for a modest number of impurity sites.
 Exact diagonalization suffers from bath discretization error in the spectra due to the 
 fitting of the hybridization (at all frequencies) to a small number of frequency independent bath sites\cite{Liebsch2012}. In addition, since DMFT
-is formulated using the one-particle Greens function, other spectra such as the two-particle Greens function and optical spectra are 
+is formulated using the one-particle Green function, other spectra such as the two-particle Green function and optical spectra are 
 difficult to obtain, formally requiring expensive vertex corrections\cite{Millis2012}. Other methods to calculate 
 spectra of correlated extended systems, such as the dynamical density matrix renormalization group\cite{Jeckelmann2004} or perturbative
 methods\cite{Senechal2000} are restricted to certain correlation strengths, system sizes or spatial dimensions.
 
-Here, we bypass these issues, by extending the idea of quantum embedding of {\em states} rather than Greens functions, to compute dynamical
+Here, we bypass these issues, by extending the idea of quantum embedding of {\em states} rather than Green functions, to compute dynamical
 correlation functions. The framework, which we term density matrix embedding theory (DMET) was introduced in 
 Ref.~\onlinecite{Chan2012}, and extended to long-range Hamiltonians in Ref.~\onlinecite{Chan2013}. 
 The essential idea for static quantities is that the Schmidt decomposition of a mean-field bulk state defines a {\em finite} quantum impurity mapping:
@@ -139,7 +139,7 @@ took more than a minute on a single computing core), while eliminating bath disc
 %analytic coupling to the rest of the delocalized excitation space. This is determined through the exact Schmidt decomposition of a mean-field 
 %response computed throughout the bulk system. This renders the spectra exact in the non-interacting and local excitation limits. 
 In addition, since the method is formulated in terms of a general response vector, it is not restricted in the type or rank of perturbation 
-operators that it can consider, with two-particle Greens functions almost as easy to obtain as single particle Greens functions. 
+operators that it can consider, with two-particle Green functions almost as easy to obtain as single particle Green functions. 
 %Furthermore, since the analytic coupling is only defined for a given frequency (rather than all frequencies 
 %for DMFT), the entanglement bath for the spectra is compact and exactly represents the coupling defined by the global response function. This 
 %allows for large impurity clusters to be treated with small numbers of additional `bath' states, without discretization error in the coupling 
@@ -153,7 +153,7 @@ This model encapsulates many of the challenges in the electronic structure of co
 phase transitions in the thermodynamic limit, and the physics of many transition metal oxides\cite{Limelette2003}, including qualitative features 
 of high-$T_c$ superconductivity\cite{Anderson87,Sordi2012,Millis2013}. Where possible, we compare to one-dimensional exact results from the Bethe 
 Ansatz\cite{Lieb68,Ovchinni1970}, as well as large-scale 1D and 2D DMFT calculations at half-filling and under doping\cite{Go2009,Kotliar2008,Masatoshi2009}. 
-In addition we compute local two-particle Greens functions.
+In addition we compute local two-particle Green functions.
 
 \emph{Method.-} We first recap the DMET quantum embedding formalism introduced for the ground state, with more details provided in
 Ref.~\onlinecite{Chan2012} and \onlinecite{Chan2013}. The 
@@ -162,7 +162,7 @@ quantum impurity model and bulk properties are defined in the following steps.
 \begin{inparaenum}[\itshape i\upshape)]
 \item From the ground state of a one-particle Hamiltonian defined over the lattice, $h$, a single Slater determinant, $|\phi^{(0)}\rangle$, is variationally minimized.
 \item A set of local `impurity' sites are chosen, spanned by the states $\{ |\alpha \rangle \}$, and the formal Schmidt decomposition of $|\phi^{(0)}\rangle = \sum_{\alpha \beta} \phi_{\alpha \beta} |\alpha \rangle |\beta \rangle$ into this space
-yields a set of bath states, $\{ |\beta \rangle \}$, whose fock space is the same dimension as the impurity space.
+yields a set of bath states, $\{ |\beta \rangle \}$, whose Fock space is the same dimension as the impurity space.
 \item The interacting quantum impurity plus bath Hamiltonian is constructed by projecting $H$ into this basis 
 of $\{ | \alpha \rangle \} \otimes \{ | \beta \rangle \}$ as $H'=PH_{\mathrm emb}P$, 
 with $P = \sum_{\alpha \beta} |\alpha \beta \rangle \langle \alpha \beta |$. This space spans the exact entanglement of the impurity to its environment 
@@ -186,8 +186,8 @@ as defined by a response vector, $|\phi^{(1)}(\omega) \rangle$ constructed from 
 |\phi^{(1)}(\omega) \rangle &= \left[ \omega-(h'-\varepsilon_0)+i\eta \right]^{-1} {\hat V} |\phi^{(0)}\rangle  \nonumber \\ 
                             &= {\hat R}(\omega) \sum_{\alpha \beta} \phi^{(0)}_{\alpha \beta} |\alpha \rangle |\beta \rangle    ,
 \end{align}
-where ${\hat R}(\omega)$ is the response operator relating $| \phi^{(0)} \rangle$ and $| \phi^{(1)}(\omega) \rangle$. For the one-particle Greens 
-function, where ${\hat V} = a_{\alpha}^{(\dagger)}$, ${\hat R}(\omega) = \sum_i r_i(\omega) a_i^{(\dagger)}$, while for the two-particle Greens function, 
+where ${\hat R}(\omega)$ is the response operator relating $| \phi^{(0)} \rangle$ and $| \phi^{(1)}(\omega) \rangle$. For the one-particle Green 
+function, where ${\hat V} = a_{\alpha}^{(\dagger)}$, ${\hat R}(\omega) = \sum_i r_i(\omega) a_i^{(\dagger)}$, while for the two-particle Green function, 
 where ${\hat V}=a_{\alpha}^{(\dagger)} a_{\alpha'}^{(\dagger)}$, ${\hat R}(\omega) = \sum_{ij} r_{ij}(\omega) a_i^{(\dagger)} a_j^{(\dagger)}$.
 \item The {\em operator} $R(\omega)$ is decomposed into separate operators as $R(\omega) = \sum_i {\hat {\mathcal{A}}}^{(i)}(\omega) {\hat {\mathcal{B}}}^{(i)}(\omega)$, 
 where ${\hat {\mathcal{A}}}^{(i)}(\omega)$ act only on the local impurity states $\{ |\alpha \rangle \}$, and ${\hat {\mathcal{B}}}^{(i)}(\omega)$ on the states of $\{ |\beta\rangle \}$.
@@ -228,9 +228,9 @@ DMFT does not posess. The coupling to the environment
 is achieved via a set of bath states, which change continuously with frequency, and which couple the impurity space to the set of non-local excitations appropriate for the frequency considered. 
 In contrast, DMFT constructs bath states which are
 frequency-independent, and whose size must be formally infinite in order to avoid a discretization error which is not present in the above {\em algebraic} 
-construction. Furthermore, DMFT is formulated in terms of the one-particle Greens function, but the procedure outlined above is suitable for 
+construction. Furthermore, DMFT is formulated in terms of the one-particle Green function, but the procedure outlined above is suitable for 
 general operators ${\hat V}$ of any rank. 
-%For one-particle Greens functions,
+%For one-particle Green functions,
 %the space of $|\phi^{(1)}(\omega) \rangle$ is exactly spanned by a single bath operator in $\mathcal{K}(\omega)$, and therefore the resultant dimension of the space into which the problem
 %is projected is only approximately twice as large as the ground state Hilbert space. For two-particle functions, there are $\mathcal{O}[\text{\textnormal {dim}} \{\alpha\}]$ operators, although the actual
 %increase in the size of the Hilbert space in practice is generally much smaller than this after consideration of particle number symmetry and optional removal of linear dependencies (the basis
@@ -241,7 +241,7 @@ and once the fully interacting response is projected into this basis, there is n
 the cost of the method truly mean-field scaling with the size of the system\footnote{A pilot implementation used to obtain these results can be found at https://github.com/ghb24/SpectralDMET.git}. 
 
 It is now necessary to turn to numerical applications of the method to determine the quality of the results away from these exact limits. 
-In this Letter, we restrict ourselves to consider the one- and two-particle local Greens functions,
+In this Letter, we restrict ourselves to consider the one- and two-particle local Green functions,
 defining the local density of states, and density-density spectral functions respectively, while other local dynamic correlation functions can be obtained analogously.
 
 %\emph{Method.-} Within the analytic quantum embedding formalism introduced for the ground state with the DMET method (see 
@@ -314,7 +314,7 @@ defining the local density of states, and density-density spectral functions res
 %$G(\omega;{\hat A},{\hat V})=\langle \Psi^{(0)} | {\hat A}^{\dagger} | \Psi^{(1)}(\omega) \rangle$.
 %
 %The number of individual operators in ${\hat B}(\omega)$ which define the contracted bath states from the Schmidt decomposition 
-%of $|\phi^{(1)}(\omega) \rangle$, grow with increasing particle rank of ${\hat V}$. For ${\hat V}=a_{\alpha}$, as required for the single-particle Greens function,
+%of $|\phi^{(1)}(\omega) \rangle$, grow with increasing particle rank of ${\hat V}$. For ${\hat V}=a_{\alpha}$, as required for the single-particle Green function,
 %there is only one additional operator in ${\hat B}(\omega)$, and therefore the resultant dimension of the many-electron space $\mathcal{K}(\omega)$ in 
 %which the interacting equations are solved, is only approximately twice as large as the corresponding ground state space. For two-particle functions,
 %as shown in Eq.~\ref{eqn:2elpert}, there are $4 \times \text{\textnormal {dim}}\{|\gamma \rangle \} + 1$ operators. The actual increase in the size of the Hilbert
@@ -330,7 +330,7 @@ defining the local density of states, and density-density spectral functions res
 %$|\alpha \rangle$ space included in $\mathcal{K}(\omega)$. 
 %It is now necessary to turn to numerical applications of the method to determine the
 %quality of the results away from these exact limits. 
-%In this letter, we restrict ourselves to consider the one- and two-electron local Greens function,
+%In this letter, we restrict ourselves to consider the one- and two-electron local Green function,
 %defining the local density of states, and the density-density spectral functions respectively, while other local dynamic correlation functions can be obtained analogously.
 %To underline the small cost at which these thermodynamic limit results were obtained, all calculations presented were achieved on a single computing core at a 
 %computational cost of at most a few seconds per frequency point.
@@ -360,8 +360,8 @@ both the CDMFT and DMET calculations.}
 \includegraphics[scale=0.425]{Plots/1D_Gap/Hubbard_Gap.eps}
 \end{center}
     \vspace{-8mm}
-\caption{Error in the spectral gap from the 1-particle and 2-particle Greens functions compared to analytic results
-from the Bethe Ansatze\cite{Ovchinni1970}, and six bath orbital CDMFT results\cite{Go2009}. The results show generally good agreement between the Greens functions, and 
+\caption{Error in the spectral gap from the 1-particle and 2-particle Green functions compared to analytic results
+from the Bethe Ansatze\cite{Ovchinni1970}, and six bath orbital CDMFT results\cite{Go2009}. The results show generally good agreement between the Green functions, and 
 convergence of the DMET results with increasing cluster size.}
 \label{1D_GAP}
 \end{figure}
@@ -448,8 +448,8 @@ until the system becomes a Fermi liquid phase. The spectra are qualitatively sim
 \end{figure}
 
 
-Fig.~\ref{2D_DD} shows the local density-density response function of the 2D Hubbard model at half-filling, obtained from the local two-particle Greens 
-function (${\hat V}={\hat X}=a_{\alpha_{\alpha}}^{\dagger}a_{\alpha_{\alpha}} + a_{\alpha_{\beta}}^{\dagger}a_{\alpha_{\beta}}$). The poles of this 
+Fig.~\ref{2D_DD} shows the local density-density response function of the 2D Hubbard model at half-filling, obtained from the local two-particle Green 
+function (${\hat V}={\hat X}=\sum_{\sigma} a_{\alpha_{\sigma}}^{\dagger}a_{\alpha_{\sigma}}$). The poles of this 
 function correspond to the neutral excitation energies, and as such determine 
 the optical properties of the system\cite{Millis2012,Essler91}.
 Unfortunately, direct comparison of the spectra in Fig.~\ref{2D_DD} to other results is difficult due to the paucity of other comparable 
@@ -457,8 +457,8 @@ calculations for this quantity, but show the expected MIT, and transfer of spect
 However, since holons and doublons do not bind in the 1D Hubbard Hamiltonian, 
 %exciton binding is negligable, and 
 the optical and single-particle gaps obtained should be the same, and these can be tested against the exact Bethe Ansatz results as before\cite{Essler91}. Therefore, excitation gaps
-obtained from the two-particle Greens functions in the 1D model are included in Fig.~\ref{1D_GAP}, and show that for the same cluster size, the differences between the spectral gaps are generally small.
-While not conclusive, this supports the assertion that the one- and two-particle Greens functions are of similar quality, while also of comparable computational cost, and validating the results shown in Fig.~\ref{2D_DD}.
+obtained from the two-particle Green functions in the 1D model are included in Fig.~\ref{1D_GAP}, and show that for the same cluster size, the differences between the spectral gaps are generally small.
+While not conclusive, this supports the assertion that the one- and two-particle Green functions are of similar quality, while also of comparable computational cost, and validating the results shown in Fig.~\ref{2D_DD}.
 
 In conclusion, we have presented a quantum embedding formalism for accurate, zero-temperature spectral functions of extended, strongly correlated systems 
 at a small computational cost, which vastly 
@@ -481,7 +481,7 @@ calculation of non-local operators, an {\em ab initio} formulation, and for the 
 
 {\bf Acknowledgements}
 
-The authors would like to sincerly thank Ara Go for sharing her CDMFT results and useful conversations, and Cedric Weber for useful comments on the manuscript.
+The authors would like to sincerely thank Ara Go for sharing her CDMFT results and useful conversations, and Cedric Weber for useful comments on the manuscript.
 
 \bibliography{SpectralDMETBib}
 
