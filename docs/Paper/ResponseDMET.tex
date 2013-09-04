@@ -109,7 +109,8 @@ and is self-consistently embedded in a non-interacting Green function (hybridiza
 The quantum impurity problem, which is then solved via an `impurity solver', such as
 continuous-time quantum Monte Carlo (CT-QMC)\cite{Millis2006} or exact diagonalization (ED)\cite{Zgid2012}. 
 However, there are some formal drawbacks of the DMFT formulation. 
-The essential problem is that DMFT maps the infinite bulk onto a quantum impurity plus infinite bath problem, which is not much easier to solve.
+The essential problem is that DMFT maps the infinite bulk onto a quantum impurity plus infinite bath problem, which while 
+simpler, is still numerically challenging to solve.
 If CT-QMC is used as an 
 impurity solver to integrate over this infinite bath (or indeed general QMC methods used in isolation), then spectral 
 functions are obtained only on the imaginary frequency 
@@ -134,7 +135,7 @@ very favorably (and often exceeds) that of DMFT.
 Here, we show that for dynamic quantities, the Schmidt decomposition of a mean-field bulk response vector yields a similar finite quantum impurity mapping
 that renders {\em spectra} exact in the non-interacting and local excitation limits. This `spectral DMET' possesses significant advantages compared to
 DMFT. The finite quantum impurity mapping results in numerically simple calculations of spectral functions (no frequency point in these results
-took more than a minute on a single computing core), while eliminating bath discretization error of finite DMFT calculations.
+took more than a minute on a single computing core), while eliminating bath discretization error of DMFT+ED calculations.
 %This is achieved by embedding a local correlation function defined over a set of `impurity' sites, within an 
 %analytic coupling to the rest of the delocalized excitation space. This is determined through the exact Schmidt decomposition of a mean-field 
 %response computed throughout the bulk system. This renders the spectra exact in the non-interacting and local excitation limits. 
@@ -226,7 +227,7 @@ out decompositions in the superoperator space.
 The exactness of the non-interacting and local limits is a feature that this construction shares with DMFT, but there are important properties which 
 DMFT does not posess. The coupling to the environment
 is achieved via a set of bath states, which change continuously with frequency, and which couple the impurity space to the set of non-local excitations appropriate for the frequency considered. 
-In contrast, ED+DMFT constructs bath states which are
+In contrast, DMFT+ED constructs bath states which are
 frequency-independent, and whose size must be formally infinite in order to avoid a discretization error which is not present in the above {\em algebraic} 
 construction. Furthermore, DMFT is formulated in terms of the one-particle Green function, but the procedure outlined above is suitable for 
 general operators ${\hat V}$ of any rank. 
@@ -345,9 +346,9 @@ defining the local density of states, and density-density spectral functions res
 \end{center}
     \vspace{-5mm}
 \caption{Comparison of the local density of states between a four impurity cluster DMET calculation and a
-(six impurity, six bath) CDMFT calculation for the half-filled 1D Hubbard model. The analytic bath construction
+(six impurity, six bath) CDMFT+ED calculation for the half-filled 1D Hubbard model. The analytic bath construction
 of DMET renders the spectral functions smooth over the frequency range, with the same spectral broadening ($\eta=0.05t$) used for
-both the CDMFT and DMET calculations.}
+both the CDMFT+ED and DMET calculations.}
 \label{1D_DOS}
 \end{figure}
 
@@ -361,7 +362,7 @@ both the CDMFT and DMET calculations.}
 \end{center}
     \vspace{-8mm}
 \caption{Error in the spectral gap from the 1-particle and 2-particle Green functions compared to analytic results
-from the Bethe Ansatze\cite{Ovchinni1970}, and six bath orbital CDMFT results\cite{Go2009}. The results show generally good agreement between the Green functions, and 
+from the Bethe Ansatze\cite{Ovchinni1970}, and six bath orbital CDMFT+ED results\cite{Go2009}. The results show generally good agreement between the Green functions, and 
 convergence of the DMET results with increasing cluster size.}
 \label{1D_GAP}
 \end{figure}
