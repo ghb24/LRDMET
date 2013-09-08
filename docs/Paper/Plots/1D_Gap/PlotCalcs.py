@@ -23,6 +23,7 @@ data_CDMFT_48=mlab.load('CDMFT/data_gap/gap_48.dat',usecols=[0,1,2],unpack=True)
 data_CDMFT_66=mlab.load('CDMFT/data_gap/gap_66.dat',usecols=[0,1,2],unpack=True)
 clf()
 ax1 = subplot(111)
+
 #suptitle('1D hubbard spectral gap (Lattice = 624 sites)')
 ylabel('Error in Spectral gap / t',fontsize='14')
 xlabel('U / t',fontsize='14')
