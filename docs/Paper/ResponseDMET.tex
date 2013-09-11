@@ -349,7 +349,8 @@ defining the local density of states, and density-density spectral functions res
 \begin{figure}
 \begin{center}
     \vspace{-2mm}
-\includegraphics[scale=0.425]{Plots/1D_Spectra/1D_Hub_Spectra.eps}
+%\includegraphics[scale=0.425]{Plots/1D_Spectra/1D_Hub_Spectra.eps}
+\includegraphics[scale=0.425]{1D_Hub_Spectra.eps}
 \end{center}
     \vspace{-5mm}
 \caption{Comparison of the local density of states between a four impurity cluster DMET calculation and a
@@ -365,11 +366,12 @@ both the CDMFT+ED and DMET calculations.}
 \begin{figure}
 \begin{center}
     \vspace{-2mm}
-\includegraphics[scale=0.425]{Plots/1D_Gap/Hubbard_Gap.eps}
+%\includegraphics[scale=0.425]{Plots/1D_Gap/Hubbard_Gap.eps}
+\includegraphics[scale=0.425]{Hubbard_Gap.eps}
 \end{center}
     \vspace{-8mm}
 \caption{Error in the spectral gap from the impurity 1-particle and 2-particle Green functions compared to analytic results
-from the Bethe Ansatze\cite{Ovchinni1970}, and six bath orbital CDMFT+ED lattice Green functions\cite{Go2009}. The results show generally 
+from the Bethe Ansatze\cite{Ovchinni1970}, and six bath orbital CDMFT+ED lattice Green functions. The results show generally 
 good agreement, and convergence of the results with increasing cluster size.}
 \label{1D_GAP}
 \end{figure}
@@ -394,7 +396,7 @@ Therefore, in the results presented, the spectral window probed will be determin
 exactly obeyed, and the integrated spectral weight of the results in Fig.~\ref{1D_DOS} are all unity.
 For comparison, Fig.~\ref{1D_GAP} shows the error in the spectral gap from the exact Bethe Ansatz result\cite{Ovchinni1970}, demonstrating 
 the convergence towards the exact spectral gap as the cluster size is increased 
-from two to four sites, and indicating a generally similar quality to CDMFT calculations of similar cluster size.
+from two to four sites, and indicating a generally similar quality to CDMFT calculations.
 
 %+++++++++++++++++++++++++++++++++++++++++++++++++++++++
 %   2D HUBBARD PLOTS 
@@ -402,7 +404,8 @@ from two to four sites, and indicating a generally similar quality to CDMFT calc
 \begin{figure}
 \begin{center}
     \vspace{-2mm}
-\includegraphics[scale=0.425]{Plots/2D_Spectra/2DHub_Spectra.eps}
+%\includegraphics[scale=0.425]{Plots/2D_Spectra/2DHub_Spectra.eps}
+\includegraphics[scale=0.425]{2DHub_Spectra.eps}
 \end{center}
     \vspace{-8mm}
 \caption{Local density of states of the half-filled 2D Hubbard model from a $2 \times 2$ impurity cluster DMET calculation, with a 
@@ -419,11 +422,12 @@ The exact bath states from $|\phi^{(1)}(\omega)\rangle$ for each frequency allow
 \begin{figure}
 \begin{center}
     \vspace{-2mm}
-\includegraphics[scale=0.425]{Plots/Doping/2D/nImp4/U8/LargerBroadening/2DHub_Doping.eps}
+%\includegraphics[scale=0.425]{Plots/Doping/2D/nImp4/U8/LargerBroadening/2DHub_Doping.eps}
+\includegraphics[scale=0.425]{2DHub_Doping.eps}
 \end{center}
     \vspace{-8mm}
-\caption{Local density of states of the hole doped 2D Hubbard model calculated with a $2 \times 2$ impurity cluster with $U = 8t$. Qualitative
-features present in the CDMFT study of Ref.~\onlinecite{Masatoshi2009} are observed (see Fig. 1(c) and (d)).}
+\caption{Local density of states of the hole doped 2D Hubbard model calculated with a $2 \times 2$ impurity cluster with $U = 8t$. Dotted
+lines indicate the Fermi level. Qualitative features present in the CDMFT study of Ref.~\onlinecite{Masatoshi2009} are observed (see Fig. 1(c) and (d)).}
 %Aside: Also look at A. Liebsch DMFT in doped Hubbard.}
 \label{2D_Doped}
 \end{figure}
@@ -449,7 +453,8 @@ until the system becomes a Fermi liquid phase. The spectra are qualitatively sim
 \begin{figure}
 \begin{center}
     \vspace{-2mm}
-\includegraphics[scale=0.425]{Plots/2D_DD/2D_DD_Spectra.eps}
+%\includegraphics[scale=0.425]{Plots/2D_DD/2D_DD_Spectra.eps}
+\includegraphics[scale=0.425]{2D_DD_Spectra.eps}
 \end{center}
     \vspace{-8mm}
 \caption{$2 \times 2$ impurity DMET calculation of the local density-density response function for the half-filled 2D Hubbard model.}
@@ -494,6 +499,216 @@ The authors would like to sincerely thank Ara Go for sharing unpublished CDMFT r
 conversations, and Cedric Weber and Qiaoni Chen for useful comments on the manuscript.
 This work was supported by the DoE through grants DE-SC0010530, and DE-FG02-12ER46875.
 
-\bibliography{SpectralDMETBib}
+%\bibliography{SpectralDMETBib}
+\begin{thebibliography}{25}
+\expandafter\ifx\csname natexlab\endcsname\relax\def\natexlab#1{#1}\fi
+\expandafter\ifx\csname bibnamefont\endcsname\relax
+  \def\bibnamefont#1{#1}\fi
+\expandafter\ifx\csname bibfnamefont\endcsname\relax
+  \def\bibfnamefont#1{#1}\fi
+\expandafter\ifx\csname citenamefont\endcsname\relax
+  \def\citenamefont#1{#1}\fi
+\expandafter\ifx\csname url\endcsname\relax
+  \def\url#1{\texttt{#1}}\fi
+\expandafter\ifx\csname urlprefix\endcsname\relax\def\urlprefix{URL }\fi
+\providecommand{\bibinfo}[2]{#2}
+\providecommand{\eprint}[2][]{\url{#2}}
+
+\bibitem[{\citenamefont{Coulter et~al.}(2013)\citenamefont{Coulter, Manousakis,
+  and Gali}}]{Gali2013}
+\bibinfo{author}{\bibfnamefont{J.~E.} \bibnamefont{Coulter}},
+  \bibinfo{author}{\bibfnamefont{E.}~\bibnamefont{Manousakis}},
+  \bibnamefont{and} \bibinfo{author}{\bibfnamefont{A.}~\bibnamefont{Gali}}
+  (\bibinfo{year}{2013}), \bibinfo{note}{arXiv:1306.4948}.
+
+\bibitem[{\citenamefont{Mukherjee et~al.}(2013)\citenamefont{Mukherjee,
+  Sawatzky, and Berciu}}]{Mona2013}
+\bibinfo{author}{\bibfnamefont{A.}~\bibnamefont{Mukherjee}},
+  \bibinfo{author}{\bibfnamefont{G.~A.} \bibnamefont{Sawatzky}},
+  \bibnamefont{and} \bibinfo{author}{\bibfnamefont{M.}~\bibnamefont{Berciu}},
+  \bibinfo{journal}{Phys. Rev. B} \textbf{\bibinfo{volume}{87}},
+  \bibinfo{pages}{165136} (\bibinfo{year}{2013}).
+
+\bibitem[{\citenamefont{Lin et~al.}(2012)\citenamefont{Lin, Gull, and
+  Millis}}]{Millis2012}
+\bibinfo{author}{\bibfnamefont{N.}~\bibnamefont{Lin}},
+  \bibinfo{author}{\bibfnamefont{E.}~\bibnamefont{Gull}}, \bibnamefont{and}
+  \bibinfo{author}{\bibfnamefont{A.~J.} \bibnamefont{Millis}},
+  \bibinfo{journal}{Phys. Rev. Lett.} \textbf{\bibinfo{volume}{109}},
+  \bibinfo{pages}{106401} (\bibinfo{year}{2012}).
+
+\bibitem[{\citenamefont{Sordi et~al.}(2012)\citenamefont{Sordi, S\'emon, Haule,
+  and Tremblay}}]{Sordi2012}
+\bibinfo{author}{\bibfnamefont{G.}~\bibnamefont{Sordi}},
+  \bibinfo{author}{\bibfnamefont{P.}~\bibnamefont{S\'emon}},
+  \bibinfo{author}{\bibfnamefont{K.}~\bibnamefont{Haule}}, \bibnamefont{and}
+  \bibinfo{author}{\bibfnamefont{A.-M.~S.} \bibnamefont{Tremblay}},
+  \bibinfo{journal}{Phys. Rev. Lett.} \textbf{\bibinfo{volume}{108}},
+  \bibinfo{pages}{216401} (\bibinfo{year}{2012}).
+
+\bibitem[{\citenamefont{Gull et~al.}(2013)\citenamefont{Gull, Parcollet, and
+  Millis}}]{Millis2013}
+\bibinfo{author}{\bibfnamefont{E.}~\bibnamefont{Gull}},
+  \bibinfo{author}{\bibfnamefont{O.}~\bibnamefont{Parcollet}},
+  \bibnamefont{and} \bibinfo{author}{\bibfnamefont{A.~J.}
+  \bibnamefont{Millis}}, \bibinfo{journal}{Phys. Rev. Lett.}
+  \textbf{\bibinfo{volume}{110}}, \bibinfo{pages}{216405}
+  (\bibinfo{year}{2013}).
+
+\bibitem[{\citenamefont{Georges and Krauth}(1992)}]{Georges1992}
+\bibinfo{author}{\bibfnamefont{A.}~\bibnamefont{Georges}} \bibnamefont{and}
+  \bibinfo{author}{\bibfnamefont{W.}~\bibnamefont{Krauth}},
+  \bibinfo{journal}{Phys. Rev. Lett.} \textbf{\bibinfo{volume}{69}},
+  \bibinfo{pages}{1240} (\bibinfo{year}{1992}).
+
+\bibitem[{\citenamefont{Georges et~al.}(1996)\citenamefont{Georges, Kotliar,
+  Krauth, and Rozenberg}}]{Georges1996}
+\bibinfo{author}{\bibfnamefont{A.}~\bibnamefont{Georges}},
+  \bibinfo{author}{\bibfnamefont{G.}~\bibnamefont{Kotliar}},
+  \bibinfo{author}{\bibfnamefont{W.}~\bibnamefont{Krauth}}, \bibnamefont{and}
+  \bibinfo{author}{\bibfnamefont{M.}~\bibnamefont{Rozenberg}},
+  \bibinfo{journal}{Rev. Mod. Phys.} \textbf{\bibinfo{volume}{68}},
+  \bibinfo{pages}{13} (\bibinfo{year}{1996}).
+
+\bibitem[{\citenamefont{Kotliar et~al.}(2006)\citenamefont{Kotliar, Savrasov,
+  Haule, Oudovenko, Parcollet, and Marianetti}}]{Kotliar2006}
+\bibinfo{author}{\bibfnamefont{G.}~\bibnamefont{Kotliar}},
+  \bibinfo{author}{\bibfnamefont{S.~Y.} \bibnamefont{Savrasov}},
+  \bibinfo{author}{\bibfnamefont{K.}~\bibnamefont{Haule}},
+  \bibinfo{author}{\bibfnamefont{V.~S.} \bibnamefont{Oudovenko}},
+  \bibinfo{author}{\bibfnamefont{O.}~\bibnamefont{Parcollet}},
+  \bibnamefont{and} \bibinfo{author}{\bibfnamefont{C.~A.}
+  \bibnamefont{Marianetti}}, \bibinfo{journal}{Rev. Mod. Phys.}
+  \textbf{\bibinfo{volume}{78}}, \bibinfo{pages}{865} (\bibinfo{year}{2006}).
+
+\bibitem[{\citenamefont{Werner et~al.}(2006)\citenamefont{Werner, Comanac, de'
+  Medici, Troyer, and Millis}}]{Millis2006}
+\bibinfo{author}{\bibfnamefont{P.}~\bibnamefont{Werner}},
+  \bibinfo{author}{\bibfnamefont{A.}~\bibnamefont{Comanac}},
+  \bibinfo{author}{\bibfnamefont{L.}~\bibnamefont{de' Medici}},
+  \bibinfo{author}{\bibfnamefont{M.}~\bibnamefont{Troyer}}, \bibnamefont{and}
+  \bibinfo{author}{\bibfnamefont{A.~J.} \bibnamefont{Millis}},
+  \bibinfo{journal}{Phys. Rev. Lett.} \textbf{\bibinfo{volume}{97}},
+  \bibinfo{pages}{076405} (\bibinfo{year}{2006}).
+
+\bibitem[{\citenamefont{Zgid et~al.}(2012)\citenamefont{Zgid, Gull, and
+  Chan}}]{Zgid2012}
+\bibinfo{author}{\bibfnamefont{D.}~\bibnamefont{Zgid}},
+  \bibinfo{author}{\bibfnamefont{E.}~\bibnamefont{Gull}}, \bibnamefont{and}
+  \bibinfo{author}{\bibfnamefont{G.~K.-L.} \bibnamefont{Chan}},
+  \bibinfo{journal}{Phys. Rev. B} \textbf{\bibinfo{volume}{86}},
+  \bibinfo{pages}{165128} (\bibinfo{year}{2012}).
+
+\bibitem[{\citenamefont{Wang et~al.}(2009)\citenamefont{Wang, Gull, de' Medici,
+  Capone, and Millis}}]{Millis2009}
+\bibinfo{author}{\bibfnamefont{X.}~\bibnamefont{Wang}},
+  \bibinfo{author}{\bibfnamefont{E.}~\bibnamefont{Gull}},
+  \bibinfo{author}{\bibfnamefont{L.}~\bibnamefont{de' Medici}},
+  \bibinfo{author}{\bibfnamefont{M.}~\bibnamefont{Capone}}, \bibnamefont{and}
+  \bibinfo{author}{\bibfnamefont{A.}~\bibnamefont{Millis}},
+  \bibinfo{journal}{Phys. Rev. B} \textbf{\bibinfo{volume}{80}},
+  \bibinfo{pages}{045101} (\bibinfo{year}{2009}).
+
+\bibitem[{\citenamefont{Liebsch and Ishida}(2012)}]{Liebsch2012}
+\bibinfo{author}{\bibfnamefont{A.}~\bibnamefont{Liebsch}} \bibnamefont{and}
+  \bibinfo{author}{\bibfnamefont{H.}~\bibnamefont{Ishida}},
+  \bibinfo{journal}{J. Phys.: Condens. Matter} \textbf{\bibinfo{volume}{24}},
+  \bibinfo{pages}{053201} (\bibinfo{year}{2012}).
+
+\bibitem[{\citenamefont{Benthien et~al.}(2004)\citenamefont{Benthien, Gebhard,
+  and Jeckelmann}}]{Jeckelmann2004}
+\bibinfo{author}{\bibfnamefont{H.}~\bibnamefont{Benthien}},
+  \bibinfo{author}{\bibfnamefont{F.}~\bibnamefont{Gebhard}}, \bibnamefont{and}
+  \bibinfo{author}{\bibfnamefont{E.}~\bibnamefont{Jeckelmann}},
+  \bibinfo{journal}{Phys. Rev. Lett.} \textbf{\bibinfo{volume}{92}},
+  \bibinfo{pages}{256401} (\bibinfo{year}{2004}).
+
+\bibitem[{\citenamefont{Senechal et~al.}(2000)\citenamefont{Senechal, Perez,
+  and Pioro-Ladiere}}]{Senechal2000}
+\bibinfo{author}{\bibfnamefont{D.}~\bibnamefont{Senechal}},
+  \bibinfo{author}{\bibfnamefont{D.}~\bibnamefont{Perez}}, \bibnamefont{and}
+  \bibinfo{author}{\bibfnamefont{M.}~\bibnamefont{Pioro-Ladiere}},
+  \bibinfo{journal}{Phys. Rev. Lett.} \textbf{\bibinfo{volume}{84}},
+  \bibinfo{pages}{522} (\bibinfo{year}{2000}).
+
+\bibitem[{\citenamefont{Knizia and Chan}(2012)}]{Chan2012}
+\bibinfo{author}{\bibfnamefont{G.}~\bibnamefont{Knizia}} \bibnamefont{and}
+  \bibinfo{author}{\bibfnamefont{G.~K.-L.} \bibnamefont{Chan}},
+  \bibinfo{journal}{Phys. Rev. Lett.} \textbf{\bibinfo{volume}{109}},
+  \bibinfo{pages}{186404} (\bibinfo{year}{2012}).
+
+\bibitem[{\citenamefont{Knizia and Chan}(2013)}]{Chan2013}
+\bibinfo{author}{\bibfnamefont{G.}~\bibnamefont{Knizia}} \bibnamefont{and}
+  \bibinfo{author}{\bibfnamefont{G.~K.-L.} \bibnamefont{Chan}},
+  \bibinfo{journal}{J. Chem. Theory Comput.} \textbf{\bibinfo{volume}{9}},
+  \bibinfo{pages}{1428} (\bibinfo{year}{2013}).
+
+\bibitem[{\citenamefont{Limelette et~al.}(2003)\citenamefont{Limelette,
+  Georges, Jerome, Wzietek, Metcalf, and Honig}}]{Limelette2003}
+\bibinfo{author}{\bibfnamefont{P.}~\bibnamefont{Limelette}},
+  \bibinfo{author}{\bibfnamefont{A.}~\bibnamefont{Georges}},
+  \bibinfo{author}{\bibfnamefont{D.}~\bibnamefont{Jerome}},
+  \bibinfo{author}{\bibfnamefont{P.}~\bibnamefont{Wzietek}},
+  \bibinfo{author}{\bibfnamefont{P.}~\bibnamefont{Metcalf}}, \bibnamefont{and}
+  \bibinfo{author}{\bibfnamefont{J.}~\bibnamefont{Honig}},
+  \bibinfo{journal}{Science} \textbf{\bibinfo{volume}{302}},
+  \bibinfo{pages}{89} (\bibinfo{year}{2003}).
+
+\bibitem[{\citenamefont{Anderson}(1987)}]{Anderson87}
+\bibinfo{author}{\bibfnamefont{P.~W.} \bibnamefont{Anderson}},
+  \bibinfo{journal}{Science} \textbf{\bibinfo{volume}{235}},
+  \bibinfo{pages}{1196} (\bibinfo{year}{1987}).
+
+\bibitem[{\citenamefont{Lieb and Wu}(1968)}]{Lieb68}
+\bibinfo{author}{\bibfnamefont{E.}~\bibnamefont{Lieb}} \bibnamefont{and}
+  \bibinfo{author}{\bibfnamefont{F.}~\bibnamefont{Wu}}, \bibinfo{journal}{Phys.
+  Rev. Lett.} \textbf{\bibinfo{volume}{20}}, \bibinfo{pages}{1445}
+  (\bibinfo{year}{1968}).
+
+\bibitem[{\citenamefont{Ovchinni}(1970)}]{Ovchinni1970}
+\bibinfo{author}{\bibfnamefont{A.}~\bibnamefont{Ovchinni}},
+  \bibinfo{journal}{Sov. Phys. JETP-USSR} \textbf{\bibinfo{volume}{30}},
+  \bibinfo{pages}{1160} (\bibinfo{year}{1970}).
+
+\bibitem[{\citenamefont{Go and Jeon}(2009)}]{Go2009}
+\bibinfo{author}{\bibfnamefont{A.}~\bibnamefont{Go}} \bibnamefont{and}
+  \bibinfo{author}{\bibfnamefont{G.~S.} \bibnamefont{Jeon}},
+  \bibinfo{journal}{J. Phys.: Condens. Mat.} \textbf{\bibinfo{volume}{21}},
+  \bibinfo{pages}{485602} (\bibinfo{year}{2009}).
+
+\bibitem[{\citenamefont{Park et~al.}(2008)\citenamefont{Park, Haule, and
+  Kotliar}}]{Kotliar2008}
+\bibinfo{author}{\bibfnamefont{H.}~\bibnamefont{Park}},
+  \bibinfo{author}{\bibfnamefont{K.}~\bibnamefont{Haule}}, \bibnamefont{and}
+  \bibinfo{author}{\bibfnamefont{G.}~\bibnamefont{Kotliar}},
+  \bibinfo{journal}{Phys. Rev. Lett.} \textbf{\bibinfo{volume}{101}},
+  \bibinfo{pages}{186403} (\bibinfo{year}{2008}).
+
+\bibitem[{\citenamefont{Sakai et~al.}(2009)\citenamefont{Sakai, Motome, and
+  Imada}}]{Masatoshi2009}
+\bibinfo{author}{\bibfnamefont{S.}~\bibnamefont{Sakai}},
+  \bibinfo{author}{\bibfnamefont{Y.}~\bibnamefont{Motome}}, \bibnamefont{and}
+  \bibinfo{author}{\bibfnamefont{M.}~\bibnamefont{Imada}},
+  \bibinfo{journal}{Phys. Rev. Lett.} \textbf{\bibinfo{volume}{102}},
+  \bibinfo{pages}{056404} (\bibinfo{year}{2009}).
+
+\bibitem[{\citenamefont{Fraysse et~al.}(2005)\citenamefont{Fraysse, Giraud,
+  Gratton, and Langou}}]{Langou2005}
+\bibinfo{author}{\bibfnamefont{V.}~\bibnamefont{Fraysse}},
+  \bibinfo{author}{\bibfnamefont{L.}~\bibnamefont{Giraud}},
+  \bibinfo{author}{\bibfnamefont{S.}~\bibnamefont{Gratton}}, \bibnamefont{and}
+  \bibinfo{author}{\bibfnamefont{J.}~\bibnamefont{Langou}},
+  \bibinfo{journal}{ACM T. Math. Software} \textbf{\bibinfo{volume}{31}},
+  \bibinfo{pages}{228} (\bibinfo{year}{2005}).
+
+\bibitem[{\citenamefont{Essler et~al.}(1991)\citenamefont{Essler, Korepin, and
+  Schoutens}}]{Essler91}
+\bibinfo{author}{\bibfnamefont{F.}~\bibnamefont{Essler}},
+  \bibinfo{author}{\bibfnamefont{V.}~\bibnamefont{Korepin}}, \bibnamefont{and}
+  \bibinfo{author}{\bibfnamefont{K.}~\bibnamefont{Schoutens}},
+  \bibinfo{journal}{Phys. Rev. Lett.} \textbf{\bibinfo{volume}{67}},
+  \bibinfo{pages}{3848} (\bibinfo{year}{1991}).
+
+\end{thebibliography}
 
 \end{document}
