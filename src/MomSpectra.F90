@@ -65,25 +65,90 @@ module MomSpectra
             !Construct FT of k-space GFs and take zeroth part.
             call FindLocalMomGF(nESteps,SE,LocalMomGF)
 
+            !Invert the matrix of non-interacting local greens functions.
+            InvLocalMomGF(:,:,:) = LocalMomGF(:,:,:)
+            call InvertLocalNonHermGF(nESteps,InvLocalMomGF)
+
+            !Now find hybridization
+            !This is given by (omega + mu + idelta - e_0 - SE - InvGF)
+            call FindHybrid(nESteps,InvLocalMomGF,SE,Hybrid)
+
         enddo
 
     end subroutine SC_Mom_LR
             
-    !**** NOT FINISHED **** !
+    !This function inverts a local greens function matrix, allowing it to be non-hermitian
+    !Function is sent in as the normal greens function, n, nImp x nImp matrices, and the inverse
+    !for each frequency is returned
+    subroutine InvertLocalNonHermGF(n,InvGF)
+        implicit none
+        integer, intent(in) :: n
+        complex(dp), intent(inout) :: InvGF(nImp,nImp,n)
+        real(dp), allocatable :: Work(:)
+        complex(dp), allocatable :: LVec(:,:),RVec(:,:),W_Vals(:),cWork(:)
+        integer :: i,lwork,info,j
+
+        allocate(LVec(nImp,nImp))
+        allocate(RVec(nImp,nImp))
+        allocate(W_Vals(nImp))
+        allocate(Work(max(1,2*nImp)))
+
+        do i = 1,n
+
+            !Diagonalize
+            LVec(:,:) = zzero
+            RVec(:,:) = zzero
+            W_Vals(:) = zzero
+
+            allocate(cWork(1))
+            lwork = -1
+            info = 0
+            call zgeev('V','V',nImp,InvGF(:,:,i),nImp,W_Vals,LVec,nImp,RVec,nImp,cWork,lWork,Work,info)
+            if(info.ne.0) call stop_all(t_r,'Workspace query failed')
+            lwork = int(abs(cWork(1)))+1
+            deallocate(cWork)
+            allocate(cWork(lWork))
+            call zgeev('V','V',nImp,InvGF(:,:,i),nImp,W_Vals,LVec,nImp,RVec,nImp,cWork,lWork,Work,info)
+            if(info.ne.0) call stop_all(t_r,'Diagonalization of 1-electron GF failed')
+            deallocate(cWork)
+
+            !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
+            !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
+            call Order_zgeev_vecs(W_Vals,LVec,RVec)
+            !call writevectorcomp(W_Vals,'Eigenvalues ordered')
+            !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
+            call Orthonorm_zgeev_vecs(nImp,W_Vals,LVec,RVec)
+            !Calculate greens function for this k-vector
+            InvMat(:,:) = zzero
+            do j = 1,nImp
+                InvGF(j,j,i) = zone / W_Vals(j)
+            enddo
+            !Now rotate this back into the original basis
+            call zGEMM('N','N',nImp,nImp,nImp,zone,RVec,nImp,InvGF(:,:,i),nImp,zzero,ztemp2,nImp)
+            call zGEMM('N','C',nImp,nImp,nImp,zone,ztemp2,nImp,LVec,nImp,zzero,InvGF(:,:,i),nImp)
+
+        enddo
+
+        deallocate(LVec,RVec,W_Vals,Work)
+
+    end subroutine InvertLocalNonHermGF
+        
     !This calculates the sum of all the k-space greens functions over the 'n' frequency points
-    !\sum_k 1/
-    !Assume we want to do this for the sum of the two greens fucntions? (ie retarded & advanced?)
+    !The hamiltonian in this case is taken to be h0v (i.e. with the correlation potential)
+    !1/V \sum_k [w + mu + i/eta - h_k - SE]^-1      where V is volume of the BZ
+    !TODO: Care needed with sign of broadening?
+    !Check that this gives as expected
     subroutine FindLocalMomGF(n,SE,LocalMomGF)
         implicit none
         integer, intent(in) :: n
-        complex(dp), intent(in) :: SE(n)
-        complex(dp), intent(out) :: LocalMomGF(n)
+        complex(dp), intent(in) :: SE(nImp,nImp,n)
+        complex(dp), intent(out) :: LocalMomGF(nImp,nImp,n)
         integer :: kPnt,ind_1,ind_2,i,j,SS_Period
         real(dp) :: Omega,mu
         complex(dp) :: ni_lr_ann(n),ni_lr_cre(n)
         character(len=*), parameter :: t_r='FindLocalMomGF'
 
-        LocalMomGF(:) = zzero
+        LocalMomGF(:,:,:) = zzero
         SS_Period = nImp
         if(.not.tAnderson) then
             !In the hubbard model, apply a chemical potential of U/2
@@ -91,6 +156,21 @@ module MomSpectra
         else
             mu = 0.0_dp
         endif
+
+        allocate(RotMat(nLat,SS_Period))
+        allocate(k_Ham(SS_Period,SS_Period))
+        allocate(CompHam(nLat,nLat))
+        do i = 1,nLat
+            do j = 1,nLat
+                CompHam(j,i) = dcmplx(h0v,zero)
+            enddo
+        enddo
+
+        !Data for the diagonalization of the one-electron k-dependent Greens functions
+        allocate(RVec(SS_Period,SS_Period))
+        allocate(LVec(SS_Period,SS_Period))
+        allocate(W_Vals(SS_Period))
+        allocate(Work(max(1,2*SS_Period)))
 
         do kPnt = 1,nKPnts
             !Run through all k-points
@@ -100,6 +180,12 @@ module MomSpectra
             !Zero the individual greens functions
             ni_lr_ann(:) = zzero
             ni_lr_cre(:) = zzero
+                
+            !Transform the one-electron hamiltonian into this k-basis
+            RotMat(:,:) = RtoK_Rot(:,ind_1:ind_2)
+            call ZGEMM('N','N',nLat,SS_Period,nLat,zone,CompHam,nLat,RotMat,nLat,zzero,ztemp,nLat)
+            call ZGEMM('C','N',SS_Period,SS_Period,nLat,zone,RotMat,nLat,ztemp,nLat,zzero,k_Ham,SS_Period)
+            !k_Ham is the complex, one-electron hamiltonian (with correlation potential) for this k-point
 
             i = 0
             Omega = Start_Omega
@@ -107,21 +193,52 @@ module MomSpectra
                 i = i + 1
                 if(i.gt.n) call stop_all(t_r,'Too many freq points')
 
-                do j = ind_1,ind_2  !Run throuh eigenvectors corresponding to this kpoint
-                    if(KVec_InvEMap(i).lt.nOcc) then
-                        !Occipied orbital
-                        ni_lr_ann(i) = ni_lr_ann(i) + zone/(dcmplx(Omega+mu,dDelta)-k_HFEnergies(j) - SE(i) )
-                    else
-                        ni_lr_cre(i) = ni_lr_cre(i) + zone/(dcmplx(Omega+mu,dDelta)-k_HFEnergies(j) - SE(i) )
-                    endif
+                !Find inverse greens function for this k-point
+                InvMat(:,:) = - k_Ham(:,:) - SE(:,:,i)
+                do i = 1,SS_Period
+                    InvMat(i,i) = InvMat(i,i) + dcmplx(Omega + mu,dDelta)
                 enddo
 
-                LocalMomGF(i) = LocalMomGF(i) + ni_lr_ann(i) + ni_lr_cre(i)
+                !Now, diagonalize this
+                !The self-energy is *not* hermitian
+                allocate(cWork(1))
+                lwork = -1
+                info = 0
+                call zgeev('V','V',SS_Period,InvMat,SS_Period,W_Vals,LVec,SS_Period,RVec,SS_Period,cWork,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'Workspace query failed')
+                lwork = int(abs(cWork(1)))+1
+                deallocate(cWork)
+                allocate(cWork(lWork))
+                call zgeev('V','V',SS_Period,InvMat,SS_Period,W_Vals,LVec,SS_Period,RVec,SS_Period,cWork,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'Diagonalization of 1-electron GF failed')
+                deallocate(cWork)
+
+                !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
+                !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
+                call Order_zgeev_vecs(W_Vals,LVec,RVec)
+                !call writevectorcomp(W_Vals,'Eigenvalues ordered')
+                !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
+                call Orthonorm_zgeev_vecs(SS_Period,W_Vals,LVec,RVec)
+                !Calculate greens function for this k-vector
+                InvMat(:,:) = zzero
+                do i = 1,SS_Period
+                    InvMat(i,i) = zone / W_Vals(i)
+                enddo
+                !Now rotate this back into the original basis
+                call zGEMM('N','N',SS_Period,SS_Period,SS_Period,zone,RVec,SS_Period,InvMat,SS_Period,zzero,ztemp2,SS_Period)
+                call zGEMM('N','C',SS_Period,SS_Period,SS_Period,zone,ztemp2,SS_Period,LVec,SS_Period,zzero,InvMat,SS_Period)
+                !InvMat is now the non-interacting greens function for this k: TEST THIS!
+                !Sum this into the *local* greens function (i.e. a fourier transform of r=0 component)
+                LocalMomGF(:,:,i) = LocalMomGF(:,:,i) + InvMat(:,:)
 
                 Omega = Omega + Omega_Step
             enddo
 
         enddo
+
+        !Divide the entire local greens function by the 'volume' of the brillouin zone
+        LocalMomGF(:,:,:) = LocalMomGF(:,:,:) / BZVol
+
     end subroutine FindLocalMomGF
 
     subroutine MomGF_Ex()

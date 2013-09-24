@@ -10,7 +10,7 @@ module LRDriver
     contains
 
     !Attempt to get k-space spectral functions by self-consistenly calculating k-independent hybridization and self-energy contributions
-    subroutine SC_SRMom_LR()
+    subroutine SC_Mom_LR()
         implicit none
 
         !First, calculate G_00

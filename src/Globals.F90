@@ -151,6 +151,7 @@ module Globals
 
     !KSpace parameters
     integer :: nKPnts                           !Number of kpoints sampled in the 1st BZ
+    real(dp) :: BZVol                           !Volume of the 1st BZ
     logical :: tShift_Mesh                      ! = T <- Gamma centered mesh. = F <- Monkhorst-Pack mesh
     real(dp), allocatable :: RecipLattVecs(:,:) !Define the reciprocal lattice vectors (nDim,nDim)
     real(dp), allocatable :: KPnts(:,:)         !Define the kpoint vectors in the reciprocal lattice (nDim,nKPnts)
