@@ -1763,7 +1763,7 @@ module mat_tools
         real(dp) :: PrimLattVec(LatticeDim),SiteVec(LatticeDim),Expo,DDOT,phase
         complex(dp), allocatable :: RotMat(:,:),temp(:,:),CompHam(:,:),RotHam(:,:),cWork(:)
         complex(dp), allocatable :: CompHam_2(:,:),ztemp(:,:),k_Ham(:,:),k_vecs(:,:)
-        complex(dp), allocatable :: r_vecs(:,:)
+        complex(dp), allocatable :: r_vecs(:,:),Vec_temp(:),Vec_temp2(:)
         integer :: lWork,info,i,j,k,kSpace_ind,ki,kj,bandi,bandj,Ind_i,Ind_j,ind_1,ind_2
         integer :: ii,jj,xb,yb,impy,impx,impsite
         character(len=*), parameter :: t_r='DiagOneEOp'
@@ -1844,19 +1844,19 @@ module mat_tools
                     enddo
                 enddo
                 deallocate(cWork)
-                write(6,*) "Eigensystem correctly computed and transformed to real space"
+                !write(6,*) "Eigensystem correctly computed and transformed to real space"
             endif
 
-            write(6,*) "Before sorting..."
-            call writevector(Vals,'Vals')
-            call writematrixcomp(r_vecs,'r_vecs',.true.)
+!            write(6,*) "Before sorting..."
+!            call writevector(Vals,'Vals')
+!            call writematrixcomp(r_vecs,'r_vecs',.true.)
             
             !Order the vectors, such that the are in order of increasing eigenvalue
             call sort_d_a_c(Vals,r_vecs,nSites,nSites)
             
-            write(6,*) "After sorting..."
-            call writevector(Vals,'Vals')
-            call writematrixcomp(r_vecs,'r_vecs',.true.)
+            !write(6,*) "After sorting..."
+            !call writevector(Vals,'Vals')
+            !call writematrixcomp(r_vecs,'r_vecs',.true.)
             
             if(tCheck) then
                 !Do these satisfy the original eigenvalue problem?
@@ -1870,8 +1870,41 @@ module mat_tools
                     enddo
                 enddo
                 deallocate(cWork)
-                write(6,*) "Eigensystem correctly computed and transformed to real space"
+                !write(6,*) "Eigensystem correctly computed and transformed to real space"
             endif
+            
+            !Degenerate sets?
+            !It is *impossible* to have non-complex k-pure eigenvectors in the presence of degeneracies.
+            !Within the degenerate set, we must rotate them together, losing the k-label. Boo.
+            !HACK!!
+            !Just rotate them together in equal quantities. We should only ever have mixtures of +-K, which should
+            !be taken as the positive and negative LC. e^ik.r = cos k.r + i sin k.r     We want these trig functions
+            allocate(Vec_temp(nLat))
+            allocate(Vec_temp2(nLat))
+            i = 1
+            do while(i.le.(nLat-1))
+                j = i + 1
+                do while(abs(Vals(i)-Vals(j)).lt.1.0e-8)
+                    j = j + 1
+                    if(j.gt.nLat) exit
+                enddo
+                if((j-i).gt.1) then
+                    !Degeneracy
+                    if((j-i).gt.2) then
+                        !More than two fold degenerate. How do we rotate these??
+                        call stop_all(t_r,'Cannot handle more than 2x degeneracy in the k-space hamiltonian')
+                    endif
+                    !Degeneracy is between i and i + 1 (or i and j - 1)
+                    if((i+1).ne.(j-1)) call stop_all(t_r,'Indexing error')
+                    !Rotate these vectors together in positive and negative linear combinations
+                    Vec_temp(:) = (r_vecs(:,i) + r_vecs(:,i+1)) / sqrt(2.0_dp)
+                    Vec_temp2(:) = (r_vecs(:,i) - r_vecs(:,i+1)) / sqrt(2.0_dp)
+                    r_vecs(:,i) = Vec_temp(:)
+                    r_vecs(:,i+1) = Vec_temp2(:)
+                endif
+                i = j 
+            enddo
+            deallocate(Vec_temp,Vec_temp2)
 
             allocate(r_vecs_real(nLat,nLat))
             r_vecs_real(:,:) = zero
@@ -1886,7 +1919,6 @@ module mat_tools
                         !Find the phase factor for this eigenvector
                         phase = atan(aimag(r_vecs(j,i))/real(r_vecs(j,i)))
                         if(tWriteOut) write(6,*) "Eigenvector: ",i,j,phase,r_vecs(j,i) * exp(dcmplx(0.0_dp,-phase))
-                        !temp(j,i) = temp(j,i) * exp(dcmplx(0.0_dp,-phase))
                         exit
                     endif
                 enddo
@@ -1902,8 +1934,6 @@ module mat_tools
                 enddo
             enddo
 
-            !Degenerate sets?
-
             !Check again that these rotated r_vecs are correct eigenfunctions...
             if(tCheck) then
                 !Do these satisfy the original eigenvalue problem?
@@ -1917,7 +1947,7 @@ module mat_tools
                     enddo
                 enddo
                 deallocate(Work)
-                write(6,*) "Eigensystem correctly computed and transformed to real real space"
+                !write(6,*) "Eigensystem correctly computed and transformed to real real space"
             endif
 
             Ham(:,:) = r_vecs_real(:,:)
