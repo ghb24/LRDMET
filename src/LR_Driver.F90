@@ -12,15 +12,32 @@ module LRDriver
     !Attempt to get k-space spectral functions by self-consistenly calculating k-independent hybridization and self-energy contributions
     subroutine SC_Mom_LR()
         implicit none
+        real(dp) :: Omega
+        integer :: nESteps
+        complex(dp), allocatable :: SE(:,:,:)
 
         !First, calculate G_00
         call NonIntExCont_TDA_MCLR_Charged_Cmprs()
+        
+        !How many frequency points are there exactly?
+        Omega = Start_Omega
+        nESteps = 0
+        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+            nESteps = nESteps + 1
+        enddo
+
+        !Find the k-independent self-consistent self-energy
+        allocate(SE(nImp,nImp,nESteps))
+        SE(:,:,:) = zzero
 
         !Now calculate the hybridization and self-energy self-consistently
         !This will read back in the greens function
-        call SC_Mom_LR()
+        !The returned self-energy is k-independent, but will reproduce the correlated local greens function
+        call FindNI_SE(SE,nESteps)
 
-    end subroutine SC_SRMom_LR
+        !Finally, should we do this all in a larger self-consistency, such that the self energy is used for the frequency dependent bath?
+
+    end subroutine SC_Mom_LR
 
     !This is the high level routine to work out how we want to do the linear response
     !These functions are for single-reference (generally non-interacting) spectral functions, but using the correlated one-electron potential in their calculation.

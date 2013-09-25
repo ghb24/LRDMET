@@ -11,16 +11,22 @@ module MomSpectra
 
     !Routine to read in a correlated greens function, and self-consistently converge
     !a self energy from the 1-electron hemailtonian to get it to match this.
-    subroutine SC_Mom_LR()
+    subroutine FindNI_SE(SE,nESteps)
         use utils, only: get_free_unit,append_ext_real,append_ext
         implicit none
-        integer :: iunit,i,nESteps
+        integer, intent(in) :: nESteps
+        complex(dp), intent(inout) :: SE(nImp,nImp,nESteps)
+        integer :: iunit,i
         logical :: exists
-        complex(dp), allocatable :: G00(:),SE(:),Hybrid(:),LocalMomGF(:)
+        complex(dp), allocatable :: G00(:,:,:),Hybrid(:,:,:)
+        complex(dp), allocatable :: InvLocalMomGF(:,:,:),LocalMomGF(:,:,:)
+        complex(dp), allocatable :: InvG00(:,:,:)
         real(dp) :: Omega,Re_LR,Im_LR,Omega_Val
         character(64) :: filename,filename2
         character(128) :: header
         character(len=*), parameter :: t_r='SC_Mom_LR'
+
+        if(nImp.ne.1) call stop_all(t_r,'Can currently only do self-consistency with one impurity site')
 
         !First, read back in the G_00 (real and complex)
         iunit = get_free_unit()
@@ -43,11 +49,13 @@ module MomSpectra
         do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
             i = i + 1
         enddo
-        i = nESteps
+        if(i.ne.nESteps) call stop_all(t_r,'Wrong number of frequency points read in')
+
         allocate(G00(nImp,nImp,nESteps))    !The correlated greens function
-        allocate(SE(nImp,nImp,nESteps))     !The self energy
         allocate(Hybrid(nImp,nImp,nESteps)) !The hybridization
         allocate(LocalMomGF(nImp,nImp,nESteps)) !The local 1-electron GF from the non-interacting H
+        allocate(InvLocalMomGF(nImp,nImp,nESteps))
+        allocate(InvG00(nImp,nImp,nESteps))
         G00(:,:,:) = zzero
         Omega = Start_Omega
         i = 0
@@ -59,7 +67,6 @@ module MomSpectra
         enddo
         close(iunit)
 
-        SE(:,:,:) = zzero
         Hybrid(:,:,:) = zzero
         LocalMomGF(:,:,:) = zzero
 
@@ -87,8 +94,10 @@ module MomSpectra
             call FindSE(nESteps,InvG00,Hybrid,SE)
 
         enddo
+        
+        deallocate(G00,InvG00,Hybrid,InvLocalMomGF,LocalMomGF)
 
-    end subroutine SC_Mom_LR
+    end subroutine FindNI_SE 
 
     !This finds the self energy required to match the local greens function to the interacting local one.
     ! (omega + mu +- idelta)I - e_00 - hybrid - InvG00      Gives the local self-energy
@@ -99,7 +108,9 @@ module MomSpectra
         complex(dp), intent(in) :: InvG00(nImp,nImp,n)
         complex(dp), intent(in) :: Hybrid(nImp,nImp,n)
         complex(dp), intent(out) :: SE(nImp,nImp,n)
+        complex(dp) :: LocalH(nImp,nImp)
         real(dp) :: Omega,mu
+        integer :: i,j
         character(len=*), parameter :: t_r='FindSE'
 
         !This is *NOT* the correct chemical potential for non-half filled systems, but nevermind...
@@ -145,7 +156,7 @@ module MomSpectra
         complex(dp), intent(out) :: Hybrid(nImp,nImp,n)
         complex(dp) :: LocalH(nImp,nImp)
         real(dp) :: mu,Omega
-        integer :: i
+        integer :: i,j
         character(len=*), parameter :: t_r='FindHybrid'
         
         !This is *NOT* the correct chemical potential for non-half filled systems, but nevermind...
@@ -184,12 +195,15 @@ module MomSpectra
     !Function is sent in as the normal greens function, n, nImp x nImp matrices, and the inverse
     !for each frequency is returned
     subroutine InvertLocalNonHermGF(n,InvGF)
+        use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
         implicit none
         integer, intent(in) :: n
         complex(dp), intent(inout) :: InvGF(nImp,nImp,n)
         real(dp), allocatable :: Work(:)
         complex(dp), allocatable :: LVec(:,:),RVec(:,:),W_Vals(:),cWork(:)
+        complex(dp) :: ztemp2(nImp,nImp)
         integer :: i,lwork,info,j
+        character(len=*), parameter :: t_r='InvertLocalNonHermGF'
 
         allocate(LVec(nImp,nImp))
         allocate(RVec(nImp,nImp))
@@ -222,7 +236,7 @@ module MomSpectra
             !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
             call Orthonorm_zgeev_vecs(nImp,W_Vals,LVec,RVec)
             !Calculate greens function for this k-vector
-            InvMat(:,:) = zzero
+            InvGF(:,:,i) = zzero
             do j = 1,nImp
                 InvGF(j,j,i) = zone / W_Vals(j)
             enddo
@@ -242,13 +256,17 @@ module MomSpectra
     !TODO: Care needed with sign of broadening?
     !Check that this gives as expected
     subroutine FindLocalMomGF(n,SE,LocalMomGF)
+        use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
         implicit none
         integer, intent(in) :: n
         complex(dp), intent(in) :: SE(nImp,nImp,n)
         complex(dp), intent(out) :: LocalMomGF(nImp,nImp,n)
-        integer :: kPnt,ind_1,ind_2,i,j,SS_Period
+        complex(dp), allocatable :: RotMat(:,:),k_Ham(:,:),CompHam(:,:),cWork(:)
+        complex(dp), allocatable :: RVec(:,:),LVec(:,:),W_Vals(:),ztemp(:,:)
+        complex(dp) :: InvMat(nImp,nImp),ztemp2(nImp,nImp)
+        real(dp), allocatable :: Work(:)
+        integer :: kPnt,ind_1,ind_2,i,j,SS_Period,lwork,info
         real(dp) :: Omega,mu
-        complex(dp) :: ni_lr_ann(n),ni_lr_cre(n)
         character(len=*), parameter :: t_r='FindLocalMomGF'
 
         LocalMomGF(:,:,:) = zzero
@@ -260,12 +278,12 @@ module MomSpectra
             mu = 0.0_dp
         endif
 
-        allocate(RotMat(nLat,SS_Period))
+        allocate(RotMat(nSites,SS_Period))
         allocate(k_Ham(SS_Period,SS_Period))
-        allocate(CompHam(nLat,nLat))
-        do i = 1,nLat
-            do j = 1,nLat
-                CompHam(j,i) = dcmplx(h0v,zero)
+        allocate(CompHam(nSites,nSites))
+        do i = 1,nSites
+            do j = 1,nSites
+                CompHam(j,i) = dcmplx(h0v(j,i),zero)
             enddo
         enddo
 
@@ -274,20 +292,17 @@ module MomSpectra
         allocate(LVec(SS_Period,SS_Period))
         allocate(W_Vals(SS_Period))
         allocate(Work(max(1,2*SS_Period)))
+        allocate(ztemp(nSites,SS_Period))
 
         do kPnt = 1,nKPnts
             !Run through all k-points
             ind_1 = ((kPnt-1)*SS_Period) + 1
             ind_2 = SS_Period*kPnt
                 
-            !Zero the individual greens functions
-            ni_lr_ann(:) = zzero
-            ni_lr_cre(:) = zzero
-                
             !Transform the one-electron hamiltonian into this k-basis
             RotMat(:,:) = RtoK_Rot(:,ind_1:ind_2)
-            call ZGEMM('N','N',nLat,SS_Period,nLat,zone,CompHam,nLat,RotMat,nLat,zzero,ztemp,nLat)
-            call ZGEMM('C','N',SS_Period,SS_Period,nLat,zone,RotMat,nLat,ztemp,nLat,zzero,k_Ham,SS_Period)
+            call ZGEMM('N','N',nSites,SS_Period,nSites,zone,CompHam,nSites,RotMat,nSites,zzero,ztemp,nSites)
+            call ZGEMM('C','N',SS_Period,SS_Period,nSites,zone,RotMat,nSites,ztemp,nSites,zzero,k_Ham,SS_Period)
             !k_Ham is the complex, one-electron hamiltonian (with correlation potential) for this k-point
 
             i = 0
@@ -341,6 +356,8 @@ module MomSpectra
 
         !Divide the entire local greens function by the 'volume' of the brillouin zone
         LocalMomGF(:,:,:) = LocalMomGF(:,:,:) / BZVol
+        
+        deallocate(RotMat,k_Ham,CompHam,RVec,LVec,W_Vals,Work,ztemp)
 
     end subroutine FindLocalMomGF
 
