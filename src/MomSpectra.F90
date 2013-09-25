@@ -9,6 +9,8 @@ module MomSpectra
 
     contains
 
+    !Routine to read in a correlated greens function, and self-consistently converge
+    !a self energy from the 1-electron hemailtonian to get it to match this.
     subroutine SC_Mom_LR()
         use utils, only: get_free_unit,append_ext_real,append_ext
         implicit none
@@ -42,28 +44,32 @@ module MomSpectra
             i = i + 1
         enddo
         i = nESteps
-        allocate(G00(nESteps))    !The correlated greens function
-        allocate(SE(nESteps))     !The self energy
-        allocate(Hybrid(nESteps)) !The hybridization
-        G00(:) = zzero
+        allocate(G00(nImp,nImp,nESteps))    !The correlated greens function
+        allocate(SE(nImp,nImp,nESteps))     !The self energy
+        allocate(Hybrid(nImp,nImp,nESteps)) !The hybridization
+        allocate(LocalMomGF(nImp,nImp,nESteps)) !The local 1-electron GF from the non-interacting H
+        G00(:,:,:) = zzero
         Omega = Start_Omega
         i = 0
         do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
             i = i + 1
-            read(iunit,"(3G22.10)") Omega_val,Re_LR,Im_LR
-            G00(i) = dcmplx(Re_LR,Im_LR)
+            if(i.gt.nESteps) call stop_all(t_r,'Too many frequency points')
+            read(iunit,*) Omega_val,Re_LR,Im_LR
+            G00(1,1,i) = dcmplx(Re_LR,Im_LR)
         enddo
         close(iunit)
 
-        SE(:) = zzero
-        Hybrid(:) = zzero
-
-        allocate(LocalMomGF(nESteps))
+        SE(:,:,:) = zzero
+        Hybrid(:,:,:) = zzero
+        LocalMomGF(:,:,:) = zzero
 
         do while(.true.)
 
             !Construct FT of k-space GFs and take zeroth part.
             call FindLocalMomGF(nESteps,SE,LocalMomGF)
+
+            !We now have the updated local greens function from the 1-electron hamiltonian
+            !Exit criterion here once the local greens function is converged.
 
             !Invert the matrix of non-interacting local greens functions.
             InvLocalMomGF(:,:,:) = LocalMomGF(:,:,:)
@@ -73,9 +79,106 @@ module MomSpectra
             !This is given by (omega + mu + idelta - e_0 - SE - InvGF)
             call FindHybrid(nESteps,InvLocalMomGF,SE,Hybrid)
 
+            !Now to converge the k-independent Self-energy
+            InvG00(:,:,:) = G00(:,:,:)
+            call InvertLocalNonHermGF(nESteps,InvG00)
+            !Now find Self-energy
+            !This is given by (omega + mu + idelta)I - e_0 - Hybrid - InvFullGF)
+            call FindSE(nESteps,InvG00,Hybrid,SE)
+
         enddo
 
     end subroutine SC_Mom_LR
+
+    !This finds the self energy required to match the local greens function to the interacting local one.
+    ! (omega + mu +- idelta)I - e_00 - hybrid - InvG00      Gives the local self-energy
+    ! e_00 is taken from the local h0v part of tha hamiltonian
+    subroutine FindSE(n,InvG00,Hybrid,SE)
+        implicit none
+        integer, intent(in) :: n
+        complex(dp), intent(in) :: InvG00(nImp,nImp,n)
+        complex(dp), intent(in) :: Hybrid(nImp,nImp,n)
+        complex(dp), intent(out) :: SE(nImp,nImp,n)
+        real(dp) :: Omega,mu
+        character(len=*), parameter :: t_r='FindSE'
+
+        !This is *NOT* the correct chemical potential for non-half filled systems, but nevermind...
+        if(.not.tAnderson) then
+            !In the hubbard model, apply a chemical potential of U/2
+            mu = U/2.0_dp
+        else
+            mu = 0.0_dp
+        endif
+
+        SE(:,:,:) = zzero
+
+        do i = 1,nImp
+            do j = 1,nImp
+                LocalH(j,i) = dcmplx(h0v(j,i),zero)
+            enddo
+        enddo
+
+        i = 0
+        Omega = Start_Omega
+        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+            i = i + 1
+            if(i.gt.n) call stop_all(t_r,'Too many freq points')
+
+            SE(:,:,i) = - LocalH(:,:) - Hybrid(:,:,i) - InvG00(:,:,i)
+            do j = 1,nImp
+                SE(j,j,i) = SE(j,j,i) + dcmplx(Omega + mu,dDelta)
+            enddo
+
+            Omega = Omega + Omega_Step
+        enddo
+    end subroutine FindSE
+
+    !This hybridization is a nImp x nImp matrix, for all frequency points, calculated from:
+    ! [omega + mu + i\eta]I - e_00 - SE - Inv_GF     where e_00 is the impurity block of the 'non-interacting' hamiltonian
+    ! Reminder that here we are performing this self-consistency on the R£AL frequency axis, and the e_00 matrix simply comes from h0v
+    ! Hybridization returned in Hybrid
+    subroutine FindHybrid(n,InvLocalMomGF,SE,Hybrid)
+        implicit none
+        integer, intent(in) :: n    !number of frequency points
+        complex(dp), intent(in) :: InvLocalMomGF(nImp,nImp,n)
+        complex(dp), intent(in) :: SE(nImp,nImp,n)
+        complex(dp), intent(out) :: Hybrid(nImp,nImp,n)
+        complex(dp) :: LocalH(nImp,nImp)
+        real(dp) :: mu,Omega
+        integer :: i
+        character(len=*), parameter :: t_r='FindHybrid'
+        
+        !This is *NOT* the correct chemical potential for non-half filled systems, but nevermind...
+        if(.not.tAnderson) then
+            !In the hubbard model, apply a chemical potential of U/2
+            mu = U/2.0_dp
+        else
+            mu = 0.0_dp
+        endif
+
+        Hybrid(:,:,:) = zzero
+
+        do i = 1,nImp
+            do j = 1,nImp
+                LocalH(j,i) = dcmplx(h0v(j,i),zero)
+            enddo
+        enddo
+
+        i = 0
+        Omega = Start_Omega
+        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+            i = i + 1
+            if(i.gt.n) call stop_all(t_r,'Too many freq points')
+
+            Hybrid(:,:,i) = - LocalH(:,:) - SE(:,:,i) - InvLocalMomGF(:,:,i)
+            do j = 1,nImp
+                Hybrid(j,j,i) = Hybrid(j,j,i) + dcmplx(Omega + mu,dDelta)
+            enddo
+
+            Omega = Omega + Omega_Step
+        enddo
+
+    end subroutine FindHybrid
             
     !This function inverts a local greens function matrix, allowing it to be non-hermitian
     !Function is sent in as the normal greens function, n, nImp x nImp matrices, and the inverse
