@@ -2957,8 +2957,14 @@ module LinearResponse
                         call stop_all(t_r,'Cannot do dotting of vectors here, since the LHS vectors are still being computed')
                     endif
                     do j = 1,nImp_GF
-                        ResponseFn_p(pertsite,j) = zdotc(nLinearSystem,Cre_0(:,j),1,Psi1_p,1)
-                        ResponseFn_h(pertsite,j) = zdotc(nLinearSystem,Ann_0(:,j),1,Psi1_h,1)
+                        ResponseFn_p(pertsite,j) = zzero
+                        ResponseFn_h(pertsite,j) = zzero
+                        do k = 1,nLinearSystem
+                            ResponseFn_p(pertsite,j) = ResponseFn_p(pertsite,j) + dconjg(Cre_0(k,j))*Psi1_p(k)
+                            ResponseFn_h(pertsite,j) = ResponseFn_h(pertsite,j) + dconjg(Ann_0(k,j))*Psi1_h(k)
+                        enddo
+                        !ResponseFn_p(pertsite,j) = zdotc(nLinearSystem,Cre_0(:,j),1,Psi1_p,1)
+                        !ResponseFn_h(pertsite,j) = zdotc(nLinearSystem,Ann_0(:,j),1,Psi1_h,1)
                         ResponseFn_Mat(pertsite,j) = ResponseFn_p(pertsite,j) + ResponseFn_h(pertsite,j)
                         ni_lr_Mat(pertsite,j) = NI_LRMat_Cre(pertsite,j) + NI_LRMat_Ann(pertsite,j) 
                     enddo
@@ -7046,6 +7052,7 @@ module LinearResponse
     !the virtual space, the basis of single excitations of the core into virtual space, and the basis
     !of single excitations of core into active space. This will all be constructed explicitly initially.
     subroutine TDA_MCLR()
+        use sort_mod, only: sort_int
         use DetToolsData, only: nFCIDet,FCIDetList
         use DetTools, only: GetHElement,GetExcitation
         implicit none
@@ -7485,6 +7492,7 @@ module LinearResponse
     subroutine FindNI_Charged(Omega,NI_LRMat_Cre,NI_LRMat_Ann)
         use mat_tools, only: add_localpot_comp_inplace
         use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
+        use sort_mod, only: Orthonorm_zgeev_vecs
         implicit none
         real(dp), intent(in) :: Omega
         complex(dp), intent(out) :: NI_LRMat_Cre(nImp,nImp),NI_LRMat_Ann(nImp,nImp)

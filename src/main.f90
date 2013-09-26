@@ -1292,10 +1292,12 @@ Program RealHub
                     !Calculates single reference spectral functions using the correlated 1-electron hamiltonian
                     call Correlated_SR_LR()
                 endif
+
+                call SC_Mom_LR()
                 
                 if(tLR_DMET) then
                     !Perform linear response on the resulting DMET state
-                    call MR_LinearResponse()
+                !    call MR_LinearResponse()
                 endif
                 deallocate(HFOrbs)
                 if(tUHF) deallocate(HFOrbs_b)

@@ -16,15 +16,17 @@ module MomSpectra
         implicit none
         integer, intent(in) :: nESteps
         complex(dp), intent(inout) :: SE(nImp,nImp,nESteps)
-        integer :: iunit,i
+        integer :: iunit,i,iter
         logical :: exists
-        complex(dp), allocatable :: G00(:,:,:),Hybrid(:,:,:)
+        complex(dp), allocatable :: G00(:,:,:),Hybrid(:,:,:),OldSE(:,:,:)
         complex(dp), allocatable :: InvLocalMomGF(:,:,:),LocalMomGF(:,:,:)
         complex(dp), allocatable :: InvG00(:,:,:)
-        real(dp) :: Omega,Re_LR,Im_LR,Omega_Val
+        real(dp) :: Omega,Re_LR,Im_LR,Omega_Val,SE_Thresh,MaxDiff,MinDiff,MeanDiff
         character(64) :: filename,filename2
         character(128) :: header
         character(len=*), parameter :: t_r='SC_Mom_LR'
+
+        SE_Thresh = 1.0e-6_dp
 
         if(nImp.ne.1) call stop_all(t_r,'Can currently only do self-consistency with one impurity site')
 
@@ -48,11 +50,13 @@ module MomSpectra
         i = 0
         do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
             i = i + 1
+            Omega = Omega + Omega_Step
         enddo
         if(i.ne.nESteps) call stop_all(t_r,'Wrong number of frequency points read in')
 
         allocate(G00(nImp,nImp,nESteps))    !The correlated greens function
         allocate(Hybrid(nImp,nImp,nESteps)) !The hybridization
+        allocate(OldSE(nImp,nImp,nESteps))
         allocate(LocalMomGF(nImp,nImp,nESteps)) !The local 1-electron GF from the non-interacting H
         allocate(InvLocalMomGF(nImp,nImp,nESteps))
         allocate(InvG00(nImp,nImp,nESteps))
@@ -63,41 +67,98 @@ module MomSpectra
             i = i + 1
             if(i.gt.nESteps) call stop_all(t_r,'Too many frequency points')
             read(iunit,*) Omega_val,Re_LR,Im_LR
+            !write(6,*) Omega_val,Re_LR,Im_LR
+            !HACK - can only read in 1 x 1 impurity matrix
             G00(1,1,i) = dcmplx(Re_LR,Im_LR)
+            Omega = Omega + Omega_Step
         enddo
         close(iunit)
 
+        write(6,*) "High-level greens function sucessfully read back in..."
+        call flush(6)
+
         Hybrid(:,:,:) = zzero
         LocalMomGF(:,:,:) = zzero
+        OldSE(:,:,:) = SE(:,:,:)
 
+        write(6,"(A)") "      Iter   Max[delta(SE)]         Min[delta(SE)]      Mean[delta(SE)]"
+        iter = 0
         do while(.true.)
+            iter = iter + 1
+            !write(6,*) "Beginning iteration: ",iter
 
             !Construct FT of k-space GFs and take zeroth part.
+            !write(6,*) "FT'ing mean-field greens functions for local part"
             call FindLocalMomGF(nESteps,SE,LocalMomGF)
-
             !We now have the updated local greens function from the 1-electron hamiltonian
-            !Exit criterion here once the local greens function is converged.
+            !call writevectorcomp(LocalMomGF(1,1,:),'local FT of NI GF')
 
             !Invert the matrix of non-interacting local greens functions.
+            !write(6,*) "Inverting Local greens function"
             InvLocalMomGF(:,:,:) = LocalMomGF(:,:,:)
             call InvertLocalNonHermGF(nESteps,InvLocalMomGF)
+            !call writevectorcomp(InvLocalMomGF(1,1,:),'inverse of local FT of NI GF')
 
             !Now find hybridization
             !This is given by (omega + mu + idelta - e_0 - SE - InvGF)
+            !write(6,*) "Calculating Hybridization function to local greens function"
             call FindHybrid(nESteps,InvLocalMomGF,SE,Hybrid)
 
             !Now to converge the k-independent Self-energy
+            !write(6,*) "Inverting high-level greens function"
             InvG00(:,:,:) = G00(:,:,:)
             call InvertLocalNonHermGF(nESteps,InvG00)
             !Now find Self-energy
             !This is given by (omega + mu + idelta)I - e_0 - Hybrid - InvFullGF)
+            !write(6,*) "Obtaining Self-energy by equating local mean-field GF to high level one"
             call FindSE(nESteps,InvG00,Hybrid,SE)
+
+            !Find maximum difference between self-energies
+            call FindSEDiffs(SE,OldSE,nESteps,MaxDiff,MinDiff,MeanDiff)
+            OldSE(:,:,:) = SE(:,:,:)
+            write(6,"(I8,3F20.10)") Iter,MaxDiff,MinDiff,MeanDiff
+            if(MaxDiff.lt.SE_Thresh) then
+                write(6,"(A,G11.5)") "Success! Convergence to maximum self-energy difference of ",SE_Thresh
+                exit
+            endif
 
         enddo
         
-        deallocate(G00,InvG00,Hybrid,InvLocalMomGF,LocalMomGF)
+        deallocate(G00,OldSE,InvG00,Hybrid,InvLocalMomGF,LocalMomGF)
 
     end subroutine FindNI_SE 
+
+    subroutine FindSEDiffs(SE,OldSE,n,MaxDiff,MinDiff,MeanDiff)
+        implicit none
+        integer, intent(in) :: n
+        complex(dp), intent(in) :: SE(nImp,nImp,n),OldSE(nImp,nImp,n)
+        real(dp), intent(out) :: MaxDiff,MinDiff,MeanDiff
+        integer :: i,j,k
+        complex(dp) :: DiffMat(nImp,nImp)
+        real(dp) :: Diff
+
+        MaxDiff = zero
+        MinDiff = 1000000.0_dp
+        MeanDiff = zero
+        do i = 1,n
+    
+            DiffMat(:,:) = SE(:,:,i) - OldSE(:,:,i)
+
+            Diff = zero
+            do j = 1,nImp
+                do k = 1,nImp
+                    Diff = Diff + real(dconjg(DiffMat(k,j))*DiffMat(k,j),dp)
+                enddo
+            enddo
+
+            if(Diff.gt.MaxDiff) MaxDiff = Diff
+            if(Diff.lt.MinDiff) MinDiff = Diff
+
+            MeanDiff = MeanDiff + Diff
+        enddo
+        MeanDiff = MeanDiff / real(n,dp)
+
+    end subroutine FindSEDiffs
 
     !This finds the self energy required to match the local greens function to the interacting local one.
     ! (omega + mu +- idelta)I - e_00 - hybrid - InvG00      Gives the local self-energy
@@ -196,6 +257,7 @@ module MomSpectra
     !for each frequency is returned
     subroutine InvertLocalNonHermGF(n,InvGF)
         use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
+        use sort_mod, only: Orthonorm_zgeev_vecs
         implicit none
         integer, intent(in) :: n
         complex(dp), intent(inout) :: InvGF(nImp,nImp,n)
@@ -257,6 +319,7 @@ module MomSpectra
     !Check that this gives as expected
     subroutine FindLocalMomGF(n,SE,LocalMomGF)
         use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
+        use sort_mod, only: Orthonorm_zgeev_vecs
         implicit none
         integer, intent(in) :: n
         complex(dp), intent(in) :: SE(nImp,nImp,n)
@@ -305,6 +368,9 @@ module MomSpectra
             call ZGEMM('C','N',SS_Period,SS_Period,nSites,zone,RotMat,nSites,ztemp,nSites,zzero,k_Ham,SS_Period)
             !k_Ham is the complex, one-electron hamiltonian (with correlation potential) for this k-point
 
+            !write(6,*) "For k-point: ",kPnt
+            !call writematrixcomp(k_Ham,'k-space ham is: ',.false.)
+
             i = 0
             Omega = Start_Omega
             do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
@@ -313,8 +379,8 @@ module MomSpectra
 
                 !Find inverse greens function for this k-point
                 InvMat(:,:) = - k_Ham(:,:) - SE(:,:,i)
-                do i = 1,SS_Period
-                    InvMat(i,i) = InvMat(i,i) + dcmplx(Omega + mu,dDelta)
+                do j = 1,SS_Period
+                    InvMat(j,j) = InvMat(j,j) + dcmplx(Omega + mu,dDelta)
                 enddo
 
                 !Now, diagonalize this
@@ -339,8 +405,8 @@ module MomSpectra
                 call Orthonorm_zgeev_vecs(SS_Period,W_Vals,LVec,RVec)
                 !Calculate greens function for this k-vector
                 InvMat(:,:) = zzero
-                do i = 1,SS_Period
-                    InvMat(i,i) = zone / W_Vals(i)
+                do j = 1,SS_Period
+                    InvMat(j,j) = zone / W_Vals(j)
                 enddo
                 !Now rotate this back into the original basis
                 call zGEMM('N','N',SS_Period,SS_Period,SS_Period,zone,RVec,SS_Period,InvMat,SS_Period,zzero,ztemp2,SS_Period)
@@ -349,10 +415,15 @@ module MomSpectra
                 !Sum this into the *local* greens function (i.e. a fourier transform of r=0 component)
                 LocalMomGF(:,:,i) = LocalMomGF(:,:,i) + InvMat(:,:)
 
-                Omega = Omega + Omega_Step
-            enddo
+                !write(6,*) "For frequency: ",Omega
+                !call writematrixcomp(InvMat,'k-space greens function is: ',.false.)
 
-        enddo
+                Omega = Omega + Omega_Step
+            enddo   !Enddo frequency point i
+
+        enddo   !enddo k-point
+
+        !write(6,*) "BZ volume: ",BZVol
 
         !Divide the entire local greens function by the 'volume' of the brillouin zone
         LocalMomGF(:,:,:) = LocalMomGF(:,:,:) / BZVol

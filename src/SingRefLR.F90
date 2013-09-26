@@ -279,6 +279,7 @@ module SingRefLR
     subroutine NonInteractingLR()
         use utils, only: get_free_unit,append_ext_real,append_ext
         use DetTools, only: tospat
+        use sort_mod, only: sort_real2
         implicit none
         integer :: ov_space,virt_start,i,a,a_spat,i_spat,ai_ind,iunit
         integer :: highbound,pertsite 
@@ -399,6 +400,7 @@ module SingRefLR
         use utils, only: get_free_unit,append_ext_real,append_ext
         use DetToolsData, only: tmat,umat
         use DetTools, only: tospat,GetHFAntisymInt_spinorb,GetExcitation,GetHFInt_spinorb,umatind,GetHElement
+        use sort_mod, only: sort_int
         implicit none
         integer :: ov_space,virt_start,ierr,i,j,n,m,nj_ind,mi_ind,ex(2,2)
         integer :: m_spat,i_spat,lwork,info,k,l,orbpairs,umatsize,ai_ind,a

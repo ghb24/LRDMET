@@ -229,6 +229,7 @@ module fitting
             
     subroutine CreateNIGF(SE,NI_GF,Omega)
         use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
+        use sort_mod, only: Orthonorm_zgeev_vecs
         implicit none
         real(dp), intent(in) :: Omega
         complex(dp), intent(out) :: NI_GF(nImp,nImp)

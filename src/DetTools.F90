@@ -11,6 +11,7 @@ module DetTools
         use DetToolsData
         use DetBitOps, only: EncodeBitDet
         use errors, only: stop_all 
+        use sort_mod, only: sort_int
         implicit none
         integer, intent(in) :: NEl,SpatOrbs     !Number of electrons in active space, number of spatial orbitals in active space
         logical, intent(in) :: tCoupledSpaces,tCreateBitRep,tSplitMs

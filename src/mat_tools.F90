@@ -1471,6 +1471,8 @@ module mat_tools
                 write(6,"(A)") "Using a gamma-centered kpoint mesh of 1st BZ - gamma point included"
             endif
 
+            BZVol = 2.0_dp*pi/real(SS_Period,dp)
+
             RecipLattVecs(1,1) = 2.0_dp*pi/real(SS_Period,dp)
             !Just use equally spaced mesh starting at -pi/SS_Period, and working our way across
             do k = 1,nKPnts
@@ -1627,6 +1629,7 @@ module mat_tools
 
     !This is for the end of a calculation, to get the kspace 1e orbitals
     subroutine GetKSpaceOrbs()
+        use sort_mod, only: sort_d_i
         implicit none
         complex(dp), allocatable :: CompHam(:,:),k_Ham(:,:),ztemp(:,:),cWork(:)
         complex(dp), allocatable :: TempSchmidtBasis(:,:),ztemp2(:,:)
@@ -1753,6 +1756,7 @@ module mat_tools
     !This will be equivalent to the number of bands per kpoint
     !Ham returns the eigenvectors (in real space).
     subroutine DiagOneEOp(Ham,Vals,SS_Period,nLat,tKSpace_Diag)
+        use sort_mod, only: sort_d_a_c
         implicit none
         integer, intent(in) :: nLat
         logical, intent(in) :: tKSpace_Diag
@@ -2241,6 +2245,7 @@ module mat_tools
     !   is referenced. I.e. R_Ham(1:nUnitCell,:). In the future, this should be changed so that only this is called.
     !Out: The operator in k-space. In this, the operator is block-diagonal, with each block being of size nUnitCell x nUnitCell.
     subroutine Convert1DtoKSpace(R_Ham,nSuperCell,nUnitCell,k_Ham)
+        use sort_mod, only: sort_real
         implicit none
         integer, intent(in) :: nSuperCell,nUnitCell
         real(dp), intent(in) :: R_Ham(nSuperCell,nSuperCell)
@@ -2416,6 +2421,7 @@ module mat_tools
     !This should really be diagonalized in k-space
     subroutine mkgf(se,ni_GFs,Omega)
         use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
+        use sort_mod, only: Orthonorm_zgeev_vecs
         implicit none
         complex(dp), intent(in) :: se(nVarSE)
         real(dp), intent(in) :: Omega

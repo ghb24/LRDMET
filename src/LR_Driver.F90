@@ -17,14 +17,21 @@ module LRDriver
         complex(dp), allocatable :: SE(:,:,:)
 
         !First, calculate G_00
-        call NonIntExCont_TDA_MCLR_Charged_Cmprs()
+!        call NonIntExCont_TDA_MCLR_Charged_Cmprs()
+        call NonIntExCont_TDA_MCLR_Charged()
         
         !How many frequency points are there exactly?
         Omega = Start_Omega
         nESteps = 0
         do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
             nESteps = nESteps + 1
+            Omega = Omega + Omega_Step
         enddo
+
+        write(6,"(A)") "High-level correlation function written to disk."
+        write(6,"(A,I8,A)") "Now attempting self-consistent determination of self-energy function from ", &
+            nESteps," frequency points."
+        call flush(6)
 
         !Find the k-independent self-consistent self-energy
         allocate(SE(nImp,nImp,nESteps))
