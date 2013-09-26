@@ -21,7 +21,8 @@ module MomSpectra
         complex(dp), allocatable :: G00(:,:,:),Hybrid(:,:,:),OldSE(:,:,:)
         complex(dp), allocatable :: InvLocalMomGF(:,:,:),LocalMomGF(:,:,:)
         complex(dp), allocatable :: InvG00(:,:,:)
-        real(dp) :: Omega,Re_LR,Im_LR,Omega_Val,SE_Thresh,MaxDiff,MinDiff,MeanDiff
+        real(dp) :: Omega,Re_LR,Im_LR,Omega_Val,SE_Thresh,MaxDiffSE,MinDiffSE,MeanDiffSE
+        real(dp) :: MaxDiffGF,MeanDiffGF
         character(64) :: filename,filename2
         character(128) :: header
         character(len=*), parameter :: t_r='SC_Mom_LR'
@@ -81,7 +82,7 @@ module MomSpectra
         LocalMomGF(:,:,:) = zzero
         OldSE(:,:,:) = SE(:,:,:)
 
-        write(6,"(A)") "      Iter   Max[delta(SE)]         Min[delta(SE)]      Mean[delta(SE)]"
+        write(6,"(A)") "      Iter   Max[delta(SE)]         Min[delta(SE)]      Mean[delta(SE)]    Max[delta(GF)]   Mean[delta(GF)]"
         iter = 0
         do while(.true.)
             iter = iter + 1
@@ -114,11 +115,13 @@ module MomSpectra
             call FindSE(nESteps,InvG00,Hybrid,SE)
 
             !Find maximum difference between self-energies
-            call FindSEDiffs(SE,OldSE,nESteps,MaxDiff,MinDiff,MeanDiff)
+            call FindSEDiffs(SE,OldSE,G00,LocalMomGF,nESteps,MaxDiffSE,MinDiffSE,MeanDiffSE,MaxDiffGF,MeanDiffGF)
             OldSE(:,:,:) = SE(:,:,:)
-            write(6,"(I8,3F20.10)") Iter,MaxDiff,MinDiff,MeanDiff
-            if(MaxDiff.lt.SE_Thresh) then
+            write(6,"(I8,5F20.10)") Iter,MaxDiffSE,MinDiffSE,MeanDiffSE,MaxDiffGF,MeanDiffGF
+            call flush(6)
+            if(MaxDiffSE.lt.SE_Thresh) then
                 write(6,"(A,G11.5)") "Success! Convergence to maximum self-energy difference of ",SE_Thresh
+                write(6,"(A,G11.5)") "Mean squared difference between greens functions over all frequencies: ",MeanDiffGF
                 exit
             endif
 
@@ -148,35 +151,44 @@ module MomSpectra
 
     end subroutine FindNI_SE 
 
-    subroutine FindSEDiffs(SE,OldSE,n,MaxDiff,MinDiff,MeanDiff)
+    subroutine FindSEDiffs(SE,OldSE,G00,LocalMomGF,n,MaxDiffSE,MinDiffSE,MeanDiffSE,MaxDiffGF,MeanDiffGF)
         implicit none
         integer, intent(in) :: n
-        complex(dp), intent(in) :: SE(nImp,nImp,n),OldSE(nImp,nImp,n)
-        real(dp), intent(out) :: MaxDiff,MinDiff,MeanDiff
+        complex(dp), intent(in) :: SE(nImp,nImp,n),OldSE(nImp,nImp,n),G00(nImp,nImp,n),LocalMomGF(nImp,nImp,n)
+        real(dp), intent(out) :: MaxDiffSE,MinDiffSE,MeanDiffSE,MaxDiffGF,MeanDiffGF
         integer :: i,j,k
-        complex(dp) :: DiffMat(nImp,nImp)
-        real(dp) :: Diff
+        complex(dp) :: DiffMatSE(nImp,nImp),DiffMatGF(nImp,nImp)
+        real(dp) :: DiffSE,DiffGF
 
-        MaxDiff = zero
-        MinDiff = 1000000.0_dp
-        MeanDiff = zero
+        MaxDiffSE = zero
+        MinDiffSE = 1000000.0_dp
+        MeanDiffSE = zero
+        MaxDiffGF = zero
+        MeanDiffGF = zero
         do i = 1,n
     
-            DiffMat(:,:) = SE(:,:,i) - OldSE(:,:,i)
+            DiffMatSE(:,:) = SE(:,:,i) - OldSE(:,:,i)
+            DiffMatGF(:,:) = G00(:,:,i) - LocalMomGF(:,:,i)
 
-            Diff = zero
+            DiffSE = zero
+            DiffGF = zero
             do j = 1,nImp
                 do k = 1,nImp
-                    Diff = Diff + real(dconjg(DiffMat(k,j))*DiffMat(k,j),dp)
+                    DiffSE = DiffSE + real(dconjg(DiffMatSE(k,j))*DiffMatSE(k,j),dp)
+                    DiffGF = DiffGF + real(dconjg(DiffMatGF(k,j))*DiffMatGF(k,j),dp)
                 enddo
             enddo
 
-            if(Diff.gt.MaxDiff) MaxDiff = Diff
-            if(Diff.lt.MinDiff) MinDiff = Diff
+            if(DiffSE.gt.MaxDiffSE) MaxDiffSE = DiffSE
+            if(DiffSE.lt.MinDiffSE) MinDiffSE = DiffSE
+            MeanDiffSE = MeanDiffSE + DiffSE
 
-            MeanDiff = MeanDiff + Diff
+            if(DiffGF.gt.MaxDiffGF) MaxDiffGF = DiffGF
+            MeanDiffGF = MeanDiffGF + DiffGF
         enddo
-        MeanDiff = MeanDiff / real(n,dp)
+
+        MeanDiffSE = MeanDiffSE / real(n,dp)
+        MeanDiffGF = MeanDiffGF / real(n,dp)
 
     end subroutine FindSEDiffs
 
