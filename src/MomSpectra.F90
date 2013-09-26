@@ -123,6 +123,26 @@ module MomSpectra
             endif
 
         enddo
+
+        write(6,"(A)") "Writing out local mean-field greens function with converged self-energy"
+        iunit = get_free_unit()
+        call append_ext_real('MF_GF_wSE',U,filename)
+        if(.not.tHalfFill) then
+            !Also append occupation of lattice to the filename
+            call append_ext(filename,nOcc,filename2)
+        else
+            filename2 = filename
+        endif
+        open(unit=iunit,file=filename2,status='unknown')
+
+        Omega = Start_Omega
+        i = 0
+        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+            i = i + 1
+            write(iunit,"(3G25.10)") Omega,real(LocalMomGF(1,1,i),dp),aimag(LocalMomGF(1,1,i))
+            Omega = Omega + Omega_Step
+        enddo
+        close(iunit)
         
         deallocate(G00,OldSE,InvG00,Hybrid,InvLocalMomGF,LocalMomGF)
 
