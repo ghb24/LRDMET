@@ -3,7 +3,7 @@ module MomSpectra
     use timing
     use globals
     use errors, only: stop_all,warning
-    use mat_tools, only: WriteVector,WriteMatrix,WriteVectorInt,WriteMatrixComp,WriteVectorComp,znrm2
+    use mat_tools, only: WriteVector,WriteMatrix,WriteVectorInt,WriteMatrixComp,WriteVectorComp,znrm2,add_localpot_comp_inplace
     use LRSolvers
     implicit none
 
@@ -11,16 +11,21 @@ module MomSpectra
 
     !Routine to read in a correlated greens function, and self-consistently converge
     !a self energy from the 1-electron hemailtonian to get it to match this.
-    subroutine FindNI_SE(SE,nESteps)
+    subroutine Converge_SE(SE,nESteps)
         use utils, only: get_free_unit,append_ext_real,append_ext
+        use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
+        use sort_mod, only: Orthonorm_zgeev_vecs
         implicit none
         integer, intent(in) :: nESteps
         complex(dp), intent(inout) :: SE(nImp,nImp,nESteps)
-        integer :: iunit,i,iter
+        integer :: iunit,i,iter,j,w,info,lwork,pertBra,pertsite,a
         logical :: exists
         complex(dp), allocatable :: G00(:,:,:),Hybrid(:,:,:),OldSE(:,:,:)
         complex(dp), allocatable :: InvLocalMomGF(:,:,:),LocalMomGF(:,:,:)
         complex(dp), allocatable :: InvG00(:,:,:)
+        complex(dp), allocatable :: OneE_Ham(:,:),W_Vals(:),RVec(:,:),LVec(:,:),cWork(:)
+        real(dp), allocatable :: Work(:)
+        complex(dp) :: NI_LRMat_Ann(nImp,nImp),NI_LRMat_Cre(nImp,nImp),NI_LR
         real(dp) :: Omega,Re_LR,Im_LR,Omega_Val,SE_Thresh,MaxDiffSE,MinDiffSE,MeanDiffSE
         real(dp) :: MaxDiffGF,MeanDiffGF
         character(64) :: filename,filename2
@@ -147,9 +152,112 @@ module MomSpectra
         enddo
         close(iunit)
         
+        write(6,"(A)") "Writing out converged self-energy"
+        call append_ext_real('SelfEnergy',U,filename)
+        if(.not.tHalfFill) then
+            !Also append occupation of lattice to the filename
+            call append_ext(filename,nOcc,filename2)
+        else
+            filename2 = filename
+        endif
+        open(unit=iunit,file=filename2,status='unknown')
+        Omega = Start_Omega
+        i = 0
+        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+            i = i + 1
+            write(iunit,"(3G25.10)") Omega,real(SE(1,1,i),dp),aimag(SE(1,1,i))
+            Omega = Omega + Omega_Step
+        enddo
+        close(iunit)
+        
+        if(tCheck) then
+            !Use the self-energy striped through the space to find the NI greens function for each frequency.
+            !This *I presume* is EXACTLY the same as what I am doing when I calculate the local NI GF in k-space and FT for the local part.
+            !This is just more expensive!
+            allocate(OneE_Ham(nSites,nSites))
+            allocate(W_Vals(nSites))
+            allocate(RVec(nSites,nSites))
+            allocate(LVec(nSites,nSites))
+            allocate(Work(max(1,2*nSites)))
+
+            write(6,"(A)") "Calculating and Writing out converged real-space mean-field greens function"
+            call append_ext_real('RealSpace_NIGF',U,filename)
+            if(.not.tHalfFill) then
+                !Also append occupation of lattice to the filename
+                call append_ext(filename,nOcc,filename2)
+            else
+                filename2 = filename
+            endif
+            open(unit=iunit,file=filename2,status='unknown')
+            Omega = Start_Omega
+            w = 0
+            do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+                w = w + 1
+
+                do i = 1,nSites
+                    do j = 1,nSites
+                        OneE_Ham(j,i) = dcmplx(h0v(j,i),zero)
+                    enddo
+                enddo
+                !Stripe the complex (-)self-energy through the AO one-electron hamiltonian
+                call add_localpot_comp_inplace(OneE_Ham,SE(:,:,w),tAdd=.true.)
+
+                !Now, diagonalize the resultant non-hermitian one-electron hamiltonian
+                RVec = zzero
+                LVec = zzero
+                W_Vals = zzero
+                allocate(cWork(1))
+                lwork = -1
+                info = 0
+                call zgeev('V','V',nSites,OneE_Ham,nSites,W_Vals,LVec,nSites,RVec,nSites,cWork,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'Workspace query failed')
+                lwork = int(abs(cWork(1)))+1
+                deallocate(cWork)
+                allocate(cWork(lWork))
+                call zgeev('V','V',nSites,OneE_Ham,nSites,W_Vals,LVec,nSites,RVec,nSites,cWork,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'Diag of H - SE failed')
+                deallocate(cWork)
+
+                !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
+                !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
+                call Order_zgeev_vecs(W_Vals,LVec,RVec)
+                !call writevectorcomp(W_Vals,'Eigenvalues ordered')
+                !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
+                call Orthonorm_zgeev_vecs(nSites,W_Vals,LVec,RVec)
+
+                do pertsite = 1,nImp
+                    do pertBra = 1,nImp
+                        !Now perform the set of dot products of <0|V* with |1> for all combinations of sites
+                        do i = 1,nOcc
+                            NI_LRMat_Ann(pertsite,pertBra) = NI_LRMat_Ann(pertsite,pertBra) +   &
+                                RVec(pertBra,i)*dconjg(LVec(pertsite,i)) / (dcmplx(Omega,dDelta) - W_Vals(i))
+                        enddo
+                        do a = nOcc+1,nSites
+                            NI_LRMat_Cre(pertsite,pertBra) = NI_LRMat_Cre(pertsite,pertBra) +   &
+                                RVec(pertBra,a)*dconjg(LVec(pertsite,a)) / (dcmplx(Omega,dDelta) - W_Vals(a))
+                        enddo
+                    enddo
+                enddo
+
+                NI_LR = zzero
+                do i = 1,nImp
+                    NI_LR = NI_LRMat_Ann(i,i) + NI_LRMat_Cre(i,i)
+                enddo
+                NI_LR = NI_LR / real(nImp,dp)
+
+                write(iunit,"(3G25.10)") Omega,real(NI_LR,dp),aimag(NI_LR)
+
+                Omega = Omega + Omega_Step
+            enddo
+
+            close(iunit)
+            deallocate(OneE_Ham,W_Vals,RVec,LVec,Work)
+
+        endif   !End check
+        
         deallocate(G00,OldSE,InvG00,Hybrid,InvLocalMomGF,LocalMomGF)
 
-    end subroutine FindNI_SE 
+    end subroutine Converge_SE 
 
     subroutine FindSEDiffs(SE,OldSE,G00,LocalMomGF,n,MaxDiffSE,MinDiffSE,MeanDiffSE,MaxDiffGF,MeanDiffGF)
         implicit none
