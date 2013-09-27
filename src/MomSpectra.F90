@@ -225,6 +225,8 @@ module MomSpectra
                 !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
                 call Orthonorm_zgeev_vecs(nSites,W_Vals,LVec,RVec)
 
+                NI_LRMat_Ann(:,:) = zzero
+                NI_LRMat_Cre(:,:) = zzero
                 do pertsite = 1,nImp
                     do pertBra = 1,nImp
                         !Now perform the set of dot products of <0|V* with |1> for all combinations of sites
