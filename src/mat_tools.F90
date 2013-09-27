@@ -1472,6 +1472,7 @@ module mat_tools
             endif
 
             BZVol = 2.0_dp*pi/real(SS_Period,dp)
+            write(6,"(A,G21.14)") "Brillouin zone volume: ",BZVol
 
             RecipLattVecs(1,1) = 2.0_dp*pi/real(SS_Period,dp)
             !Just use equally spaced mesh starting at -pi/SS_Period, and working our way across
