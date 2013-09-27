@@ -16,14 +16,14 @@ module MomSpectra
         implicit none
         integer, intent(in) :: nESteps
         complex(dp), intent(inout) :: SE(nImp,nImp,nESteps)
-        integer :: iunit,i,iter
+        integer :: iunit,i,iter,iunit2,iunit3
         logical :: exists
         complex(dp), allocatable :: G00(:,:,:),Hybrid(:,:,:),OldSE(:,:,:)
         complex(dp), allocatable :: InvLocalMomGF(:,:,:),LocalMomGF(:,:,:)
         complex(dp), allocatable :: InvG00(:,:,:),RealSpaceLocGF(:,:,:)
         real(dp) :: Omega,Re_LR,Im_LR,Omega_Val,SE_Thresh,MaxDiffSE,MinDiffSE,MeanDiffSE
         real(dp) :: MaxDiffGF,MeanDiffGF
-        character(64) :: filename,filename2
+        character(64) :: filename,filename2,filename3,filename4,filename5,filename6
         character(128) :: header
         character(len=*), parameter :: t_r='SC_Mom_LR'
 
@@ -128,7 +128,7 @@ module MomSpectra
 
         enddo
 
-        write(6,"(A)") "Writing out local mean-field greens function with converged self-energy"
+        write(6,"(A)") "Writing out local mean-field greens function with converged self-energy, Self Energy and Hybridization"
         iunit = get_free_unit()
         call append_ext_real('MF_GF_wSE',U,filename)
         if(.not.tHalfFill) then
@@ -138,33 +138,37 @@ module MomSpectra
             filename2 = filename
         endif
         open(unit=iunit,file=filename2,status='unknown')
+        iunit2 = get_free_unit()
+        call append_ext_real('SelfEnergy',U,filename3)
+        if(.not.tHalfFill) then
+            !Also append occupation of lattice to the filename
+            call append_ext(filename3,nOcc,filename4)
+        else
+            filename4 = filename3
+        endif
+        open(unit=iunit,file=filename4,status='unknown')
+        iunit3 = get_free_unit()
+        call append_ext_real('Hybridization',U,filename5)
+        if(.not.tHalfFill) then
+            !Also append occupation of lattice to the filename
+            call append_ext(filename5,nOcc,filename6)
+        else
+            filename6 = filename5
+        endif
+        open(unit=iunit3,file=filename6,status='unknown')
 
         Omega = Start_Omega
         i = 0
         do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
             i = i + 1
             write(iunit,"(3G25.10)") Omega,real(LocalMomGF(1,1,i),dp),aimag(LocalMomGF(1,1,i))
+            write(iunit2,"(3G25.10)") Omega,real(SE(1,1,i),dp),aimag(SE(1,1,i))
+            write(iunit3,"(3G25.10)") Omega,real(Hybrid(1,1,i),dp),aimag(Hybrid(1,1,i))
             Omega = Omega + Omega_Step
         enddo
         close(iunit)
-        
-        write(6,"(A)") "Writing out converged self-energy"
-        call append_ext_real('SelfEnergy',U,filename)
-        if(.not.tHalfFill) then
-            !Also append occupation of lattice to the filename
-            call append_ext(filename,nOcc,filename2)
-        else
-            filename2 = filename
-        endif
-        open(unit=iunit,file=filename2,status='unknown')
-        Omega = Start_Omega
-        i = 0
-        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
-            i = i + 1
-            write(iunit,"(3G25.10)") Omega,real(SE(1,1,i),dp),aimag(SE(1,1,i))
-            Omega = Omega + Omega_Step
-        enddo
-        close(iunit)
+        close(iunit2)
+        close(iunit3)
         
         if(tCheck) then
             !Use the self-energy striped through the space to find the NI greens function for each frequency.
