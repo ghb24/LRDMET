@@ -9,6 +9,119 @@ module MomSpectra
 
     contains
 
+    subroutine Converge_SE_NoHybrid(SE,nESteps)
+        use utils, only: get_free_unit,append_ext_real,append_ext
+        implicit none
+        integer, intent(in) :: nESteps
+        complex(dp), intent(inout) :: SE(nImp,nImp,nESteps)
+        integer :: iunit,i
+        real(dp) :: SE_Thresh,Omega
+        complex(dp), allocatable :: G00(:,:,:),OldSE(:,:,:),InvG00(:,:,:)
+        logical :: exists
+        character(64) :: filename,filename2
+        character(128) :: header
+        character(len=*), parameter :: t_r='Converge_SE_NoHybrid'
+        
+        SE_Thresh = 1.0e-4_dp
+        if(nImp.ne.1) call stop_all(t_r,'Can currently only do self-consistency with one impurity site')
+        
+        !First, read back in the G_00 (real and complex)
+        iunit = get_free_unit()
+        call append_ext_real('EC-TDA_GFResponse',U,filename)
+        if(.not.tHalfFill) then
+            !Also append occupation of lattice to the filename
+            call append_ext(filename,nOcc,filename2)
+        else
+            filename2 = filename
+        endif
+        inquire(file=filename2,exist=exists)
+        if(.not.exists) then
+            call stop_all(t_r,'Cannot find local greens function file')
+        endif
+        open(unit=iunit,file=filename2,status='old',action='read')
+
+        read(iunit,*) header
+        Omega = Start_Omega
+        i = 0
+        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+            i = i + 1
+            Omega = Omega + Omega_Step
+        enddo
+        if(i.ne.nESteps) call stop_all(t_r,'Wrong number of frequency points read in')
+
+        allocate(G00(nImp,nImp,nESteps))    !The correlated greens function
+        allocate(OldSE(nImp,nImp,nESteps))
+        allocate(InvG00(nImp,nImp,nESteps))
+        G00(:,:,:) = zzero
+        Omega = Start_Omega
+        i = 0
+        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+            i = i + 1
+            if(i.gt.nESteps) call stop_all(t_r,'Too many frequency points')
+            read(iunit,*) Omega_val,Re_LR,Im_LR
+            !write(6,*) Omega_val,Re_LR,Im_LR
+            !HACK - can only read in 1 x 1 impurity matrix
+            G00(1,1,i) = dcmplx(Re_LR,Im_LR)
+            Omega = Omega + Omega_Step
+        enddo
+        close(iunit)
+
+        write(6,*) "High-level greens function sucessfully read back in..."
+        call flush(6)
+        
+        !write(6,*) "Inverting high-level greens function"
+        InvG00(:,:,:) = G00(:,:,:)
+        call InvertLocalNonHermGF(nESteps,InvG00)
+        
+        OldSE(:,:,:) = SE(:,:,:)
+
+        write(6,"(A)") "      Iter   Max[delta(SE)]         Min[delta(SE)]      Mean[delta(SE)]    Max[delta(GF)]   Mean[delta(GF)]"
+        iter = 0
+        do while(.true.)
+            iter = iter + 1
+            !write(6,*) "Beginning iteration: ",iter
+
+            temp(:,:,:) = zzero
+            temp(:,:,:) = SE(:,:,:) + InvG00(:,:,:)
+
+            !We want to equate [(omega + mu +idelta)I - SE]^-1 = G_00
+            !Therefore, calculate change in self energy as (omega + mu + idelta) - h - SE - G_00^-1
+            call FindRealSpaceLocalMomGF(nESteps,temp,DeltaSE)
+
+            SE(:,:,:) = SE(:,:,:) + DeltaSE(:,:,:)
+        
+            MaxDiffSE = zero
+            MinDiffSE = 1000000.0_dp
+            MeanDiffSE = zero
+            do i = 1,nESteps
+    
+                DiffMatSE(:,:) = SE(:,:,i) - OldSE(:,:,i)
+
+                DiffSE = zero
+                do j = 1,nImp
+                    do k = 1,nImp
+                        DiffSE = DiffSE + real(dconjg(DiffMatSE(k,j))*DiffMatSE(k,j),dp)
+                        DiffGF = DiffGF + real(dconjg(DiffMatGF(k,j))*DiffMatGF(k,j),dp)
+                    enddo
+                enddo
+
+                if(DiffSE.gt.MaxDiffSE) MaxDiffSE = DiffSE
+                if(DiffSE.lt.MinDiffSE) MinDiffSE = DiffSE
+                MeanDiffSE = MeanDiffSE + DiffSE
+            enddo
+            MeanDiffSE = MeanDiffSE / real(nESteps,dp)
+
+            write(6,"(I8,3F20.10)") Iter,MaxDiffSE,MinDiffSE,MeanDiffSE
+            call flush(6)
+            if(MaxDiffSE.lt.SE_Thresh) then
+                write(6,"(A,G12.5)") "Success! Convergence to maximum self-energy difference of ",SE_Thresh
+                exit
+            endif
+        enddo
+            
+
+    end subroutine Converge_SE_NoHybrid
+
     !Routine to read in a correlated greens function, and self-consistently converge
     !a self energy from the 1-electron hemailtonian to get it to match this.
     subroutine Converge_SE(SE,nESteps)
@@ -25,7 +138,7 @@ module MomSpectra
         real(dp) :: MaxDiffGF,MeanDiffGF
         character(64) :: filename,filename2,filename3,filename4,filename5,filename6
         character(128) :: header
-        character(len=*), parameter :: t_r='SC_Mom_LR'
+        character(len=*), parameter :: t_r='Converge_SE'
 
         SE_Thresh = 1.0e-4_dp
 
@@ -81,6 +194,10 @@ module MomSpectra
         Hybrid(:,:,:) = zzero
         LocalMomGF(:,:,:) = zzero
         OldSE(:,:,:) = SE(:,:,:)
+            
+        !write(6,*) "Inverting high-level greens function"
+        InvG00(:,:,:) = G00(:,:,:)
+        call InvertLocalNonHermGF(nESteps,InvG00)
 
         write(6,"(A)") "      Iter   Max[delta(SE)]         Min[delta(SE)]      Mean[delta(SE)]    Max[delta(GF)]   Mean[delta(GF)]"
         iter = 0
@@ -107,9 +224,6 @@ module MomSpectra
             call FindHybrid(nESteps,InvLocalMomGF,SE,Hybrid)
 
             !Now to converge the k-independent Self-energy
-            !write(6,*) "Inverting high-level greens function"
-            InvG00(:,:,:) = G00(:,:,:)
-            call InvertLocalNonHermGF(nESteps,InvG00)
             !Now find Self-energy
             !This is given by (omega + mu + idelta)I - e_0 - Hybrid - InvFullGF)
             !write(6,*) "Obtaining Self-energy by equating local mean-field GF to high level one"
