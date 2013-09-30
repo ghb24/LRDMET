@@ -92,12 +92,13 @@ A zero-temperature dynamic correlation function can be defined in the frequency 
 \begin{equation}
     G(\omega;{\hat X},{\hat V}) = \langle \Psi^{(0)} | {\hat X}^{\dagger} \frac{1}{\omega-(H-E_0)+i \eta} {\hat V} | \Psi^{(0)} \rangle , \label{eqn:intCorrFunc}
 \end{equation}
-with the one- and two-particle Green functions defined with ${\hat V}$ and ${\hat X}$ being single annihilation/creation or pairs of such operators 
-respectively, with appropriate time-ordering of the operators. Spectral functions are defined as $A(\omega)=-\frac{1}{\pi}\Im[G(\omega)]$.
+with the one-particle Green functions defined with ${\hat V}$ and ${\hat X}$ being single annihilation/creation operators 
+with appropriate time-ordering. 
+%Spectral functions are defined as $A(\omega)=-\frac{1}{\pi}\Im[G(\omega)]$.
 %where the spectral broadening is given by the small imaginary component of the energy, $\eta$, which regularizes the correlation function. 
 The single particle
 density of states, experimentally measured by STM 
-and photoemission spectroscopy, is the spectral function of the one-particle Green function. 
+and photoemission spectroscopy, is the spectral function ($A(\omega)=-\frac{1}{\pi}\Im[G(\omega)]$) of the one-particle Green function. 
 Two-particle spectral functions are also highly sought after, such as the two-hole propagator 
 probed with Auger spectroscopy\cite{Mona2013}, or the particle-hole Green function that gives the optical conductivity, polarizability and
 magnetizability, and are key descriptors in 
@@ -119,12 +120,12 @@ If CT-QMC is used as an
 impurity solver to integrate over this infinite bath (or indeed general QMC methods used in isolation), then spectral 
 functions are obtained only on the imaginary frequency 
 axis, requiring unstable analytic continuation onto the real frequency axis, which can wash out subtle or sharp features of the 
-spectra\cite{Millis2009}. Accessing low temperatures or arbitrary interactions produces Fermion sign problems, which can require millions
+spectra\cite{Millis2006,Millis2009}. Accessing low temperatures or arbitrary interactions produces Fermion sign problems, which can require millions
 of computer-hours to stabilize, even for a modest number of impurity sites.
 Exact diagonalization suffers from bath discretization error in the spectra due to the 
-fitting of the hybridization (at all frequencies) to a small number of bath sites with 
-frequency independent energies and couplings\cite{Liebsch2012}. In addition, since DMFT
-is formulated using the one-particle Green function, other spectra such as the two-particle Green function and optical spectra are 
+fitting of the hybridization (at all frequencies) to a small number of frequency independent bath sites\cite{Liebsch2012}. 
+%with frequency independent energies and couplings\cite{Liebsch2012}. 
+In addition, since DMFT is formulated using the one-particle Green function, other spectra such as the two-particle Green function and optical spectra are 
 difficult to obtain, formally requiring expensive vertex corrections\cite{Millis2012}. 
 %Other methods to calculate 
 %spectra of correlated extended systems, such as the dynamical density matrix renormalization group\cite{Jeckelmann2004} or perturbative
@@ -145,7 +146,7 @@ took more than a minute on a single computing core), while eliminating bath disc
 %This is achieved by embedding a local correlation function defined over a set of `impurity' sites, within an 
 %analytic coupling to the rest of the delocalized excitation space. This is determined through the exact Schmidt decomposition of a mean-field 
 %response computed throughout the bulk system. This renders the spectra exact in the non-interacting and local excitation limits. 
-In addition, since the method is formulated in terms of a general response vector, it is not restricted in the type or rank of perturbation 
+In addition, since the method is formulated in terms of a general response vector, it is not restricted in the type or rank of %perturbation 
 operators that it can consider, with two-particle Green functions almost as easy to obtain as single particle Green functions. 
 %Furthermore, since the analytic coupling is only defined for a given frequency (rather than all frequencies 
 %for DMFT), the entanglement bath for the spectra is compact and exactly represents the coupling defined by the global response function. This 
@@ -162,7 +163,8 @@ the electronic structure of correlated materials, displaying correlation driven
 phase transitions, and the Mott--Hubbard physics of many transition metal oxides\cite{Limelette2003}, including qualitative features 
 of high-$T_c$ superconductivity\cite{Anderson87,Sordi2012,Millis2013}. Where possible, we compare to one-dimensional exact results from the Bethe 
 Ansatz\cite{Lieb68,Ovchinni1970}, as well as benchmark 1D and 2D cluster DMFT calculations at half-filling 
-and under doping\cite{Go2009,Kotliar2008,Masatoshi2009}. In addition we compute local two-particle Green functions.
+and under doping\cite{Go2009,Kotliar2008,Masatoshi2009}. 
+%In addition we compute local two-particle Green functions.
 
 \emph{Method.-} We first recap the DMET quantum embedding formalism introduced for the ground state, with more details provided in
 Ref.~\onlinecite{Chan2012} and \onlinecite{Chan2013}. The 
@@ -205,7 +207,8 @@ where ${\hat {\mathcal{A}}}^{(i)}(\omega)$ act only on the local impurity states
 |\phi^{(1)}(\omega) \rangle = \sum_{\alpha \beta i} \phi^{(0)}_{\alpha \beta} {\hat {\mathcal{A}}}^{(i)} |\alpha \rangle {\hat {\mathcal{B}}}^{(i)} |\beta \rangle .
 \end{equation}
 $| \phi^{(1)}(\omega) \rangle$ is contained in the space $\mathcal{K}(\omega) = \{ |\alpha \rangle \} \otimes \{\hat {\mathcal{B}}^{(i)}(\omega) | \beta \rangle \}$ which 
-then defines the projector $P(\omega) = |\mathcal{K}(\omega)\rangle \langle \mathcal{K}(\omega) |$, into which the interacting response equations are projected, including the full impurity space.
+then defines the projector $P(\omega) = |\mathcal{K}(\omega)\rangle \langle \mathcal{K}(\omega) |$, into which the interacting response equations are projected.
+%, including the full impurity space.
 \item The interacting response vector, $|\Psi^{(1)} (\omega) \rangle$, is calculated from
 \begin{equation}
     P \left[ \omega - (H_{\mathrm emb}-E_0) + i \eta \right] P | \Psi^{(1)}(\omega) \rangle = P {\hat V} P |\Psi^{(0)} \rangle   ,   \label{eqn:ExactResponse}
@@ -231,11 +234,13 @@ In addition, $|\Psi^{(1)} \rangle $ is also exact for uncoupled, local excitatio
 to the completeness of the impurity space $\{ |\alpha \rangle \}$ included in $\mathcal{K}(\omega)$.
 One missing feature of the above construction is that the self-consistent potential $u$, is not updated as a function
 of frequency, $u(\omega)$. This is appropriate at low energies, but not at higher 
-energies, as discussed further below. Introducing a frequency dependence for $u$ will not change the computational 
-scaling of the spectral DMET.  However, as there are multiple ways to define the self-consistency conditions, 
+energies, as discussed further below. 
+%Introducing a frequency dependence for $u$ will not change the computational 
+%scaling of the spectral DMET.  
+However, as there are multiple ways to define the self-consistency conditions, 
 we reserve this question for future study.
-Finally, we note that although the above bath construction was carried out at zero temperature, a similar finite temperature construction exists by carrying 
-out decompositions in the superoperator space.
+%Finally, we note that although the above bath construction was carried out at zero temperature, a similar finite temperature construction exists by carrying 
+%out decompositions in the superoperator space.
 
 The exactness of the non-interacting and local limits is a feature that this construction shares with DMFT, but there are important properties which 
 DMFT does not possess. The coupling to the environment
@@ -384,11 +389,12 @@ good agreement, and convergence of the results with increasing cluster size.}
 
 \emph{Results.-} We first examine the one-dimensional Hubbard model, whose ground state energy\cite{Lieb68} and spectral gap\cite{Ovchinni1970} are 
 obtainable from the Bethe Ansatz, and additionally compare to
-zero-temperature, cluster DMFT results\cite{Go2009}. Figure~\ref{1D_DOS} shows the local density of states, calculated with a four-site DMET 
+zero-temperature, cluster DMFT results\cite{Go2009}. Fig.~\ref{1D_DOS} shows the local density of states, calculated with a four-site DMET 
 impurity cluster, and compared to six-site cluster DMFT results, obtained via an exact diagonalization within six bath orbital representation. 
 %Both DMET and DMFT calculation are performed in the paramagnetic phase. 
-Since exact diagonalization was used as the impurity solver, 
-the spectra are obtained on the real axis at zero-temperature, and so can be directly compared against. As expected in the one-dimensional case, there is no
+%Since exact diagonalization was used as the impurity solver, 
+%the spectra are obtained on the real axis at zero-temperature, and so can be directly compared against. 
+As expected in the one-dimensional case, there is no
 frustration, and the system is dominated at all values of $U$ by long-range magnetic ordering\cite{Lieb68}. Consequently, 
 the system is insulating for arbitrarily small values of $U$, in both the DMET and CDMFT spectra. 
 
@@ -439,20 +445,22 @@ lines indicate the Fermi level. Qualitative features present in the CDMFT study 
 \label{2D_Doped}
 \end{figure}
 
-A sterner test comes from the 2D paramagnetic Hubbard model. Cluster DMFT calculations in the paramagnetic phase exhibit a metal-insulator transition (MIT)
-at finite $U$, representative of a Mott transition\cite{Georges1996,Senechal2000,Kotliar2008,Millis2012,Millis2013,Zgid2012}.
+A sterner test comes from the 2D paramagnetic Hubbard model. Cluster DMFT calculations exhibit a metal-insulator transition (MIT)
+at finite $U$, representative of a Mott transition\cite{Georges1996,Kotliar2008,Millis2012,Millis2013}.
 %which still receives widespread attention in the condensed matter community\cite{Georges1996,Senechal2000,Kotliar2008,Millis2012,Millis2013}
 %due to its first-order metal-insulator transition (MIT) arising from competing magnetic effects as the correlation strength, $U$, is increased. 
 The DMET local density of
 states are shown in Fig.~\ref{2D_DOS} for a $2 \times 2$ plaquette of impurity sites. In the low $U$ regime, the famous `three-peak' structure 
 is observed, with a central Kondo resonance peak, and the Hubbard bands either side. At $U \approx 6.9t$, there is a transition to an insulating 
-regime, with a Mott gap opening with increased $U$. The spectra then feature prominent coherence peaks at the gap edge, as have been observed 
-elsewhere\cite{Kotliar2008}. Cluster DMFT calculations with the same plaquette size observe a MIT at a slightly lower $U\approx5.5t$, 
+regime, with a Mott gap opening with increased $U$. The spectra then feature prominent coherence peaks at the gap edge\cite{Kotliar2008}.
+%, as have been observed elsewhere\cite{Kotliar2008}. 
+Cluster DMFT calculations with the same plaquette size observe a MIT at a slightly lower $U\approx5.5t$, 
 with a coexistence region at low temperatures, which we also observe. However, analytically continued
 spectral functions from CT-QMC smooth out many of the subtle correlation driven substructures observed in Fig.~\ref{2D_DOS}. 
 Fig.~\ref{2D_Doped} shows the effect on the 
 spectra upon hole doping the system, which is shown for the insulating phase at $U=8t$. Once doped, the weight is transferred to lower frequencies
-until the system becomes a Fermi liquid phase. The spectra are qualitatively similar to those seen in recent cluster DMFT studies\cite{Masatoshi2009}.
+until the system becomes a Fermi liquid phase\cite{Masatoshi2009}. 
+%The spectra are qualitatively similar to those seen in recent cluster DMFT studies\cite{Masatoshi2009}.
 
 %+++++++++++++++++++++++++++++++++++++++++++++++++++++++
 %   DD response 
@@ -502,7 +510,7 @@ advantageous formal properties.
     diagonalization of the one-particle Hamiltonian
 \item Both extension to clusters of impurity sites, and arbitrary dynamic correlation functions are straightforward within the framework.
 \end{inparaenum}
-The approach was demonstrated on the one- and two-dimensional Hubbard model, and compared favorably to both exact results and cluster DMFT calculations. 
+%The approach was demonstrated on the one- and two-dimensional Hubbard model, and compared favorably to both exact results and cluster DMFT calculations. 
 %Extensions are now underway for the
 %calculation of non-local operators, an {\em ab initio} formulation, and for the investigation of differently ordered phases by embedding within broken symmetry mean-field Hamiltonians.
 %\vskip 5mm 
@@ -514,7 +522,8 @@ conversations, and Cedric Weber and Qiaoni Chen for useful comments on the manus
 This work was supported by the DoE through grants DE-SC0010530, and DE-FG02-12ER46875.
 
 %\bibliography{SpectralDMETBib}
-\begin{thebibliography}{25}
+
+\begin{thebibliography}{22}
 \expandafter\ifx\csname natexlab\endcsname\relax\def\natexlab#1{#1}\fi
 \expandafter\ifx\csname bibnamefont\endcsname\relax
   \def\bibnamefont#1{#1}\fi
@@ -605,14 +614,6 @@ This work was supported by the DoE through grants DE-SC0010530, and DE-FG02-12ER
   \bibinfo{journal}{Phys. Rev. Lett.} \textbf{\bibinfo{volume}{97}},
   \bibinfo{pages}{076405} (\bibinfo{year}{2006}).
 
-\bibitem[{\citenamefont{Zgid et~al.}(2012)\citenamefont{Zgid, Gull, and
-  Chan}}]{Zgid2012}
-\bibinfo{author}{\bibfnamefont{D.}~\bibnamefont{Zgid}},
-  \bibinfo{author}{\bibfnamefont{E.}~\bibnamefont{Gull}}, \bibnamefont{and}
-  \bibinfo{author}{\bibfnamefont{G.~K.-L.} \bibnamefont{Chan}},
-  \bibinfo{journal}{Phys. Rev. B} \textbf{\bibinfo{volume}{86}},
-  \bibinfo{pages}{165128} (\bibinfo{year}{2012}).
-
 \bibitem[{\citenamefont{Wang et~al.}(2009)\citenamefont{Wang, Gull, de' Medici,
   Capone, and Millis}}]{Millis2009}
 \bibinfo{author}{\bibfnamefont{X.}~\bibnamefont{Wang}},
@@ -628,22 +629,6 @@ This work was supported by the DoE through grants DE-SC0010530, and DE-FG02-12ER
   \bibinfo{author}{\bibfnamefont{H.}~\bibnamefont{Ishida}},
   \bibinfo{journal}{J. Phys.: Condens. Matter} \textbf{\bibinfo{volume}{24}},
   \bibinfo{pages}{053201} (\bibinfo{year}{2012}).
-
-\bibitem[{\citenamefont{Benthien et~al.}(2004)\citenamefont{Benthien, Gebhard,
-  and Jeckelmann}}]{Jeckelmann2004}
-\bibinfo{author}{\bibfnamefont{H.}~\bibnamefont{Benthien}},
-  \bibinfo{author}{\bibfnamefont{F.}~\bibnamefont{Gebhard}}, \bibnamefont{and}
-  \bibinfo{author}{\bibfnamefont{E.}~\bibnamefont{Jeckelmann}},
-  \bibinfo{journal}{Phys. Rev. Lett.} \textbf{\bibinfo{volume}{92}},
-  \bibinfo{pages}{256401} (\bibinfo{year}{2004}).
-
-\bibitem[{\citenamefont{Senechal et~al.}(2000)\citenamefont{Senechal, Perez,
-  and Pioro-Ladiere}}]{Senechal2000}
-\bibinfo{author}{\bibfnamefont{D.}~\bibnamefont{Senechal}},
-  \bibinfo{author}{\bibfnamefont{D.}~\bibnamefont{Perez}}, \bibnamefont{and}
-  \bibinfo{author}{\bibfnamefont{M.}~\bibnamefont{Pioro-Ladiere}},
-  \bibinfo{journal}{Phys. Rev. Lett.} \textbf{\bibinfo{volume}{84}},
-  \bibinfo{pages}{522} (\bibinfo{year}{2000}).
 
 \bibitem[{\citenamefont{Knizia and Chan}(2012)}]{Chan2012}
 \bibinfo{author}{\bibfnamefont{G.}~\bibnamefont{Knizia}} \bibnamefont{and}
@@ -724,5 +709,4 @@ This work was supported by the DoE through grants DE-SC0010530, and DE-FG02-12ER
   \bibinfo{pages}{3848} (\bibinfo{year}{1991}).
 
 \end{thebibliography}
-
 \end{document}
