@@ -498,16 +498,16 @@ while also of comparable computational cost, and validating the results of Fig.~
 In conclusion, we have presented a quantum embedding formalism for accurate, zero-temperature spectral functions of extended, strongly correlated systems 
 at a small computational cost, which vastly 
 extends the scope of the DMET method. The approach has a number of 
-advantageous formal properties. 
+advantageous formal properties, in particular when compared to DMFT-like theories. 
 \begin{inparaenum}[\itshape i\upshape)]
-\item The embedding within the environment is achieved via coupling to a small set of analytically constructed, many-particle bath states,
-    which are derived from the formal Schmidt decomposition of the response vector obtained from a one-particle Hamiltonian. The quantum impurity
-    plus bath space therefore exactly spans this vector, and
-    changes with frequency, to give smooth spectra without any error from discretization of the continuum.
+\item The embedding within the environment is achieved via coupling to a finite set of analytically constructed, many-particle bath states,
+    which are derived from the formal Schmidt decomposition of the response vector obtained from a one-particle Hamiltonian.
+    The quantum impurity plus bath space therefore exactly spans this vector, and
+    changes with frequency, to give smooth spectra without any error from discretization of the continuum. This contrasts with the formally infinite bath of DMFT.
 \item The simple finite quantum impurity model allows spectral functions to be easily obtained on the real frequency axis, removing the 
     need for any analytic continuation from the imaginary axis.
 \item The interacting quantum impurity and bath space is independent of the size of the underlying lattice, and is constructed at a cost no greater than the
-    diagonalization of the one-particle Hamiltonian
+    diagonalization of the one-particle Hamiltonian. The overall computational cost of this method is therefore very small compared to equivalent DMFT calculations.
 \item Both extension to clusters of impurity sites, and arbitrary dynamic correlation functions are straightforward within the framework.
 \end{inparaenum}
 %The approach was demonstrated on the one- and two-dimensional Hubbard model, and compared favorably to both exact results and cluster DMFT calculations. 
