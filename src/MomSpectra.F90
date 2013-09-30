@@ -9,118 +9,6 @@ module MomSpectra
 
     contains
 
-    subroutine Converge_SE_NoHybrid(SE,nESteps)
-        use utils, only: get_free_unit,append_ext_real,append_ext
-        implicit none
-        integer, intent(in) :: nESteps
-        complex(dp), intent(inout) :: SE(nImp,nImp,nESteps)
-        integer :: iunit,i
-        real(dp) :: SE_Thresh,Omega
-        complex(dp), allocatable :: G00(:,:,:),OldSE(:,:,:),InvG00(:,:,:)
-        logical :: exists
-        character(64) :: filename,filename2
-        character(128) :: header
-        character(len=*), parameter :: t_r='Converge_SE_NoHybrid'
-        
-        SE_Thresh = 1.0e-4_dp
-        if(nImp.ne.1) call stop_all(t_r,'Can currently only do self-consistency with one impurity site')
-        
-        !First, read back in the G_00 (real and complex)
-        iunit = get_free_unit()
-        call append_ext_real('EC-TDA_GFResponse',U,filename)
-        if(.not.tHalfFill) then
-            !Also append occupation of lattice to the filename
-            call append_ext(filename,nOcc,filename2)
-        else
-            filename2 = filename
-        endif
-        inquire(file=filename2,exist=exists)
-        if(.not.exists) then
-            call stop_all(t_r,'Cannot find local greens function file')
-        endif
-        open(unit=iunit,file=filename2,status='old',action='read')
-
-        read(iunit,*) header
-        Omega = Start_Omega
-        i = 0
-        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
-            i = i + 1
-            Omega = Omega + Omega_Step
-        enddo
-        if(i.ne.nESteps) call stop_all(t_r,'Wrong number of frequency points read in')
-
-        allocate(G00(nImp,nImp,nESteps))    !The correlated greens function
-        allocate(OldSE(nImp,nImp,nESteps))
-        allocate(InvG00(nImp,nImp,nESteps))
-        G00(:,:,:) = zzero
-        Omega = Start_Omega
-        i = 0
-        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
-            i = i + 1
-            if(i.gt.nESteps) call stop_all(t_r,'Too many frequency points')
-            read(iunit,*) Omega_val,Re_LR,Im_LR
-            !write(6,*) Omega_val,Re_LR,Im_LR
-            !HACK - can only read in 1 x 1 impurity matrix
-            G00(1,1,i) = dcmplx(Re_LR,Im_LR)
-            Omega = Omega + Omega_Step
-        enddo
-        close(iunit)
-
-        write(6,*) "High-level greens function sucessfully read back in..."
-        call flush(6)
-        
-        !write(6,*) "Inverting high-level greens function"
-        InvG00(:,:,:) = G00(:,:,:)
-        call InvertLocalNonHermGF(nESteps,InvG00)
-        
-        OldSE(:,:,:) = SE(:,:,:)
-
-        write(6,"(A)") "      Iter   Max[delta(SE)]         Min[delta(SE)]      Mean[delta(SE)]    Max[delta(GF)]   Mean[delta(GF)]"
-        iter = 0
-        do while(.true.)
-            iter = iter + 1
-            !write(6,*) "Beginning iteration: ",iter
-
-            temp(:,:,:) = zzero
-            temp(:,:,:) = SE(:,:,:) + InvG00(:,:,:)
-
-            !We want to equate [(omega + mu +idelta)I - SE]^-1 = G_00
-            !Therefore, calculate change in self energy as (omega + mu + idelta) - h - SE - G_00^-1
-            call FindRealSpaceLocalMomGF(nESteps,temp,DeltaSE)
-
-            SE(:,:,:) = SE(:,:,:) + DeltaSE(:,:,:)
-        
-            MaxDiffSE = zero
-            MinDiffSE = 1000000.0_dp
-            MeanDiffSE = zero
-            do i = 1,nESteps
-    
-                DiffMatSE(:,:) = SE(:,:,i) - OldSE(:,:,i)
-
-                DiffSE = zero
-                do j = 1,nImp
-                    do k = 1,nImp
-                        DiffSE = DiffSE + real(dconjg(DiffMatSE(k,j))*DiffMatSE(k,j),dp)
-                        DiffGF = DiffGF + real(dconjg(DiffMatGF(k,j))*DiffMatGF(k,j),dp)
-                    enddo
-                enddo
-
-                if(DiffSE.gt.MaxDiffSE) MaxDiffSE = DiffSE
-                if(DiffSE.lt.MinDiffSE) MinDiffSE = DiffSE
-                MeanDiffSE = MeanDiffSE + DiffSE
-            enddo
-            MeanDiffSE = MeanDiffSE / real(nESteps,dp)
-
-            write(6,"(I8,3F20.10)") Iter,MaxDiffSE,MinDiffSE,MeanDiffSE
-            call flush(6)
-            if(MaxDiffSE.lt.SE_Thresh) then
-                write(6,"(A,G12.5)") "Success! Convergence to maximum self-energy difference of ",SE_Thresh
-                exit
-            endif
-        enddo
-            
-
-    end subroutine Converge_SE_NoHybrid
 
     !Routine to read in a correlated greens function, and self-consistently converge
     !a self energy from the 1-electron hemailtonian to get it to match this.
@@ -260,7 +148,7 @@ module MomSpectra
         else
             filename4 = filename3
         endif
-        open(unit=iunit,file=filename4,status='unknown')
+        open(unit=iunit2,file=filename4,status='unknown')
         iunit3 = get_free_unit()
         call append_ext_real('Hybridization',U,filename5)
         if(.not.tHalfFill) then
@@ -316,6 +204,127 @@ module MomSpectra
         deallocate(G00,OldSE,InvG00,Hybrid,InvLocalMomGF,LocalMomGF)
 
     end subroutine Converge_SE 
+
+    subroutine Converge_SE_NoHybrid(SE,nESteps)
+        use utils, only: get_free_unit,append_ext_real,append_ext
+        implicit none
+        integer, intent(in) :: nESteps
+        complex(dp), intent(inout) :: SE(nImp,nImp,nESteps)
+        integer :: iunit,i,iter,j,k
+        real(dp) :: SE_Thresh,Omega,Omega_val,Re_LR,Im_LR,MaxDiffSE,MinDiffSE,MeanDiffSE,DiffSE
+        complex(dp), allocatable :: G00(:,:,:),OldSE(:,:,:),InvG00(:,:,:)
+        complex(dp), allocatable :: temp(:,:,:),DeltaSE(:,:,:)
+        complex(dp) :: DiffMatSE(nImp,nImp)
+        logical :: exists
+        character(64) :: filename,filename2
+        character(128) :: header
+        character(len=*), parameter :: t_r='Converge_SE_NoHybrid'
+        
+        SE_Thresh = 1.0e-4_dp
+        if(nImp.ne.1) call stop_all(t_r,'Can currently only do self-consistency with one impurity site')
+        
+        !First, read back in the G_00 (real and complex)
+        iunit = get_free_unit()
+        call append_ext_real('EC-TDA_GFResponse',U,filename)
+        if(.not.tHalfFill) then
+            !Also append occupation of lattice to the filename
+            call append_ext(filename,nOcc,filename2)
+        else
+            filename2 = filename
+        endif
+        inquire(file=filename2,exist=exists)
+        if(.not.exists) then
+            call stop_all(t_r,'Cannot find local greens function file')
+        endif
+        open(unit=iunit,file=filename2,status='old',action='read')
+
+        read(iunit,*) header
+        Omega = Start_Omega
+        i = 0
+        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+            i = i + 1
+            Omega = Omega + Omega_Step
+        enddo
+        if(i.ne.nESteps) call stop_all(t_r,'Wrong number of frequency points read in')
+
+        allocate(G00(nImp,nImp,nESteps))    !The correlated greens function
+        allocate(OldSE(nImp,nImp,nESteps))
+        allocate(InvG00(nImp,nImp,nESteps))
+        G00(:,:,:) = zzero
+        Omega = Start_Omega
+        i = 0
+        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+            i = i + 1
+            if(i.gt.nESteps) call stop_all(t_r,'Too many frequency points')
+            read(iunit,*) Omega_val,Re_LR,Im_LR
+            !write(6,*) Omega_val,Re_LR,Im_LR
+            !HACK - can only read in 1 x 1 impurity matrix
+            G00(1,1,i) = dcmplx(Re_LR,Im_LR)
+            Omega = Omega + Omega_Step
+        enddo
+        close(iunit)
+
+        write(6,*) "High-level greens function sucessfully read back in..."
+        call flush(6)
+        
+        !write(6,*) "Inverting high-level greens function"
+        InvG00(:,:,:) = G00(:,:,:)
+        call InvertLocalNonHermGF(nESteps,InvG00)
+        
+        OldSE(:,:,:) = SE(:,:,:)
+
+        allocate(temp(nImp,nImp,nESteps))
+        allocate(DeltaSE(nImp,nImp,nESteps))
+
+        write(6,"(A)") "      Iter   Max[delta(SE)]         Min[delta(SE)]      Mean[delta(SE)]    Max[delta(GF)]   Mean[delta(GF)]"
+        iter = 0
+        do while(.true.)
+            iter = iter + 1
+            !write(6,*) "Beginning iteration: ",iter
+
+            temp(:,:,:) = SE(:,:,:) + InvG00(:,:,:)
+
+            !We want to equate [(omega + mu +idelta)I - SE]^-1 = G_00
+            !Therefore, calculate change in self energy as (omega + mu + idelta) - h - SE - G_00^-1
+            !call FindRealSpaceLocalMomGF(nESteps,temp,DeltaSE)
+            call FindRealSpaceLocalMomGF_Kspace(nESteps,temp,DeltaSE)
+            call InvertLocalNonHermGF(nESteps,DeltaSE)
+
+            OldSE(:,:,:) = SE(:,:,:)
+            SE(:,:,:) = SE(:,:,:) + DeltaSE(:,:,:)
+        
+            MaxDiffSE = zero
+            MinDiffSE = 1000000.0_dp
+            MeanDiffSE = zero
+            do i = 1,nESteps
+    
+                DiffMatSE(:,:) = SE(:,:,i) - OldSE(:,:,i)
+
+                DiffSE = zero
+                do j = 1,nImp
+                    do k = 1,nImp
+                        DiffSE = DiffSE + real(dconjg(DiffMatSE(k,j))*DiffMatSE(k,j),dp)
+                    enddo
+                enddo
+
+                if(DiffSE.gt.MaxDiffSE) MaxDiffSE = DiffSE
+                if(DiffSE.lt.MinDiffSE) MinDiffSE = DiffSE
+                MeanDiffSE = MeanDiffSE + DiffSE
+            enddo
+            MeanDiffSE = MeanDiffSE / real(nESteps,dp)
+
+            write(6,"(I8,3F20.10)") Iter,MaxDiffSE,MinDiffSE,MeanDiffSE,nESteps
+            call flush(6)
+            if(MaxDiffSE.lt.SE_Thresh) then
+                write(6,"(A,G12.5)") "Success! Convergence to maximum self-energy difference of ",SE_Thresh
+                exit
+            endif
+        enddo
+        deallocate(temp,DeltaSE,G00,InvG00,OldSE)
+            
+
+    end subroutine Converge_SE_NoHybrid
+
 
     subroutine FindSEDiffs(SE,OldSE,G00,LocalMomGF,n,MaxDiffSE,MinDiffSE,MeanDiffSE,MaxDiffGF,MeanDiffGF)
         implicit none
@@ -510,6 +519,102 @@ module MomSpectra
 
     end subroutine InvertLocalNonHermGF
 
+    !The same as FindRealSpaceLocaMomGF below, but doing the diagonalizations in k-space rather than r-space.
+    subroutine FindRealSpaceLocalMomGF_Kspace(n,SE,RealSpaceLocGF)
+        use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
+        use sort_mod, only: Orthonorm_zgeev_vecs
+        implicit none
+        integer, intent(in) :: n
+        complex(dp), intent(in) :: SE(nImp,nImp,n)
+        complex(dp), intent(out) :: RealSpaceLocGF(nImp,nImp,n)
+        complex(dp), allocatable :: OneE_Ham(:,:),RotMat(:,:),cWork(:)
+        complex(dp), allocatable :: k_Ham(:,:),LVec(:,:),RVec(:,:),W_Vals(:)
+        complex(dp), allocatable :: r_vecs_R(:,:),r_vecs_L(:,:),ztemp(:,:)
+        real(dp), allocatable :: Work(:)
+        real(dp) :: Omega
+        integer :: w,i,j,k,pertsite,pertBra,ind_1,ind_2,lwork,info
+        character(len=*), parameter :: t_r='FindRealSpaceLocalMomGF_KSpace'
+
+        allocate(OneE_Ham(nSites,nSites))
+        allocate(RotMat(nSites,nImp))
+        allocate(k_Ham(nImp,nImp))
+        allocate(W_Vals(nImp))
+        allocate(LVec(nImp,nImp))
+        allocate(RVec(nImp,nImp))
+        allocate(Work(2*nImp))
+        allocate(r_vecs_R(nSites,nImp))
+        allocate(r_vecs_L(nSites,nImp))
+        allocate(ztemp(nSites,nImp))
+
+        w = 0
+        Omega = Start_Omega
+        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+            w = w + 1
+
+!            write(6,*) "*** kspace: ",w,n
+
+            do i = 1,nSites
+                do j = 1,nSites
+                    OneE_Ham(j,i) = dcmplx(h0v(j,i),zero)
+                enddo
+            enddo
+            !Stripe the complex (-)self-energy through the AO one-electron hamiltonian
+            call add_localpot_comp_inplace(OneE_Ham,SE(:,:,w),tAdd=.true.)
+            do k = 1,nKPnts
+                ind_1 = ((k-1)*nImp) + 1
+                ind_2 = nImp*k
+                RotMat(:,:) = RtoK_Rot(:,ind_1:ind_2)
+                call ZGEMM('N','N',nSites,nImp,nSites,zone,OneE_Ham,nSites,RotMat,nSites,zzero,ztemp,nSites)
+                call ZGEMM('C','N',nImp,nImp,nSites,zone,RotMat,nSites,ztemp,nSites,zzero,k_Ham,nImp)
+            
+                !Now, diagonalize the resultant non-hermitian one-electron hamiltonian
+                RVec = zzero
+                LVec = zzero
+                W_Vals = zzero
+                allocate(cWork(1))
+                lwork = -1
+                info = 0
+                call zgeev('V','V',nImp,k_Ham,nImp,W_Vals,LVec,nImp,RVec,nImp,cWork,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'Workspace query failed')
+                lwork = int(abs(cWork(1)))+1
+                deallocate(cWork)
+                allocate(cWork(lWork))
+                call zgeev('V','V',nImp,k_Ham,nImp,W_Vals,LVec,nImp,RVec,nImp,cWork,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'Diag of H - SE failed')
+                deallocate(cWork)
+
+                !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
+                !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
+                call Order_zgeev_vecs(W_Vals,LVec,RVec)
+                !call writevectorcomp(W_Vals,'Eigenvalues ordered')
+                !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
+                call Orthonorm_zgeev_vecs(nImp,W_Vals,LVec,RVec)
+
+                !write(6,*) W_Vals,LVec(:,:),RVec(:,:)
+
+                !Rotate vectors back into r-space
+                call ZGEMM('N','N',nSites,nImp,nImp,zone,RtoK_Rot(:,ind_1:ind_2),nSites,  &
+                    RVec(:,:),nImp,zzero,r_vecs_R(:,:),nSites)
+                call ZGEMM('N','N',nSites,nImp,nImp,zone,RtoK_Rot(:,ind_1:ind_2),nSites,  &
+                    LVec(:,:),nImp,zzero,r_vecs_L(:,:),nSites)
+            
+                do pertsite = 1,nImp
+                    do pertBra = 1,nImp
+                        do i = 1,nImp
+                            RealSpaceLocGF(pertsite,pertBra,w) = RealSpaceLocGF(pertsite,pertBra,w) +   &
+                                r_vecs_R(pertBra,i)*dconjg(r_vecs_L(pertsite,i)) / (dcmplx(Omega,dDelta) - W_Vals(i))
+                        enddo
+                    enddo
+                enddo
+
+            enddo
+            Omega = Omega + Omega_Step
+        enddo
+        deallocate(OneE_Ham,W_Vals,RVec,LVec,Work,r_vecs_L,r_vecs_R,k_Ham)
+        deallocate(ztemp,RotMat)
+
+    end subroutine FindRealSpaceLocalMomGF_KSpace
+
     subroutine FindRealSpaceLocalMomGF(n,SE,RealSpaceLocGF)
         use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
         use sort_mod, only: Orthonorm_zgeev_vecs
@@ -539,6 +644,7 @@ module MomSpectra
         Omega = Start_Omega
         do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
             w = w + 1
+            write(6,*) "***",w,n
 
             do i = 1,nSites
                 do j = 1,nSites

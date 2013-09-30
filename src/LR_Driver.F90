@@ -41,6 +41,7 @@ module LRDriver
         !This will read back in the greens function
         !The returned self-energy is k-independent, but will reproduce the correlated local greens function
         call Converge_SE(SE,nESteps)
+        !call Converge_SE_NoHybrid(SE,nESteps)
 
         !Finally, should we do this all in a larger self-consistency, such that the self energy is used for the frequency dependent bath?
 
