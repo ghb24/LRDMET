@@ -37,6 +37,9 @@ module LRDriver
         allocate(SE(nImp,nImp,nESteps))
         SE(:,:,:) = zzero
 
+        !tester
+        call testNIGFs(SE,nESteps)
+
         !Now calculate the (hybridization and) self-energy self-consistently
         !This will read back in the greens function
         !The returned self-energy is k-independent, but will reproduce the correlated local greens function

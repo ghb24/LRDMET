@@ -9,6 +9,53 @@ module MomSpectra
 
     contains
 
+    !Random test for my own edification. At Sigma=0, can we get the real-space and k-space NI GFs to agree?
+    subroutine TestNIGFs(SE,nESteps)
+        use utils, only: get_free_unit
+        implicit none
+        integer, intent(in) :: nESteps
+        complex(dp), intent(in) :: SE(nImp,nImp,nESteps)
+        complex(dp), allocatable :: LocalMomGF(:,:,:),RealSpaceLocGF(:,:,:)
+        integer :: iunit,i
+        real(dp) :: Omega,intweight,Prev_Spec
+
+        allocate(LocalMomGF(nImp,nImp,nESteps))
+        allocate(RealSpaceLocGF(nImp,nImp,nESteps))
+
+        call FindLocalMomGF(nESteps,SE,LocalMomGF)
+        intweight = zero
+        Prev_Spec = zero
+        do i=1,nESteps
+            intweight = intweight + Omega_Step*(Prev_Spec-aimag(LocalMomGF(1,1,i)))/(2.0_dp*pi)
+            Prev_Spec = -aimag(LocalMomGF(1,1,i))
+        enddo
+        write(6,*) "Integrated weight for k-space NI spectral function: ",intweight
+!        call FindRealSpaceLocalMomGF(nESteps,SE,RealSpaceLocGF)
+!        intweight = zero
+!        Prev_Spec = zero
+!        do i=1,nESteps
+!            intweight = intweight + Omega_Step*(Prev_Spec-aimag(RealSpaceLocGF(1,1,i)))/(2.0_dp*pi)
+!            Prev_Spec = -aimag(RealSpaceLocGF(1,1,i))
+!        enddo
+!        write(6,*) "Integrated weight for r-space NI spectral function: ",intweight
+!
+!        iunit = get_free_unit()
+!        open(unit=iunit,file='temp',status='unknown')
+!
+!        Omega = Start_Omega
+!        i = 0
+!        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+!            i = i + 1
+!            write(iunit,"(7G25.10)") Omega,real(LocalMomGF(1,1,i),dp),aimag(LocalMomGF(1,1,i)),real(RealSpaceLocGF(1,1,i),dp),  &
+!                    aimag(RealSpaceLocGF(1,1,i)),real(LocalMomGF(1,1,i),dp)/real(RealSpaceLocGF(1,1,i),dp), &
+!                    aimag(localMomGF(1,1,i))/aimag(RealSpaceLocGF(1,1,i))
+!            Omega = Omega + Omega_Step
+!        enddo
+!        close(iunit)
+
+        deallocate(LocalMomGF,RealSpaceLocGF)
+    end subroutine TestNIGFs
+
     !Routine to read in a correlated greens function, and self-consistently converge
     !a self energy from the 1-electron hemailtonian to get it to match this.
     subroutine Converge_SE_NoHybrid(SE,nESteps)
@@ -22,14 +69,16 @@ module MomSpectra
         complex(dp), allocatable :: InvLocalMomGF(:,:,:),LocalMomGF(:,:,:)
         complex(dp), allocatable :: InvG00(:,:,:),RealSpaceLocGF(:,:,:)
         real(dp) :: Omega,Re_LR,Im_LR,Omega_Val,SE_Thresh,MaxDiffSE,MinDiffSE,MeanDiffSE
-        real(dp) :: MaxDiffGF,MeanDiffGF
+        real(dp) :: MaxDiffGF,MeanDiffGF,Prev_Spec,intweight,SE_Damp
         character(64) :: filename,filename2,filename3,filename4,filename5,filename6
         character(128) :: header
         character(len=*), parameter :: t_r='Converge_SE'
 
-        write(6,*) "Entering Converge_SE_NoHybrid_II"
+        write(6,*) "Entering Converge_SE_NoHybrid"
 
         SE_Thresh = 1.0e-4_dp
+        !SE_Damp = 1.0_dp
+        SE_Damp = 0.03111_dp
 
         if(nImp.ne.1) call stop_all(t_r,'Can currently only do self-consistency with one impurity site')
 
@@ -71,12 +120,19 @@ module MomSpectra
             read(iunit,*) Omega_val,Re_LR,Im_LR
             !write(6,*) Omega_val,Re_LR,Im_LR
             !HACK - can only read in 1 x 1 impurity matrix
-            G00(1,1,i) = dcmplx(Re_LR,Im_LR)
+            G00(1,1,i) = dcmplx(Re_LR,-Im_LR)
             Omega = Omega + Omega_Step
         enddo
         close(iunit)
 
         write(6,*) "High-level greens function sucessfully read back in..."
+        intweight = zero
+        Prev_Spec = zero
+        do i=1,nESteps
+            intweight = intweight + Omega_Step*(Prev_Spec-aimag(G00(1,1,i)))/(2.0_dp*pi)
+            Prev_Spec = -aimag(G00(1,1,i))
+        enddo
+        write(6,*) "Integrated weight for high-level spectral function: ",intweight
         call flush(6)
 
         LocalMomGF(:,:,:) = zzero
@@ -105,7 +161,19 @@ module MomSpectra
             call InvertLocalNonHermGF(nESteps,InvLocalMomGF)
             !call writevectorcomp(InvLocalMomGF(1,1,:),'inverse of local FT of NI GF')
 
-            SE(:,:,:) = SE(:,:,:) + (InvLocalMomGF(:,:,:) - InvG00(:,:,:))
+            SE(:,:,:) = SE(:,:,:) + (SE_Damp*InvLocalMomGF(:,:,:) - InvG00(:,:,:))
+
+            !DEBUG
+            open(unit=69,file='SE',status='unknown')
+            Omega = Start_Omega
+            i = 0
+            do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+                i = i + 1
+                if(i.gt.nESteps) call stop_all(t_r,'Too many frequency points')
+                write(69,*) Omega,real(SE(1,1,i),dp),aimag(SE(1,1,i))
+                Omega = Omega + Omega_Step
+            enddo
+            close(69)
 
             !Find maximum difference between self-energies
             call FindSEDiffs(SE,OldSE,G00,LocalMomGF,nESteps,MaxDiffSE,MinDiffSE,MeanDiffSE,MaxDiffGF,MeanDiffGF)
@@ -119,6 +187,9 @@ module MomSpectra
             endif
 
         enddo
+        
+        SE(:,:,:) = SE(:,:,:) * SE_Damp
+        call FindLocalMomGF(nESteps,SE,LocalMomGF)
 
         write(6,"(A)") "Writing out local mean-field greens function with converged self-energy, and Self Energy"
         iunit = get_free_unit()
@@ -247,7 +318,7 @@ module MomSpectra
             read(iunit,*) Omega_val,Re_LR,Im_LR
             !write(6,*) Omega_val,Re_LR,Im_LR
             !HACK - can only read in 1 x 1 impurity matrix
-            G00(1,1,i) = dcmplx(Re_LR,Im_LR)
+            G00(1,1,i) = dcmplx(Re_LR,-Im_LR)
             Omega = Omega + Omega_Step
         enddo
         close(iunit)
@@ -680,10 +751,17 @@ module MomSpectra
         complex(dp), allocatable :: OneE_Ham(:,:),W_Vals(:),RVec(:,:),LVec(:,:),cWork(:)
         complex(dp), allocatable :: SelfE(:,:),ztemp(:,:),RotMat(:,:)
         real(dp), allocatable :: Work(:)
-        real(dp) :: Omega
+        real(dp) :: Omega,mu
         complex(dp) :: NI_LRMat_Ann(nImp,nImp),NI_LRMat_Cre(nImp,nImp)
         integer :: i,j,w,info,lwork,pertBra,pertsite,a,k,ind_1,ind_2
         character(len=*), parameter :: t_r='FindRealSpaceLocalMomGF'
+        
+        if(.not.tAnderson) then
+            !In the hubbard model, apply a chemical potential of U/2
+            mu = U/2.0_dp
+        else
+            mu = 0.0_dp
+        endif
             
         allocate(OneE_Ham(nSites,nSites))
         allocate(W_Vals(nSites))
@@ -750,11 +828,11 @@ module MomSpectra
                     !Now perform the set of dot products of <0|V* with |1> for all combinations of sites
                     do i = 1,nOcc
                         NI_LRMat_Ann(pertsite,pertBra) = NI_LRMat_Ann(pertsite,pertBra) +   &
-                            RVec(pertBra,i)*dconjg(LVec(pertsite,i)) / (dcmplx(Omega,dDelta) - W_Vals(i))
+                            RVec(pertBra,i)*dconjg(LVec(pertsite,i)) / (dcmplx(Omega + mu,dDelta) - W_Vals(i))
                     enddo
                     do a = nOcc+1,nSites
                         NI_LRMat_Cre(pertsite,pertBra) = NI_LRMat_Cre(pertsite,pertBra) +   &
-                            RVec(pertBra,a)*dconjg(LVec(pertsite,a)) / (dcmplx(Omega,dDelta) - W_Vals(a))
+                            RVec(pertBra,a)*dconjg(LVec(pertsite,a)) / (dcmplx(Omega + mu,dDelta) - W_Vals(a))
                     enddo
                 enddo
             enddo
@@ -881,7 +959,8 @@ module MomSpectra
         !write(6,*) "BZ volume: ",BZVol
 
         !Divide the entire local greens function by the 'volume' of the brillouin zone
-        LocalMomGF(:,:,:) = LocalMomGF(:,:,:) / BZVol
+!        LocalMomGF(:,:,:) = LocalMomGF(:,:,:) / BZVol
+        LocalMomGF(:,:,:) = LocalMomGF(:,:,:) / real(nSites,dp)
         
         deallocate(RotMat,k_Ham,CompHam,RVec,LVec,W_Vals,Work,ztemp)
 
