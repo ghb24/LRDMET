@@ -63,22 +63,24 @@ module MomSpectra
         implicit none
         integer, intent(in) :: nESteps
         complex(dp), intent(inout) :: SE(nImp,nImp,nESteps)
-        integer :: iunit,i,iter,iunit2,iunit3
+        integer :: iunit,i,iter,iunit2,iunit3,CurrSlot,MaxSlot
         logical :: exists
         complex(dp), allocatable :: G00(:,:,:),OldSE(:,:,:)
         complex(dp), allocatable :: InvLocalMomGF(:,:,:),LocalMomGF(:,:,:)
         complex(dp), allocatable :: InvG00(:,:,:),RealSpaceLocGF(:,:,:)
         real(dp) :: Omega,Re_LR,Im_LR,Omega_Val,SE_Thresh,MaxDiffSE,MinDiffSE,MeanDiffSE
-        real(dp) :: MaxDiffGF,MeanDiffGF,Prev_Spec,intweight,SE_Damp
+        real(dp) :: MaxDiffGF,MeanDiffGF,Prev_Spec,intweight,SE_Damp,MeanMax,MeanMean
+        real(dp), allocatable :: MaxSEDiffs(:),MeanSEDiffs(:)
         character(64) :: filename,filename2,filename3,filename4,filename5,filename6
         character(128) :: header
         character(len=*), parameter :: t_r='Converge_SE'
 
         write(6,*) "Entering Converge_SE_NoHybrid"
 
+        MaxSlot = 10
         SE_Thresh = 1.0e-4_dp
-        !SE_Damp = 1.0_dp
-        SE_Damp = 0.03111_dp
+        SE_Damp = Damping_SE
+        !SE_Damp = 0.03111_dp
 
         if(nImp.ne.1) call stop_all(t_r,'Can currently only do self-consistency with one impurity site')
 
@@ -144,6 +146,11 @@ module MomSpectra
 
         write(6,"(A)") "      Iter   Max[delta(SE)]         Min[delta(SE)]      Mean[delta(SE)]    Max[delta(GF)]   Mean[delta(GF)]"
         iter = 0
+        CurrSlot = 0
+        allocate(MaxSEDiffs(MaxSlot))
+        allocate(MeanSEDiffs(MaxSlot))
+        MaxSEDiffs(:) = zero
+        MeanSEDiffs(:) = zero
         do while(.true.)
             iter = iter + 1
             !write(6,*) "Beginning iteration: ",iter
@@ -161,7 +168,9 @@ module MomSpectra
             call InvertLocalNonHermGF(nESteps,InvLocalMomGF)
             !call writevectorcomp(InvLocalMomGF(1,1,:),'inverse of local FT of NI GF')
 
-            SE(:,:,:) = SE(:,:,:) + (SE_Damp*InvLocalMomGF(:,:,:) - InvG00(:,:,:))
+            !SE(:,:,:) = SE(:,:,:) + (SE_Damp*InvLocalMomGF(:,:,:) - InvG00(:,:,:))
+            !SE(:,:,:) = SE(:,:,:) + (InvLocalMomGF(:,:,:) - InvG00(:,:,:))
+            SE(:,:,:) = SE(:,:,:) + SE_Damp*(InvLocalMomGF(:,:,:) - InvG00(:,:,:))
 
             !DEBUG
             open(unit=69,file='SE',status='unknown')
@@ -170,7 +179,7 @@ module MomSpectra
             do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
                 i = i + 1
                 if(i.gt.nESteps) call stop_all(t_r,'Too many frequency points')
-                write(69,*) Omega,real(SE(1,1,i),dp),aimag(SE(1,1,i))
+                write(69,"(5F18.10)") Omega,real(SE(1,1,i),dp),aimag(SE(1,1,i)),real(LocalMomGF(1,1,i),dp),aimag(LocalMomGF(1,1,i))
                 Omega = Omega + Omega_Step
             enddo
             close(69)
@@ -180,15 +189,41 @@ module MomSpectra
             OldSE(:,:,:) = SE(:,:,:)
             write(6,"(I8,5F20.10)") Iter,MaxDiffSE,MinDiffSE,MeanDiffSE,MaxDiffGF,MeanDiffGF
             call flush(6)
-            if(MaxDiffSE.lt.SE_Thresh) then
-                write(6,"(A,G12.5)") "Success! Convergence to maximum self-energy difference of ",SE_Thresh
+
+            !Calculate mean MAD over last 20 iterations
+            if(CurrSlot.gt.MaxSlot) then
+                !We have filled all slots
+                !Move all points down one
+                MeanMax = 0.0_dp
+                MeanMean = 0.0_dp
+                do i = 2,MaxSlot
+                    MaxSEDiffs(i-1) = MaxSEDiffs(i)
+                    MeanSEDiffs(i-1) = MeanSEDiffs(i)
+                    MeanMax = MeanMax + MaxSEDiffs(i-1)
+                    MeanMean = MeanMean + MeanSEDiffs(i-1)
+                enddo
+                MaxSEDiffs(MaxSlot) = MaxDiffSE
+                MeanSEDiffs(MaxSlot) = MeanDiffSE
+                MeanMax = (MeanMax + MaxDiffSE) / real(MaxSlot,dp)
+                MeanMean = (MeanMean + MeanDiffSE) / real(MaxSlot,dp)
+                write(6,"(A,I7,A,2F20.10)") "Running average of maximum/mean SE change over last ",MaxSlot," iterations: ",MeanMax,MeanMean
+            else
+                !We haven't done MaxSlot iterations yet
+                !Just put into next slot
+                MaxSEDiffs(CurrSlot+1) = MaxDiffSE
+                MeanSEDiffs(CurrSlot+1) = MeanDiffSE
+                CurrSlot = CurrSlot + 1
+            endif
+
+            if(MaxDiffSE.lt.(SE_Damp*SE_Thresh)) then
+                write(6,"(A,G12.5)") "Success! Convergence to maximum self-energy difference of ",SE_Thresh*SE_Damp
                 write(6,"(A,G12.5)") "Mean squared difference between greens functions over all frequencies: ",MeanDiffGF
                 exit
             endif
 
         enddo
         
-        SE(:,:,:) = SE(:,:,:) * SE_Damp
+!        SE(:,:,:) = SE(:,:,:) * SE_Damp
         call FindLocalMomGF(nESteps,SE,LocalMomGF)
 
         write(6,"(A)") "Writing out local mean-field greens function with converged self-energy, and Self Energy"

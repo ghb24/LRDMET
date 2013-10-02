@@ -96,7 +96,7 @@ module fitting
                 !write(6,*) "HL_Inv: ",HL_GF_Inv(:,:)
                 !write(6,*) "NI_Inv: ",NI_GF_Inv(:,:)
 
-                dDamping = exp(-(1.0_dp/DampingExponent)*nFitCycle)
+                dDamping = exp(-(1.0_dp/Damping_SE)*nFitCycle)
                 if(mod(nFitCycle,10).eq.0) write(6,*) "Damping value: ",dDamping
                 !write(6,*) "Damping: ",dDamping
                 SE_Change_unpacked(:,:) = dDamping*SE_Change_unpacked(:,:)

@@ -196,7 +196,7 @@ module Globals
     integer :: iPartialSE_Fit   ! Max number of fits to do of the self energy
     integer :: nVarSE           ! Number of independent variables in the packed self-energy matrix
     integer :: iSE_Constraints  ! Input constraints on flexibility of the self-energy matrix
-    real(dp) :: DampingExponent ! Damping of self energy update
+    real(dp) :: Damping_SE      ! Damping of self energy update
     logical :: tConvergeMicroSE ! Whether to converge the self-energy completely for each high-level calculation
     integer :: TDLat_Ni,TDLat_Nj
     

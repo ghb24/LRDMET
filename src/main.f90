@@ -114,7 +114,7 @@ Program RealHub
         tPartialSE_Fit = .false.
         iPartialSE_Fit = 0
         iSE_Constraints = 1
-        DampingExponent = huge(0.0_dp)
+        Damping_SE = 1.0_dp 
         tConvergeMicroSE = .false.
         iMinRes_MaxIter = 20000
         tBetaExcit = .false.
@@ -655,7 +655,7 @@ Program RealHub
             case("RESPONSE_ALLIMP")
                 tAllImp_LR = .true.
             case("SELFENERGY_DAMPING")
-                call readf(DampingExponent)
+                call readf(Damping_SE)
             case("CONVERGE_MICROITER_SE")
                 tConvergeMicroSE = .true.
             case("NON_NULL")
