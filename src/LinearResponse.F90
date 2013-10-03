@@ -243,8 +243,13 @@ module LinearResponse
 
         !Emb_h0v_SE and h0v_se
         allocate(Emb_h0v_SE(EmbSize,EmbSize))   !The 1-electron hamiltonian (with self-energy correction) over the embedded basis
+        do i = 1,EmbSize
+            do j = 1,EmbSize
+                Emb_h0v_SE(j,i) = dcmplx(Emb_h0v(j,i),0.0_dp)
+            enddo
+        enddo
         if(allocated(h0v_se)) deallocate(h0v_se)
-        allocate(h0v_se(nSites,nSites))     !1 electron hamiltonian with self-energy and correlation potential striped through space
+        allocate(h0v_se(nSites,nSites))     !1 electron hamiltonian. Potential
         
         !Space for useful intermediates
         !For particle addition
@@ -330,7 +335,10 @@ module LinearResponse
         call halt_timer(LR_EC_GF_Precom)
 
         Omega = Start_Omega
+        OmegaVal = 0
         do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+            OmegaVal = OmegaVal + 1
+            if(OmegaVal.gt.nESteps) call stop_all(t_r,'More frequency points than anticipated')
 
             call set_timer(LR_EC_GF_HBuild)
         
@@ -340,27 +348,13 @@ module LinearResponse
 
             !Potentially create the desired h0v_se and emb_h0v_se here, if you want to include the self-energy.
             !Otherwise, just fill with h0v and emb_h0v
+            call FindNI_Charged_wSE(Omega,GFChemPot,NI_LRMat_Cre,NI_LRMat_Ann,SE(:,:,OmegaVal))
 
-            !Self consistently calculate a self-energy function over the impurity sites to match the 
-            !mean-field and HL GF calculations.
-            if(tSC_LR) then
-                !Find the mean-field solution with an added self-energy. This will also return the
-                !non-interacting greens functions over the requested impurity sites
-                !In addition, this will calculate the 1 electron hamiltonian in the schmidt basis
-                !with the additional self-energy contribution: Emb_h0v_SE
-                call FindNI_Charged(Omega+GFChemPot,NI_LRMat_Cre,NI_LRMat_Ann)
-
-                !If we have a self-consistent self-energy contribution, we also need to update
-                !the hamiltonians which have been stored.
-                !Update tmat with the new one-electron hamiltonian, with self-energy contribution
-                tmat_comp(:,:) = Emb_h0v_SE(:,:)
-                if(tChemPot) tmat_comp(1,1) = tmat_comp(1,1) - dcmplx(U/2.0_dp,0.0_dp)
-                call Fill_N_Np1_Nm1b_FCIHam(Elec,1,1,1,NHam=NFCIHam,Np1Ham=Np1FCIHam_alpha,Nm1Ham=Nm1FCIHam_beta)
-            else
-                !First, find the non-interacting solution expressed in the schmidt basis
-                !This will only calculate it over the first impurity site
-                call FindSchmidtPert_Charged(Omega+GFChemPot,NI_LRMat_Cre,NI_LRMat_Ann)
-            endif
+            !If we have a self-consistent self-energy contribution, we also need to update
+            !the hamiltonians which have been stored.
+            !Update tmat with the new one-electron hamiltonian, with self-energy contribution
+            !tmat_comp(:,:) = Emb_h0v_SE(:,:)
+            !call Fill_N_Np1_Nm1b_FCIHam(Elec,1,1,1,NHam=NFCIHam,Np1Ham=Np1FCIHam_alpha,Nm1Ham=Nm1FCIHam_beta)
 
             !Construct useful intermediates, using zgemm
             !sum_a Gc_a^* F_ax (Creation)
@@ -8163,6 +8157,322 @@ module LinearResponse
 
     end subroutine setup_RHS
 
+    !Calculate the non-interacting greens functions, with empirical self-energy correction
+    !Also, find the contraction coefficients for all impurity-impurity greens functions
+    !Then, calculate the new 1-electron hamiltonian (with implicit self-energy term) for 
+    !the embedded basis, as well as the core hamiltonian.
+    !The NI_LRMat_Cre and NI_LRMat_Ann matrices are returned as the non-interacting LR
+    !The global matrices SchmidtPertGF_Cre and SchmidtPertGF_Ann are filled, as well as the
+    !new one-electron hamiltonians for the interacting problem: Emb_h0v_SE and FockSchmidt_SE
+    subroutine FindNI_Charged_wSE(Omega,GFChemPot,NI_LRMat_Cre,NI_LRMat_Ann,SE)
+        use mat_tools, only: add_localpot_comp_inplace
+        use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
+        use sort_mod, only: Orthonorm_zgeev_vecs
+        implicit none
+        real(dp), intent(in) :: Omega,GFChemPot
+        complex(dp), intent(out) :: NI_LRMat_Cre(nImp,nImp),NI_LRMat_Ann(nImp,nImp)
+        complex(dp), intent(in) :: SE(nImp,nImp)
+        real(dp), allocatable :: Work(:)
+        complex(dp), allocatable :: AO_OneE_Ham(:,:),W_Vals(:),RVec(:,:),LVec(:,:),FullSchmidtTrans_C(:,:)
+        complex(dp), allocatable :: HFPertBasis_Ann_Ket(:,:),HFPertBasis_Cre_Ket(:,:),temp(:,:),temp2(:,:)
+        complex(dp), allocatable :: HFPertBasis_Ann_Bra(:,:),HFPertBasis_Cre_Bra(:,:),cWork(:),EmbeddedBasis_C(:,:)
+        integer :: lwork,info,i,a,pertBra,j,pertsite,nVirt,CoreEnd,VirtStart,ActiveStart,ActiveEnd,nCore
+        complex(dp) :: test
+        character(len=*), parameter :: t_r='FindNI_Charged_wSE'
+
+        !Check off diagonal hermiticity of self-energy
+        do i = 1,nImp
+            do j = 1,nImp
+                if(i.eq.j) cycle
+                if(abs(dconjg(SE(i,j))-SE(j,i)).gt.1.0e-6_dp) then
+                    write(6,*) "Losing off-diagonal hermiticity of the self-energy"
+                    call writematrixcomp(SelfEnergy_Imp,'Self Energy',.true.)
+                endif
+            enddo
+        enddo
+
+        allocate(EVals_R(nSites))
+        allocate(LVec_R(nSites,nSites)) !These represent the real-space L & R eigenvectors, rather than k-space
+        allocate(RVec_R(nSites,nSites))
+
+        if(tDiag_kspace) then
+            !Diagonalize in the k-space supercell
+            !Self-energy is then added to each kpoint
+            allocate(k_Ham(nImp,nImp))
+            allocate(RVec(nImp,nImp))
+            allocate(LVec(nImp,nImp))
+            allocate(W_Vals(nImp))
+            allocate(Work(max(1,2*nImp)))
+            allocate(ztemp(nSites,nImp))
+
+            allocate(CompHam(nSites,nSites))
+            do i = 1,nSites
+                do j = 1,nSites
+                    CompHam(j,i) = dcmplx(h0v(j,i),zero)
+                enddo
+            enddo
+
+            do kPnt = 1,nKPnts
+                ind_1 = ((kPnt-1)*nImp) + 1
+                ind_2 = nImp*kPnt
+
+                !Transform one-electron hamiltonian into this k-basis
+                call ZGEMM('N','N',nSites,nImp,nSites,zone,CompHam,nSites,RtoK_Rot(:,ind_1:ind_2),nSites,zzero,ztemp,nSites)
+                call ZGEMM('C','N',nImp,nImp,nSites,zone,RtoK_Rot(:,ind_1:ind_2),nSites,ztemp,nSites,zzero,k_Ham,nImp)
+
+                !Now, add the self-energy (in k-space) and diagonalize this k-space hamiltonian
+                k_Ham(:,:) = k_Ham(:,:) + SE(:,:)
+
+                !Now diagonalize this (don't add the diagonals)
+                allocate(cWork(1))
+                lwork = -1
+                info = 0
+                call zgeev('V','V',nImp,k_Ham,nImp,W_Vals,LVec,nImp,RVec,nImp,cWork,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'Workspace query failed')
+                lwork = int(abs(cWork(1)))+1
+                deallocate(cWork)
+                allocate(cWork(lWork)
+                call zgeev('V','V',nImp,k_Ham,nImp,W_Vals,LVec,nImp,RVec,nImp,cWork,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'Diagonalization of 1-electron GF failed')
+                deallocate(cWork)
+                !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
+                !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
+!                call Order_zgeev_vecs(W_Vals,LVec,RVec)
+                !call writevectorcomp(W_Vals,'Eigenvalues ordered')
+                !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
+!                call Orthonorm_zgeev_vecs(SS_Period,W_Vals,LVec,RVec)
+
+                !Rotate eigenvalues and eigenvectors back into r-space
+                call ZGEMM('N','N',nSites,nImp,nImp,zone,RtoK_Rot(:,ind_1:ind_2),nSites,LVec,nImp,zzero,LVec_R(:,ind_1:ind_2),nSites)
+                call ZGEMM('N','N',nSites,nImp,nImp,zone,RtoK_Rot(:,ind_1:ind_2),nSites,RVec,nImp,zzero,RVec_R(:,ind_1:ind_2),nSites)
+                EVals_R(ind_1:ind_2) = W_Vals(:)
+
+            enddo
+            deallocate(CompHam,ztemp,Work,W_Vals,LVec,RVec,k_Ham)
+
+        else
+            !Diagonalize in r-space
+            allocate(AO_OneE_Ham(nSites,nSites))
+            do i = 1,nSites
+                do j = 1,nSites
+                    AO_OneE_Ham(j,i) = dcmplx(h0v(j,i),zero)
+                enddo
+            enddo
+            !Stripe the complex self-energy through the AO one-electron hamiltonian
+            call add_localpot_comp_inplace(AO_OneE_Ham,SE)
+
+            !Now, diagonalize the resultant non-hermitian one-electron hamiltonian
+            RVec_R = zzero
+            LVec_R = zzero
+            EVals_R = zzero
+            allocate(Work(max(1,2*nSites)))
+            allocate(cWork(1))
+            lwork = -1
+            info = 0
+            call zgeev('V','V',nSites,AO_OneE_Ham,nSites,EVals_R,LVec_R,nSites,RVec_R,nSites,cWork,lWork,Work,info)
+            if(info.ne.0) call stop_all(t_r,'Workspace query failed')
+            lwork = int(abs(cWork(1)))+1
+            deallocate(cWork)
+            allocate(cWork(lWork))
+            call zgeev('V','V',nSites,AO_OneE_Ham,nSites,EVals_R,LVec_R,nSites,RVec_R,nSites,cWork,lWork,Work,info)
+            if(info.ne.0) call stop_all(t_r,'Diag of H + SE failed')
+            deallocate(work,cWork,AO_OneE_Ham)
+
+        endif
+            
+        !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
+        !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
+        call Order_zgeev_vecs(EVals_R,LVec_R,RVec_R)
+        !call writevectorcomp(W_Vals,'Eigenvalues ordered')
+        !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
+        call Orthonorm_zgeev_vecs(nSites,EVals_R,LVec_R,RVec_R)
+        
+        !Memory to temperarily store the first order wavefunctions of each impurity site, in the right MO basis (For the Kets)
+        !and the left MO space (for the Bras)
+        allocate(HFPertBasis_Ann_Bra(1:nOcc,nImp))
+        allocate(HFPertBasis_Cre_Bra(nOcc+1:nSites,nImp))
+        allocate(HFPertBasis_Ann_Ket(1:nOcc,nImp))
+        allocate(HFPertBasis_Cre_Ket(nOcc+1:nSites,nImp))
+        HFPertBasis_Ann_Bra(:,:) = zzero
+        HFPertBasis_Cre_Bra(:,:) = zzero
+        HFPertBasis_Ann_Ket(:,:) = zzero
+        HFPertBasis_Cre_Ket(:,:) = zzero
+        
+        NI_LRMat_Cre(:,:) = zzero
+        NI_LRMat_Ann(:,:) = zzero 
+
+        !Now, form the non-interacting greens functions (but with u *and* self-energy)
+        do pertsite = 1,nImp
+            !Form the set of non-interacting first order wavefunctions from the new one-electron h for both Bra and Ket versions
+            do i = 1,nOcc
+                HFPertBasis_Ann_Ket(i,pertsite) = dconjg(LVec_R(pertsite,i)) / (dcmplx(Omega+GFChemPot,-dDelta) - EVals_R(i))
+                HFPertBasis_Ann_Bra(i,pertsite) = RVec_R(pertsite,i) / (dcmplx(Omega+GFChemPot,dDelta) - dconjg(EVals_R(i)))
+            enddo
+            do a = nOcc+1,nSites
+                HFPertBasis_Cre_Ket(a,pertsite) = dconjg(LVec_R(pertsite,a)) / (dcmplx(Omega+GFChemPot,dDelta) - EVals_R(a))
+                HFPertBasis_Cre_Bra(a,pertsite) = RVec_R(pertsite,a) / (dcmplx(Omega+GFChemPot,-dDelta)-dconjg(EVals_R(a)))
+            enddo
+
+            !Run over operators acting of the Bra in the impurity space
+            do pertBra = 1,nImp
+                !Now perform the set of dot products of <0|V* with |1> for all combinations of sites
+                do i = 1,nOcc
+                    NI_LRMat_Ann(pertBra,pertsite) = NI_LRMat_Ann(pertBra,pertsite) +   &
+                        RVec_R(pertBra,i)*HFPertBasis_Ann_Ket(i,pertsite)
+                enddo
+                do a = nOcc+1,nSites
+                    NI_LRMat_Cre(pertBra,pertsite) = NI_LRMat_Cre(pertBra,pertsite) +   &
+                        RVec_R(pertBra,a)*HFPertBasis_Cre_Ket(a,pertsite)
+                enddo
+            enddo
+        enddo
+        
+        !Schmidt basis bounds
+        nVirt = nSites-nOcc-nImp   
+        nCore = nOcc-nImp
+        CoreEnd = nOcc-nImp
+        VirtStart = nOcc+nImp+1
+        ActiveStart = nOcc-nImp+1
+        ActiveEnd = nOcc+nImp
+
+        !Now, we need to project these NI wavefunctions into the schmidt basis
+        !We want to rotate the vectors, expressed in the 'right' basis (the kets), back into that AO basis.
+        !If we can do that, we can easily rotate into the Schmidt basis.
+        allocate(FullSchmidtTrans_C(nSites,nSites))
+        do i = 1,nSites
+            do j = 1,nSites
+                FullSchmidtTrans_C(j,i) = dcmplx(FullSchmidtBasis(j,i),0.0_dp)  !(ao,schmidt)
+            enddo
+        enddo
+
+        allocate(temp(nSites,nImp))
+        call ZGEMM('N','N',nSites,nImp,nOcc,zone,RVec_R(:,1:nOcc),nSites,HFPertBasis_Ann_Ket(1:nOcc,:),nOcc,zzero,  &
+            temp,nSites)
+            !temp is now the (nSites,nImp) rotated HFPertBasis_Ann into the AO basis
+            !Now rotate this into the occupied schmidt basis
+        call ZGEMM('T','N',nCore,nImp,nSites,zone,FullSchmidtTrans_C(:,1:CoreEnd),nSites,temp,nSites,zzero,   &
+            SchmidtPertGF_Ann_Ket(1:CoreEnd,:),nCore)
+        !Now do the same for the bra contraction coefficients, which are in the space of L*
+        allocate(temp2(nSites,1:nOcc))
+        do i=1,nOcc
+            do j=1,nSites
+                temp2(j,i) = dconjg(LVec_R(j,i))
+            enddo
+        enddo
+        call ZGEMM('N','N',nSites,nImp,nOcc,zone,temp2(:,1:nOcc),nSites,HFPertBasis_Ann_Bra(1:nOcc,:),nOcc,zzero,    &
+            temp,nSites)
+        deallocate(temp2)
+        call ZGEMM('T','N',nCore,nImp,nSites,zone,FullSchmidtTrans_C(:,1:CoreEnd),nSites,temp,nSites,zzero,   &
+            SchmidtPertGF_Ann_Bra(1:CoreEnd,:),nCore)
+
+        !Do the same with the particle NI GF
+        call ZGEMM('N','N',nSites,nImp,nSites-nOcc,zone,RVec_R(:,nOcc+1:nSites),nSites,  &
+            HFPertBasis_Cre_Ket,nSites-nOcc,zzero,temp,nSites)
+        !Now rotate into schmidt basis
+        call ZGEMM('T','N',nVirt,nImp,nSites,zone,FullSchmidtTrans_C(:,VirtStart:nSites),nSites,temp,nSites,zzero,    &
+            SchmidtPertGF_Cre_Ket(VirtStart:nSites,:),nVirt)
+        !Now for the Bra version of the particle NI GF
+        allocate(temp2(nSites,nOcc+1:nSites))
+        do i = nOcc+1,nSites
+            do j = 1,nSites
+                temp2(j,i) = dconjg(LVec_R(j,i))
+            enddo
+        enddo
+        call ZGEMM('N','N',nSites,nImp,nSites-nOcc,zone,temp2(:,nOcc+1:nSites),nSites,  &
+            HFPertBasis_Cre_Bra,nSites-nOcc,zzero,temp,nSites)
+        !Now rotate into schmidt basis
+        call ZGEMM('T','N',nVirt,nImp,nSites,zone,FullSchmidtTrans_C(:,VirtStart:nSites),nSites,temp,nSites,zzero,    &
+            SchmidtPertGF_Cre_Bra(VirtStart:nSites,:),nVirt)
+        deallocate(temp,temp2)
+        
+        !TODO: Check that in the absence of a self-energy, the Bra and Ket are complex conjugates of each other.
+
+        !Potentially here, if we want to include the self-energy in the hamiltonian for the bath states, then this should be done here.
+!        if(.not.tNoHL_SE) then
+!            !Now, we need to find the new 1 electron hamiltonian for the interacting problem.
+!            !This wants to have the self-energy projected into the schmidt basis, but only over the bath and
+!            !core sites, not the impurity.
+!
+!            !First, deal with the embedded basis
+!            !Stripe the self energy through the space
+!            allocate(temp(nSites,nSites))
+!            temp(:,:) = zzero
+!            call add_localpot_comp_inplace(temp,SelfEnergy_Imp,tAdd=.true.)
+!            !temp is now just the self-energy striped through the space, in the AO basis
+!            !Rotate this into the embedding basis
+!            allocate(temp2(EmbSize,nSites))
+!            allocate(EmbeddedBasis_C(nSites,EmbSize))
+!            do i = 1,EmbSize
+!                do j = 1,nSites
+!                    EmbeddedBasis_C(j,i) = dcmplx(EmbeddedBasis(j,i),0.0_dp)
+!                enddo
+!            enddo
+!            call ZGEMM('T','N',EmbSize,nSites,nSites,zone,EmbeddedBasis_C,nSites,temp,nSites,zzero,temp2,EmbSize)
+!            call ZGEMM('N','N',EmbSize,EmbSize,nSites,zone,temp2,EmbSize,EmbeddedBasis_C,nSites,zzero,Emb_h0v_SE,EmbSize)
+!            deallocate(temp2,EmbeddedBasis_C)
+!            
+!            !Now, zero out the self-energy contribution over the impurity site
+!            Emb_h0v_SE(1:nImp,1:nImp) = zzero
+!            !Now subtract this self-energy correction from the normal one-electron hamiltonian in the embedded space (with corr pot)
+!            !The resulting one-electron embedding potential is neither real, nor hermitian
+!            Emb_h0v_SE(:,:) = Emb_h0v(:,:) - Emb_h0v_SE(:,:)
+!
+!            !But what about the core hamiltonian?
+!            !Here, we do need to include
+!            !the effect of the self-energy on the core orbitals, since it is explicitly a coupling between the
+!            !(non-bath) environment and the embedded basis which we want to consider, and we are not changing
+!            !the bath orbital to account for it as we do in the ground state problem.
+!            !Calculate the new 1-electron hamiltonian
+!
+!            !This now gives the one-electron hamiltonian in the AO basis, with the self-energy subtracted.
+!            !Rotate from the AO basis, to the Schmidt basis
+!            call ZGEMM('T','N',nSites,nSites,nSites,zone,FullSchmidtTrans_C,nSites,h0v_SE,nSites,zzero,temp,nSites)
+!            call ZGEMM('N','N',nSites,nSites,nSites,zone,temp,nSites,FullSchmidtTrans_C,nSites,zzero,FockSchmidt_SE,nSites)
+!
+!            do i=nImp+1,EmbSize
+!                do j=1,EmbSize
+!                    !The bath orbitals, and coupling to the impurity site blocks of the one-electron hamiltonain should now agree between FockSchmidt_SE and Emb_h0v_SE surely?
+!                    if(abs(Emb_h0v_SE(j,i)-FockSchmidt_SE(nOcc-nImp+j,nOcc-nImp+i)).gt.1.0e-8_dp) then
+!                        call writematrixcomp(Emb_h0v_SE,'Emb_h0v_SE',.true.)
+!                        call writematrixcomp(FockSchmidt_SE(nOcc-nImp+1:nOcc+nImp,nOcc-nImp+1:nOcc+nImp),   &
+!                            'Fock_SE Embedded system',.true.)
+!                        write(6,*) "The above should be the same in the bath and coupling blocks"
+!                        write(6,*) "j,i: ",j,i,Emb_h0v_SE(j,i),FockSchmidt_SE(nOcc-nImp+j,nOcc-nImp+i), &
+!                            abs(Emb_h0v_SE(j,i)-FockSchmidt_SE(nOcc-nImp+j,nOcc-nImp+i))
+!                        call stop_all(t_r,'One electron hamiltonians with self energy not consistent')
+!                    endif
+!                enddo
+!            enddo
+!
+!            !Now, convert this into a complex number (for easy ZGEMM'ing), and store it in the global array
+!            FockSchmidt_SE_CC(1:CoreEnd,1:CoreEnd) = FockSchmidt_SE(1:CoreEnd,1:CoreEnd)
+!            FockSchmidt_SE_VV(VirtStart:nSites,VirtStart:nSites) = FockSchmidt_SE(VirtStart:nSites,VirtStart:nSites)
+!            FockSchmidt_SE_CX(1:CoreEnd,ActiveStart:ActiveEnd) = FockSchmidt_SE(1:CoreEnd,ActiveStart:ActiveEnd)
+!            FockSchmidt_SE_XC(ActiveStart:ActiveEnd,1:CoreEnd) = FockSchmidt_SE(ActiveStart:ActiveEnd,1:CoreEnd)
+!            FockSchmidt_SE_VX(VirtStart:nSites,ActiveStart:ActiveEnd) = FockSchmidt_SE(VirtStart:nSites,ActiveStart:ActiveEnd)
+!            FockSchmidt_SE_XV(ActiveStart:ActiveEnd,VirtStart:nSites) = FockSchmidt_SE(ActiveStart:ActiveEnd,VirtStart:nSites)
+!            
+!            !Set the impurity:impurity parts to the correct values (even though we don't access them from FockSchmidt)
+!            !They are different since the correlation potential is not defined over the impurity sites.
+!            FockSchmidt_SE(nOcc-nImp+1:nOcc+nImp,nOcc-nImp+1:nOcc+nImp) = Emb_h0v_SE(:,:)
+!
+!            deallocate(temp)
+!
+!        else
+!            !The hamiltonians use for the interacting problem remain the same.
+!            !That is: FockSchmidt_SE = dcmplx(FockSchmidt)  (this should have been done at initialization, and remain the same)
+!            ! and     Emb_h0v_SE = Emb_h0v
+!            do i = 1,EmbSize
+!                do j = 1,EmbSize
+!                    Emb_h0v_SE(j,i) = dcmplx(Emb_h0v(j,i),0.0_dp)
+!                enddo
+!            enddo
+!        endif
+        
+        deallocate(FullSchmidtTrans_C,HFPertBasis_Ann_Bra,HFPertBasis_Cre_Bra)
+        deallocate(HFPertBasis_Ann_Ket,HFPertBasis_Cre_Ket,LVec_R,RVec_R,EVals_R)
+
+    end subroutine FindNI_Charged_wSE
 
     !Calculate the non-interacting greens functions, with empirical self-energy correction
     !Also, find the contraction coefficients for all impurity-impurity greens functions

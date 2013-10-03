@@ -995,7 +995,7 @@ module MomSpectra
 
         !Divide the entire local greens function by the 'volume' of the brillouin zone
 !        LocalMomGF(:,:,:) = LocalMomGF(:,:,:) / BZVol
-        LocalMomGF(:,:,:) = LocalMomGF(:,:,:) / real(nSites,dp)
+        LocalMomGF(:,:,:) = LocalMomGF(:,:,:) / real(nSites/nImp,dp)
         
         deallocate(RotMat,k_Ham,CompHam,RVec,LVec,W_Vals,Work,ztemp)
 
