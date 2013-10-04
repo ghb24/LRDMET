@@ -9,68 +9,22 @@ module MomSpectra
 
     contains
 
-    !Random test for my own edification. At Sigma=0, can we get the real-space and k-space NI GFs to agree?
-    subroutine TestNIGFs(SE,nESteps)
-        use utils, only: get_free_unit
-        implicit none
-        integer, intent(in) :: nESteps
-        complex(dp), intent(in) :: SE(nImp,nImp,nESteps)
-        complex(dp), allocatable :: LocalMomGF(:,:,:),RealSpaceLocGF(:,:,:)
-        integer :: iunit,i
-        real(dp) :: Omega,intweight,Prev_Spec
-
-        allocate(LocalMomGF(nImp,nImp,nESteps))
-        allocate(RealSpaceLocGF(nImp,nImp,nESteps))
-
-        call FindLocalMomGF(nESteps,SE,LocalMomGF)
-        intweight = zero
-        Prev_Spec = zero
-        do i=1,nESteps
-            intweight = intweight + Omega_Step*(Prev_Spec-aimag(LocalMomGF(1,1,i)))/(2.0_dp*pi)
-            Prev_Spec = -aimag(LocalMomGF(1,1,i))
-        enddo
-        write(6,*) "Integrated weight for k-space NI spectral function: ",intweight
-!        call FindRealSpaceLocalMomGF(nESteps,SE,RealSpaceLocGF)
-!        intweight = zero
-!        Prev_Spec = zero
-!        do i=1,nESteps
-!            intweight = intweight + Omega_Step*(Prev_Spec-aimag(RealSpaceLocGF(1,1,i)))/(2.0_dp*pi)
-!            Prev_Spec = -aimag(RealSpaceLocGF(1,1,i))
-!        enddo
-!        write(6,*) "Integrated weight for r-space NI spectral function: ",intweight
-!
-!        iunit = get_free_unit()
-!        open(unit=iunit,file='temp',status='unknown')
-!
-!        Omega = Start_Omega
-!        i = 0
-!        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
-!            i = i + 1
-!            write(iunit,"(7G25.10)") Omega,real(LocalMomGF(1,1,i),dp),aimag(LocalMomGF(1,1,i)),real(RealSpaceLocGF(1,1,i),dp),  &
-!                    aimag(RealSpaceLocGF(1,1,i)),real(LocalMomGF(1,1,i),dp)/real(RealSpaceLocGF(1,1,i),dp), &
-!                    aimag(localMomGF(1,1,i))/aimag(RealSpaceLocGF(1,1,i))
-!            Omega = Omega + Omega_Step
-!        enddo
-!        close(iunit)
-
-        deallocate(LocalMomGF,RealSpaceLocGF)
-    end subroutine TestNIGFs
-
     !Routine to read in a correlated greens function, and self-consistently converge
     !a self energy from the 1-electron hemailtonian to get it to match this.
-    subroutine Converge_SE_NoHybrid(G00,SE,nESteps)
+    !MacroIter is the iteration of the main convergence
+    subroutine Converge_SE_NoHybrid(G00,SE,nESteps,MacroIter)
         use utils, only: get_free_unit,append_ext_real,append_ext
         implicit none
-        integer, intent(in) :: nESteps
+        integer, intent(in) :: nESteps,MacroIter
         complex(dp), intent(in) :: G00(nImp,nImp,nESteps)
         complex(dp), intent(inout) :: SE(nImp,nImp,nESteps)
-        integer :: iunit,i,iter,iunit2,iunit3,CurrSlot,MaxSlot
+        integer :: iunit,i,iter,iunit2,iunit3,CurrSlot,MaxSlot,j
         logical :: exists
         complex(dp), allocatable :: OldSE(:,:,:)
         complex(dp), allocatable :: InvLocalMomGF(:,:,:),LocalMomGF(:,:,:)
         complex(dp), allocatable :: InvG00(:,:,:),RealSpaceLocGF(:,:,:)
         real(dp) :: Omega,Re_LR,Im_LR,Omega_Val,SE_Thresh,MaxDiffSE,MinDiffSE,MeanDiffSE
-        real(dp) :: MaxDiffGF,MeanDiffGF,Prev_Spec,intweight,SE_Damp,MeanMax,MeanMean
+        real(dp) :: MaxDiffGF,MeanDiffGF,Prev_Spec,intweight,SE_Damp,MeanMax,MeanMean,IsoRes
         real(dp), allocatable :: MaxSEDiffs(:),MeanSEDiffs(:)
         character(64) :: filename,filename2,filename3,filename4,filename5,filename6
         character(128) :: header
@@ -93,8 +47,13 @@ module MomSpectra
         intweight = zero
         Prev_Spec = zero
         do i=1,nESteps
-            intweight = intweight + Omega_Step*(Prev_Spec-aimag(G00(1,1,i)))/(2.0_dp*pi)
-            Prev_Spec = -aimag(G00(1,1,i))
+            IsoRes = zero
+            do j = 1,nImp
+                IsoRes = IsoRes + aimag(G00(j,j,i))
+            enddo
+            IsoRes = IsoRes / real(nImp,dp)
+            intweight = intweight + Omega_Step*(Prev_Spec-IsoRes)/(2.0_dp*pi)
+            Prev_Spec = -IsoRes
         enddo
         write(6,*) "Integrated weight for high-level spectral function: ",intweight
         call flush(6)
@@ -107,6 +66,7 @@ module MomSpectra
         call InvertLocalNonHermGF(nESteps,InvG00)
 
         write(6,"(A)") "      Iter   Max[delta(SE)]         Min[delta(SE)]      Mean[delta(SE)]    Max[delta(GF)]   Mean[delta(GF)]"
+        call flush(6)
         iter = 0
         CurrSlot = 0
         allocate(MaxSEDiffs(MaxSlot))
@@ -129,10 +89,19 @@ module MomSpectra
             InvLocalMomGF(:,:,:) = LocalMomGF(:,:,:)
             call InvertLocalNonHermGF(nESteps,InvLocalMomGF)
             !call writevectorcomp(InvLocalMomGF(1,1,:),'inverse of local FT of NI GF')
+            
+            !Save previous Self-energy
+            OldSE(:,:,:) = SE(:,:,:)
 
             !SE(:,:,:) = SE(:,:,:) + (SE_Damp*InvLocalMomGF(:,:,:) - InvG00(:,:,:))
             !SE(:,:,:) = SE(:,:,:) + (InvLocalMomGF(:,:,:) - InvG00(:,:,:))
             SE(:,:,:) = SE(:,:,:) + SE_Damp*(InvLocalMomGF(:,:,:) - InvG00(:,:,:))
+
+            do i = 1,nESteps
+                if((aimag(SE(1,1,i)).gt.zero)) then
+                    SE(1,1,i) = dcmplx(real(SE(1,1,i),dp),zero)
+                endif
+            enddo
 
             !DEBUG
             open(unit=69,file='SE',status='unknown')
@@ -148,12 +117,11 @@ module MomSpectra
 
             !Find maximum difference between self-energies
             call FindSEDiffs(SE,OldSE,G00,LocalMomGF,nESteps,MaxDiffSE,MinDiffSE,MeanDiffSE,MaxDiffGF,MeanDiffGF)
-            OldSE(:,:,:) = SE(:,:,:)
             write(6,"(I8,5F20.10)") Iter,MaxDiffSE,MinDiffSE,MeanDiffSE,MaxDiffGF,MeanDiffGF
             call flush(6)
 
             !Calculate mean MAD over last 20 iterations
-            if(CurrSlot.gt.MaxSlot) then
+            if(CurrSlot.ge.MaxSlot) then
                 !We have filled all slots
                 !Move all points down one
                 MeanMax = 0.0_dp
@@ -191,28 +159,20 @@ module MomSpectra
         write(6,"(A)") "Writing out local mean-field greens function with converged self-energy, and Self Energy"
         iunit = get_free_unit()
         call append_ext_real('MF_GF_wSE',U,filename)
-        if(.not.tHalfFill) then
-            !Also append occupation of lattice to the filename
-            call append_ext(filename,nOcc,filename2)
-        else
-            filename2 = filename
-        endif
+        !Also append iteration number 
+        call append_ext(filename,MacroIter,filename2)
         open(unit=iunit,file=filename2,status='unknown')
         iunit2 = get_free_unit()
         call append_ext_real('SelfEnergy',U,filename3)
-        if(.not.tHalfFill) then
-            !Also append occupation of lattice to the filename
-            call append_ext(filename3,nOcc,filename4)
-        else
-            filename4 = filename3
-        endif
+        !Also append iteraction number to the filename
+        call append_ext(filename3,MacroIter,filename4)
         open(unit=iunit2,file=filename4,status='unknown')
 
         Omega = Start_Omega
         i = 0
         do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
             i = i + 1
-            write(iunit,"(3G25.10)") Omega,real(LocalMomGF(1,1,i),dp),aimag(LocalMomGF(1,1,i))
+            write(iunit,"(4G25.10)") Omega,aimag(LocalMomGF(1,1,i)),aimag(G00(1,1,i)),aimag(SE(1,1,i))
             write(iunit2,"(3G25.10)") Omega,real(SE(1,1,i),dp),aimag(SE(1,1,i))
             Omega = Omega + Omega_Step
         enddo
@@ -248,7 +208,7 @@ module MomSpectra
 
         endif   !End check
         
-        deallocate(G00,OldSE,InvG00,InvLocalMomGF,LocalMomGF)
+        deallocate(OldSE,InvG00,InvLocalMomGF,LocalMomGF)
 
     end subroutine Converge_SE_NoHybrid
 
@@ -449,6 +409,54 @@ module MomSpectra
 
     end subroutine Converge_SE 
 
+    !Random test for my own edification. At Sigma=0, can we get the real-space and k-space NI GFs to agree?
+    subroutine TestNIGFs(SE,nESteps)
+        use utils, only: get_free_unit
+        implicit none
+        integer, intent(in) :: nESteps
+        complex(dp), intent(in) :: SE(nImp,nImp,nESteps)
+        complex(dp), allocatable :: LocalMomGF(:,:,:),RealSpaceLocGF(:,:,:)
+        integer :: iunit,i
+        real(dp) :: Omega,intweight,Prev_Spec
+
+        allocate(LocalMomGF(nImp,nImp,nESteps))
+        allocate(RealSpaceLocGF(nImp,nImp,nESteps))
+
+        call FindLocalMomGF(nESteps,SE,LocalMomGF)
+        intweight = zero
+        Prev_Spec = zero
+        do i=1,nESteps
+            intweight = intweight + Omega_Step*(Prev_Spec-aimag(LocalMomGF(1,1,i)))/(2.0_dp*pi)
+            Prev_Spec = -aimag(LocalMomGF(1,1,i))
+        enddo
+        write(6,*) "Integrated weight for k-space NI spectral function: ",intweight
+!        call FindRealSpaceLocalMomGF(nESteps,SE,RealSpaceLocGF)
+!        intweight = zero
+!        Prev_Spec = zero
+!        do i=1,nESteps
+!            intweight = intweight + Omega_Step*(Prev_Spec-aimag(RealSpaceLocGF(1,1,i)))/(2.0_dp*pi)
+!            Prev_Spec = -aimag(RealSpaceLocGF(1,1,i))
+!        enddo
+!        write(6,*) "Integrated weight for r-space NI spectral function: ",intweight
+!
+!        iunit = get_free_unit()
+!        open(unit=iunit,file='temp',status='unknown')
+!
+!        Omega = Start_Omega
+!        i = 0
+!        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+!            i = i + 1
+!            write(iunit,"(7G25.10)") Omega,real(LocalMomGF(1,1,i),dp),aimag(LocalMomGF(1,1,i)),real(RealSpaceLocGF(1,1,i),dp),  &
+!                    aimag(RealSpaceLocGF(1,1,i)),real(LocalMomGF(1,1,i),dp)/real(RealSpaceLocGF(1,1,i),dp), &
+!                    aimag(localMomGF(1,1,i))/aimag(RealSpaceLocGF(1,1,i))
+!            Omega = Omega + Omega_Step
+!        enddo
+!        close(iunit)
+
+        deallocate(LocalMomGF,RealSpaceLocGF)
+    end subroutine TestNIGFs
+
+
     subroutine FindSEDiffs(SE,OldSE,G00,LocalMomGF,n,MaxDiffSE,MinDiffSE,MeanDiffSE,MaxDiffGF,MeanDiffGF)
         implicit none
         integer, intent(in) :: n
@@ -593,7 +601,7 @@ module MomSpectra
         complex(dp), intent(inout) :: InvGF(nImp,nImp,n)
         real(dp), allocatable :: Work(:)
         complex(dp), allocatable :: LVec(:,:),RVec(:,:),W_Vals(:),cWork(:)
-        complex(dp) :: ztemp2(nImp,nImp)
+        complex(dp) :: ztemp2(nImp,nImp),IGF(nImp,nImp)
         integer :: i,lwork,info,j
         character(len=*), parameter :: t_r='InvertLocalNonHermGF'
 
@@ -608,16 +616,17 @@ module MomSpectra
             LVec(:,:) = zzero
             RVec(:,:) = zzero
             W_Vals(:) = zzero
+            IGF(:,:) = InvGF(:,:,i)
 
             allocate(cWork(1))
             lwork = -1
             info = 0
-            call zgeev('V','V',nImp,InvGF(:,:,i),nImp,W_Vals,LVec,nImp,RVec,nImp,cWork,lWork,Work,info)
+            call zgeev('V','V',nImp,IGF,nImp,W_Vals,LVec,nImp,RVec,nImp,cWork,lWork,Work,info)
             if(info.ne.0) call stop_all(t_r,'Workspace query failed')
             lwork = int(abs(cWork(1)))+1
             deallocate(cWork)
             allocate(cWork(lWork))
-            call zgeev('V','V',nImp,InvGF(:,:,i),nImp,W_Vals,LVec,nImp,RVec,nImp,cWork,lWork,Work,info)
+            call zgeev('V','V',nImp,IGF,nImp,W_Vals,LVec,nImp,RVec,nImp,cWork,lWork,Work,info)
             if(info.ne.0) call stop_all(t_r,'Diagonalization of 1-electron GF failed')
             deallocate(cWork)
 
@@ -628,14 +637,15 @@ module MomSpectra
             !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
             call Orthonorm_zgeev_vecs(nImp,W_Vals,LVec,RVec)
             !Calculate greens function for this k-vector
-            InvGF(:,:,i) = zzero
+            IGF = zzero
             do j = 1,nImp
-                InvGF(j,j,i) = zone / W_Vals(j)
+                IGF(j,j) = zone / W_Vals(j)
             enddo
             !Now rotate this back into the original basis
-            call zGEMM('N','N',nImp,nImp,nImp,zone,RVec,nImp,InvGF(:,:,i),nImp,zzero,ztemp2,nImp)
-            call zGEMM('N','C',nImp,nImp,nImp,zone,ztemp2,nImp,LVec,nImp,zzero,InvGF(:,:,i),nImp)
+            call zGEMM('N','N',nImp,nImp,nImp,zone,RVec,nImp,IGF,nImp,zzero,ztemp2,nImp)
+            call zGEMM('N','C',nImp,nImp,nImp,zone,ztemp2,nImp,LVec,nImp,zzero,IGF,nImp)
 
+            InvGF(:,:,i) = IGF(:,:)
         enddo
 
         deallocate(LVec,RVec,W_Vals,Work)
@@ -861,6 +871,11 @@ module MomSpectra
         integer :: kPnt,ind_1,ind_2,i,j,SS_Period,lwork,info
         real(dp) :: Omega,mu
         character(len=*), parameter :: t_r='FindLocalMomGF'
+
+        if(.not.tDiag_kspace) then
+            call FindRealSpaceLocalMomGF(n,SE,LocalMomGF)
+            return
+        endif
 
         LocalMomGF(:,:,:) = zzero
         SS_Period = nImp

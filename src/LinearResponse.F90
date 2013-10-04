@@ -39,12 +39,12 @@ module LinearResponse
         integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,ierr,info,iunit,nCore
         integer :: nLinearSystem,nOrbs,nVirt,tempK,VIndex,VirtStart,VirtEnd
         integer :: orbdum(1),nLinearSystem_h,Np1GSInd,Nm1GSInd,lWork,minres_unit
-        integer :: maxminres_iter,pertsite
+        integer :: maxminres_iter,pertsite,OmegaVal
         integer(ip) :: nLinearSystem_ip,minres_unit_ip,info_ip,maxminres_iter_ip,iters_p,iters_h
         real(dp) :: Omega,mu,SpectralWeight,Prev_Spec,AvdNorm_p,AvdNorm_h,Error_GF
         real(dp) :: Diff_GF
         complex(dp) :: ResponseFn,tempel,ni_lr,ni_lr_p,ni_lr_h,AvResFn_p,AvResFn_h
-        complex(dp) :: zdotc,VNorm,CNorm
+        complex(dp) :: zdotc,VNorm,CNorm,SelfE(nImp,nImp)
         logical :: tParity,tFirst
         character(64) :: filename,filename2
         character(len=*), parameter :: t_r='SchmidtGF_wSE'
@@ -207,7 +207,6 @@ module LinearResponse
         allocate(Ann_0(nLinearSystem,nImp))
         Psi_0(:) = zzero 
         Psi_0(1:nFCIDet) = HL_Vec(:)    
-!        GFChemPot = HL_Energy
         do i = 1,nImp
             call ApplySP_PertGS_EC(Psi_0,nFCIDet,Cre_0(:,i),Ann_0(:,i),nLinearSystem,i)
         enddo
@@ -349,7 +348,8 @@ module LinearResponse
 
             !Potentially create the desired h0v_se and emb_h0v_se here, if you want to include the self-energy.
             !Otherwise, just fill with h0v and emb_h0v
-            call FindNI_Charged_wSE(Omega,GFChemPot,NI_LRMat_Cre,NI_LRMat_Ann,SE(:,:,OmegaVal))
+            SelfE(:,:) = SE(:,:,OmegaVal)
+            call FindNI_Charged_wSE(Omega,GFChemPot,NI_LRMat_Cre,NI_LRMat_Ann,SelfE)
 
             !If we have a self-consistent self-energy contribution, we also need to update
             !the hamiltonians which have been stored.
@@ -457,8 +457,6 @@ module LinearResponse
                     enddo
                 enddo
                 
-                !call writematrixcomp(LinearSystem_p,'LinearSystem_p',.false.)
-                !call writematrixcomp(LinearSystem_h,'LinearSystem_h',.false.)
 
                 !Now, check hessian is hermitian
                 do i = 1,nLinearSystem
@@ -490,6 +488,7 @@ module LinearResponse
                 do i = 1,nLinearSystem
                     LinearSystem_p(i,i) = LinearSystem_p(i,i) + dcmplx(Omega+GFChemPot+HL_Energy,dDelta)
                 enddo
+!                call writematrixcomp(LinearSystem_p,'LinearSystem_p',.false.)
 
                 !Now solve these linear equations
                 !call writevectorcomp(Psi1_p,'Cre_0')
@@ -535,8 +534,9 @@ module LinearResponse
 
                 !Now solve the LR for the hole addition
                 do i = 1,nLinearSystem
-                    LinearSystem_h(i,i) = dcmplx(Omega+GFChemPot-HL_Energy,-dDelta) + LinearSystem_h(i,i)
+                    LinearSystem_h(i,i) = dcmplx(Omega+GFChemPot-HL_Energy,dDelta) + LinearSystem_h(i,i)
                 enddo
+!                call writematrixcomp(LinearSystem_h,'LinearSystem_h',.false.)
                 if(tMinRes_NonDir) then
                     !zShift = dcmplx(-Omega-mu+GFChemPot,-dDelta)
                     zDirMV_Mat => LinearSystem_h
@@ -606,7 +606,7 @@ module LinearResponse
             ni_lr_h = zzero
             AvdNorm_p = zero
             AvdNorm_h = zero
-            do i = 1,nImp_GF
+            do i = 1,nImp
                 ni_lr = ni_lr + ni_lr_Mat(i,i)
                 ResponseFn = ResponseFn + ResponseFn_Mat(i,i)
                 AvResFn_p = AvResFn_p + ResponseFn_p(i,i)
@@ -680,7 +680,7 @@ module LinearResponse
         if(allocated(Np1bBitList)) deallocate(Np1bBitList)
 
         !Stored intermediates
-        deallocate(NFCIHam,Nm1FCIHam_beta,Np1FCIHam_alpha)
+        deallocate(NFCIHam,Nm1FCIHam_beta,Np1FCIHam_alpha,Emb_h0v_se)
         deallocate(Coup_Create_alpha,Coup_Ann_alpha)
         deallocate(FockSchmidt_SE,FockSchmidt_SE_VV,FockSchmidt_SE_CC)
         deallocate(FockSchmidt_SE_VX,FockSchmidt_SE_CX,FockSchmidt_SE_XV,FockSchmidt_SE_XC)
@@ -3541,6 +3541,7 @@ module LinearResponse
                     do i = 1,nLinearSystem
                         LinearSystem_p(i,i) = LinearSystem_p(i,i) + dcmplx(Omega+mu+GFChemPot,dDelta)
                     enddo
+                    call writematrixcomp(LinearSystem_p,'LinearSystem_p',.false.)
 
                     !Now solve these linear equations
                     !call writevectorcomp(Psi1_p,'Cre_0')
@@ -3588,6 +3589,7 @@ module LinearResponse
                     do i = 1,nLinearSystem
                         LinearSystem_h(i,i) = dcmplx(Omega+mu,dDelta) + (LinearSystem_h(i,i) - dcmplx(GFChemPot,0.0_dp))
                     enddo
+                    call writematrixcomp(LinearSystem_h,'LinearSystem_h',.false.)
                     if(tMinRes_NonDir) then
                         !zShift = dcmplx(-Omega-mu+GFChemPot,-dDelta)
                         zDirMV_Mat => LinearSystem_h
@@ -5376,7 +5378,7 @@ module LinearResponse
         V0_Ann(:) = zzero
         V0_Cre(:) = zzero 
 
-        if(SizeGS.ne.(nFCIDet+nNp1FCIDet+nNm1bFCIDet)) then
+        if(tLR_ReoptGS.and.(SizeGS.ne.(nFCIDet+nNp1FCIDet+nNm1bFCIDet))) then
             call stop_all(t_r,'Zeroth order wavefunction not expected size')
         endif
         if(nSizeLR.ne.(nFCIDet+nNp1FCIDet)) then
@@ -8175,10 +8177,12 @@ module LinearResponse
         complex(dp), intent(out) :: NI_LRMat_Cre(nImp,nImp),NI_LRMat_Ann(nImp,nImp)
         complex(dp), intent(in) :: SE(nImp,nImp)
         real(dp), allocatable :: Work(:)
+        complex(dp), allocatable :: LVec_R(:,:),RVec_R(:,:),EVals_R(:),k_Ham(:,:),ztemp(:,:),CompHam(:,:)
         complex(dp), allocatable :: AO_OneE_Ham(:,:),W_Vals(:),RVec(:,:),LVec(:,:),FullSchmidtTrans_C(:,:)
         complex(dp), allocatable :: HFPertBasis_Ann_Ket(:,:),HFPertBasis_Cre_Ket(:,:),temp(:,:),temp2(:,:)
         complex(dp), allocatable :: HFPertBasis_Ann_Bra(:,:),HFPertBasis_Cre_Bra(:,:),cWork(:),EmbeddedBasis_C(:,:)
         integer :: lwork,info,i,a,pertBra,j,pertsite,nVirt,CoreEnd,VirtStart,ActiveStart,ActiveEnd,nCore
+        integer :: kPnt,ind_1,ind_2
         complex(dp) :: test
         character(len=*), parameter :: t_r='FindNI_Charged_wSE'
 
@@ -8233,7 +8237,7 @@ module LinearResponse
                 if(info.ne.0) call stop_all(t_r,'Workspace query failed')
                 lwork = int(abs(cWork(1)))+1
                 deallocate(cWork)
-                allocate(cWork(lWork)
+                allocate(cWork(lWork))
                 call zgeev('V','V',nImp,k_Ham,nImp,W_Vals,LVec,nImp,RVec,nImp,cWork,lWork,Work,info)
                 if(info.ne.0) call stop_all(t_r,'Diagonalization of 1-electron GF failed')
                 deallocate(cWork)
@@ -8307,8 +8311,8 @@ module LinearResponse
         do pertsite = 1,nImp
             !Form the set of non-interacting first order wavefunctions from the new one-electron h for both Bra and Ket versions
             do i = 1,nOcc
-                HFPertBasis_Ann_Ket(i,pertsite) = dconjg(LVec_R(pertsite,i)) / (dcmplx(Omega+GFChemPot,-dDelta) - EVals_R(i))
-                HFPertBasis_Ann_Bra(i,pertsite) = RVec_R(pertsite,i) / (dcmplx(Omega+GFChemPot,dDelta) - dconjg(EVals_R(i)))
+                HFPertBasis_Ann_Ket(i,pertsite) = dconjg(LVec_R(pertsite,i)) / (dcmplx(Omega+GFChemPot,dDelta) - EVals_R(i))
+                HFPertBasis_Ann_Bra(i,pertsite) = RVec_R(pertsite,i) / (dcmplx(Omega+GFChemPot,-dDelta) - dconjg(EVals_R(i)))
             enddo
             do a = nOcc+1,nSites
                 HFPertBasis_Cre_Ket(a,pertsite) = dconjg(LVec_R(pertsite,a)) / (dcmplx(Omega+GFChemPot,dDelta) - EVals_R(a))

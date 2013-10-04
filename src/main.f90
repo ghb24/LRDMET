@@ -107,7 +107,7 @@ Program RealHub
         rtol_LR = 1.0e-8_dp
         tReuse_LS = .false.
         tSC_LR = .false.
-        tNoHL_SE = .false.
+        tNoHL_SE = .true. 
         iReuse_SE = 0
         tAllImp_LR = .false.
         iGF_Fit = 0
@@ -326,6 +326,8 @@ Program RealHub
                 call ModelReadInput()
             case("LINEAR_RESPONSE")
                 call LRReadInput()
+            case("SELF_CONSISTENCY")
+                call SCReadInput()
             case("END")
                 exit
             case default
@@ -557,6 +559,43 @@ Program RealHub
 
     end subroutine ModelReadInput
 
+    subroutine SCReadInput()
+        implicit none
+        logical :: teof
+        character(len=100) :: w
+        integer :: Ks(100),i
+        character(len=*), parameter :: t_r='SC_ReadInput'
+
+        tSC_LR = .true.
+        SC: do
+            call read_line(teof)
+            if(teof) exit
+            call readu(w)
+            select case(w)
+            case("SELF-CONSISTENCY")
+                tSC_LR = .true.
+                if(item.lt.nitems) then
+                    call readi(iGF_Fit)
+                endif
+            case("REUSE_SELFENERGY")
+                call readi(iReuse_SE)
+            case("MANYBODY_SELFENERGY")
+                tNoHL_SE = .false.
+            case("SELFENERGY_DAMPING")
+                call readf(Damping_SE)
+            case("END")
+                exit
+            case default
+                write(6,"(A)") "ALLOWED KEYWORDS IN SELF_CONSISTENCY BLOCK: "
+                write(6,"(A)") "MANYBODY_SELFENERGY"
+                write(6,"(A)") "REUSE_SELFENERGY"
+                write(6,"(A)") "SELFENERGY_DAMPING"
+                call stop_all(t_r,'Keyword '//trim(w)//' not recognized')
+            end select
+        enddo SC
+
+    end subroutine SCReadInput
+
     subroutine LRReadInput()
         implicit none
         logical :: teof
@@ -636,28 +675,6 @@ Program RealHub
                 call readf(Omega_Step)
             case("BROADENING")
                 call readf(dDelta)
-            case("SELF-CONSISTENCY")
-                tSC_LR = .true.
-                if(item.lt.nitems) then
-                    call readi(iGF_Fit)
-                endif
-            case("REUSE_SELFENERGY")
-                call readi(iReuse_SE)
-            case("PARTIAL_SELFENERGY_FIT")
-                tPartialSE_Fit = .true.
-                if(item.le.nitems) then
-                    call readi(iPartialSE_Fit)
-                endif
-            case("SELF_ENERGY_CONSTRAINTS")
-                call readi(iSE_Constraints)
-            case("NO_MANYBODY_SELFENERGY")
-                tNoHL_SE = .true.
-            case("RESPONSE_ALLIMP")
-                tAllImp_LR = .true.
-            case("SELFENERGY_DAMPING")
-                call readf(Damping_SE)
-            case("CONVERGE_MICROITER_SE")
-                tConvergeMicroSE = .true.
             case("NON_NULL")
                 tProjectOutNull = .true.
                 if(item.lt.nitems) then
@@ -699,14 +716,6 @@ Program RealHub
                 write(6,"(A)") "IC_TDA"
                 write(6,"(A)") "FREQ"
                 write(6,"(A)") "BROADENING"
-                write(6,"(A)") "SELF-CONSISTENCY"
-                write(6,"(A)") "NO_MANYBODY_SELFENERGY"
-                write(6,"(A)") "REUSE_SELFENERGY"
-                write(6,"(A)") "PARTIAL_SELFENERGY_FIT"
-                write(6,"(A)") "SELF_ENERGY_CONSTRAINTS"
-                write(6,"(A)") "RESPONSE_ALLIMP"
-                write(6,"(A)") "SELFENERGY_DAMPING"
-                write(6,"(A)") "CONVERGE_MICROITER_SE"
                 write(6,"(A)") "NON_NULL"
                 write(6,"(A)") "REOPT_GS"
                 write(6,"(A)") "EXPLICIT_ORTHOG"
@@ -814,9 +823,6 @@ Program RealHub
         endif
         if(iGF_Fit.gt.4) then
             call stop_all(t_r,'iGF_Fit set to illegal value')
-        endif
-        if(tNoHL_SE.and.(.not.tSC_LR)) then
-            call stop_all(t_r,'Can only specify no self-energy in many-body hamiltonian if we are doing self-consistency')
         endif
         if(tPartialSE_Fit.and.(.not.tSC_LR)) then
             call stop_all(t_r,'Need to specify self-consistency to use option PartialSE_Fit. I know this makes no sense')
@@ -1293,11 +1299,13 @@ Program RealHub
                     call Correlated_SR_LR()
                 endif
 
-                call SC_Mom_LR()
-                
                 if(tLR_DMET) then
                     !Perform linear response on the resulting DMET state
-                !    call MR_LinearResponse()
+                    if(tSC_LR) then
+                        call SC_Mom_LR()    !The LR routine will be called inside here
+                    else
+                        call MR_LinearResponse()
+                    endif
                 endif
                 deallocate(HFOrbs)
                 if(tUHF) deallocate(HFOrbs_b)
