@@ -58,14 +58,15 @@ module MomSpectra
 
     !Routine to read in a correlated greens function, and self-consistently converge
     !a self energy from the 1-electron hemailtonian to get it to match this.
-    subroutine Converge_SE_NoHybrid(SE,nESteps)
+    subroutine Converge_SE_NoHybrid(G00,SE,nESteps)
         use utils, only: get_free_unit,append_ext_real,append_ext
         implicit none
         integer, intent(in) :: nESteps
+        complex(dp), intent(in) :: G00(nImp,nImp,nESteps)
         complex(dp), intent(inout) :: SE(nImp,nImp,nESteps)
         integer :: iunit,i,iter,iunit2,iunit3,CurrSlot,MaxSlot
         logical :: exists
-        complex(dp), allocatable :: G00(:,:,:),OldSE(:,:,:)
+        complex(dp), allocatable :: OldSE(:,:,:)
         complex(dp), allocatable :: InvLocalMomGF(:,:,:),LocalMomGF(:,:,:)
         complex(dp), allocatable :: InvG00(:,:,:),RealSpaceLocGF(:,:,:)
         real(dp) :: Omega,Re_LR,Im_LR,Omega_Val,SE_Thresh,MaxDiffSE,MinDiffSE,MeanDiffSE
@@ -84,50 +85,11 @@ module MomSpectra
 
         if(nImp.ne.1) call stop_all(t_r,'Can currently only do self-consistency with one impurity site')
 
-        !First, read back in the G_00 (real and complex)
-        iunit = get_free_unit()
-        call append_ext_real('EC-TDA_GFResponse',U,filename)
-        if(.not.tHalfFill) then
-            !Also append occupation of lattice to the filename
-            call append_ext(filename,nOcc,filename2)
-        else
-            filename2 = filename
-        endif
-        inquire(file=filename2,exist=exists)
-        if(.not.exists) then
-            call stop_all(t_r,'Cannot find local greens function file')
-        endif
-        open(unit=iunit,file=filename2,status='old',action='read')
-
-        read(iunit,*) header
-        Omega = Start_Omega
-        i = 0
-        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
-            i = i + 1
-            Omega = Omega + Omega_Step
-        enddo
-        if(i.ne.nESteps) call stop_all(t_r,'Wrong number of frequency points read in')
-
-        allocate(G00(nImp,nImp,nESteps))    !The correlated greens function
         allocate(OldSE(nImp,nImp,nESteps))
         allocate(LocalMomGF(nImp,nImp,nESteps)) !The local 1-electron GF from the non-interacting H
         allocate(InvLocalMomGF(nImp,nImp,nESteps))
         allocate(InvG00(nImp,nImp,nESteps))
-        G00(:,:,:) = zzero
-        Omega = Start_Omega
-        i = 0
-        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
-            i = i + 1
-            if(i.gt.nESteps) call stop_all(t_r,'Too many frequency points')
-            read(iunit,*) Omega_val,Re_LR,Im_LR
-            !write(6,*) Omega_val,Re_LR,Im_LR
-            !HACK - can only read in 1 x 1 impurity matrix
-            G00(1,1,i) = dcmplx(Re_LR,-Im_LR)
-            Omega = Omega + Omega_Step
-        enddo
-        close(iunit)
-
-        write(6,*) "High-level greens function sucessfully read back in..."
+        
         intweight = zero
         Prev_Spec = zero
         do i=1,nESteps

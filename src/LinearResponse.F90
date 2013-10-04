@@ -27,7 +27,7 @@ module LinearResponse
         real(dp), intent(in) :: GFChemPot
         complex(dp), intent(out) :: G_Mat(nImp,nImp,nESteps)
         complex(dp), allocatable :: NFCIHam(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
-        real(dp), allocatable :: W(:),dNorm_p(:),dNorm_h(:)
+        real(dp), allocatable :: dNorm_p(:),dNorm_h(:)
         complex(dp), allocatable , target :: LinearSystem_p(:,:),LinearSystem_h(:,:)
         complex(dp), allocatable :: Cre_0(:,:),Ann_0(:,:),ResponseFn_p(:,:),ResponseFn_h(:,:)
         complex(dp), allocatable :: Gc_a_F_ax_Bra(:,:),Gc_a_F_ax_Ket(:,:),Gc_b_F_ab(:,:)
@@ -53,6 +53,7 @@ module LinearResponse
         iters_p = 0
         iters_h = 0
 
+        G_Mat(:,:,:) = zzero
         SpectralWeight = 0.0_dp
         Prev_Spec = 0.0_dp
         tFirst = .true.
@@ -358,21 +359,21 @@ module LinearResponse
 
             !Construct useful intermediates, using zgemm
             !sum_a Gc_a^* F_ax (Creation)
-            call ZGEMM('T','N',EmbSize,nImp_GF,nVirt,zone,FockSchmidt_SE_VX(VirtStart:VirtEnd,ActiveStart:ActiveEnd),  &
+            call ZGEMM('T','N',EmbSize,nImp,nVirt,zone,FockSchmidt_SE_VX(VirtStart:VirtEnd,ActiveStart:ActiveEnd),  &
                 nVirt,SchmidtPertGF_Cre_Bra(VirtStart:VirtEnd,:),nVirt,zzero,Gc_a_F_ax_Bra,EmbSize)
-            call ZGEMM('N','N',EmbSize,nImp_GF,nVirt,zone,FockSchmidt_SE_XV(ActiveStart:ActiveEnd,VirtStart:VirtEnd),  &
+            call ZGEMM('N','N',EmbSize,nImp,nVirt,zone,FockSchmidt_SE_XV(ActiveStart:ActiveEnd,VirtStart:VirtEnd),  &
                 EmbSize,SchmidtPertGF_Cre_Ket(VirtStart:VirtEnd,:),nVirt,zzero,Gc_a_F_ax_Ket,EmbSize)
             !sum_b Gc_b F_ab  (Creation)
-            call ZGEMM('N','N',nVirt,nImp_GF,nVirt,zone,FockSchmidt_SE_VV(VirtStart:VirtEnd,VirtStart:VirtEnd),    &
+            call ZGEMM('N','N',nVirt,nImp,nVirt,zone,FockSchmidt_SE_VV(VirtStart:VirtEnd,VirtStart:VirtEnd),    &
                 nVirt,SchmidtPertGF_Cre_Ket(VirtStart:VirtEnd,:),nVirt,zzero,Gc_b_F_ab,nVirt)
 
             !sum_i Ga_i^bra F_xi (Annihilation)
-            call ZGEMM('N','N',EmbSize,nImp_GF,nCore,zone,FockSchmidt_SE_XC(ActiveStart:ActiveEnd,1:CoreEnd),EmbSize,    &
+            call ZGEMM('N','N',EmbSize,nImp,nCore,zone,FockSchmidt_SE_XC(ActiveStart:ActiveEnd,1:CoreEnd),EmbSize,    &
                 SchmidtPertGF_Ann_Bra(1:nCore,:),nCore,zzero,Ga_i_F_xi_Bra,EmbSize)
-            call ZGEMM('T','N',EmbSize,nImp_GF,nCore,zone,FockSchmidt_SE_CX(1:CoreEnd,ActiveStart:ActiveEnd),nCore,    &
+            call ZGEMM('T','N',EmbSize,nImp,nCore,zone,FockSchmidt_SE_CX(1:CoreEnd,ActiveStart:ActiveEnd),nCore,    &
                 SchmidtPertGF_Ann_Ket(1:nCore,:),nCore,zzero,Ga_i_F_xi_Ket,EmbSize)
             !sum_i Ga_i F_ij (Annihilation)
-            call ZGEMM('T','N',nCore,nImp_GF,nCore,zone,FockSchmidt_SE_CC(:,:),nCore,SchmidtPertGF_Ann_Ket(:,:),nCore,zzero, &
+            call ZGEMM('T','N',nCore,nImp,nCore,zone,FockSchmidt_SE_CC(:,:),nCore,SchmidtPertGF_Ann_Ket(:,:),nCore,zzero, &
                 Ga_i_F_ij,nCore)
 
             !Find the first-order wavefunction in the interacting picture for all impurity sites 
@@ -487,7 +488,7 @@ module LinearResponse
                 LinearSystem_p(:,:) = -LinearSystem_p(:,:)
                 !Offset matrix
                 do i = 1,nLinearSystem
-                    LinearSystem_p(i,i) = LinearSystem_p(i,i) + dcmplx(Omega+mu+GFChemPot,dDelta)
+                    LinearSystem_p(i,i) = LinearSystem_p(i,i) + dcmplx(Omega+GFChemPot+HL_Energy,dDelta)
                 enddo
 
                 !Now solve these linear equations
@@ -534,7 +535,7 @@ module LinearResponse
 
                 !Now solve the LR for the hole addition
                 do i = 1,nLinearSystem
-                    LinearSystem_h(i,i) = dcmplx(Omega+mu,dDelta) + (LinearSystem_h(i,i) - dcmplx(GFChemPot,0.0_dp))
+                    LinearSystem_h(i,i) = dcmplx(Omega+GFChemPot-HL_Energy,-dDelta) + LinearSystem_h(i,i)
                 enddo
                 if(tMinRes_NonDir) then
                     !zShift = dcmplx(-Omega-mu+GFChemPot,-dDelta)
@@ -579,23 +580,24 @@ module LinearResponse
                 !write(6,*) "Normalization of first-order wavefunction: ",dNorm_p,dNorm_h
                 
                 !Now, calculate all interacting greens funtions that we want, by dotting in the first-order space
-                if((nImp_GF.gt.1).and.(tLR_ReoptGS)) then
-                    call stop_all(t_r,'Cannot do dotting of vectors here, since the LHS vectors are still being computed')
-                endif
-                do j = 1,nImp_GF
-                    ResponseFn_p(pertsite,j) = zzero
+                do j = 1,nImp
+                    ResponseFn_p(j,pertsite) = zzero
                     ResponseFn_h(pertsite,j) = zzero
                     do k = 1,nLinearSystem
-                        ResponseFn_p(pertsite,j) = ResponseFn_p(pertsite,j) + dconjg(Cre_0(k,j))*Psi1_p(k)
+                        ResponseFn_p(j,pertsite) = ResponseFn_p(j,pertsite) + dconjg(Cre_0(k,j))*Psi1_p(k)
                         ResponseFn_h(pertsite,j) = ResponseFn_h(pertsite,j) + dconjg(Ann_0(k,j))*Psi1_h(k)
                     enddo
-                    ResponseFn_Mat(pertsite,j) = ResponseFn_p(pertsite,j) + ResponseFn_h(pertsite,j)
-                    ni_lr_Mat(pertsite,j) = NI_LRMat_Cre(pertsite,j) + NI_LRMat_Ann(pertsite,j) 
                 enddo
 
             enddo   !End do over pertsite. We now have all the greens funtions 
 
+            !Sum them
+            ResponseFn_Mat(:,:) = ResponseFn_p(:,:) + ResponseFn_h(:,:)
+            ni_lr_Mat(:,:) = NI_LRMat_Cre(:,:) + NI_LRMat_Ann(:,:)
+            G_Mat(:,:,OmegaVal) = ResponseFn_Mat(:,:)
+
             !Now, calculate NI and interacting response function as trace over diagonal parts of the local greens functions
+            !This is the isotropic average of the local greens function
             ni_lr = zzero
             ResponseFn = zzero
             AvResFn_p = zzero
@@ -614,18 +616,18 @@ module LinearResponse
                 AvdNorm_p = AvdNorm_p + dNorm_p(i)
                 AvdNorm_h = AvdNorm_h + dNorm_h(i)
             enddo
-            ni_lr = ni_lr/real(nImp_GF,dp)
-            ni_lr_p = ni_lr_p/real(nImp_GF,dp)
-            ni_lr_h = ni_lr_h/real(nImp_GF,dp)
-            ResponseFn = ResponseFn/real(nImp_GF,dp)
-            AvResFn_p = AvResFn_p/real(nImp_GF,dp)
-            AvResFn_h = AvResFn_h/real(nImp_GF,dp)
-            AvdNorm_p = AvdNorm_p/real(nImp_GF,dp)
-            AvdNorm_h = AvdNorm_h/real(nImp_GF,dp)
+            ni_lr = ni_lr/real(nImp,dp)
+            ni_lr_p = ni_lr_p/real(nImp,dp)
+            ni_lr_h = ni_lr_h/real(nImp,dp)
+            ResponseFn = ResponseFn/real(nImp,dp)
+            AvResFn_p = AvResFn_p/real(nImp,dp)
+            AvResFn_h = AvResFn_h/real(nImp,dp)
+            AvdNorm_p = AvdNorm_p/real(nImp,dp)
+            AvdNorm_h = AvdNorm_h/real(nImp,dp)
 
             Diff_GF = zero  !real(abs(ResponseFn - ni_lr))
-            do i=1,nImp_GF
-                do j=1,nImp_GF
+            do i=1,nImp
+                do j=1,nImp
                     Diff_GF = Diff_GF + real((ni_lr_Mat(j,i)-ResponseFn_Mat(j,i))*dconjg(ni_lr_Mat(j,i)-ResponseFn_Mat(j,i)))
                 enddo
             enddo
@@ -8317,7 +8319,7 @@ module LinearResponse
             do pertBra = 1,nImp
                 !Now perform the set of dot products of <0|V* with |1> for all combinations of sites
                 do i = 1,nOcc
-                    NI_LRMat_Ann(pertBra,pertsite) = NI_LRMat_Ann(pertBra,pertsite) +   &
+                    NI_LRMat_Ann(pertsite,pertBra) = NI_LRMat_Ann(pertsite,pertBra) +   &
                         RVec_R(pertBra,i)*HFPertBasis_Ann_Ket(i,pertsite)
                 enddo
                 do a = nOcc+1,nSites

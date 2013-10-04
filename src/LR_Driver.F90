@@ -12,13 +12,9 @@ module LRDriver
     !Attempt to get k-space spectral functions by self-consistenly calculating k-independent hybridization and self-energy contributions
     subroutine SC_Mom_LR()
         implicit none
-        real(dp) :: Omega
+        real(dp) :: Omega,GFChemPot
         integer :: nESteps
-        complex(dp), allocatable :: SE(:,:,:)
-
-        !First, calculate G_00
-!        call NonIntExCont_TDA_MCLR_Charged_Cmprs()
-        call NonIntExCont_TDA_MCLR_Charged()
+        complex(dp), allocatable :: SE(:,:,:),G_Mat(:,:,:)
         
         !How many frequency points are there exactly?
         Omega = Start_Omega
@@ -27,24 +23,33 @@ module LRDriver
             nESteps = nESteps + 1
             Omega = Omega + Omega_Step
         enddo
+        
+        !Find the k-independent self-consistent self-energy
+        allocate(SE(nImp,nImp,nESteps))
+        SE(:,:,:) = zzero
+        allocate(G_Mat(nImp,nImp,nESteps))
 
-        write(6,"(A)") "High-level correlation function written to disk."
+        !Set chemical potential (This will only be right for half-filling)
+        GFChemPot = U/2.0_dp
+
+        !calculate G_00
+!        call NonIntExCont_TDA_MCLR_Charged_Cmprs()
+!        call NonIntExCont_TDA_MCLR_Charged()
+        write(6,"(A)") "Calculating high-level correlation functioin..."
+        call SchmidtGF_wSE(G_Mat,GFChemPot,SE,nESteps)
+        write(6,"(A)") "High-level correlation function obtained."
         write(6,"(A,I8,A)") "Now attempting self-consistent determination of self-energy function from ", &
             nESteps," frequency points."
         call flush(6)
 
-        !Find the k-independent self-consistent self-energy
-        allocate(SE(nImp,nImp,nESteps))
-        SE(:,:,:) = zzero
-
         !tester
-        call testNIGFs(SE,nESteps)
+        !call testNIGFs(SE,nESteps)
 
         !Now calculate the (hybridization and) self-energy self-consistently
         !This will read back in the greens function
         !The returned self-energy is k-independent, but will reproduce the correlated local greens function
         !call Converge_SE(SE,nESteps)
-        call Converge_SE_NoHybrid(SE,nESteps)
+        call Converge_SE_NoHybrid(G_Mat,SE,nESteps)
 
         !Finally, should we do this all in a larger self-consistency, such that the self energy is used for the frequency dependent bath?
 
