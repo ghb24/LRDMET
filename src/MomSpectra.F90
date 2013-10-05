@@ -97,11 +97,11 @@ module MomSpectra
             !SE(:,:,:) = SE(:,:,:) + (InvLocalMomGF(:,:,:) - InvG00(:,:,:))
             SE(:,:,:) = SE(:,:,:) + SE_Damp*(InvLocalMomGF(:,:,:) - InvG00(:,:,:))
 
-            do i = 1,nESteps
-                if((aimag(SE(1,1,i)).gt.zero)) then
-                    SE(1,1,i) = dcmplx(real(SE(1,1,i),dp),zero)
-                endif
-            enddo
+!            do i = 1,nESteps
+!                if((aimag(SE(1,1,i)).gt.zero)) then
+!                    SE(1,1,i) = dcmplx(real(SE(1,1,i),dp),zero)
+!                endif
+!            enddo
 
             !DEBUG
             open(unit=69,file='SE',status='unknown')
@@ -136,7 +136,8 @@ module MomSpectra
                 MeanSEDiffs(MaxSlot) = MeanDiffSE
                 MeanMax = (MeanMax + MaxDiffSE) / real(MaxSlot,dp)
                 MeanMean = (MeanMean + MeanDiffSE) / real(MaxSlot,dp)
-                write(6,"(A,I7,A,2F20.10)") "Running average of maximum/mean SE change over last ",MaxSlot," iterations: ",MeanMax,MeanMean
+                write(6,"(A,I7,A,2F20.10)") "Running average of maximum/mean SE change over last ", &
+                    MaxSlot," iterations: ",MeanMax,MeanMean
             else
                 !We haven't done MaxSlot iterations yet
                 !Just put into next slot

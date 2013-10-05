@@ -97,7 +97,7 @@ module LinearResponse
         endif
 
         !umat and tmat for the active space
-        call CreateIntMats(tComp=.true.)
+        call CreateIntMats(tComp=.true.,tTwoElecBath=.false.)
         
         !Enumerate excitations for fully coupled space
         !Seperate the lists into different Ms sectors in the N+- lists
@@ -8249,8 +8249,10 @@ module LinearResponse
 !                call Orthonorm_zgeev_vecs(SS_Period,W_Vals,LVec,RVec)
 
                 !Rotate eigenvalues and eigenvectors back into r-space
-                call ZGEMM('N','N',nSites,nImp,nImp,zone,RtoK_Rot(:,ind_1:ind_2),nSites,LVec,nImp,zzero,LVec_R(:,ind_1:ind_2),nSites)
-                call ZGEMM('N','N',nSites,nImp,nImp,zone,RtoK_Rot(:,ind_1:ind_2),nSites,RVec,nImp,zzero,RVec_R(:,ind_1:ind_2),nSites)
+                call ZGEMM('N','N',nSites,nImp,nImp,zone,RtoK_Rot(:,ind_1:ind_2),nSites,LVec,nImp,  &
+                    zzero,LVec_R(:,ind_1:ind_2),nSites)
+                call ZGEMM('N','N',nSites,nImp,nImp,zone,RtoK_Rot(:,ind_1:ind_2),nSites,RVec,nImp,  &
+                    zzero,RVec_R(:,ind_1:ind_2),nSites)
                 EVals_R(ind_1:ind_2) = W_Vals(:)
 
             enddo

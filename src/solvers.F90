@@ -1127,13 +1127,21 @@ module solvers
     !put U over the impurity sites.
     !If tComp = .true., then the 1-electron array tmat_comp is filled, and the elements complex
     !Umat is real either way
-    subroutine CreateIntMats(tComp)
+    subroutine CreateIntMats(tComp,tTwoElecBath)
         use DetToolsData
         use DetTools, only: umatind
         implicit none
         logical, intent(in), optional :: tComp
-        logical :: tComp_
-        integer :: OrbPairs,UMatSize,j,i
+        logical, intent(in), optional :: tTwoElecBath
+        logical :: tComp_,tTwoElecBath_
+        integer :: OrbPairs,UMatSize,j,i,k,l,a
+        character(len=*), parameter :: t_r='CreateIntMats'
+
+        if(present(tTwoElecBath)) then
+            tTwoElecBath_ = tTwoElecBath
+        else
+            tTwoElecBath_ = .false.
+        endif
 
         if(present(tComp)) then
             tComp_ = tComp
@@ -1172,10 +1180,34 @@ module solvers
                 enddo
             enddo
         else
-            do i=1,nImp
-                umat(umatind(i,i,i,i)) = U
-            enddo
+            if(tTwoElecBath_) then
+                !Also create integrals over the bath space
+                do i = 1,nImp*2              
+                    do j = 1,nImp*2
+                        do k = 1,nImp*2
+                            do l = 1,nImp*2
+                                do a = 1,nSites
+                                    umat(umatind(i,j,k,l)) = umat(umatind(i,j,k,l)) +   &
+                                    FullSchmidtBasis(a,nOcc-nImp+i) *   &
+                                    FullSchmidtBasis(a,nOcc-nImp+j) *   &
+                                    FullSchmidtBasis(a,nOcc-nImp+k) *   &
+                                    FullSchmidtBasis(a,nOcc-nImp+l)
+                                enddo
+                            enddo
+                        enddo
+                    enddo
+                enddo
+                umat(:) = umat(:)*U
+                if(abs(umat(umatind(1,1,1,1)) - U).gt.1.0e-7_dp) then
+                    call stop_all(t_r,'Integrals calculated incorrectly')
+                endif
+            else
+                do i=1,nImp
+                    umat(umatind(i,i,i,i)) = U
+                enddo
+            endif
             if(tUHF) then
+                if(tTwoElecBath) call stop_all(t_r,'Cannot correlate bath with UHF')
                 do i = nImp+1,nImp*2
                     umat(umatind(i,i,i,i)) = U
                 enddo
