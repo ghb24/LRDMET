@@ -232,7 +232,7 @@ module solvers
             close(iunit)
 !            call writematrix(HL_1RDM,'FCI 1RDM',.true.)
 
-            if(tCreate2RDM) then
+            if(tCreate2RDM.or.tCorrelatedBath) then
                 write(6,*) "Creating 2RDM over impurity system..."
                 if(allocated(HL_2RDM)) deallocate(HL_2RDM)
                 allocate(HL_2RDM(EmbSize,EmbSize,EmbSize,EmbSize))  !< i^+ j^+ k l >
@@ -379,7 +379,7 @@ module solvers
         !The two electron contribution to the embedded system energy is just the FCI result - the 1e energy
         Two_ElecE = HL_Energy - One_ElecE
 
-        if(tCreate2RDM) then
+        if(tCreate2RDM.or.tCorrelatedBath) then
 
             if(tUHF) call stop_all(t_r,'2RDM not created with UHF')
             !Do some tests to make sure we have the right 2RDM
@@ -407,21 +407,23 @@ module solvers
                 enddo
             enddo
 
-            !Check that 2RDM is correct by explicitly calculating the two-electron contribution to the FCI energy from the 2RDM
-            !We only need to check the iiii components over the impurity sites ONLY
-            Check2eEnergy = 0.0_dp
-            if(tAnderson) then
-                Check2eEnergy = Check2eEnergy + U*HL_2RDM(1,1,1,1)
-            else
-                do i=1,nImp
-                    Check2eEnergy = Check2eEnergy + U*HL_2RDM(i,i,i,i)
-                enddo
-            endif
-            Check2eEnergy = Check2eEnergy / 2.0_dp
-            if(abs(Check2eEnergy-Two_ElecE).gt.1.0e-7_dp) then
-                write(6,*) "Check2eEnergy: ",Check2eEnergy
-                write(6,*) "Two_ElecE: ",Two_ElecE
-                call stop_all(t_r,'2RDM calculated incorrectly')
+            if(.not.tCorrelatedBath) then
+                !Check that 2RDM is correct by explicitly calculating the two-electron contribution to the FCI energy from the 2RDM
+                !We only need to check the iiii components over the impurity sites ONLY
+                Check2eEnergy = 0.0_dp
+                if(tAnderson) then
+                    Check2eEnergy = Check2eEnergy + U*HL_2RDM(1,1,1,1)
+                else
+                    do i=1,nImp
+                        Check2eEnergy = Check2eEnergy + U*HL_2RDM(i,i,i,i)
+                    enddo
+                endif
+                Check2eEnergy = Check2eEnergy / 2.0_dp
+                if(abs(Check2eEnergy-Two_ElecE).gt.1.0e-7_dp) then
+                    write(6,*) "Check2eEnergy: ",Check2eEnergy
+                    write(6,*) "Two_ElecE: ",Two_ElecE
+                    call stop_all(t_r,'2RDM calculated incorrectly')
+                endif
             endif
 
             !Also check that trace condition is satisfied
@@ -453,40 +455,44 @@ module solvers
             enddo
         endif
 
-        !We only want to calculate the energy over the impurity site, along with the coupling to the bath.
-        !Calculate one-electron energy contributions only over the impurity
-        One_ElecE_Imp = 0.0_dp
-        do j=1,nImp
-            do i=1,nImp
-                if(tChemPot.and.(i.eq.1).and.(j.eq.1)) then
-                    One_ElecE_Imp = One_ElecE_Imp + (Emb_h0v(i,j)-U/2.0_dp)*HL_1RDM(i,j)
-                    if(tUHF) One_ElecE_Imp = One_ElecE_Imp + (Emb_h0v_b(i,j)-U/2.0_dp)*HL_1RDM_b(i,j)
-                else
-                    One_ElecE_Imp = One_ElecE_Imp + Emb_h0v(i,j)*HL_1RDM(i,j)
-                    if(tUHF) One_ElecE_Imp = One_ElecE_Imp + Emb_h0v_b(i,j)*HL_1RDM_b(i,j)
-                endif
+        if(tCorrelatedBath) then
+            call stop_all(t_r,'Need to finish coding this up!')
+        else
+            !We only want to calculate the energy over the impurity site, along with the coupling to the bath.
+            !Calculate one-electron energy contributions only over the impurity
+            One_ElecE_Imp = 0.0_dp
+            do j=1,nImp
+                do i=1,nImp
+                    if(tChemPot.and.(i.eq.1).and.(j.eq.1)) then
+                        One_ElecE_Imp = One_ElecE_Imp + (Emb_h0v(i,j)-U/2.0_dp)*HL_1RDM(i,j)
+                        if(tUHF) One_ElecE_Imp = One_ElecE_Imp + (Emb_h0v_b(i,j)-U/2.0_dp)*HL_1RDM_b(i,j)
+                    else
+                        One_ElecE_Imp = One_ElecE_Imp + Emb_h0v(i,j)*HL_1RDM(i,j)
+                        if(tUHF) One_ElecE_Imp = One_ElecE_Imp + Emb_h0v_b(i,j)*HL_1RDM_b(i,j)
+                    endif
+                enddo
             enddo
-        enddo
-        One_ElecE_Imp = One_ElecE_Imp/real(nImp)    !For energy per impurity
+            One_ElecE_Imp = One_ElecE_Imp/real(nImp)    !For energy per impurity
 
-        !Two electron energy terms are not contained in core hamiltonian, or expressed over the bath, 
-        !so just divided total 2e contribution by number of impurities to get the 2e contrib
-        !Note, we can only do this since there is no correlated bath??
-        Two_ElecE_Imp = Two_ElecE/real(nImp)
+            !Two electron energy terms are not contained in core hamiltonian, or expressed over the bath, 
+            !so just divided total 2e contribution by number of impurities to get the 2e contrib
+            !Note, we can only do this since there is no correlated bath??
+            Two_ElecE_Imp = Two_ElecE/real(nImp)
 
-        !There is also finally an interaction term between the bath and impurity which we can calculate
-        !Model this as the h0v matrix with added 1/2 correlation potential so that there is no double counting between the interactions with the bath-impurity
-        CoupE_Imp = 0.0_dp
-        do j=nImp+1,EmbSize
-            do i=1,nImp
-                CoupE_Imp = CoupE_Imp + (Emb_h0v(i,j) + 0.5_dp*Emb_CorrPot(i,j))*HL_1RDM(i,j)
-                if(tUHF) CoupE_Imp = CoupE_Imp + (Emb_h0v_b(i,j) + 0.5_dp*Emb_CorrPot_b(i,j))*HL_1RDM_b(i,j)
-!                CoupE_Imp = CoupE_Imp + (Emb_h0v(i,j) + 0.5_dp*v_loc(i,j))*HL_1RDM(i,j)
+            !There is also finally an interaction term between the bath and impurity which we can calculate
+            !Model this as the h0v matrix with added 1/2 correlation potential so that there is no double counting between the interactions with the bath-impurity
+            CoupE_Imp = 0.0_dp
+            do j=nImp+1,EmbSize
+                do i=1,nImp
+                    CoupE_Imp = CoupE_Imp + (Emb_h0v(i,j) + 0.5_dp*Emb_CorrPot(i,j))*HL_1RDM(i,j)
+                    if(tUHF) CoupE_Imp = CoupE_Imp + (Emb_h0v_b(i,j) + 0.5_dp*Emb_CorrPot_b(i,j))*HL_1RDM_b(i,j)
+    !                CoupE_Imp = CoupE_Imp + (Emb_h0v(i,j) + 0.5_dp*v_loc(i,j))*HL_1RDM(i,j)
+                enddo
             enddo
-        enddo
-        CoupE_Imp = CoupE_Imp / real(nImp)
+            CoupE_Imp = CoupE_Imp / real(nImp)
 
-        TotalE_Imp = One_ElecE_Imp + Two_ElecE_Imp + CoupE_Imp
+            TotalE_Imp = One_ElecE_Imp + Two_ElecE_Imp + CoupE_Imp
+        endif
 
         write(6,"(A,F10.6)") "One electron energy per impurity:     ",One_ElecE_Imp
         write(6,"(A,F10.6)") "Two electron energy per impurity:     ",Two_ElecE_Imp
@@ -926,7 +932,7 @@ module solvers
         logical :: texist
         character(len=*), parameter :: t_r='CompleteDiag'
 
-        call CreateIntMats()
+        call CreateIntMats(tTwoElecBath=tCorrelatedBath_GS)
 
         !Now generate all determinants in the active space
         if(allocated(FCIDetList)) deallocate(FCIDetList)
@@ -1106,7 +1112,7 @@ module solvers
             if(tUHF) call writematrix(HL_1RDM_b,'Beta HL_1RDM',.true.)
         endif
 
-        if(tCreate2RDM) then
+        if(tCreate2RDM.or.tCorrelatedBath) then
             if(allocated(HL_2RDM)) deallocate(HL_2RDM)
             allocate(HL_2RDM(EmbSize,EmbSize,EmbSize,EmbSize))
             HL_2RDM(:,:,:,:) = zero
@@ -1188,10 +1194,10 @@ module solvers
                             do l = 1,nImp*2
                                 do a = 1,nSites
                                     umat(umatind(i,j,k,l)) = umat(umatind(i,j,k,l)) +   &
-                                    FullSchmidtBasis(a,nOcc-nImp+i) *   &
-                                    FullSchmidtBasis(a,nOcc-nImp+j) *   &
-                                    FullSchmidtBasis(a,nOcc-nImp+k) *   &
-                                    FullSchmidtBasis(a,nOcc-nImp+l)
+                                    EmbeddedBasis(a,nOcc-nImp+i) *   &
+                                    EmbeddedBasis(a,nOcc-nImp+j) *   &
+                                    EmbeddedBasis(a,nOcc-nImp+k) *   &
+                                    EmbeddedBasis(a,nOcc-nImp+l)
                                 enddo
                             enddo
                         enddo
@@ -1685,6 +1691,8 @@ module solvers
         real(dp), allocatable :: CoreH(:,:),W(:),work(:)
         character(len=*), parameter :: t_r='WriteFCIDUMP'
 
+        call CreateIntMats(tTwoElecBath = tCorrelatedBath) 
+
         !Open & write header
         iunit = get_free_unit()
         open(iunit,file='FCIDUMP',status='unknown')
@@ -1702,8 +1710,17 @@ module solvers
             if(tAnderson) then
                 write(iunit,"(F16.12,4I8)") U,1,1,1,1
             else
-                do i=1,nImp
-                    write(iunit,"(F16.12,4I8)") U,i,i,i,i
+!                do i=1,nImp
+!                    write(iunit,"(F16.12,4I8)") U,i,i,i,i
+!                enddo
+                do i=1,nImp*2
+                    do j = 1,nImp*2
+                        do k = 1,nImp*2
+                            do l = 1,nImp*2
+                                write(iunit,"(F16.12,4I8)") Umat(umatind(i,j,k,l)),i,j,k,l
+                            enddo
+                        enddo
+                    enddo
                 enddo
             endif
 
@@ -1720,6 +1737,7 @@ module solvers
         else
             !Transform to the core hamiltonian basis and write out in this basis
             write(6,"(A)") "Transforming to core hamiltonian basis before writing out FCIDUMP..."
+            if(tCorrelatedBath) call stop_all(t_r,'This cannot be currently done with a correlated bath. Fixme.')
             !First, construct the core hamiltonian
             allocate(CoreH(EmbSize,EmbSize))
             allocate(W(EmbSize))
