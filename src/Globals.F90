@@ -198,6 +198,9 @@ module Globals
     integer :: iSE_Constraints  ! Input constraints on flexibility of the self-energy matrix
     real(dp) :: Damping_SE      ! Damping of self energy update
     logical :: tConvergeMicroSE ! Whether to converge the self-energy completely for each high-level calculation
+    integer :: max_SE_iter      ! Maximum microiterations for converging self-energy 
+    real(dp) :: NIGF_WeightFac  ! Multiplier for the lattice greens function to aid convergence
+    logical :: tRead_SelfEnergy ! Read in converged self-energy from previous calculation
     integer :: TDLat_Ni,TDLat_Nj
     
     !DMET_LR global data

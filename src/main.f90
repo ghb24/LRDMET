@@ -119,6 +119,9 @@ Program RealHub
         iMinRes_MaxIter = 20000
         tBetaExcit = .false.
         nKCalcs = 0
+        max_SE_iter = 0
+        NIGF_WeightFac = 0.0_dp
+        tRead_SelfEnergy = .false.
 
     end subroutine set_defaults
 
@@ -583,6 +586,12 @@ Program RealHub
                 tNoHL_SE = .false.
             case("SELFENERGY_DAMPING")
                 call readf(Damping_SE)
+            case("SELFENERGY_ITERATIONS")
+                call readi(max_SE_iter)
+            case("LATTICEGF_MULTIPLIER")
+                call readf(NIGF_WeightFac)
+            case("READ_SELFENERGY")
+                tRead_SelfEnergy = .true.
             case("END")
                 exit
             case default
@@ -590,6 +599,9 @@ Program RealHub
                 write(6,"(A)") "MANYBODY_SELFENERGY"
                 write(6,"(A)") "REUSE_SELFENERGY"
                 write(6,"(A)") "SELFENERGY_DAMPING"
+                write(6,"(A)") "SELFENERGY_ITERATIONS"
+                write(6,"(A)") "LATTICEGF_MULTIPLIER"
+                write(6,"(A)") "READ_SELFENERGY"
                 call stop_all(t_r,'Keyword '//trim(w)//' not recognized')
             end select
         enddo SC

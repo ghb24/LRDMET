@@ -11,10 +11,15 @@ module LRDriver
 
     !Attempt to get k-space spectral functions by self-consistenly calculating k-independent hybridization and self-energy contributions
     subroutine SC_Mom_LR()
+        use utils, only: get_free_unit,append_ext_real,append_ext
         implicit none
-        real(dp) :: Omega,GFChemPot
-        integer :: nESteps,iter
-        complex(dp), allocatable :: SE(:,:,:),G_Mat(:,:,:)
+        real(dp) :: Omega,GFChemPot,OmegaVal,MaxDiffSE,DiffSE,reSE,imSE
+        complex(dp) :: DiffMatSE(nImp,nImp)
+        integer :: nESteps,iter,i,k,l,iunit,j
+        complex(dp), allocatable :: SE(:,:,:),G_Mat(:,:,:),SE_Old(:,:,:)
+        character(64) :: filename,filename2
+        logical :: exists
+        character(len=*), parameter :: t_r='SC_Mom_LR'
         
         !How many frequency points are there exactly?
         Omega = Start_Omega
@@ -26,8 +31,54 @@ module LRDriver
         
         !Find the k-independent self-consistent self-energy
         allocate(SE(nImp,nImp,nESteps))
-        SE(:,:,:) = zzero
+        allocate(SE_Old(nImp,nImp,nESteps))
         allocate(G_Mat(nImp,nImp,nESteps))
+
+        if(tRead_SelfEnergy) then
+            write(6,"(A)") "Reading in self-energy..."
+            call append_ext_real('Converged_SE',U,filename)
+            if(.not.tHalfFill) then
+                call append_ext(filename,nOcc,filename2)
+            else
+                filename2 = filename
+            endif
+            inquire(file=filename2,exist=exists)
+            if(.not.exists) then
+                write(6,*) "Converged self-energy does not exist, filename: ",filename2
+                call stop_all(t_r,'Cannot find file with converged selfenergy')
+            endif
+            
+            iunit = get_free_unit()
+            open(unit=iunit,file=filename2,status='unknown')
+            Omega = Start_Omega
+            i = 0
+            do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+                i = i + 1
+                !Read in *lower* triangle
+                read(iunit,"(G25.10)",advance='no') OmegaVal
+                if(abs(OmegaVal-Omega).gt.1.0e-8_dp) then
+                    write(6,*) OmegaVal,Omega
+                    call stop_all(t_r,'Omega values do not match up for read-in self-energy')
+                endif
+                do k = 1,nImp
+                    do l = k,nImp
+                        if((k.eq.nImp).and.(l.eq.nImp)) then
+                            exit
+                        endif
+                        read(iunit,"(2G25.10)",advance='no') reSE,imSE
+                        SE(l,k,i) = dcmplx(reSE,imSE)
+                    enddo
+                enddo
+                read(iunit,"(2G25.10)") reSE,imSE
+                SE(nImp,nImp,i) = dcmplx(reSE,imSE)
+                Omega = Omega + Omega_Step
+            enddo
+            close(iunit)
+        else
+            SE(:,:,:) = zzero
+        endif
+
+
 
         !Set chemical potential (This will only be right for half-filling)
         GFChemPot = U/2.0_dp
@@ -55,12 +106,58 @@ module LRDriver
             !This will read back in the greens function
             !The returned self-energy is k-independent, but will reproduce the correlated local greens function
             !call Converge_SE(SE,nESteps)
+            SE_Old(:,:,:) = SE(:,:,:)
             call Converge_SE_NoHybrid(G_Mat,SE,nESteps,iter)
 
-            !Finally, should we do this all in a larger self-consistency, such that the self energy is used for the frequency dependent bath?
-            if(iter.eq.10) exit
+            !What is the overall change in self-energy
+            MaxDiffSE = zero
+            do i = 1,nESteps
+                DiffMatSE(:,:) = SE(:,:,i) - SE_Old(:,:,i)
+                DiffSE = zero
+                do j = 1,nImp
+                    do k = 1,nImp
+                        DiffSE = DiffSE + real(dconjg(DiffMatSE(k,j))*DiffMatSE(k,j),dp)
+                    enddo
+                enddo
+                if(DiffSE.gt.MaxDiffSE) MaxDiffSE = DiffSE
+            enddo
+
+            !Finally, should we do this all in a larger self-consistency, 
+            !such that the self energy is used for the frequency dependent bath?
+            if(MaxDiffSE.lt.1.0e-4_dp) then
+                write(6,"(A,G15.8)") "Self-energy macroiteration converged to: ",1.0e-4_dp
+                exit
+            endif
 
         enddo
+
+        write(6,"(A)") "Writing out converged self-energy"
+        iunit = get_free_unit()
+        call append_ext_real('Converged_SE',U,filename)
+        if(.not.tHalfFill) then
+            call append_ext(filename,nOcc,filename2)
+        else
+            filename2 = filename
+        endif
+        open(unit=iunit,file=filename2,status='unknown')
+        Omega = Start_Omega
+        i = 0
+        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+            i = i + 1
+            !Write out *lower* triangle
+            write(iunit,"(G25.10)",advance='no') Omega
+            do k = 1,nImp
+                do l = k,nImp
+                    if((k.eq.nImp).and.(l.eq.nImp)) then
+                        exit
+                    endif
+                    write(iunit,"(2G25.10)",advance='no') real(SE(l,k,i),dp),aimag(SE(l,k,i))
+                enddo
+            enddo
+            write(iunit,"(2G25.10)") real(SE(nImp,nImp,i),dp),aimag(SE(nImp,nImp,i))
+            Omega = Omega + Omega_Step
+        enddo
+        close(iunit)
 
     end subroutine SC_Mom_LR
 

@@ -18,44 +18,36 @@ module MomSpectra
         integer, intent(in) :: nESteps,MacroIter
         complex(dp), intent(in) :: G00(nImp,nImp,nESteps)
         complex(dp), intent(inout) :: SE(nImp,nImp,nESteps)
-        integer :: iunit,i,iter,iunit2,iunit3,CurrSlot,MaxSlot,j
+        integer :: iunit,i,iter,iunit2,iunit3,CurrSlot,MaxSlot,j,k
         logical :: exists
         complex(dp), allocatable :: OldSE(:,:,:)
         complex(dp), allocatable :: InvLocalMomGF(:,:,:),LocalMomGF(:,:,:)
         complex(dp), allocatable :: InvG00(:,:,:),RealSpaceLocGF(:,:,:)
         real(dp) :: Omega,Re_LR,Im_LR,Omega_Val,SE_Thresh,MaxDiffSE,MinDiffSE,MeanDiffSE
-        real(dp) :: MaxDiffGF,MeanDiffGF,Prev_Spec,intweight,SE_Damp,MeanMax,MeanMean,IsoRes
+        real(dp) :: MaxDiffGF,MeanDiffGF,SpecWeight(nImp,nImp),IsoSpecWeight,MeanMax,MeanMean
         real(dp), allocatable :: MaxSEDiffs(:),MeanSEDiffs(:)
         character(64) :: filename,filename2,filename3,filename4,filename5,filename6
         character(128) :: header
-        character(len=*), parameter :: t_r='Converge_SE'
+        character(len=*), parameter :: t_r='Converge_SE_NoHybrid'
 
         write(6,*) "Entering Converge_SE_NoHybrid"
 
         MaxSlot = 10
         SE_Thresh = 1.0e-4_dp
-        SE_Damp = Damping_SE
-        !SE_Damp = 0.03111_dp
 
-        if(nImp.ne.1) call stop_all(t_r,'Can currently only do self-consistency with one impurity site')
+!        if(nImp.ne.1) call stop_all(t_r,'Can currently only do self-consistency with one impurity site')
 
         allocate(OldSE(nImp,nImp,nESteps))
         allocate(LocalMomGF(nImp,nImp,nESteps)) !The local 1-electron GF from the non-interacting H
         allocate(InvLocalMomGF(nImp,nImp,nESteps))
         allocate(InvG00(nImp,nImp,nESteps))
-        
-        intweight = zero
-        Prev_Spec = zero
-        do i=1,nESteps
-            IsoRes = zero
-            do j = 1,nImp
-                IsoRes = IsoRes + aimag(G00(j,j,i))
-            enddo
-            IsoRes = IsoRes / real(nImp,dp)
-            intweight = intweight + Omega_Step*(Prev_Spec-IsoRes)/(2.0_dp*pi)
-            Prev_Spec = -IsoRes
-        enddo
-        write(6,*) "Integrated weight for high-level spectral function: ",intweight
+
+        call CalcSumRule(G00,nImp,nESteps,SpecWeight,IsoSpecWeight)
+        call writematrix(SpecWeight,'Integrated spectral weights for all HL GFs',.true.)
+        write(6,*) "Integrated weight for isotropic high-level spectral function: ",IsoSpecWeight
+        call CalcSumRule(SE,nImp,nESteps,SpecWeight,IsoSpecWeight)
+        call writematrix(SpecWeight,'Integrated spectral weights for all initial Self-energies',.true.)
+        write(6,*) "Integrated weight for isotropic initial self-energy: ",IsoSpecWeight
         call flush(6)
 
         LocalMomGF(:,:,:) = zzero
@@ -80,6 +72,12 @@ module MomSpectra
             !Construct FT of k-space GFs and take zeroth part.
             !write(6,*) "FT'ing mean-field greens functions for local part"
             call FindLocalMomGF(nESteps,SE,LocalMomGF)
+
+            if(NIGF_WeightFac.ne.zero) then
+                write(6,*) "Increasing weight of NI GFs by: ",NIGF_WeightFac
+                LocalMomGF(:,:,:) = LocalMomGF(:,:,:)*NIGF_WeightFac
+            endif
+
             !call FindRealSpaceLocalMomGF(nESteps,SE,LocalMomGF)
             !We now have the updated local greens function from the 1-electron hamiltonian
             !call writevectorcomp(LocalMomGF(1,1,:),'local FT of NI GF')
@@ -93,9 +91,9 @@ module MomSpectra
             !Save previous Self-energy
             OldSE(:,:,:) = SE(:,:,:)
 
-            !SE(:,:,:) = SE(:,:,:) + (SE_Damp*InvLocalMomGF(:,:,:) - InvG00(:,:,:))
+            !SE(:,:,:) = SE(:,:,:) + (Damping_SE*InvLocalMomGF(:,:,:) - InvG00(:,:,:))
             !SE(:,:,:) = SE(:,:,:) + (InvLocalMomGF(:,:,:) - InvG00(:,:,:))
-            SE(:,:,:) = SE(:,:,:) + SE_Damp*(InvLocalMomGF(:,:,:) - InvG00(:,:,:))
+            SE(:,:,:) = SE(:,:,:) + Damping_SE*(InvLocalMomGF(:,:,:) - InvG00(:,:,:))
 
 !            do i = 1,nESteps
 !                if((aimag(SE(1,1,i)).gt.zero)) then
@@ -146,16 +144,28 @@ module MomSpectra
                 CurrSlot = CurrSlot + 1
             endif
 
-            if(MaxDiffSE.lt.(SE_Damp*SE_Thresh)) then
-                write(6,"(A,G12.5)") "Success! Convergence to maximum self-energy difference of ",SE_Thresh*SE_Damp
+            if(MaxDiffSE.lt.(Damping_SE*SE_Thresh)) then
+                write(6,"(A,G12.5)") "Success! Convergence to maximum self-energy difference of ",SE_Thresh*Damping_SE
                 write(6,"(A,G12.5)") "Mean squared difference between greens functions over all frequencies: ",MeanDiffGF
+                exit
+            endif
+
+            if((iter.ge.max_SE_iter).and.(max_SE_iter.ne.0)) then
+                write(6,*) "Hit max iters for self-energy fit. Exiting..."
                 exit
             endif
 
         enddo
         
-!        SE(:,:,:) = SE(:,:,:) * SE_Damp
+!        SE(:,:,:) = SE(:,:,:) * Damping_SE
         call FindLocalMomGF(nESteps,SE,LocalMomGF)
+        call CalcSumRule(LocalMomGF,nImp,nESteps,SpecWeight,IsoSpecWeight)
+        call writematrix(SpecWeight,'Integrated spectral weights for all converged mean-field GFs',.true.)
+        write(6,*) "Integrated weight for isotropic converged mean-field spectral function: ",IsoSpecWeight
+        call CalcSumRule(SE,nImp,nESteps,SpecWeight,IsoSpecWeight)
+        call writematrix(SpecWeight,'Integrated spectral weights for all converged Self-energies',.true.)
+        write(6,*) "Integrated weight for isotropic final self-energy: ",IsoSpecWeight
+        call flush(6)
 
         write(6,"(A)") "Writing out local mean-field greens function with converged self-energy, and Self Energy"
         iunit = get_free_unit()
@@ -163,22 +173,15 @@ module MomSpectra
         !Also append iteration number 
         call append_ext(filename,MacroIter,filename2)
         open(unit=iunit,file=filename2,status='unknown')
-        iunit2 = get_free_unit()
-        call append_ext_real('SelfEnergy',U,filename3)
-        !Also append iteraction number to the filename
-        call append_ext(filename3,MacroIter,filename4)
-        open(unit=iunit2,file=filename4,status='unknown')
 
         Omega = Start_Omega
         i = 0
         do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
             i = i + 1
             write(iunit,"(4G25.10)") Omega,aimag(LocalMomGF(1,1,i)),aimag(G00(1,1,i)),aimag(SE(1,1,i))
-            write(iunit2,"(3G25.10)") Omega,real(SE(1,1,i),dp),aimag(SE(1,1,i))
             Omega = Omega + Omega_Step
         enddo
         close(iunit)
-        close(iunit2)
         
         if(tCheck) then
             !Use the self-energy striped through the space to find the NI greens function for each frequency.
@@ -212,6 +215,38 @@ module MomSpectra
         deallocate(OldSE,InvG00,InvLocalMomGF,LocalMomGF)
 
     end subroutine Converge_SE_NoHybrid
+        
+    subroutine CalcSumRule(G,nGF,n,SpecWeight,IsoSpecWeight)
+        implicit none
+        integer, intent(in) :: n,nGF
+        complex(dp), intent(in) :: G(nGF,nGF,n)
+        real(dp), intent(out) :: SpecWeight(nGF,nGF),IsoSpecWeight
+        real(dp) :: Prev_Spec(nGF,nGF),Prev_IsoGF,IsoGF
+        integer :: i,j,k
+    
+        SpecWeight(:,:) = zero
+        IsoSpecWeight = zero
+
+        Prev_Spec(:,:) = zero
+        Prev_IsoGF = zero
+        do i=1,n
+            IsoGF = zero
+            do j = 1,nGF
+                IsoGF = IsoGF + aimag(G(j,j,i))
+                do k = 1,nGF
+                    if(aimag(G(k,j,i)).gt.zero) then
+                        write(6,*) "WARNING!! Local greens function not causal for freq: ",k,j,i
+                    endif
+                    SpecWeight(k,j) = SpecWeight(k,j) + Omega_Step*(Prev_Spec(k,j) - aimag(G(k,j,i)) )/(2.0_dp*pi)
+                    Prev_Spec(k,j) = -aimag(G(k,j,i))
+                enddo
+            enddo
+            IsoGF = IsoGF / real(nGF,dp)
+            IsoSpecWeight = IsoSpecWeight + Omega_Step*(Prev_IsoGF-IsoGF)/(2.0_dp*pi)
+            Prev_IsoGF = -IsoGF
+        enddo
+
+    end subroutine CalcSumRule
 
     !Routine to read in a correlated greens function, and self-consistently converge
     !a self energy from the 1-electron hemailtonian to get it to match this.
