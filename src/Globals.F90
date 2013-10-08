@@ -88,6 +88,7 @@ module Globals
     real(dp) :: HFEnergy    !Calculated HF energy
     logical :: tReadMats, tWriteMats    !Options for reading/writing the compressed matrices (N-electron only)
     integer :: iHamSize_N,iHamSize_Nm1,iHamSize_Np1     !Size of the compressed hamiltonians for N,N-1 and N+1 respectively
+    logical :: tCorrelatedBath      ! Explicit two-electron terms of the hamiltonian in the bath space
 
     integer , allocatable :: TD_Imp_Lat(:,:),TD_Imp_Phase(:,:)  !Parameterization of the orbital space for 2D hubbard
     integer , allocatable :: ImpSites(:)    !The list of site indices for the impurity sites
@@ -201,6 +202,7 @@ module Globals
     integer :: max_SE_iter      ! Maximum microiterations for converging self-energy 
     real(dp) :: NIGF_WeightFac  ! Multiplier for the lattice greens function to aid convergence
     logical :: tRead_SelfEnergy ! Read in converged self-energy from previous calculation
+    logical :: tRandom_Init_SE  ! Initialize self-energy with random numbers
     integer :: TDLat_Ni,TDLat_Nj
     
     !DMET_LR global data

@@ -66,6 +66,7 @@ Program RealHub
         iHamSize_N = 0
         iHamSize_Np1 = 0
         iHamSize_Nm1 = 0
+        tCorrelatedBath = .false.
 
         !General LR options
         Start_Omega = 0.0_dp
@@ -122,6 +123,7 @@ Program RealHub
         max_SE_iter = 0
         NIGF_WeightFac = 0.0_dp
         tRead_SelfEnergy = .false.
+        tRandom_Init_SE = .false.
 
     end subroutine set_defaults
 
@@ -592,6 +594,8 @@ Program RealHub
                 call readf(NIGF_WeightFac)
             case("READ_SELFENERGY")
                 tRead_SelfEnergy = .true.
+            case("RANDOM_SELFENERGY")
+                tRandom_Init_SE = .true.
             case("END")
                 exit
             case default
@@ -602,6 +606,7 @@ Program RealHub
                 write(6,"(A)") "SELFENERGY_ITERATIONS"
                 write(6,"(A)") "LATTICEGF_MULTIPLIER"
                 write(6,"(A)") "READ_SELFENERGY"
+                write(6,"(A)") "RANDOM_SELFENERGY"
                 call stop_all(t_r,'Keyword '//trim(w)//' not recognized')
             end select
         enddo SC

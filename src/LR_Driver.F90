@@ -13,7 +13,7 @@ module LRDriver
     subroutine SC_Mom_LR()
         use utils, only: get_free_unit,append_ext_real,append_ext
         implicit none
-        real(dp) :: Omega,GFChemPot,OmegaVal,MaxDiffSE,DiffSE,reSE,imSE
+        real(dp) :: Omega,GFChemPot,OmegaVal,MaxDiffSE,DiffSE,reSE,imSE,r(3)
         complex(dp) :: DiffMatSE(nImp,nImp)
         integer :: nESteps,iter,i,k,l,iunit,j
         complex(dp), allocatable :: SE(:,:,:),G_Mat(:,:,:),SE_Old(:,:,:)
@@ -78,8 +78,6 @@ module LRDriver
             SE(:,:,:) = zzero
         endif
 
-
-
         !Set chemical potential (This will only be right for half-filling)
         GFChemPot = U/2.0_dp
 
@@ -99,6 +97,22 @@ module LRDriver
                 nESteps," frequency points."
             call flush(6)
 
+            if((iter.eq.1).and.tRandom_Init_SE) then
+                !Randomize the initial SE for the microiterations on the first iteration
+                CALL random_seed()
+                do i = 1,nESteps
+                    do j = 1,nImp
+                        do k = 1,nImp
+                            CALL Random_Number(r(:))
+                            if(r(1).gt.0.5_dp) then
+                                SE(k,j,i) = dcmplx(r(2),-r(3))
+                            else
+                                SE(k,j,i) = dcmplx(-r(2),-r(3))
+                            endif
+                        enddo
+                    enddo
+                enddo
+            endif
             !tester
             !call testNIGFs(SE,nESteps)
 

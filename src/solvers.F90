@@ -932,7 +932,7 @@ module solvers
         logical :: texist
         character(len=*), parameter :: t_r='CompleteDiag'
 
-        call CreateIntMats(tTwoElecBath=tCorrelatedBath_GS)
+        call CreateIntMats(tTwoElecBath=tCorrelatedBath)
 
         !Now generate all determinants in the active space
         if(allocated(FCIDetList)) deallocate(FCIDetList)
@@ -1685,6 +1685,8 @@ module solvers
 
     subroutine WriteFCIDUMP()
         use utils, only: get_free_unit
+        use DetToolsData
+        use DetTools, only: umatind
         implicit none
         integer :: iunit,i,j,k,l,alpha,lWork,info,twoESize
         real(dp) :: hel
