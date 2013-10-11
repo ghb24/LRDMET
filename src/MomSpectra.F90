@@ -455,17 +455,10 @@ module MomSpectra
         integer :: iunit,i
         real(dp) :: Omega,intweight,Prev_Spec
 
-        allocate(LocalMomGF(nImp,nImp,nESteps))
-        allocate(RealSpaceLocGF(nImp,nImp,nESteps))
-
-        call FindLocalMomGF(nESteps,SE,LocalMomGF)
-        intweight = zero
-        Prev_Spec = zero
-        do i=1,nESteps
-            intweight = intweight + Omega_Step*(Prev_Spec-aimag(LocalMomGF(1,1,i)))/(2.0_dp*pi)
-            Prev_Spec = -aimag(LocalMomGF(1,1,i))
-        enddo
-        write(6,*) "Integrated weight for k-space NI spectral function: ",intweight
+!        allocate(LocalMomGF(nImp,nImp,nESteps))
+!        allocate(RealSpaceLocGF(nImp,nImp,nESteps))
+!
+!        call FindLocalMomGF(nESteps,SE,LocalMomGF)
 !        call FindRealSpaceLocalMomGF(nESteps,SE,RealSpaceLocGF)
 !        intweight = zero
 !        Prev_Spec = zero
@@ -488,6 +481,105 @@ module MomSpectra
 !            Omega = Omega + Omega_Step
 !        enddo
 !        close(iunit)
+
+
+!Diagonalize a self-energy in r-space
+        allocate(CompHam(nSites,nSites))
+
+        call add_localpot_comp_inplace(CompHam,SE)
+        allocate(RVec(nSites,nSites))
+        allocate(LVec(nSites,nSites))
+        allocate(W_Vals(nSites))
+        allocate(Work(max(1,2*nSites)))
+        allocate(cWork(1))
+        lwork = -1
+        info = 0
+        call zgeev('V','V',nSites,CompHam,nSites,W_Vals,LVec,nSites,RVec,nSites,cWork,lWork,Work,info)
+        if(info.ne.0) call stop_all(t_r,'Workspace query failed')
+        lwork = int(abs(cWork(1)))+1
+        deallocate(cWork)
+        allocate(cWork(lWork))
+        call zgeev('V','V',nSites,Mat,nSites,W_Vals,LVec,SS_Period,RVec,SS_Period,cWork,lWork,Work,info)
+        if(info.ne.0) call stop_all(t_r,'Diagonalization of 1-electron GF failed')
+        deallocate(cWork)
+
+
+
+
+
+
+        !Data for the diagonalization of the one-electron k-dependent Greens functions
+        allocate(RVec(SS_Period,SS_Period))
+        allocate(LVec(SS_Period,SS_Period))
+        allocate(W_Vals(SS_Period))
+        allocate(Work(max(1,2*SS_Period)))
+        allocate(ztemp(nSites,SS_Period))
+
+        do kPnt = 1,nKPnts
+            !Run through all k-points
+            ind_1 = ((kPnt-1)*SS_Period) + 1
+            ind_2 = SS_Period*kPnt
+                
+            !Transform the one-electron hamiltonian into this k-basis
+            RotMat(:,:) = RtoK_Rot(:,ind_1:ind_2)
+            call ZGEMM('N','N',nSites,SS_Period,nSites,zone,CompHam,nSites,RotMat,nSites,zzero,ztemp,nSites)
+            call ZGEMM('C','N',SS_Period,SS_Period,nSites,zone,RotMat,nSites,ztemp,nSites,zzero,k_Ham,SS_Period)
+            !k_Ham is the complex, one-electron hamiltonian (with correlation potential) for this k-point
+
+            !write(6,*) "For k-point: ",kPnt
+            !call writematrixcomp(k_Ham,'k-space ham is: ',.false.)
+
+            i = 0
+            Omega = Start_Omega
+            do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+                i = i + 1
+                if(i.gt.n) call stop_all(t_r,'Too many freq points')
+
+                !Find inverse greens function for this k-point
+                InvMat(:,:) = - k_Ham(:,:) - SE(:,:,i)
+                do j = 1,SS_Period
+                    InvMat(j,j) = InvMat(j,j) + dcmplx(Omega + mu,dDelta)
+                enddo
+
+                !Now, diagonalize this
+                !The self-energy is *not* hermitian
+                allocate(cWork(1))
+                lwork = -1
+                info = 0
+                call zgeev('V','V',SS_Period,InvMat,SS_Period,W_Vals,LVec,SS_Period,RVec,SS_Period,cWork,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'Workspace query failed')
+                lwork = int(abs(cWork(1)))+1
+                deallocate(cWork)
+                allocate(cWork(lWork))
+                call zgeev('V','V',SS_Period,InvMat,SS_Period,W_Vals,LVec,SS_Period,RVec,SS_Period,cWork,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'Diagonalization of 1-electron GF failed')
+                deallocate(cWork)
+
+                !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
+                !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
+                call Order_zgeev_vecs(W_Vals,LVec,RVec)
+                !call writevectorcomp(W_Vals,'Eigenvalues ordered')
+                !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
+                call Orthonorm_zgeev_vecs(SS_Period,W_Vals,LVec,RVec)
+                !Calculate greens function for this k-vector
+                InvMat(:,:) = zzero
+                do j = 1,SS_Period
+                    InvMat(j,j) = zone / W_Vals(j)
+                enddo
+                !Now rotate this back into the original basis
+                call zGEMM('N','N',SS_Period,SS_Period,SS_Period,zone,RVec,SS_Period,InvMat,SS_Period,zzero,ztemp2,SS_Period)
+                call zGEMM('N','C',SS_Period,SS_Period,SS_Period,zone,ztemp2,SS_Period,LVec,SS_Period,zzero,InvMat,SS_Period)
+                !InvMat is now the non-interacting greens function for this k: TEST THIS!
+                !Sum this into the *local* greens function (i.e. a fourier transform of r=0 component)
+                LocalMomGF(:,:,i) = LocalMomGF(:,:,i) + InvMat(:,:)
+
+                !write(6,*) "For frequency: ",Omega
+                !call writematrixcomp(InvMat,'k-space greens function is: ',.false.)
+
+                Omega = Omega + Omega_Step
+            enddo   !Enddo frequency point i
+
+        enddo   !enddo k-point
 
         deallocate(LocalMomGF,RealSpaceLocGF)
     end subroutine TestNIGFs

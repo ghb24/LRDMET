@@ -1719,7 +1719,9 @@ module solvers
                     do j = 1,nImp*2
                         do k = 1,nImp*2
                             do l = 1,nImp*2
-                                write(iunit,"(F16.12,4I8)") Umat(umatind(i,j,k,l)),i,j,k,l
+                                if(abs(umat(umatind(i,j,k,l))).gt.1.0e-8_dp) then
+                                    write(iunit,"(F16.12,4I8)") Umat(umatind(i,j,k,l)),i,j,k,l
+                                endif
                             enddo
                         enddo
                     enddo
@@ -1739,7 +1741,7 @@ module solvers
         else
             !Transform to the core hamiltonian basis and write out in this basis
             write(6,"(A)") "Transforming to core hamiltonian basis before writing out FCIDUMP..."
-            if(tCorrelatedBath) call stop_all(t_r,'This cannot be currently done with a correlated bath. Fixme.')
+            if(tCorrelatedBath) call stop_all(t_r,'Core H basis cannot be currently done with a correlated bath. Fixme.')
             !First, construct the core hamiltonian
             allocate(CoreH(EmbSize,EmbSize))
             allocate(W(EmbSize))
