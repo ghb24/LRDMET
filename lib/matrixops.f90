@@ -37,11 +37,12 @@ MODULE matrixops
 
 CONTAINS
   SUBROUTINE z_inv (mat,matinv)
+    use const
     
     CHARACTER,PARAMETER :: trans='N'
-    COMPLEX(KIND=KIND(1.d0)), INTENT(IN) :: mat(:,:)
+    COMPLEX(dp), INTENT(IN) :: mat(:,:)
 !    COMPLEX(KIND=KIND(1.d0)), DIMENSION(SIZE(mat(:,1)),SIZE(mat(1,:))) ::&
-    COMPLEX(KIND=KIND(1.d0)), DIMENSION(SIZE(mat,1),SIZE(mat,2)) ::&
+    COMPLEX(dp), DIMENSION(SIZE(mat,1),SIZE(mat,2)) ::&
         & matinv, matdum
     INTEGER, DIMENSION(SIZE(mat,1)) :: IPIV
     INTEGER :: nsize,msize,i,INFO
@@ -49,9 +50,9 @@ CONTAINS
     msize=SIZE(mat,1)
     nsize=SIZE(mat,2)
     matdum=mat
-    matinv=dcmplx(0.0d0,0.0d0)
+    matinv=zzero
     DO i=1,msize
-       matinv(i,i)=1.0d0
+       matinv(i,i)=zone
     END DO
     INFO=-1
     CALL zGETRF(msize,nsize,matdum,nsize,IPIV,INFO)

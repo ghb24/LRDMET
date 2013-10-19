@@ -90,7 +90,7 @@ module LRDriver
             !calculate G_00
 !            call NonIntExCont_TDA_MCLR_Charged_Cmprs()
 !            call NonIntExCont_TDA_MCLR_Charged()
-            write(6,"(A)") "Calculating high-level correlation functioin..."
+            write(6,"(A)") "Calculating high-level correlation function..."
             call SchmidtGF_wSE(G_Mat,GFChemPot,SE,nESteps)
             write(6,"(A)") "High-level correlation function obtained."
             write(6,"(A,I8,A)") "Now attempting self-consistent determination of self-energy function from ", &
@@ -119,9 +119,9 @@ module LRDriver
             !Now calculate the (hybridization and) self-energy self-consistently
             !This will read back in the greens function
             !The returned self-energy is k-independent, but will reproduce the correlated local greens function
-            !call Converge_SE(SE,nESteps)
+            call Converge_SE(SE,nESteps)
             SE_Old(:,:,:) = SE(:,:,:)
-            call Converge_SE_NoHybrid(G_Mat,SE,nESteps,iter)
+            !call Converge_SE_NoHybrid(G_Mat,SE,nESteps,iter)
 
             !What is the overall change in self-energy
             MaxDiffSE = zero
