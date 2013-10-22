@@ -470,6 +470,182 @@ module MomSpectra
 
     end subroutine Converge_SE 
 
+    !Given the local part of a global non-interacting greens function, a self-energy and hybridization function,
+    !check that the local greens function is the same as the local part of the global greens function.
+    subroutine CheckNIGFsSame(n,LocalMomGF,SE,Hybrid,mu)
+        implicit none
+        integer, intent(in) :: n
+        complex(dp), intent(in) :: LocalMomGF(nImp,nImp,n)
+        complex(dp), intent(in) :: SE(nImp,nImp,n)
+        complex(dp), intent(in) :: Hybrid(nImp,nImp,n)
+        real(dp), intent(in) :: mu
+        complex(dp), allocatable :: LocalH(:,:),TrueLocGF(:,:,:)
+        real(dp) :: Omega
+        integer :: i,j
+
+        allocate(LocalH(nImp,nImp))
+        allocate(TrueLocGF(nImp,nImp,n))
+        TrueLocGF(:,:,:) = zzero
+        do j = 1,nImp
+            do k = 1,nImp
+                LocalH(k,j) = dcmplx(h0v(k,j),zero)
+            enddo
+        enddo
+        
+        Omega = Start_Omega
+        i = 0
+        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+            i = i + 1
+            if(i.gt.n) call stop_all(t_r,'Too many freq points')
+
+            !Calculate the local greens function for this frequency
+            TrueLocGF(:,:,i) = - LocalH(:,:) - SE(:,:,i) - Hybrid(:,:,i)
+            do j = 1,nImp
+                TrueLocGF(j,j,i) = TrueLocGF(j,j,i) + dcmplx(Omega + mu,dDelta)
+            enddo
+            Omega = Omega + Omega_Step
+        enddo
+
+        call InvertLocalNonHermGF(n,TrueLocGF)
+
+        do i = 1,n
+            !Now, check they're the same
+            do j = 1,nImp
+                do k = 1,nImp
+                    if(abs(LocalMomGF(i,k,j)-TrueLocGF(k,j)).gt.1.0e-8_dp) then
+                        call stop_all(t_r,'Local and Global Non-interacting greens functions not equal')
+                    endif
+                enddo
+            enddo
+        enddo
+
+        write(6,*) "Local and Global non-interacting greens functions identical..."
+        deallocate(LocalH,TrueLocGF)
+
+    end subroutine CheckNIGFsSame
+
+    !Now calculate X', the local coupling function, as
+    ![omega + mu + i delta - h00 - Delta]^-1
+    subroutine CalcLocalCoupling(n,Hybrid,LocalCoup)
+        integer, intent(in) :: n
+        complex(dp), intent(in) :: Hybrid(nImp,nImp,n)
+        complex(dp), intent(out) :: LocalCoup(nImp,nImp,n)
+
+        complex(dp), allocatable :: LocalH(:,:)
+        integer :: i,j,k
+
+        allocate(LocalH(nImp,nImp))
+        do j = 1,nImp
+            do k = 1,nImp
+                LocalH(k,j) = dcmplx(h0v(k,j),zero)
+            enddo
+        enddo
+        
+        Omega = Start_Omega
+        i = 0
+        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+            i = i + 1
+            if(i.gt.n) call stop_all(t_r,'Too many freq points')
+            
+            !Calculate the local coupling function for this frequency
+            LocalCoup(:,:,i) = - LocalH(:,:) - Hybrid(:,:,i)
+            do j = 1,nImp
+                LocalCoup(j,j,i) = LocalCoup(j,j,i) + dcmplx(Omega + mu,dDelta)
+            enddo
+            Omega = Omega + Omega_Step
+        enddo
+
+        call InvertLocalNonHermGF(n,LocalCoup)
+
+        deallocate(LocalH)
+    end subroutine CalcLocalCoupling
+
+    !Write out the isotropic average of a dynamic function in the impurity space.
+    subroutine writedynamicfunction(n,Func,FileRoot,tag,tCheckCausal,tCheckOffDiagHerm)
+        implicit none
+        integer, intent(in) :: n
+        complex(dp), intent(in) :: Func(nImp,nImp,n)
+        character(len=*), intent(in) :: FileRoot
+        integer, intent(in), optional :: tag
+        logical, intent(in), optional :: tCheckCausal
+        logical, intent(in), optional :: tCheckOffDiagHerm
+
+        character(64) :: filename
+        logical :: tCheckOffDiagHerm_,tCheckCausal_
+        integer :: iunit,i
+        real(dp) :: Omega
+        complex(dp) :: IsoAv
+        character(len=*), parameter :: t_r='writedynamicfunction'
+
+        if(present(tCheckCausal)) then
+            tCheckCausal_ = tCheckCausal
+        else
+            tCheckCausal_ = .false.
+        endif
+
+        if(present(tCheckOffDiagHerm)) then
+            tCheckOffDiagHerm_ = tCheckOffDiagHerm
+        else
+            tCheckOffDiagHerm_ = .false.
+        endif
+
+        if(present(tag)) then
+            call append_ext(FileRoot,tag,filename)
+        else
+            filename = FileRoot
+        endif
+        iunit = get_free_unit()
+        open(unit=iunit,file=filename,status='unknown')
+        Omega = Start_Omega
+        i=0
+        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+            i = i + 1
+            if(i.gt.n) call stop_all(t_r,'Wrong number of frequency points used')
+            !Find isotropic part
+            IsoAv = zzero
+            do j = 1,nImp
+                IsoAv = IsoAv + Func(j,j,i)
+                if(tCheckOffDiagHerm_) then
+                    do k = 1,nImp
+                        if(k.ne.j) then
+                            if(abs(Func(k,j,i)-dconjg(Func(j,k,i))).gt.1.0e-8) then
+                                call stop_all(t_r,'Function no longer off-diagonal hermitian')
+                            endif
+                        endif
+                    enddo
+                endif
+            enddo
+            IsoAv = IsoAv / real(nImp,dp)
+            if(tCheckCausal_.and.(aimag(IsoAv).gt.zero)) then
+                call stop_all(t_r,'Function not causal')
+            endif
+
+            write(iunit,"(3G25.10)") Omega,real(IsoAv,dp),aimag(IsoAv)
+            Omega = Omega + Omega_Step
+        enddo
+        close(iunit)
+
+    end subroutine writedynamicfunction
+
+    !Via a NR algorithm, iteratively converge the global coupling of the cluster to the lattice
+    subroutine ConvergeGlobalCoupling(n,LocalCoup,GlobalCoup)
+        implicit none
+        integer, intent(in) :: n
+        complex(dp), intent(in) :: LocalCoup(nImp,nImp,n)
+        complex(dp), intent(out) :: GlobalCoup(nImp,nImp,n)
+
+    end subroutine ConvergeGlobalCoupling
+
+    !Damped update of the self-energy via the dyson equation
+    subroutine Calc_SE(n,Hybrid,G,SE)
+        implicit none
+        integer, intent(in) :: n
+        complex(dp), intent(in) :: Hybrid(nImp,nImp,n)
+        complex(dp), intent(in) :: G(nImp,nImp,n)
+        complex(dp), intent(inout) :: SE(nImp,nImp,n)
+
+    end subroutine Calc_SE
+
 !    !Random test for my own edification. At Sigma=0, can we get the real-space and k-space NI GFs to agree?
 !    subroutine TestNIGFs(SE,nESteps)
 !        use utils, only: get_free_unit

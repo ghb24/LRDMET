@@ -8,6 +8,206 @@ module LRDriver
     implicit none
 
     contains
+    
+    !Attempt to get k-space spectral functions by self-consistenly calculating k-independent hybridization and self-energy contributions
+    !As opposed to the routine below, this one attempts to use a global hybridization in the construction of the bath, rather than the 
+    !self-energy
+    subroutine SC_Mom_LR_Z()
+        use utils, only: get_free_unit,append_ext_real,append_ext
+        implicit none
+        real(dp) :: Omega,GFChemPot,OmegaVal,MaxDiffSE,DiffSE,reSE,imSE,r(3)
+        complex(dp) :: DiffMatSE(nImp,nImp)
+        integer :: nESteps,iter,i,k,l,iunit,j
+        complex(dp), allocatable :: SE(:,:,:),G_Mat(:,:,:),SE_Old(:,:,:)
+        complex(dp), allocatable :: Hybrid(:,:,:),InvLocalMomGF(:,:,:),LocalMomGF(:,:,:)
+        character(64) :: filename,filename2
+        logical :: exists
+        character(len=*), parameter :: t_r='SC_Mom_LR'
+        
+        !How many frequency points are there exactly?
+        Omega = Start_Omega
+        nESteps = 0
+        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+            nESteps = nESteps + 1
+            Omega = Omega + Omega_Step
+        enddo
+        
+        !Find the k-independent self-consistent self-energy
+        allocate(SE(nImp,nImp,nESteps))
+        allocate(SE_Old(nImp,nImp,nESteps))
+        allocate(G_Mat(nImp,nImp,nESteps))
+        allocate(Hybrid(nImp,nImp,nESteps))
+        allocate(InvLocalMomGF(nImp,nImp,nESteps))
+        allocate(LocalMomGF(nImp,nImp,nESteps))
+
+        Hybrid(:,:,:) = zzero
+        InvLocalMomGF(:,:,:) = zzero
+        LocalMomGF(:,:,:) = zzero
+
+        if(tRead_SelfEnergy) then
+            write(6,"(A)") "Reading in self-energy..."
+            call append_ext_real('Converged_SE',U,filename)
+            if(.not.tHalfFill) then
+                call append_ext(filename,nOcc,filename2)
+            else
+                filename2 = filename
+            endif
+            inquire(file=filename2,exist=exists)
+            if(.not.exists) then
+                write(6,*) "Converged self-energy does not exist, filename: ",filename2
+                call stop_all(t_r,'Cannot find file with converged selfenergy')
+            endif
+            
+            iunit = get_free_unit()
+            open(unit=iunit,file=filename2,status='unknown')
+            Omega = Start_Omega
+            i = 0
+            do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+                i = i + 1
+                !Read in *lower* triangle
+                read(iunit,"(G25.10)",advance='no') OmegaVal
+                if(abs(OmegaVal-Omega).gt.1.0e-8_dp) then
+                    write(6,*) OmegaVal,Omega
+                    call stop_all(t_r,'Omega values do not match up for read-in self-energy')
+                endif
+                do k = 1,nImp
+                    do l = k,nImp
+                        if((k.eq.nImp).and.(l.eq.nImp)) then
+                            exit
+                        endif
+                        read(iunit,"(2G25.10)",advance='no') reSE,imSE
+                        SE(l,k,i) = dcmplx(reSE,imSE)
+                    enddo
+                enddo
+                read(iunit,"(2G25.10)") reSE,imSE
+                SE(nImp,nImp,i) = dcmplx(reSE,imSE)
+                Omega = Omega + Omega_Step
+            enddo
+            close(iunit)
+        else
+            SE(:,:,:) = zzero
+        endif
+
+        !Set chemical potential (This will only be right for half-filling)
+        GFChemPot = U/2.0_dp
+
+        iter = 0
+
+        do while(.true.)
+
+            iter = iter + 1
+
+            !Construct FT of k-space GFs and take zeroth part.
+            !write(6,*) "FT'ing mean-field greens functions for local part"
+            call FindLocalMomGF(nESteps,SE,LocalMomGF)
+
+            !Invert the matrix of non-interacting local greens functions.
+            !write(6,*) "Inverting Local greens function"
+            InvLocalMomGF(:,:,:) = LocalMomGF(:,:,:)
+            call InvertLocalNonHermGF(nESteps,InvLocalMomGF)
+
+            !Now find hybridization
+            !This is given by (omega + mu + idelta - e_0 - SE - InvGF)
+            !write(6,*) "Calculating Hybridization function to local greens function"
+            call FindHybrid(nESteps,InvLocalMomGF,SE,Hybrid)
+
+            !TODO: Check that G^0 = G^0' now.
+            call CheckNIGFsSame(nESteps,LocalMomGF,SE,Hybrid,GFChemPot)
+
+            call writedynamicfunction(nESteps,Hybrid,'Hybrid',tCheckCausal=.true.,tCheckOffDiagHerm=.true.)
+
+            !Now calculate X', the local coupling function, as
+            ![omega + mu + i delta - h00 - Delta]^-1
+            call CalcLocalCoupling(nESteps,Hybrid,LocalCoup)
+
+            !Iteratively converge the global, k-independent coupling quantity 'GlobalCoup', 
+            !which mimics the effect of the hybridization on the whole lattice.
+            call ConvergeGlobalCoupling(nESteps,LocalCoup,GlobalCoup)
+
+            !Construct interacting greens function from the global coupling
+            !calculate G_00
+            write(6,"(A)") "Calculating high-level correlation function..."
+            call SchmidtGF_wSE(G_Mat,GFChemPot,GlobalCoup,nESteps)
+            write(6,"(A)") "High-level correlation function obtained."
+
+            !Now calculate the change in the self energy from a damped application
+            !of the dyson equation. This is not iterative, and the non-interating
+            !and iteractive greens function do not necessarily agree from the outset.
+            !This takes the old SE, and outputs the new one.
+            SE_Old(:,:,:) = SE(:,:,:)
+            call Calc_SE(nESteps,Hybrid,G_Mat,SE)
+
+            !What is the overall change in self-energy
+            MaxDiffSE = zero
+            do i = 1,nESteps
+                DiffMatSE(:,:) = SE(:,:,i) - SE_Old(:,:,i)
+                DiffSE = zero
+                do j = 1,nImp
+                    do k = 1,nImp
+                        DiffSE = DiffSE + real(dconjg(DiffMatSE(k,j))*DiffMatSE(k,j),dp)
+                    enddo
+                enddo
+                if(DiffSE.gt.MaxDiffSE) MaxDiffSE = DiffSE
+            enddo
+
+            !Finally, should we do this all in a larger self-consistency, 
+            !such that the self energy is used for the frequency dependent bath?
+            if(MaxDiffSE.lt.1.0e-4_dp) then
+                write(6,"(A,G15.8)") "Self-energy macroiteration converged to: ",1.0e-4_dp
+                exit
+            endif
+
+        enddo
+
+        write(6,"(A)") "Writing out converged self-energy"
+        iunit = get_free_unit()
+        call append_ext_real('Converged_SE',U,filename)
+        if(.not.tHalfFill) then
+            call append_ext(filename,nOcc,filename2)
+        else
+            filename2 = filename
+        endif
+        open(unit=iunit,file=filename2,status='unknown')
+        Omega = Start_Omega
+        i = 0
+        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+            i = i + 1
+            !Write out *lower* triangle
+            write(iunit,"(G25.10)",advance='no') Omega
+            do k = 1,nImp
+                do l = k,nImp
+                    if((k.eq.nImp).and.(l.eq.nImp)) then
+                        exit
+                    endif
+                    write(iunit,"(2G25.10)",advance='no') real(SE(l,k,i),dp),aimag(SE(l,k,i))
+                enddo
+            enddo
+            write(iunit,"(2G25.10)") real(SE(nImp,nImp,i),dp),aimag(SE(nImp,nImp,i))
+            Omega = Omega + Omega_Step
+        enddo
+        close(iunit)
+
+    end subroutine SC_Mom_LR
+
+    !This is the high level routine to work out how we want to do the linear response
+    !These functions are for single-reference (generally non-interacting) spectral functions, but using the correlated one-electron potential in their calculation.
+    !Therefore, they should be pretty good around the ground state.
+    subroutine Correlated_SR_LR()
+        implicit none
+        !character(len=*), parameter :: t_r='Correlated_SR_LR'
+
+        if(tCorrNI_LocGF) then
+            call CorrNI_LocalGF()
+        endif
+        if(tCorrNI_LocDD) then
+            call CorrNI_LocalDD()
+        endif
+        if(tCorrNI_MomGF) then
+            call CorrNI_MomGF()
+        endif
+
+    end subroutine Correlated_SR_LR_Z
+
 
     !Attempt to get k-space spectral functions by self-consistenly calculating k-independent hybridization and self-energy contributions
     subroutine SC_Mom_LR()
