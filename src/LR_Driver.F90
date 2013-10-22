@@ -100,6 +100,7 @@ module LRDriver
             !Construct FT of k-space GFs and take zeroth part.
             !write(6,*) "FT'ing mean-field greens functions for local part"
             call FindLocalMomGF(nESteps,SE,LocalMomGF)
+            call writedynamicfunction(nESteps,LocalMomGF,'LocalMomGF',tCheckCausal=.true.,tCheckOffDiagHerm=.true.)
 
             !Invert the matrix of non-interacting local greens functions.
             !write(6,*) "Inverting Local greens function"
@@ -111,7 +112,7 @@ module LRDriver
             !write(6,*) "Calculating Hybridization function to local greens function"
             call FindHybrid(nESteps,InvLocalMomGF,SE,Hybrid)
 
-            !TODO: Check that G^0 = G^0' now.
+            !Check that G^0 = G^0' now.
             call CheckNIGFsSame(nESteps,LocalMomGF,SE,Hybrid,GFChemPot)
 
             call writedynamicfunction(nESteps,Hybrid,'Hybrid',tCheckCausal=.true.,tCheckOffDiagHerm=.true.)
@@ -124,6 +125,8 @@ module LRDriver
             !which mimics the effect of the hybridization on the whole lattice.
             call ConvergeGlobalCoupling(nESteps,LocalCoup,GlobalCoup)
 
+            !TODO: Check here that the two coupling functions are identical
+
             !Construct interacting greens function from the global coupling
             !calculate G_00
             write(6,"(A)") "Calculating high-level correlation function..."
@@ -135,20 +138,8 @@ module LRDriver
             !and iteractive greens function do not necessarily agree from the outset.
             !This takes the old SE, and outputs the new one.
             SE_Old(:,:,:) = SE(:,:,:)
-            call Calc_SE(nESteps,Hybrid,G_Mat,SE)
-
-            !What is the overall change in self-energy
-            MaxDiffSE = zero
-            do i = 1,nESteps
-                DiffMatSE(:,:) = SE(:,:,i) - SE_Old(:,:,i)
-                DiffSE = zero
-                do j = 1,nImp
-                    do k = 1,nImp
-                        DiffSE = DiffSE + real(dconjg(DiffMatSE(k,j))*DiffMatSE(k,j),dp)
-                    enddo
-                enddo
-                if(DiffSE.gt.MaxDiffSE) MaxDiffSE = DiffSE
-            enddo
+            call Calc_SE(nESteps,Hybrid,G_Mat,GFChemPot,SE,MaxDiffSE)
+            call writedynamicfunction(nESteps,SE,'SelfEnergy',tCheckCausal=.true.,tCheckOffDiagHerm=.true.)
 
             !Finally, should we do this all in a larger self-consistency, 
             !such that the self energy is used for the frequency dependent bath?

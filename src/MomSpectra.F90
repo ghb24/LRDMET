@@ -632,18 +632,88 @@ module MomSpectra
         implicit none
         integer, intent(in) :: n
         complex(dp), intent(in) :: LocalCoup(nImp,nImp,n)
-        complex(dp), intent(out) :: GlobalCoup(nImp,nImp,n)
+        complex(dp), intent(inout) :: GlobalCoup(nImp,nImp,n)
+
+        real(dp) :: dDampedNR
+        
+        dDampedNR = 1.0_dp
+
+        write(6,*) "Converging global coupling matrix..."
+
+        nVars = nImp*nImp
+
+        allocate(Jacobian(nVars))
+        allocate(Func(nVars))
+
+        do while(.true.)
+
+            Omega = Start_Omega
+            i=0
+            do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+                i = i + 1
+                if(i.gt.n) call stop_all(t_r,'Wrong number of frequency points used')
+
+                Omega = Omega + Omega_Step
+            enddo
+
+        enddo
 
     end subroutine ConvergeGlobalCoupling
 
     !Damped update of the self-energy via the dyson equation
-    subroutine Calc_SE(n,Hybrid,G,SE)
+    subroutine Calc_SE(n,Hybrid,G,mu,SE,MaxDiffSE)
         implicit none
         integer, intent(in) :: n
         complex(dp), intent(in) :: Hybrid(nImp,nImp,n)
         complex(dp), intent(in) :: G(nImp,nImp,n)
+        real(dp), intent(in) :: mu
         complex(dp), intent(inout) :: SE(nImp,nImp,n)
+        real(dp), intent(out) :: MaxDiffSE
 
+        complex(dp), allocatable :: InvG00(:,:,:),DeltaSE(:,:),LocalH(:,:)
+        real(dp) :: Omega
+        integer :: i,j,k
+
+        !First, invert the interacting greens function
+        allocate(InvG00(nImp,nImp,n))
+        InvG00(:,:,:) = G(:,:,:)
+        call InvertLocalNonHermGF(n,InvG00)
+        
+        allocate(LocalH(nImp,nImp))
+        do j = 1,nImp
+            do k = 1,nImp
+                LocalH(k,j) = dcmplx(h0v(k,j),zero)
+            enddo
+        enddo
+
+        allocate(DeltaSE(nImp,nImp))
+
+        Omega = Start_Omega
+        i=0
+        MaxDiffSE = zero
+        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+            i = i + 1
+            if(i.gt.n) call stop_all(t_r,'Wrong number of frequency points used')
+
+            DeltaSE(:,:) = zzero
+            do j = 1,nImp
+                DeltaSE(j,j) = dcmplx(Omega+mu,dDelta)
+            enddo
+            DeltaSE(:,:) = DeltaSE(:,:) - SE(:,:,i) - LocalH(:,:) - Hybrid(:,:,i) - InvG00(:,:,i)
+
+            SE(:,:,i) = SE(:,:,i) + Damping_SE*DeltaSE(:,:)
+
+            do j = 1,nImp
+                do k = 1,nImp
+                    DiffSE = DiffSE + real(dconjg(DeltaSE(k,j))*DeltaSE(k,j),dp)
+                enddo
+            enddo
+            if(DiffSE.gt.MaxDiffSE) MaxDiffSE = DiffSE
+
+            Omega = Omega + Omega_Step
+        enddo
+
+        deallocate(DeltaSE,LocalH,InvG00)
     end subroutine Calc_SE
 
 !    !Random test for my own edification. At Sigma=0, can we get the real-space and k-space NI GFs to agree?
