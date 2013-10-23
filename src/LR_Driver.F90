@@ -121,11 +121,12 @@ module LRDriver
             ![omega + mu + i delta - h00 - Delta]^-1
             call CalcLocalCoupling(nESteps,Hybrid,LocalCoup)
 
-            !Iteratively converge the global, k-independent coupling quantity 'GlobalCoup', 
+            !Iteratively converge the global, k-independent coupling quantity 'GlobalCoup' (Z), 
             !which mimics the effect of the hybridization on the whole lattice.
             call ConvergeGlobalCoupling(nESteps,LocalCoup,GlobalCoup)
 
             !TODO: Check here that the two coupling functions are identical
+            stop
 
             !Construct interacting greens function from the global coupling
             !calculate G_00

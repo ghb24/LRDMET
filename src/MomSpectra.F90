@@ -627,38 +627,149 @@ module MomSpectra
 
     end subroutine writedynamicfunction
 
-    !Via a NR algorithm, iteratively converge the global coupling of the cluster to the lattice
-    subroutine ConvergeGlobalCoupling(n,LocalCoup,GlobalCoup)
+    !Via a NR algorithm, iteratively converge the global coupling (Z) of the cluster to the lattice
+    !LocalCoupFunc is X'(omega)
+    subroutine ConvergeGlobalCoupling(n,LocalCoupFunc,GlobalCoup)
         implicit none
         integer, intent(in) :: n
         complex(dp), intent(in) :: LocalCoup(nImp,nImp,n)
         complex(dp), intent(inout) :: GlobalCoup(nImp,nImp,n)
 
-        real(dp) :: dDampedNR
+        real(dp) :: dDampedNR,dConvTol
+        real(dp) :: AbsChange,MaxAbsChange
+        complex(dp), allocatable :: FuncVal(:,:,:),Grad(:,:,:)
+        complex(dp), allocatable :: ChangeZ(:,:)
+        integer :: i,iter,j,k
+        character(len=*), parameter :: t_r='ConvergeGlobalCoupling'
         
         dDampedNR = 1.0_dp
-
+        dConvTol = 1.0e-7_dp
         write(6,*) "Converging global coupling matrix..."
 
-        nVars = nImp*nImp
+        allocate(FuncVal(nImp,nImp,n))
+        allocate(Grad(nImp,nImp,n))
+        allocate(ChangeZ(nImp,nImp))
 
-        allocate(Jacobian(nVars))
-        allocate(Func(nVars))
-
+        iter = 0
         do while(.true.)
+            iter = iter + 1
+            write(6,*) "Starting NR iteration: ",iter
 
+            !Get function values and Jacobian (diagonal) for all omega values
+            call GetFuncValsandGrads(n,mu,LocalCoupFunc,GlobalCoup,FuncVal,Grad)
+
+            MaxAbsChange = zero
+            do i = 1,n
+                !Run over omega values
+
+                ChangeZ(:,:) = zzero
+                AbsChange = zero
+                do j = 1,nImp
+                    do k = 1,nImp
+                        ChangeZ(k,j) = - FuncVal(k,j,i) / Grad(k,j,i)
+                        AbsChange = AbsChange + abs(ChangeZ(k,j))
+                    enddo
+                enddo
+                AbsChange = AbsChange / real(nImp**2,dp)
+                if(AbsChange.gt.MaxAbsChange) MaxAbsChange = AbsChange
+
+                !Update the global coupling parameter
+                GlobalCoup(:,:,i) = GlobalCoup(:,:,i) + (dDampedNR*ChangeZ(:,:))
+            enddo
+
+            if(MaxAbsChange.lt.dConvTol) then
+                write(6,"(A,G14.7)") "Convergence of global coupling function achieved to accuracy of: ",dConvTol
+                write(6,"(A,I9)") "Number of microiterations required: ",iter
+                exit
+            endif
+        enddo
+        deallocate(FuncVal,Grad,ChangeZ)
+
+    end subroutine ConvergeGlobalCoupling
+
+    !Get function values and gradients for all values of omega
+    !LocalCoupFunc is the X'(omega) function with the local GF - local hybridization
+    !GlobalCoup is the striped coupling function through k-space
+    subroutine GetFuncValsandGrads(n,mu,LocalCoupFunc,GlobalCoup,FuncVal,Grad)
+        implicit none
+        integer, intent(in) :: n
+        real(dp), intent(in) :: mu
+        complex(dp), intent(in) :: LocalCoupFunc(nImp,nImp,n)
+        complex(dp), intent(in) :: GlobalCoup(nImp,nImp,n)
+        complex(dp), intent(out) :: FuncVal(nImp,nImp,n)
+        complex(dp), intent(out) :: Grad(nImp,nImp,n)
+
+        real(dp) :: Omega
+        complex(dp) :: Factor
+        complex(dp), allocatable :: CompHam(:,:),k_Ham(:,:),ztemp(:,:),A(:,:),A_Inv(:,:)
+        integer :: i,j,ind_1,ind_2
+        character(len=*), parameter :: t_r='GetFuncValsandGrads'
+
+        if(.not.tDiag_kspace) call stop_all(t_r,'Real space diagonalizations not available here')
+
+        FuncVal(:,:,:) = zzero
+        Grad(:,:,:) = zzero
+        Factor = dcmplx(real(nSites/nImp,dp),zero)
+
+        allocate(k_Ham(nImp,nImp))
+        allocate(CompHam(nSites,nSites))
+        do i = 1,nSites
+            do j = 1,nSites
+                CompHam(j,i) = dcmplx(h0v(j,i),zero)
+            enddo
+        enddo
+        
+        allocate(ztemp(nSites,nImp))
+        allocate(A(nImp,nImp))
+        allocate(A_Inv(nImp,nImp))
+
+        do kPnt = 1,nKPnts
+            !Run through all k-points
+            ind_1 = ((kPnt-1)*nImp) + 1
+            ind_2 = nImp*kPnt
+            
+            !1) Find h_k
+            !Transform the one-electron hamiltonian into this k-basis
+            call ZGEMM('N','N',nSites,nImp,nSites,zone,CompHam,nSites,RtoK_Rot(:,ind_1:ind_2),nSites,zzero,ztemp,nSites)
+            call ZGEMM('C','N',nImp,nImp,nSites,zone,RtoK_Rot(:,ind_1:ind_2),nSites,ztemp,nSites,zzero,k_Ham,nImp)
+            !k_Ham is the complex, one-electron hamiltonian (with correlation potential) for this k-point
+
+            i = 0
             Omega = Start_Omega
-            i=0
             do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
                 i = i + 1
-                if(i.gt.n) call stop_all(t_r,'Wrong number of frequency points used')
+                if(i.gt.n) call stop_all(t_r,'Too many freq points')
+
+                !2) Construct A_k(omega)
+                A(:,:) = zzero
+                do j = 1,nImp
+                    A(j,j) = dcmplx(Omega+mu,dDelta)
+                enddo
+                A(:,:) = A(:,:) - k_Ham(:,:) - GlobalCoup(:,:,i)
+                A(:,:) = A(:,:) * Factor
+        
+                !3) Invert A_k(omega)
+                !TODO: Use mat_inv routine, but if this is not stable/identical, use diagonalization routines
+                A_Inv(:,:) = zzero
+                call mat_inv(A,A_Inv)
+
+                !4) Sum into function evaluation for this frequency
+                FuncVal(:,:,i) = FuncVal(:,:,i) + A_Inv(:,:)
+
+                !5) Sum the square of the inverse into the jacobian construction
+                call ZGEMM('N','N',nImp,nImp,nImp,Factor,A_Inv,nImp,A_Inv,nImp,zone,Grad(:,:,i),nImp)
 
                 Omega = Omega + Omega_Step
             enddo
-
         enddo
 
-    end subroutine ConvergeGlobalCoupling
+        !The Function evaluation needs to have the X' value removed from it at all points
+        FuncVal(:,:,:) = FuncVal(:,:,:) - LocalCoupFunc(:,:,:)
+        
+        deallocate(k_Ham,CompHam,ztemp,A,A_Inv)
+    end subroutine FindLocalMomGF
+
+    end subroutine GetFuncValsandGrads
 
     !Damped update of the self-energy via the dyson equation
     subroutine Calc_SE(n,Hybrid,G,mu,SE,MaxDiffSE)
