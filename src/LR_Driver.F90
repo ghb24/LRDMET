@@ -102,40 +102,57 @@ module LRDriver
 
             iter = iter + 1
 
+            write(6,*) "Starting iteration: ",iter
             !Construct FT of k-space GFs and take zeroth part.
             !write(6,*) "FT'ing mean-field greens functions for local part"
             call FindLocalMomGF(nESteps,SE,LocalMomGF)
+            write(6,*) "1"
+            call flush(6)
             call writedynamicfunction(nESteps,LocalMomGF,'LocalMomGF',tCheckCausal=.true.,tCheckOffDiagHerm=.true.)
 
             !Invert the matrix of non-interacting local greens functions.
             !write(6,*) "Inverting Local greens function"
             InvLocalMomGF(:,:,:) = LocalMomGF(:,:,:)
+            write(6,*) "2"
+            call flush(6)
             call InvertLocalNonHermGF(nESteps,InvLocalMomGF)
 
             !Now find hybridization
             !This is given by (omega + mu + idelta - e_0 - SE - InvGF)
             !write(6,*) "Calculating Hybridization function to local greens function"
+            write(6,*) "3"
+            call flush(6)
             call FindHybrid(nESteps,InvLocalMomGF,SE,Hybrid)
 
             !Check that G^0 = G^0' now.
+            write(6,*) "4"
+            call flush(6)
             call CheckNIGFsSame(nESteps,LocalMomGF,SE,Hybrid,GFChemPot)
 
             call writedynamicfunction(nESteps,Hybrid,'Hybrid',tCheckCausal=.true.,tCheckOffDiagHerm=.true.)
 
             !Now calculate X', the local coupling function (LocalCoupFn), as
             ![omega + mu + i delta - h00 - Delta]^-1
+            write(6,*) "5"
+            call flush(6)
             call CalcLocalCoupling(nESteps,Hybrid,LocalCoupFn,GFChemPot)
 
             !Iteratively converge the global, k-independent coupling quantity 'GlobalCoup' (Z), 
             !which mimics the effect of the hybridization on the whole lattice.
+            write(6,*) "6"
+            call flush(6)
             call ConvergeGlobalCoupling(nESteps,LocalCoupFn,GlobalCoup,GFChemPot)
 
             !Check here that the two coupling functions are identical
+            write(6,*) "7"
+            call flush(6)
             call CheckNICoupFnsSame(nESteps,LocalCoupFn,GlobalCoup,GFChemPot)
 
             !Construct interacting greens function from the global coupling
             !calculate G_00
             write(6,"(A)") "Calculating high-level correlation function..."
+            write(6,*) "8"
+            call flush(6)
             call SchmidtGF_wSE(G_Mat,GFChemPot,GlobalCoup,nESteps)
             write(6,"(A)") "High-level correlation function obtained."
 

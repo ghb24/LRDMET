@@ -834,6 +834,7 @@ module MomSpectra
         real(dp) :: Omega
         complex(dp) :: Factor
         complex(dp), allocatable :: CompHam(:,:),k_Ham(:,:),ztemp(:,:),A(:,:),A_Inv(:,:)
+        complex(dp), allocatable :: GradTmp(:,:)
         integer :: i,j,ind_1,ind_2,kPnt
         character(len=*), parameter :: t_r='GetFuncValsandGrads'
 
@@ -854,6 +855,7 @@ module MomSpectra
         allocate(ztemp(nSites,nImp))
         allocate(A(nImp,nImp))
         allocate(A_Inv(nImp,nImp))
+        allocate(GradTmp(nImp,nImp))
 
         do kPnt = 1,nKPnts
             !Run through all k-points
@@ -889,7 +891,8 @@ module MomSpectra
                 FuncVal(:,:,i) = FuncVal(:,:,i) + A_Inv(:,:)
 
                 !5) Sum the square of the inverse into the jacobian construction
-                call ZGEMM('N','N',nImp,nImp,nImp,Factor,A_Inv,nImp,A_Inv,nImp,zone,Grad(:,:,i),nImp)
+                call ZGEMM('N','N',nImp,nImp,nImp,Factor,A_Inv,nImp,A_Inv,nImp,zone,GradTmp,nImp)
+                Grad(:,:,i) = Grad(:,:,i) + GradTmp(:,:)
 
                 Omega = Omega + Omega_Step
             enddo
@@ -898,7 +901,7 @@ module MomSpectra
         !The Function evaluation needs to have the X' value removed from it at all points
         FuncVal(:,:,:) = FuncVal(:,:,:) - LocalCoupFunc(:,:,:)
         
-        deallocate(k_Ham,CompHam,ztemp,A,A_Inv)
+        deallocate(k_Ham,CompHam,ztemp,A,A_Inv,GradTmp)
     end subroutine GetFuncValsandGrads
 
     !Damped update of the self-energy via the dyson equation
@@ -945,6 +948,7 @@ module MomSpectra
 
             SE(:,:,i) = SE(:,:,i) + Damping_SE*DeltaSE(:,:)
 
+            DiffSE = zero
             do j = 1,nImp
                 do k = 1,nImp
                     DiffSE = DiffSE + real(dconjg(DeltaSE(k,j))*DeltaSE(k,j),dp)
