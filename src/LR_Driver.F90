@@ -117,16 +117,16 @@ module LRDriver
 
             call writedynamicfunction(nESteps,Hybrid,'Hybrid',tCheckCausal=.true.,tCheckOffDiagHerm=.true.)
 
-            !Now calculate X', the local coupling function, as
+            !Now calculate X', the local coupling function (LocalCoupFn), as
             ![omega + mu + i delta - h00 - Delta]^-1
-            call CalcLocalCoupling(nESteps,Hybrid,LocalCoup)
+            call CalcLocalCoupling(nESteps,Hybrid,LocalCoupFn)
 
             !Iteratively converge the global, k-independent coupling quantity 'GlobalCoup' (Z), 
             !which mimics the effect of the hybridization on the whole lattice.
-            call ConvergeGlobalCoupling(nESteps,LocalCoup,GlobalCoup)
+            call ConvergeGlobalCoupling(nESteps,LocalCoupFn,GlobalCoup)
 
-            !TODO: Check here that the two coupling functions are identical
-            stop
+            !Check here that the two coupling functions are identical
+            call CheckNICoupFnsSame(nESteps,LocalCoupFn,GlobalCoup,GFChemPot)
 
             !Construct interacting greens function from the global coupling
             !calculate G_00

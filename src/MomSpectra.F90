@@ -469,6 +469,131 @@ module MomSpectra
         deallocate(G00,OldSE,InvG00,Hybrid,InvLocalMomGF,LocalMomGF)
 
     end subroutine Converge_SE 
+            
+    !Check that the local and global coupling functions are the same after the NR optimization.
+    subroutine CheckNICoupFnsSame(n,LocalCoupFn,Z,mu)
+        use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
+        use sort_mod, only: Orthonorm_zgeev_vecs
+        implicit none
+        integer, intent(in) :: n
+        complex(dp), intent(in) :: LocalCoupFn(nImp,nImp,n)
+        complex(dp), intent(in) :: Z(nImp,nImp,n)
+        real(dp), intent(in) :: mu
+
+        integer :: SS_Period,i,j,k,lwork,info
+        real(dp) :: MaxDiff,Diff
+        complex(dp), allocatable :: Fn(:,:,:),k_Ham(:,:),CompHam(:,:)
+        complex(dp), allocatable :: RVec(:,:),LVec(:,:),W_Vals(:),Work(:),ztemp(:,:)
+        complex(dp), allocatable :: InvMat(:,:),ztemp2(:,:),cWork(:)
+        character(len=*), parameter :: t_r='CheckNICoupFnsSame'
+
+        if(.not.tDiag_kspace) call stop_all(t_r,'k-space diagonalizations must be used here')
+
+        allocate(Fn(nImp,nImp,n))
+        Fn(:,:,:) = zzero
+        SS_Period = nImp
+
+        allocate(k_Ham(SS_Period,SS_Period))
+        allocate(CompHam(nSites,nSites))
+        do i = 1,nSites
+            do j = 1,nSites
+                CompHam(j,i) = dcmplx(h0v(j,i),zero)
+            enddo
+        enddo
+
+        !Data for the diagonalization of the one-electron k-dependent Greens functions
+        allocate(RVec(SS_Period,SS_Period))
+        allocate(LVec(SS_Period,SS_Period))
+        allocate(W_Vals(SS_Period))
+        allocate(Work(max(1,2*SS_Period)))
+        allocate(ztemp(nSites,SS_Period))
+        allocate(InvMat(nImp,nImp))
+        allocate(ztemp2(nImp,nImp))
+
+        do kPnt = 1,nKPnts
+            !Run through all k-points
+            ind_1 = ((kPnt-1)*SS_Period) + 1
+            ind_2 = SS_Period*kPnt
+                
+            !Transform the one-electron hamiltonian into this k-basis
+            call ZGEMM('N','N',nSites,SS_Period,nSites,zone,CompHam,nSites,RtoK_Rot(:,ind_1:ind_2),nSites,zzero,ztemp,nSites)
+            call ZGEMM('C','N',SS_Period,SS_Period,nSites,zone,RtoK_Rot(:,ind_1:ind_2),nSites,ztemp,nSites,zzero,k_Ham,SS_Period)
+            !k_Ham is the complex, one-electron hamiltonian (with correlation potential) for this k-point
+
+            i = 0
+            Omega = Start_Omega
+            do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+                i = i + 1
+                if(i.gt.n) call stop_all(t_r,'Too many freq points')
+
+                InvMat(:,:) = - k_Ham(:,:) - Z(:,:,i)
+                do j = 1,SS_Period
+                    InvMat(j,j) = InvMat(j,j) + dcmplx(Omega + mu,dDelta)
+                enddo
+
+                !Now, diagonalize this
+                !Is *not* hermitian
+                allocate(cWork(1))
+                lwork = -1
+                info = 0
+                call zgeev('V','V',SS_Period,InvMat,SS_Period,W_Vals,LVec,SS_Period,RVec,SS_Period,cWork,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'Workspace query failed')
+                lwork = int(abs(cWork(1)))+1
+                deallocate(cWork)
+                allocate(cWork(lWork))
+                call zgeev('V','V',SS_Period,InvMat,SS_Period,W_Vals,LVec,SS_Period,RVec,SS_Period,cWork,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'Diagonalization of 1-electron GF failed')
+                deallocate(cWork)
+
+                !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
+                !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
+                call Order_zgeev_vecs(W_Vals,LVec,RVec)
+                !call writevectorcomp(W_Vals,'Eigenvalues ordered')
+                !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
+                call Orthonorm_zgeev_vecs(SS_Period,W_Vals,LVec,RVec)
+                !Calculate greens function for this k-vector
+                InvMat(:,:) = zzero
+                do j = 1,SS_Period
+                    InvMat(j,j) = zone / W_Vals(j)
+                enddo
+                !Now rotate this back into the original basis
+                call zGEMM('N','N',SS_Period,SS_Period,SS_Period,zone,RVec,SS_Period,InvMat,SS_Period,zzero,ztemp2,SS_Period)
+                call zGEMM('N','C',SS_Period,SS_Period,SS_Period,zone,ztemp2,SS_Period,LVec,SS_Period,zzero,InvMat,SS_Period)
+                !InvMat is now the non-interacting greens function for this k: TEST THIS!
+                !Sum this into the *local* greens function (i.e. a fourier transform of r=0 component)
+                Fn(:,:,i) = Fn(:,:,i) + InvMat(:,:)
+
+                Omega = Omega + Omega_Step
+            enddo   !Enddo frequency point i
+        enddo   !enddo k-point
+
+        !Divide the entire local greens function by the 'volume' of the brillouin zone
+        Fn(:,:,:) = Fn(:,:,:) / real(nSites/nImp,dp)
+
+        !Now, subtract the Local coupling function from all frequencies.
+        Fn(:,:,:) = Fn(:,:,:) - LocalCoupFn(:,:,:)
+
+        !Test
+        MaxDiff = zero
+        do i = 1,n
+            Diff = zero
+            do j = 1,nImp
+                do k = 1,nImp
+                    Diff = Diff + abs(Fn(k,j,i))
+                enddo
+            enddo
+            Diff = Diff / real(nImp**2,dp)
+            if(Diff.gt.MaxDiff) MaxDiff = Diff
+        enddo
+        if(MaxDiff.gt.1.0e-6_dp) then
+            call stop_all(t_r,'Local/Global Coupling functions not the same after NR optimization of Z...')
+        else
+            write(6,"(A)") "Local/Global coupling functions the same after NR optimization of Z..."
+        endif
+
+        deallocate(Fn,k_Ham,CompHam,RVec,LVec,W_Vals,Work,ztemp,InvMat,ztemp2)
+
+    end subroutine CheckNICoupFnsSame
 
     !Given the local part of a global non-interacting greens function, a self-energy and hybridization function,
     !check that the local greens function is the same as the local part of the global greens function.
@@ -767,8 +892,6 @@ module MomSpectra
         FuncVal(:,:,:) = FuncVal(:,:,:) - LocalCoupFunc(:,:,:)
         
         deallocate(k_Ham,CompHam,ztemp,A,A_Inv)
-    end subroutine FindLocalMomGF
-
     end subroutine GetFuncValsandGrads
 
     !Damped update of the self-energy via the dyson equation
