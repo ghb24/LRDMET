@@ -54,10 +54,14 @@ CONTAINS
     DO i=1,msize
        matinv(i,i)=zone
     END DO
-    INFO=-1
+    INFO=0 
+    !write(6,*) matdum,msize,nsize,info
     CALL zGETRF(msize,nsize,matdum,nsize,IPIV,INFO)
-    IF (INFO /= 0) STOP 'Error with z_inv 1'
-    INFO=-1
+    IF (INFO /= 0) then
+        write(6,*) "info: ",info
+        STOP 'Error with z_inv 1'
+    endif
+    INFO=0 
     CALL zGETRS(trans,msize,nsize,matdum,nsize,IPIV,matinv,msize,INFO)
     IF (INFO /= 0) STOP 'Error with z_inv 2'
     

@@ -480,8 +480,8 @@ module MomSpectra
         complex(dp), intent(in) :: Z(nImp,nImp,n)
         real(dp), intent(in) :: mu
 
-        integer :: SS_Period,i,j,k,lwork,info
-        real(dp) :: MaxDiff,Diff
+        integer :: SS_Period,i,j,k,lwork,info,kPnt,ind_1,ind_2
+        real(dp) :: MaxDiff,Diff,Omega
         complex(dp), allocatable :: Fn(:,:,:),k_Ham(:,:),CompHam(:,:)
         complex(dp), allocatable :: RVec(:,:),LVec(:,:),W_Vals(:),Work(:),ztemp(:,:)
         complex(dp), allocatable :: InvMat(:,:),ztemp2(:,:),cWork(:)
@@ -606,7 +606,8 @@ module MomSpectra
         real(dp), intent(in) :: mu
         complex(dp), allocatable :: LocalH(:,:),TrueLocGF(:,:,:)
         real(dp) :: Omega
-        integer :: i,j
+        integer :: i,j,k
+        character(len=*), parameter :: t_r='CheckNIGFsSame'
 
         allocate(LocalH(nImp,nImp))
         allocate(TrueLocGF(nImp,nImp,n))
@@ -637,7 +638,7 @@ module MomSpectra
             !Now, check they're the same
             do j = 1,nImp
                 do k = 1,nImp
-                    if(abs(LocalMomGF(i,k,j)-TrueLocGF(k,j)).gt.1.0e-8_dp) then
+                    if(abs(LocalMomGF(k,j,i)-TrueLocGF(k,j,i)).gt.1.0e-8_dp) then
                         call stop_all(t_r,'Local and Global Non-interacting greens functions not equal')
                     endif
                 enddo
@@ -651,13 +652,16 @@ module MomSpectra
 
     !Now calculate X', the local coupling function, as
     ![omega + mu + i delta - h00 - Delta]^-1
-    subroutine CalcLocalCoupling(n,Hybrid,LocalCoup)
+    subroutine CalcLocalCoupling(n,Hybrid,LocalCoup,mu)
         integer, intent(in) :: n
         complex(dp), intent(in) :: Hybrid(nImp,nImp,n)
         complex(dp), intent(out) :: LocalCoup(nImp,nImp,n)
+        real(dp), intent(in) :: mu
 
         complex(dp), allocatable :: LocalH(:,:)
+        real(dp) :: Omega
         integer :: i,j,k
+        character(len=*), parameter :: t_r='CalcLocalCoupling'
 
         allocate(LocalH(nImp,nImp))
         do j = 1,nImp
@@ -687,6 +691,7 @@ module MomSpectra
 
     !Write out the isotropic average of a dynamic function in the impurity space.
     subroutine writedynamicfunction(n,Func,FileRoot,tag,tCheckCausal,tCheckOffDiagHerm)
+        use utils, only: get_free_unit,append_ext
         implicit none
         integer, intent(in) :: n
         complex(dp), intent(in) :: Func(nImp,nImp,n)
@@ -697,7 +702,7 @@ module MomSpectra
 
         character(64) :: filename
         logical :: tCheckOffDiagHerm_,tCheckCausal_
-        integer :: iunit,i
+        integer :: iunit,i,j,k
         real(dp) :: Omega
         complex(dp) :: IsoAv
         character(len=*), parameter :: t_r='writedynamicfunction'
@@ -754,11 +759,12 @@ module MomSpectra
 
     !Via a NR algorithm, iteratively converge the global coupling (Z) of the cluster to the lattice
     !LocalCoupFunc is X'(omega)
-    subroutine ConvergeGlobalCoupling(n,LocalCoupFunc,GlobalCoup)
+    subroutine ConvergeGlobalCoupling(n,LocalCoupFunc,GlobalCoup,mu)
         implicit none
         integer, intent(in) :: n
-        complex(dp), intent(in) :: LocalCoup(nImp,nImp,n)
+        complex(dp), intent(in) :: LocalCoupFunc(nImp,nImp,n)
         complex(dp), intent(inout) :: GlobalCoup(nImp,nImp,n)
+        real(dp), intent(in) :: mu
 
         real(dp) :: dDampedNR,dConvTol
         real(dp) :: AbsChange,MaxAbsChange
@@ -816,6 +822,7 @@ module MomSpectra
     !LocalCoupFunc is the X'(omega) function with the local GF - local hybridization
     !GlobalCoup is the striped coupling function through k-space
     subroutine GetFuncValsandGrads(n,mu,LocalCoupFunc,GlobalCoup,FuncVal,Grad)
+        use matrixops, only: mat_inv
         implicit none
         integer, intent(in) :: n
         real(dp), intent(in) :: mu
@@ -827,7 +834,7 @@ module MomSpectra
         real(dp) :: Omega
         complex(dp) :: Factor
         complex(dp), allocatable :: CompHam(:,:),k_Ham(:,:),ztemp(:,:),A(:,:),A_Inv(:,:)
-        integer :: i,j,ind_1,ind_2
+        integer :: i,j,ind_1,ind_2,kPnt
         character(len=*), parameter :: t_r='GetFuncValsandGrads'
 
         if(.not.tDiag_kspace) call stop_all(t_r,'Real space diagonalizations not available here')
@@ -905,8 +912,9 @@ module MomSpectra
         real(dp), intent(out) :: MaxDiffSE
 
         complex(dp), allocatable :: InvG00(:,:,:),DeltaSE(:,:),LocalH(:,:)
-        real(dp) :: Omega
+        real(dp) :: Omega,DiffSE
         integer :: i,j,k
+        character(len=*), parameter :: t_r='Calc_SE'
 
         !First, invert the interacting greens function
         allocate(InvG00(nImp,nImp,n))
@@ -1229,6 +1237,7 @@ module MomSpectra
     subroutine InvertLocalNonHermGF(n,InvGF)
         use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
         use sort_mod, only: Orthonorm_zgeev_vecs
+        use matrixops, only: mat_inv
         implicit none
         integer, intent(in) :: n
         complex(dp), intent(inout) :: InvGF(nImp,nImp,n)
@@ -1238,50 +1247,58 @@ module MomSpectra
         integer :: i,lwork,info,j
         character(len=*), parameter :: t_r='InvertLocalNonHermGF'
 
-        allocate(LVec(nImp,nImp))
-        allocate(RVec(nImp,nImp))
-        allocate(W_Vals(nImp))
-        allocate(Work(max(1,2*nImp)))
-
-        do i = 1,n
-
-            !Diagonalize
-            LVec(:,:) = zzero
-            RVec(:,:) = zzero
-            W_Vals(:) = zzero
-            IGF(:,:) = InvGF(:,:,i)
-
-            allocate(cWork(1))
-            lwork = -1
-            info = 0
-            call zgeev('V','V',nImp,IGF,nImp,W_Vals,LVec,nImp,RVec,nImp,cWork,lWork,Work,info)
-            if(info.ne.0) call stop_all(t_r,'Workspace query failed')
-            lwork = int(abs(cWork(1)))+1
-            deallocate(cWork)
-            allocate(cWork(lWork))
-            call zgeev('V','V',nImp,IGF,nImp,W_Vals,LVec,nImp,RVec,nImp,cWork,lWork,Work,info)
-            if(info.ne.0) call stop_all(t_r,'Diagonalization of 1-electron GF failed')
-            deallocate(cWork)
-
-            !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
-            !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
-            call Order_zgeev_vecs(W_Vals,LVec,RVec)
-            !call writevectorcomp(W_Vals,'Eigenvalues ordered')
-            !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
-            call Orthonorm_zgeev_vecs(nImp,W_Vals,LVec,RVec)
-            !Calculate greens function for this k-vector
-            IGF = zzero
-            do j = 1,nImp
-                IGF(j,j) = zone / W_Vals(j)
+        if(.true.) then
+            do i = 1,n
+                call mat_inv(InvGF(:,:,i),IGF)
+                InvGF(:,:,i) = IGF(:,:)
             enddo
-            !Now rotate this back into the original basis
-            call zGEMM('N','N',nImp,nImp,nImp,zone,RVec,nImp,IGF,nImp,zzero,ztemp2,nImp)
-            call zGEMM('N','C',nImp,nImp,nImp,zone,ztemp2,nImp,LVec,nImp,zzero,IGF,nImp)
+        else
+            !Invert via diagonalization
+            allocate(LVec(nImp,nImp))
+            allocate(RVec(nImp,nImp))
+            allocate(W_Vals(nImp))
+            allocate(Work(max(1,2*nImp)))
 
-            InvGF(:,:,i) = IGF(:,:)
-        enddo
+            do i = 1,n
 
-        deallocate(LVec,RVec,W_Vals,Work)
+                !Diagonalize
+                LVec(:,:) = zzero
+                RVec(:,:) = zzero
+                W_Vals(:) = zzero
+                IGF(:,:) = InvGF(:,:,i)
+
+                allocate(cWork(1))
+                lwork = -1
+                info = 0
+                call zgeev('V','V',nImp,IGF,nImp,W_Vals,LVec,nImp,RVec,nImp,cWork,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'Workspace query failed')
+                lwork = int(abs(cWork(1)))+1
+                deallocate(cWork)
+                allocate(cWork(lWork))
+                call zgeev('V','V',nImp,IGF,nImp,W_Vals,LVec,nImp,RVec,nImp,cWork,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'Diagonalization of 1-electron GF failed')
+                deallocate(cWork)
+
+                !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
+                !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
+                call Order_zgeev_vecs(W_Vals,LVec,RVec)
+                !call writevectorcomp(W_Vals,'Eigenvalues ordered')
+                !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
+                call Orthonorm_zgeev_vecs(nImp,W_Vals,LVec,RVec)
+                !Calculate greens function for this k-vector
+                IGF = zzero
+                do j = 1,nImp
+                    IGF(j,j) = zone / W_Vals(j)
+                enddo
+                !Now rotate this back into the original basis
+                call zGEMM('N','N',nImp,nImp,nImp,zone,RVec,nImp,IGF,nImp,zzero,ztemp2,nImp)
+                call zGEMM('N','C',nImp,nImp,nImp,zone,ztemp2,nImp,LVec,nImp,zzero,IGF,nImp)
+
+                InvGF(:,:,i) = IGF(:,:)
+            enddo
+
+            deallocate(LVec,RVec,W_Vals,Work)
+        endif
 
     end subroutine InvertLocalNonHermGF
 

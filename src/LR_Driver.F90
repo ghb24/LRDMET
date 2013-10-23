@@ -20,9 +20,10 @@ module LRDriver
         integer :: nESteps,iter,i,k,l,iunit,j
         complex(dp), allocatable :: SE(:,:,:),G_Mat(:,:,:),SE_Old(:,:,:)
         complex(dp), allocatable :: Hybrid(:,:,:),InvLocalMomGF(:,:,:),LocalMomGF(:,:,:)
+        complex(dp), allocatable :: LocalCoupFn(:,:,:),GlobalCoup(:,:,:)
         character(64) :: filename,filename2
         logical :: exists
-        character(len=*), parameter :: t_r='SC_Mom_LR'
+        character(len=*), parameter :: t_r='SC_Mom_LR_Z'
         
         !How many frequency points are there exactly?
         Omega = Start_Omega
@@ -39,10 +40,14 @@ module LRDriver
         allocate(Hybrid(nImp,nImp,nESteps))
         allocate(InvLocalMomGF(nImp,nImp,nESteps))
         allocate(LocalMomGF(nImp,nImp,nESteps))
+        allocate(LocalCoupFn(nImp,nImp,nESteps))    !X'
+        allocate(GlobalCoup(nImp,nImp,nESteps))     !Z
 
         Hybrid(:,:,:) = zzero
         InvLocalMomGF(:,:,:) = zzero
         LocalMomGF(:,:,:) = zzero
+        LocalCoupFn(:,:,:) = zzero
+        GlobalCoup(:,:,:) = zzero
 
         if(tRead_SelfEnergy) then
             write(6,"(A)") "Reading in self-energy..."
@@ -119,11 +124,11 @@ module LRDriver
 
             !Now calculate X', the local coupling function (LocalCoupFn), as
             ![omega + mu + i delta - h00 - Delta]^-1
-            call CalcLocalCoupling(nESteps,Hybrid,LocalCoupFn)
+            call CalcLocalCoupling(nESteps,Hybrid,LocalCoupFn,GFChemPot)
 
             !Iteratively converge the global, k-independent coupling quantity 'GlobalCoup' (Z), 
             !which mimics the effect of the hybridization on the whole lattice.
-            call ConvergeGlobalCoupling(nESteps,LocalCoupFn,GlobalCoup)
+            call ConvergeGlobalCoupling(nESteps,LocalCoupFn,GlobalCoup,GFChemPot)
 
             !Check here that the two coupling functions are identical
             call CheckNICoupFnsSame(nESteps,LocalCoupFn,GlobalCoup,GFChemPot)
@@ -179,7 +184,9 @@ module LRDriver
         enddo
         close(iunit)
 
-    end subroutine SC_Mom_LR
+        deallocate(LocalCoupFn,SE,SE_Old,G_Mat,Hybrid,InvLocalMomGF,LocalMomGF,GlobalCoup)
+
+    end subroutine SC_Mom_LR_Z
 
     !This is the high level routine to work out how we want to do the linear response
     !These functions are for single-reference (generally non-interacting) spectral functions, but using the correlated one-electron potential in their calculation.
@@ -198,7 +205,7 @@ module LRDriver
             call CorrNI_MomGF()
         endif
 
-    end subroutine Correlated_SR_LR_Z
+    end subroutine Correlated_SR_LR
 
 
     !Attempt to get k-space spectral functions by self-consistenly calculating k-independent hybridization and self-energy contributions
@@ -311,8 +318,8 @@ module LRDriver
             !Now calculate the (hybridization and) self-energy self-consistently
             !This will read back in the greens function
             !The returned self-energy is k-independent, but will reproduce the correlated local greens function
-            call Converge_SE(SE,nESteps)
             SE_Old(:,:,:) = SE(:,:,:)
+            call Converge_SE(SE,nESteps)
             !call Converge_SE_NoHybrid(G_Mat,SE,nESteps,iter)
 
             !What is the overall change in self-energy
@@ -366,26 +373,6 @@ module LRDriver
         close(iunit)
 
     end subroutine SC_Mom_LR
-
-    !This is the high level routine to work out how we want to do the linear response
-    !These functions are for single-reference (generally non-interacting) spectral functions, but using the correlated one-electron potential in their calculation.
-    !Therefore, they should be pretty good around the ground state.
-    subroutine Correlated_SR_LR()
-        implicit none
-        !character(len=*), parameter :: t_r='Correlated_SR_LR'
-
-        if(tCorrNI_LocGF) then
-            call CorrNI_LocalGF()
-        endif
-        if(tCorrNI_LocDD) then
-            call CorrNI_LocalDD()
-        endif
-        if(tCorrNI_MomGF) then
-            call CorrNI_MomGF()
-        endif
-
-    end subroutine Correlated_SR_LR
-
 
     !TODO:
     !   Code up all of these options!
