@@ -108,7 +108,7 @@ module LRDriver
             call FindLocalMomGF(nESteps,SE,LocalMomGF)
             write(6,*) "1"
             call flush(6)
-            call writedynamicfunction(nESteps,LocalMomGF,'LocalMomGF',tCheckCausal=.true.,tCheckOffDiagHerm=.true.)
+            call writedynamicfunction(nESteps,LocalMomGF,'LocalMomGF',tag=iter,tCheckCausal=.true.,tCheckOffDiagHerm=.true.)
 
             !Invert the matrix of non-interacting local greens functions.
             !write(6,*) "Inverting Local greens function"
@@ -123,19 +123,19 @@ module LRDriver
             write(6,*) "3"
             call flush(6)
             call FindHybrid(nESteps,InvLocalMomGF,SE,Hybrid)
+            call writedynamicfunction(nESteps,Hybrid,'Hybrid',tag=iter,tCheckCausal=.true.,tCheckOffDiagHerm=.true.)
 
             !Check that G^0 = G^0' now.
             write(6,*) "4"
             call flush(6)
             call CheckNIGFsSame(nESteps,LocalMomGF,SE,Hybrid,GFChemPot)
 
-            call writedynamicfunction(nESteps,Hybrid,'Hybrid',tCheckCausal=.true.,tCheckOffDiagHerm=.true.)
-
             !Now calculate X', the local coupling function (LocalCoupFn), as
             ![omega + mu + i delta - h00 - Delta]^-1
             write(6,*) "5"
             call flush(6)
             call CalcLocalCoupling(nESteps,Hybrid,LocalCoupFn,GFChemPot)
+            call writedynamicfunction(nESteps,LocalCoupFn,'LocalCouplingFn',tag=iter,tCheckCausal=.true.,tCheckOffDiagHerm=.true.)
 
             !Iteratively converge the global, k-independent coupling quantity 'GlobalCoup' (Z), 
             !which mimics the effect of the hybridization on the whole lattice.
@@ -147,6 +147,7 @@ module LRDriver
             write(6,*) "7"
             call flush(6)
             call CheckNICoupFnsSame(nESteps,LocalCoupFn,GlobalCoup,GFChemPot)
+            call writedynamicfunction(nESteps,GlobalCoup,'GlobalCoupling_Z',tag=iter,tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.)
 
             !Construct interacting greens function from the global coupling
             !calculate G_00
@@ -162,7 +163,7 @@ module LRDriver
             !This takes the old SE, and outputs the new one.
             SE_Old(:,:,:) = SE(:,:,:)
             call Calc_SE(nESteps,Hybrid,G_Mat,GFChemPot,SE,MaxDiffSE)
-            call writedynamicfunction(nESteps,SE,'SelfEnergy',tCheckCausal=.true.,tCheckOffDiagHerm=.true.)
+            call writedynamicfunction(nESteps,SE,'SelfEnergy',tag=iter,tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.)
 
             !Finally, should we do this all in a larger self-consistency, 
             !such that the self energy is used for the frequency dependent bath?
@@ -170,6 +171,8 @@ module LRDriver
                 write(6,"(A,G15.8)") "Self-energy macroiteration converged to: ",1.0e-4_dp
                 exit
             endif
+
+            if(iter.eq.2) call stop_all(t_r,'end')
 
         enddo
 

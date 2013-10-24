@@ -1591,6 +1591,33 @@ module mat_tools
         endif
 
     end subroutine setup_kspace
+        
+    !Compute k-space hamiltonian blocks from the content of h0v
+    subroutine CreateKHamBlocks(k_Hams)
+        implicit none
+        complex(dp), intent(out) :: k_Hams(nImp,nImp,nKPnts)
+
+        complex(dp), allocatable :: ztemp(:,:),k_Ham_tmp(:,:),CompHam(:,:)
+        integer :: i,j,kPnt,ind_1,ind_2
+
+        k_Hams(:,:,:) = zzero
+        allocate(ztemp(nSites,nImp))
+        allocate(k_Ham_tmp(nImp,nImp))
+        allocate(CompHam(nSites,nSites))
+        do i = 1,nSites
+            do j = 1,nSites
+                CompHam(j,i) = dcmplx(h0v(j,i),zero)
+            enddo
+        enddo
+        do kPnt = 1,nKPnts
+            ind_1 = ((kPnt-1)*nImp) + 1
+            ind_2 = nImp*kPnt
+            call ZGEMM('N','N',nSites,nImp,nSites,zone,CompHam,nSites,RtoK_Rot(:,ind_1:ind_2),nSites,zzero,ztemp,nSites)
+            call ZGEMM('C','N',nImp,nImp,nSites,zone,RtoK_Rot(:,ind_1:ind_2),nSites,ztemp,nSites,zzero,k_Ham_tmp,nImp)
+            k_Hams(:,:,kPnt) = k_Ham_tmp(:,:)
+        enddo
+        deallocate(k_Ham_tmp,ztemp,CompHam)
+    end subroutine CreateKHamBlocks
 
     !Find the projection of the final one-electron orbitals onto each kpoint
     subroutine ProjectHFontoK()

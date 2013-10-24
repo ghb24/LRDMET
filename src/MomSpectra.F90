@@ -4,6 +4,7 @@ module MomSpectra
     use globals
     use errors, only: stop_all,warning
     use mat_tools, only: WriteVector,WriteMatrix,WriteVectorInt,WriteMatrixComp,WriteVectorComp,znrm2,add_localpot_comp_inplace
+    use mat_tools, only: CreateKHamBlocks
     use LRSolvers
     implicit none
 
@@ -588,7 +589,7 @@ module MomSpectra
         if(MaxDiff.gt.1.0e-6_dp) then
             call stop_all(t_r,'Local/Global Coupling functions not the same after NR optimization of Z...')
         else
-            write(6,"(A)") "Local/Global coupling functions the same after NR optimization of Z..."
+            write(6,"(A)") "Local (w Hybrid) / Global (w Z) coupling functions the same after NR optimization of Z..."
         endif
 
         deallocate(Fn,k_Ham,CompHam,RVec,LVec,W_Vals,Work,ztemp,InvMat,ztemp2)
@@ -645,7 +646,7 @@ module MomSpectra
             enddo
         enddo
 
-        write(6,*) "Local and Global non-interacting greens functions identical..."
+        write(6,"(A)") "Local (w Hybrid) and Global non-interacting (w SE) greens functions identical..."
         deallocate(LocalH,TrueLocGF)
 
     end subroutine CheckNIGFsSame
@@ -690,7 +691,7 @@ module MomSpectra
     end subroutine CalcLocalCoupling
 
     !Write out the isotropic average of a dynamic function in the impurity space.
-    subroutine writedynamicfunction(n,Func,FileRoot,tag,tCheckCausal,tCheckOffDiagHerm)
+    subroutine writedynamicfunction(n,Func,FileRoot,tag,tCheckCausal,tCheckOffDiagHerm,tWarn)
         use utils, only: get_free_unit,append_ext
         implicit none
         integer, intent(in) :: n
@@ -699,9 +700,10 @@ module MomSpectra
         integer, intent(in), optional :: tag
         logical, intent(in), optional :: tCheckCausal
         logical, intent(in), optional :: tCheckOffDiagHerm
+        logical, intent(in), optional :: tWarn  !If true, don't die if non-causal
 
         character(64) :: filename
-        logical :: tCheckOffDiagHerm_,tCheckCausal_
+        logical :: tCheckOffDiagHerm_,tCheckCausal_,tWarn_
         integer :: iunit,i,j,k
         real(dp) :: Omega
         complex(dp) :: IsoAv
@@ -717,6 +719,12 @@ module MomSpectra
             tCheckOffDiagHerm_ = tCheckOffDiagHerm
         else
             tCheckOffDiagHerm_ = .false.
+        endif
+
+        if(present(tWarn)) then
+            tWarn_ = tWarn
+        else
+            tWarn_ = .false.    !i.e. die by default
         endif
 
         if(present(tag)) then
@@ -739,15 +747,32 @@ module MomSpectra
                     do k = 1,nImp
                         if(k.ne.j) then
                             if(abs(Func(k,j,i)-dconjg(Func(j,k,i))).gt.1.0e-8) then
-                                call stop_all(t_r,'Function no longer off-diagonal hermitian')
+                                write(6,*) "While writing file: ",filename
+                                if(present(tag)) write(6,*) "Filename extension: ",tag
+                                write(6,*) "Element of function: ",k,j
+                                write(6,*) "Frequency point: ",Omega
+                                write(6,*) "Values: ",Func(k,j,i),Func(j,k,i)
+                                if(tWarn) then
+                                    call warning(t_r,'Function no longer off-diagonal hermitian')
+                                else
+                                    call stop_all(t_r,'Function no longer off-diagonal hermitian')
+                                endif
                             endif
                         endif
                     enddo
                 endif
             enddo
             IsoAv = IsoAv / real(nImp,dp)
-            if(tCheckCausal_.and.(aimag(IsoAv).gt.zero)) then
-                call stop_all(t_r,'Function not causal')
+            if(tCheckCausal_.and.(aimag(IsoAv).gt.1.0e-8_dp)) then
+                write(6,*) "While writing file: ",filename
+                if(present(tag)) write(6,*) "Filename extension: ",tag
+                write(6,*) "Frequency point: ",Omega
+                write(6,*) "Isotropic value: ",IsoAv,Func(1,1,i)
+                if(tWarn_) then
+                    call warning(t_r,'Function not causal')
+                else
+                    call stop_all(t_r,'Function not causal')
+                endif
             endif
 
             write(iunit,"(3G25.10)") Omega,real(IsoAv,dp),aimag(IsoAv)
@@ -760,26 +785,31 @@ module MomSpectra
     !Via a NR algorithm, iteratively converge the global coupling (Z) of the cluster to the lattice
     !LocalCoupFunc is X'(omega)
     subroutine ConvergeGlobalCoupling(n,LocalCoupFunc,GlobalCoup,mu)
+        use matrixops, only: mat_inv
         implicit none
         integer, intent(in) :: n
         complex(dp), intent(in) :: LocalCoupFunc(nImp,nImp,n)
         complex(dp), intent(inout) :: GlobalCoup(nImp,nImp,n)
         real(dp), intent(in) :: mu
 
-        real(dp) :: dDampedNR,dConvTol
+        real(dp) :: dConvTol,Omega
         real(dp) :: AbsChange,MaxAbsChange
         complex(dp), allocatable :: FuncVal(:,:,:),Grad(:,:,:)
-        complex(dp), allocatable :: ChangeZ(:,:)
-        integer :: i,iter,j,k
+        complex(dp), allocatable :: ChangeZ(:,:),k_Hams(:,:,:)
+        complex(dp), allocatable :: Fn(:,:,:),InvMat(:,:)
+        integer :: i,iter,j,k,kPnt
         character(len=*), parameter :: t_r='ConvergeGlobalCoupling'
         
-        dDampedNR = 1.0_dp
-        dConvTol = 1.0e-7_dp
+!        dDampedNR = 0.2_dp
+        dConvTol = 1.0e-10_dp
         write(6,*) "Converging global coupling matrix..."
 
         allocate(FuncVal(nImp,nImp,n))
         allocate(Grad(nImp,nImp,n))
         allocate(ChangeZ(nImp,nImp))
+
+        allocate(k_Hams(nImp,nImp,nKPnts))
+        call CreateKHamBlocks(k_Hams)
 
         iter = 0
         do while(.true.)
@@ -787,26 +817,52 @@ module MomSpectra
             write(6,*) "Starting NR iteration: ",iter
 
             !Get function values and Jacobian (diagonal) for all omega values
-            call GetFuncValsandGrads(n,mu,LocalCoupFunc,GlobalCoup,FuncVal,Grad)
+            call GetFuncValsandGrads(n,mu,LocalCoupFunc,GlobalCoup,k_Hams,FuncVal,Grad)
 
             MaxAbsChange = zero
+            Omega = Start_Omega
             do i = 1,n
                 !Run over omega values
 
-                ChangeZ(:,:) = zzero
-                AbsChange = zero
-                do j = 1,nImp
-                    do k = 1,nImp
-                        ChangeZ(k,j) = - FuncVal(k,j,i) / Grad(k,j,i)
-                        AbsChange = AbsChange + abs(ChangeZ(k,j))
-                    enddo
-                enddo
-                AbsChange = AbsChange / real(nImp**2,dp)
+                call FindChangeZ(Omega,mu,LocalCoupFunc(:,:,i),GlobalCoup(:,:,i),k_Hams,Grad(:,:,i),FuncVal(:,:,i),ChangeZ,AbsChange)
                 if(AbsChange.gt.MaxAbsChange) MaxAbsChange = AbsChange
 
                 !Update the global coupling parameter
-                GlobalCoup(:,:,i) = GlobalCoup(:,:,i) + (dDampedNR*ChangeZ(:,:))
+                !GlobalCoup(:,:,i) = GlobalCoup(:,:,i) + (dDampedNR*ChangeZ(:,:))
+                GlobalCoup(:,:,i) = GlobalCoup(:,:,i) + ChangeZ(:,:)
+                Omega = Omega + Omega_Step
             enddo
+
+            write(6,*) "MaxAbsChange: ",MaxAbsChange
+            call writedynamicfunction(n,GlobalCoup,'ConvZ')
+        
+            !TEST! calulate and write out X, to compare to X'
+            allocate(InvMat(nImp,nImp))
+            allocate(Fn(nImp,nImp,n))
+            do kPnt = 1,nKPnts
+                i = 0
+                Omega = Start_Omega
+                do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+                    i = i + 1
+
+                    ChangeZ(:,:) = - k_Hams(:,:,kPnt) - GlobalCoup(:,:,i)
+                    do j = 1,nImp
+                        ChangeZ(j,j) = ChangeZ(j,j) + dcmplx(Omega + mu,dDelta)
+                    enddo
+                    call mat_inv(ChangeZ,InvMat)
+                    !Sum this into the *local* greens function (i.e. a fourier transform of r=0 component)
+                    Fn(:,:,i) = Fn(:,:,i) + InvMat(:,:)
+                    Omega = Omega + Omega_Step
+                enddo   !Enddo frequency point i
+            enddo   !enddo k-point
+            !Divide the entire local greens function by the 'volume' of the brillouin zone
+            Fn(:,:,:) = Fn(:,:,:) / real(nSites/nImp,dp)
+            call writedynamicfunction(n,Fn,'X_Fn_NR')
+            call writedynamicfunction(n,FuncVal,'FuncVal')
+            call writedynamicfunction(n,Grad,'Grad')
+            deallocate(InvMat)
+            deallocate(Fn)
+            !END TEST
 
             if(MaxAbsChange.lt.dConvTol) then
                 write(6,"(A,G14.7)") "Convergence of global coupling function achieved to accuracy of: ",dConvTol
@@ -814,26 +870,144 @@ module MomSpectra
                 exit
             endif
         enddo
-        deallocate(FuncVal,Grad,ChangeZ)
+        deallocate(FuncVal,Grad,ChangeZ,k_Hams)
 
     end subroutine ConvergeGlobalCoupling
+                
+    subroutine FindChangeZ(Omega,mu,X_prime,Z,k_Hams,Grad,Func,ChangeZ,AbsChange)
+        use matrixops, only: mat_inv
+        implicit none
+        real(dp), intent(in) :: Omega,mu
+        complex(dp), intent(in) :: X_prime(nImp,nImp)
+        complex(dp), intent(in) :: Z(nImp,nImp)
+        complex(dp), intent(in) :: k_Hams(nImp,nImp,nKPnts)
+        complex(dp), intent(in) :: Grad(nImp,nImp),Func(nImp,nImp)
+        complex(dp), intent(out) :: ChangeZ(nImp,nImp)
+        real(dp), intent(out) :: AbsChange
+
+        integer :: OptType,i,j,kPnt
+        real(dp) :: OptDamp,CurrOptRes,r(3)
+        complex(dp), allocatable :: NewFn(:,:),Fn(:,:),NewZ(:,:),InvMat(:,:)
+
+        ChangeZ(:,:) = zzero
+        AbsChange = zero
+        allocate(NewFn(nImp,nImp))
+        allocate(Fn(nImp,nImp))
+        allocate(NewZ(nImp,nImp))
+        allocate(InvMat(nImp,nImp))
+
+        OptType = 0
+        do i = 1,nImp
+            do j = 1,nImp
+                if(abs(Grad(j,i)).lt.(4.0_dp*eps)) then
+                    !Gradient numerically zero.
+                    !Just move a little bit in an arbitrary direction.
+                    OptType = 1
+                elseif(abs(Grad(j,i)).lt.1.0e-6_dp) then
+                    OptType = 2
+                endif
+            enddo
+        enddo
+        
+        if(OptType.eq.0) then
+            !If the gradient is not small, then simply use an undamped newton raphson step
+            ChangeZ(:,:) = - Func(:,:) / Grad(:,:)
+            AbsChange = sum(abs(ChangeZ(:,:))) 
+        elseif(OptType.eq.2) then
+            !Do a linesearch along the gradient direction.
+            CurrOptRes = sum(abs(Func(:,:)))
+            OptDamp = 0.0_dp
+            do i = 1,12
+
+                NewZ(:,:) = Z(:,:) - dcmplx(0.1_dp*real(i*dp),zero) * Func(:,:) / Grad(:,:)
+
+                !Calculate new function
+                NewFn(:,:) = zzero
+                do kPnt = 1,nKPnts
+                    Fn(:,:) = - k_Hams(:,:,kPnt) - NewZ(:,:)
+                    do j = 1,nImp
+                        Fn(j,j) = Fn(j,j) + dcmplx(Omega + mu,dDelta)
+                    enddo
+                    call mat_inv(Fn,InvMat)
+                    NewFn(:,:) = NewFn(:,:) + InvMat(:,:)
+                enddo
+                NewFn(:,:) = NewFn(:,:) / real(nKPnts,dp)
+                NewFn(:,:) = NewFn(:,:) - X_prime(:,:)
+
+                if((sum(abs(NewFn(:,:)))).lt.CurrOptRes) then
+                    !This is a better value of Z
+                    OptDamp = 0.1_dp*real(i*dp)
+                    CurrOptRes = sum(abs(NewFn(:,:)))
+                endif
+            enddo
+
+            if(OptDamp.gt.0.05_dp) then
+                !We have moved, and the result is better! Use this
+                ChangeZ(:,:) = - dcmplx(OptDamp,zero) * Func(:,:) / Grad(:,:)
+                AbsChange = sum(abs(ChangeZ(:,:)))
+            else
+                !We have not moved.
+                !Is where we are actually a root?
+                if(CurrOptRes.lt.1.0e-7_dp) then
+                    !Fine. Don't move then. This just unhelpfully happens to also be a stationary point
+                    ChangeZ(:,:) = zzero
+                    AbsChange = zero
+                else
+                    !We have a problem. Gradient is small, and every direction along the gradient direction seems to increase the value of the function.
+                    !Change to a random value of Z, and try again next iteration
+                    !I guess we could choose a finer mesh?
+                    write(6,*) "Choosing random new Z as at stationary point..."
+                    do i = 1,nImp
+                        do j = 1,nImp
+                            call random_number(r(:))
+                            if(r(1).gt.0.5) then
+                                NewZ(j,i) = dcmplx(r(2),-r(3))
+                            else
+                                NewZ(j,i) = dcmplx(-r(2),-r(3))
+                            endif
+                        enddo
+                    enddo
+                    ChangeZ(:,:) = NewZ(:,:) - Z(:,:)
+                    AbsChange = sum(abs(ChangeZ(:,:)))
+                endif
+            endif
+        else
+            !Gradient is numerically zero. Bad times. Choose random new Z value.
+            write(6,*) "Choosing random new Z as at stationary point..."
+            do i = 1,nImp
+                do j = 1,nImp
+                    call random_number(r(:))
+                    if(r(1).gt.0.5) then
+                        NewZ(j,i) = dcmplx(r(2),-r(3))
+                    else
+                        NewZ(j,i) = dcmplx(-r(2),-r(3))
+                    endif
+                enddo
+            enddo
+            ChangeZ(:,:) = NewZ(:,:) - Z(:,:)
+            AbsChange = sum(abs(ChangeZ(:,:)))
+        endif
+
+        deallocate(NewFn,Fn,NewZ,InvMat)
+    end subroutine FindChangeZ
 
     !Get function values and gradients for all values of omega
     !LocalCoupFunc is the X'(omega) function with the local GF - local hybridization
     !GlobalCoup is the striped coupling function through k-space
-    subroutine GetFuncValsandGrads(n,mu,LocalCoupFunc,GlobalCoup,FuncVal,Grad)
+    subroutine GetFuncValsandGrads(n,mu,LocalCoupFunc,GlobalCoup,k_Hams,FuncVal,Grad)
         use matrixops, only: mat_inv
         implicit none
         integer, intent(in) :: n
         real(dp), intent(in) :: mu
         complex(dp), intent(in) :: LocalCoupFunc(nImp,nImp,n)
         complex(dp), intent(in) :: GlobalCoup(nImp,nImp,n)
+        complex(dp), intent(in) :: k_Hams(nImp,nImp,nkPnts)
         complex(dp), intent(out) :: FuncVal(nImp,nImp,n)
         complex(dp), intent(out) :: Grad(nImp,nImp,n)
 
         real(dp) :: Omega
         complex(dp) :: Factor
-        complex(dp), allocatable :: CompHam(:,:),k_Ham(:,:),ztemp(:,:),A(:,:),A_Inv(:,:)
+        complex(dp), allocatable :: A(:,:),A_Inv(:,:)
         complex(dp), allocatable :: GradTmp(:,:)
         integer :: i,j,ind_1,ind_2,kPnt
         character(len=*), parameter :: t_r='GetFuncValsandGrads'
@@ -844,30 +1018,13 @@ module MomSpectra
         Grad(:,:,:) = zzero
         Factor = dcmplx(real(nSites/nImp,dp),zero)
 
-        allocate(k_Ham(nImp,nImp))
-        allocate(CompHam(nSites,nSites))
-        do i = 1,nSites
-            do j = 1,nSites
-                CompHam(j,i) = dcmplx(h0v(j,i),zero)
-            enddo
-        enddo
-        
-        allocate(ztemp(nSites,nImp))
         allocate(A(nImp,nImp))
         allocate(A_Inv(nImp,nImp))
         allocate(GradTmp(nImp,nImp))
 
         do kPnt = 1,nKPnts
             !Run through all k-points
-            ind_1 = ((kPnt-1)*nImp) + 1
-            ind_2 = nImp*kPnt
-            
-            !1) Find h_k
-            !Transform the one-electron hamiltonian into this k-basis
-            call ZGEMM('N','N',nSites,nImp,nSites,zone,CompHam,nSites,RtoK_Rot(:,ind_1:ind_2),nSites,zzero,ztemp,nSites)
-            call ZGEMM('C','N',nImp,nImp,nSites,zone,RtoK_Rot(:,ind_1:ind_2),nSites,ztemp,nSites,zzero,k_Ham,nImp)
-            !k_Ham is the complex, one-electron hamiltonian (with correlation potential) for this k-point
-
+            !k_Hams contain the complex, one-electron hamiltonian (with correlation potential) for this k-point
             i = 0
             Omega = Start_Omega
             do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
@@ -879,11 +1036,10 @@ module MomSpectra
                 do j = 1,nImp
                     A(j,j) = dcmplx(Omega+mu,dDelta)
                 enddo
-                A(:,:) = A(:,:) - k_Ham(:,:) - GlobalCoup(:,:,i)
+                A(:,:) = A(:,:) - k_Hams(:,:,kPnt) - GlobalCoup(:,:,i)
                 A(:,:) = A(:,:) * Factor
         
                 !3) Invert A_k(omega)
-                !TODO: Use mat_inv routine, but if this is not stable/identical, use diagonalization routines
                 A_Inv(:,:) = zzero
                 call mat_inv(A,A_Inv)
 
@@ -891,7 +1047,7 @@ module MomSpectra
                 FuncVal(:,:,i) = FuncVal(:,:,i) + A_Inv(:,:)
 
                 !5) Sum the square of the inverse into the jacobian construction
-                call ZGEMM('N','N',nImp,nImp,nImp,Factor,A_Inv,nImp,A_Inv,nImp,zone,GradTmp,nImp)
+                call ZGEMM('N','N',nImp,nImp,nImp,zone,A_Inv,nImp,A_Inv,nImp,zzero,GradTmp,nImp)
                 Grad(:,:,i) = Grad(:,:,i) + GradTmp(:,:)
 
                 Omega = Omega + Omega_Step
@@ -900,8 +1056,9 @@ module MomSpectra
 
         !The Function evaluation needs to have the X' value removed from it at all points
         FuncVal(:,:,:) = FuncVal(:,:,:) - LocalCoupFunc(:,:,:)
+        Grad(:,:,:) = Grad(:,:,:)*Factor
         
-        deallocate(k_Ham,CompHam,ztemp,A,A_Inv,GradTmp)
+        deallocate(A,A_Inv,GradTmp)
     end subroutine GetFuncValsandGrads
 
     !Damped update of the self-energy via the dyson equation
