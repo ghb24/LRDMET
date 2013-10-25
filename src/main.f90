@@ -828,10 +828,6 @@ Program RealHub
             call stop_all(t_r,'To solve DMET_LR, must perform complete diag or non-direct davidson, '   &
      &          //'rather than direct davidson solver')
         endif
-        if(tSC_LR.and.tLR_ReoptGS.and.tLR_DMET) then
-            call stop_all(t_r,"Reoptimizing ground state not sorted yet for self-consistent response "  &
-     &          //"calculations - probably shouldn't happen")
-        endif
         if((iReuse_SE.ne.0).and.(.not.tSC_LR)) then
             call stop_all(t_r,'Cannot reuse self energy if there is no self-consistency in reponse')
         endif

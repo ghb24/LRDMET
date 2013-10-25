@@ -147,7 +147,7 @@ module LRDriver
             write(6,*) "7"
             call flush(6)
             call CheckNICoupFnsSame(nESteps,LocalCoupFn,GlobalCoup,GFChemPot)
-            call writedynamicfunction(nESteps,GlobalCoup,'GlobalCoupling_Z',tag=iter,tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.)
+            call writedynamicfunction(nESteps,GlobalCoup,'GlobalCoupling_Z',tag=iter,tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.false.)
 
             !Construct interacting greens function from the global coupling
             !calculate G_00
