@@ -1213,7 +1213,7 @@ module solvers
                 enddo
             endif
             if(tUHF) then
-                if(tTwoElecBath) call stop_all(t_r,'Cannot correlate bath with UHF')
+                if(tTwoElecBath_) call stop_all(t_r,'Cannot correlate bath with UHF')
                 do i = nImp+1,nImp*2
                     umat(umatind(i,i,i,i)) = U
                 enddo
