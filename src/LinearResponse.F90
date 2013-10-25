@@ -27,22 +27,22 @@ module LinearResponse
         real(dp), intent(in) :: GFChemPot
         complex(dp), intent(out) :: G_Mat(nImp,nImp,nESteps)
         complex(dp), allocatable :: NFCIHam(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
-        real(dp), allocatable :: dNorm_p(:),dNorm_h(:)
+        real(dp), allocatable :: dNorm_p(:),dNorm_h(:),W(:)
         complex(dp), allocatable , target :: LinearSystem_p(:,:),LinearSystem_h(:,:)
         complex(dp), allocatable :: Cre_0(:,:),Ann_0(:,:),ResponseFn_p(:,:),ResponseFn_h(:,:)
         complex(dp), allocatable :: Gc_a_F_ax_Bra(:,:),Gc_a_F_ax_Ket(:,:),Gc_b_F_ab(:,:)
         complex(dp), allocatable :: ResponseFn_Mat(:,:),Ga_i_F_xi_Ket(:,:)
         complex(dp), allocatable :: Psi1_p(:),Psi1_h(:),Ga_i_F_xi_Bra(:,:),Ga_i_F_ij(:,:),ni_lr_Mat(:,:)
         complex(dp), allocatable :: temp_vecc(:),Work(:),Psi_0(:),RHS(:)
-        complex(dp), allocatable :: NI_LRMat_Cre(:,:),NI_LRMat_Ann(:,:)
+        complex(dp), allocatable :: NI_LRMat_Cre(:,:),NI_LRMat_Ann(:,:),GSHam(:,:)
         integer, allocatable :: Coup_Ann_alpha(:,:,:),Coup_Create_alpha(:,:,:)
         integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,ierr,info,iunit,nCore
         integer :: nLinearSystem,nOrbs,nVirt,tempK,VIndex,VirtStart,VirtEnd
         integer :: orbdum(1),nLinearSystem_h,Np1GSInd,Nm1GSInd,lWork,minres_unit
-        integer :: maxminres_iter,pertsite,OmegaVal
+        integer :: maxminres_iter,pertsite,OmegaVal,nGSSpace
         integer(ip) :: nLinearSystem_ip,minres_unit_ip,info_ip,maxminres_iter_ip,iters_p,iters_h
         real(dp) :: Omega,mu,SpectralWeight,Prev_Spec,AvdNorm_p,AvdNorm_h,Error_GF
-        real(dp) :: Diff_GF
+        real(dp) :: Diff_GF,GSEnergy
         complex(dp) :: ResponseFn,tempel,ni_lr,ni_lr_p,ni_lr_h,AvResFn_p,AvResFn_h
         complex(dp) :: zdotc,VNorm,CNorm,SelfE(nImp,nImp)
         logical :: tParity,tFirst
@@ -89,11 +89,14 @@ module LinearResponse
             ! spanning a different space to previous iterations
             call stop_all(t_r,'Cannot tile the self-energy through the occupied and virtual space seperately without mixing them')
         endif
-        !Surely if we are doing self-consistent LR, we can only have the GS in the n-electron space, since the others
-        !aren't consistent across the different greens functions.
-        !Would be ok with nImp = 1 I guess, since there is still then a unique GS.
-        if(tSC_LR.and.tLR_ReoptGS) then
-            call stop_all(t_r,"Reoptimizing GS with self-consistency not sorted yet - probably shouldn't happen")
+        !There are some worrying issues regarding reoptimizing the GS within this scheme. 
+        !1) The ground state then becomes a function of frequency! Not ideal?
+        !2) It might potentially (for nImp > 1) mean that the ground state is also a function of which perturbation is applied first.
+        !   This would break hermiticity of the greens functions, unless we do N^2 reoptimizations of the wavefunction. Even so, this may still 
+        !   break hermiticity, since the bra and ket may now actually be different (for the off diagonal greens functions).
+        if(tLR_ReoptGS) then
+            if(nImp.gt.1) call stop_all(t_r,'Still some (conceptial) problems with reoptimizing ground state with > 1 impurity.')
+            write(6,"(A)") "Reoptimizing the ground state for each frequency. This will make all calculations more expensive (and not necessarily better?)"
         endif
 
         !umat and tmat for the active space
@@ -119,6 +122,13 @@ module LinearResponse
 
         nLinearSystem = nNp1FCIDet + nFCIDet
         nLinearSystem_h = nNm1bFCIDet + nFCIDet
+        nGSSpace = nFCIDet + nNp1FCIDet + nNm1bFCIDet
+        Np1GSInd = nFCIDet + 1
+        Nm1GSInd = Np1GSInd + nNp1FCIDet
+        if(tLR_ReoptGS) then
+            write(6,"(A,I9)") "Size of reoptimized ground state basis: ",nGSSpace
+            write(6,"(A,F14.6,A)") "Memory required for reoptimization of GS: ",(real(nGSSpace,dp)**2)*ComptoMb," Mb"
+        endif
 
         if(nLinearSystem.ne.nLinearSystem_h) then
             call stop_all(t_r,'Should change restriction on the Linear system size being the same for particle/hole addition')
@@ -154,18 +164,10 @@ module LinearResponse
             filename2 = filename
         endif
         open(unit=iunit,file=filename2,status='unknown')
-        if(tSC_LR) then
-            write(iunit,"(A)") "# 1.Frequency     2.GF_LinearResponse(Re)    3.GF_LinearResponse(Im)    " &
-                & //"4.ParticleGF(Re)   5.ParticleGF(Im)   6.HoleGF(Re)   7.HoleGF(Im)    8.Old_GS    9.New_GS   " &
-                & //"10.Particle_Norm  11.Hole_Norm   12.NI_GF(Re)   13.NI_GF(Im)  14.NI_GF_Part(Re)   15.NI_GF_Part(Im)   " &
-                & //"16.NI_GF_Hole(Re)   17.NI_GF_Hole(Im)  18.SpectralWeight  19.Iters_p   20.Iters_h    " &
-                & //"21.Tr[SE](Re)  22.Tr[SE](Im) "
-        else
-            write(iunit,"(A)") "# 1.Frequency     2.GF_LinearResponse(Re)    3.GF_LinearResponse(Im)    " &
-                & //"4.ParticleGF(Re)   5.ParticleGF(Im)   6.HoleGF(Re)   7.HoleGF(Im)    8.Old_GS    9.New_GS   " &
-                & //"10.Particle_Norm  11.Hole_Norm   12.NI_GF(Re)   13.NI_GF(Im)  14.NI_GF_Part(Re)   15.NI_GF_Part(Im)   " &
-                & //"16.NI_GF_Hole(Re)   17.NI_GF_Hole(Im)  18.SpectralWeight  19.Iters_p   20.Iters_h    " 
-        endif
+        write(iunit,"(A)") "# 1.Frequency     2.GF_LinearResponse(Re)    3.GF_LinearResponse(Im)    " &
+            & //"4.ParticleGF(Re)   5.ParticleGF(Im)   6.HoleGF(Re)   7.HoleGF(Im)    8.Old_GS    9.New_GS   " &
+            & //"10.Particle_Norm  11.Hole_Norm   12.NI_GF(Re)   13.NI_GF(Im)  14.NI_GF_Part(Re)   15.NI_GF_Part(Im)   " &
+            & //"16.NI_GF_Hole(Re)   17.NI_GF_Hole(Im)  18.SpectralWeight  19.Iters_p   20.Iters_h    " 
                 
         if(tMinRes_NonDir) then
             minres_unit = get_free_unit()
@@ -192,7 +194,11 @@ module LinearResponse
         !Allocate memory for hamiltonian in this system:
         allocate(LinearSystem_p(nLinearSystem,nLinearSystem),stat=ierr)
         allocate(LinearSystem_h(nLinearSystem,nLinearSystem),stat=ierr)
-        allocate(Psi_0(nFCIDet),stat=ierr)   !If tLR_ReoptGS = .F. , then only the first nFCIDet elements will be used
+        allocate(Psi_0(nGSSpace),stat=ierr)   !If tLR_ReoptGS = .F. , then only the first nFCIDet elements will be used
+        if(tLR_ReoptGS) then
+            allocate(GSHam(nGSSpace,nGSSpace),stat=ierr)
+            allocate(W(nGSSpace),stat=ierr)
+        endif
         allocate(Psi1_p(nLinearSystem),stat=ierr)
         allocate(Psi1_h(nLinearSystem),stat=ierr)
         Psi1_p = zzero
@@ -201,15 +207,17 @@ module LinearResponse
         i = nFCIDet*3 + nLinearSystem*5
         write(6,"(A,F12.5,A)") "Memory required for wavefunctions: ",real(i,dp)*ComptoMb, " Mb"
         
-        !Since this does not depend at all on the new basis, since the ground state has a completely
-        !disjoint basis to |1>, the RHS of the equations can be precomputed
         allocate(Cre_0(nLinearSystem,nImp))
         allocate(Ann_0(nLinearSystem,nImp))
-        Psi_0(:) = zzero 
-        Psi_0(1:nFCIDet) = HL_Vec(:)    
-        do i = 1,nImp
-            call ApplySP_PertGS_EC(Psi_0,nFCIDet,Cre_0(:,i),Ann_0(:,i),nLinearSystem,i)
-        enddo
+        if(.not.tLR_ReoptGS) then
+            !Since this does not depend at all on the new basis, since the ground state has a completely
+            !disjoint basis to |1>, the RHS of the equations can be precomputed
+            Psi_0(:) = zzero 
+            Psi_0(1:nFCIDet) = HL_Vec(:)    
+            do i = 1,nImp
+                call ApplySP_PertGS_EC(Psi_0,nFCIDet,Cre_0(:,i),Ann_0(:,i),nLinearSystem,i)
+            enddo
+        endif
         
         !Store the fock matrix in complex form, so that we can ZGEMM easily
         !Also allocate the subblocks seperately. More memory, but will ensure we don't get stack overflow problems
@@ -241,15 +249,15 @@ module LinearResponse
         FockSchmidt_SE_XV(ActiveStart:ActiveEnd,VirtStart:VirtEnd) = FockSchmidt_SE(ActiveStart:ActiveEnd,VirtStart:VirtEnd)
         FockSchmidt_SE_XC(ActiveStart:ActiveEnd,1:CoreEnd) = FockSchmidt_SE(ActiveStart:ActiveEnd,1:CoreEnd)
 
-        !Emb_h0v_SE and h0v_se
-        allocate(Emb_h0v_SE(EmbSize,EmbSize))   !The 1-electron hamiltonian (with self-energy correction) over the embedded basis
-        do i = 1,EmbSize
-            do j = 1,EmbSize
-                Emb_h0v_SE(j,i) = dcmplx(Emb_h0v(j,i),0.0_dp)
-            enddo
-        enddo
-        if(allocated(h0v_se)) deallocate(h0v_se)
-        allocate(h0v_se(nSites,nSites))     !1 electron hamiltonian. Potential
+!        !Emb_h0v_SE and h0v_se
+!        allocate(Emb_h0v_SE(EmbSize,EmbSize))   !The 1-electron hamiltonian (with self-energy correction) over the embedded basis
+!        do i = 1,EmbSize
+!            do j = 1,EmbSize
+!                Emb_h0v_SE(j,i) = dcmplx(Emb_h0v(j,i),0.0_dp)
+!            enddo
+!        enddo
+!        if(allocated(h0v_se)) deallocate(h0v_se)
+!        allocate(h0v_se(nSites,nSites))     !1 electron hamiltonian. Potential
         
         !Space for useful intermediates
         !For particle addition
@@ -379,6 +387,7 @@ module LinearResponse
             !Find the first-order wavefunction in the interacting picture for all impurity sites 
             do pertsite = 1,nImp
 
+                if(tLR_ReoptGS) GSHam(:,:) = zzero
                 LinearSystem_p(:,:) = zzero 
                 LinearSystem_h(:,:) = zzero 
 
@@ -387,6 +396,14 @@ module LinearResponse
                 LinearSystem_p(1:nNp1FCIDet,1:nNp1FCIDet) = Np1FCIHam_alpha(:,:)
                 !Block 1 for hole hamiltonian
                 LinearSystem_h(1:nNm1bFCIDet,1:nNm1bFCIDet) = Nm1FCIHam_beta(:,:)
+                if(tLR_ReoptGS) then
+                    !Block 1 for GS
+                    GSHam(1:nFCIDet,1:nFCIDet) = nFCIHam(:,:)
+                    !Block 2 (diagonal part to come)
+                    GSHam(Np1GSInd:Nm1GSInd-1,Np1GSInd:Nm1GSInd-1) = Np1FCIHam_alpha(:,:)
+                    !Block 4 (diagonal part to come)
+                    GSHam(Nm1GSInd:nGSSpace,Nm1GSInd:nGSSpace) = Nm1FCIHam_beta(:,:)
+                endif
 
                 !Block 2 for particle hamiltonian
                 !Copy the N electron FCI hamiltonian to this diagonal block
@@ -407,6 +424,12 @@ module LinearResponse
                 do i = VIndex,nLinearSystem
                     LinearSystem_p(i,i) = LinearSystem_p(i,i) + tempel
                 enddo
+                if(tLR_ReoptGS) then
+                    !Diagonal part of block 4
+                    do i = Nm1GSInd,nGSSpace
+                        GSHam(i,i) = GSHam(i,i) + tempel
+                    enddo
+                endif
 
                 !Block 2 for the hole hamiltonian
                 !Copy the N electron FCI hamiltonian to this diagonal blockk
@@ -426,6 +449,12 @@ module LinearResponse
                 do i = VIndex,nLinearSystem
                     LinearSystem_h(i,i) = LinearSystem_h(i,i) + tempel
                 enddo
+                if(tLR_ReoptGS) then
+                    !Diagonal part of block 2
+                    do i = Np1GSInd,Nm1GSInd-1
+                        GSHam(i,i) = GSHam(i,i) + tempel
+                    enddo
+                endif
             
                 !Block 3 for particle hamiltonian
                 do J = 1,nNp1FCIDet
@@ -439,6 +468,13 @@ module LinearResponse
                             !LinearSystem_p(J,K+VIndex-1) = conjg(LinearSystem_p(K+VIndex-1,J))
                             LinearSystem_p(J,K+VIndex-1) = Gc_a_F_ax_Ket(Coup_Ann_alpha(1,K,J),pertsite)    &
                                 *Coup_Ann_alpha(2,K,J)/sqrt(VNorm)
+                            if(tLR_ReoptGS) then
+                                !Block 3 contribution
+                                !Assume that all the matrices are hermitian as we shouldn't be reoptimizing the GS with self-energy
+                                GSHam(K,Np1GSInd+J-1) = -Ga_i_F_xi_Ket(Coup_Ann_alpha(1,K,J),pertsite)  &
+                                    *Coup_Ann_alpha(2,K,J)/sqrt(CNorm)
+                                GSHam(Np1GSInd+J-1,K) = conjg(GSHam(K,Np1GSInd+J-1))
+                            endif
                         endif
                     enddo
                 enddo
@@ -453,6 +489,12 @@ module LinearResponse
                             LinearSystem_h(J,K+VIndex-1) = - Ga_i_F_xi_Ket(Coup_Create_alpha(1,K,J),pertsite)   &
                                 *Coup_Create_alpha(2,K,J)/sqrt(CNorm)
 !                                LinearSystem_h(J,K+VIndex-1) = conjg(LinearSystem_h(K+VIndex-1,J))
+                            if(tLR_ReoptGS) then
+                                !Block 6 contribution
+                                GSHam(K,Nm1GSInd+J-1) = Gc_a_F_ax_Ket(Coup_Create_alpha(1,K,J),pertsite) &
+                                    *Coup_Create_alpha(2,K,J)/sqrt(VNorm)
+                                GSHam(Nm1GSInd+J-1,K) = conjg(GSHam(K,Nm1GSInd+J-1))
+                            endif
                         endif
                     enddo
                 enddo
@@ -475,18 +517,67 @@ module LinearResponse
                         endif
                     enddo
                 enddo
+                if(tLR_ReoptGS) then
+                    !Check GS hamiltonian is hermitian
+                    do i = 1,nGSSpace
+                        do j = i,nGSSpace
+                            if(abs(GSHam(j,i)-conjg(GSHam(i,j))).gt.1.0e-8_dp) then
+                                call stop_all(t_r,'Reoptimized ground state hamiltonian is not hermitian')
+                            endif
+                        enddo
+                    enddo
+                endif
 
                 !write(6,*) "Hessian constructed successfully...",Omega
                 call halt_timer(LR_EC_GF_HBuild)
                 call set_timer(LR_EC_GF_SolveLR)
+                
+                if(tLR_ReoptGS) then
+                    if(tNonDirDavidson) then
+                        Psi_0(:) = zzero
+                        do i = 1,nFCIDet
+                            Psi_0(i) = dcmplx(HL_Vec(i),zero)
+                        enddo
+                        call Comp_NonDir_Davidson(nGSSpace,GSHam,GSEnergy,Psi_0,.true.)
+                    else
+                        allocate(Work(max(1,3*nGSSpace-2)))
+                        allocate(temp_vecc(1))
+                        W(:) = 0.0_dp
+                        lWork = -1
+                        info = 0
+                        call zheev('V','U',nGSSpace,GSHam,nGSSpace,W,temp_vecc,lWork,Work,info)
+                        if(info.ne.0) call stop_all(t_r,'workspace query failed')
+                        lwork = int(temp_vecc(1))+1
+                        deallocate(temp_vecc)
+                        allocate(temp_vecc(lwork))
+                        call zheev('V','U',nGSSpace,GSHam,nGSSpace,W,temp_vecc,lWork,Work,info)
+                        if(info.ne.0) call stop_all(t_r,'GS H Diag failed 1')
+                        deallocate(work,temp_vecc)
+
+                        Psi_0(:) = GSHam(:,1)
+                        GSEnergy = W(1)
+                    endif
+
+                    write(6,"(A,G20.10,A,G20.10,A)") "Reoptimized ground state energy is: ",GSEnergy, &  
+                        " (old = ",HL_Energy,")"
+                    !call writevector(HL_Vec(:),'Old Psi_0')
+                    !call writevectorcomp(Psi_0,'New Psi_0')
+                else
+                    GSEnergy = HL_Energy
+                endif
+
 
                 !Solve particle GF to start
                 !The V|0> for particle and hole perturbations are held in Cre_0 and Ann_0
-                
+                if(tLR_ReoptGS) then
+                    !If we have reoptimized the ground state, we will need to recompute these
+                        !Since we are only keeping these one at a time, we don't actually need to store all pertsite vectors
+                        call ApplySP_PertGS_EC(Psi_0,nGSSpace,Cre_0(:,pertsite),Ann_0(:,pertsite),nLinearSystem,pertsite)
+                endif
                 LinearSystem_p(:,:) = -LinearSystem_p(:,:)
                 !Offset matrix
                 do i = 1,nLinearSystem
-                    LinearSystem_p(i,i) = LinearSystem_p(i,i) + dcmplx(Omega+GFChemPot+HL_Energy,dDelta)
+                    LinearSystem_p(i,i) = LinearSystem_p(i,i) + dcmplx(Omega+GFChemPot+GSEnergy,dDelta)
                 enddo
 !                call writematrixcomp(LinearSystem_p,'LinearSystem_p',.false.)
 
@@ -534,7 +625,7 @@ module LinearResponse
 
                 !Now solve the LR for the hole addition
                 do i = 1,nLinearSystem
-                    LinearSystem_h(i,i) = dcmplx(Omega+GFChemPot-HL_Energy,dDelta) + LinearSystem_h(i,i)
+                    LinearSystem_h(i,i) = dcmplx(Omega+GFChemPot-GSEnergy,dDelta) + LinearSystem_h(i,i)
                 enddo
 !                call writematrixcomp(LinearSystem_h,'LinearSystem_h',.false.)
                 if(tMinRes_NonDir) then
@@ -580,6 +671,9 @@ module LinearResponse
                 !write(6,*) "Normalization of first-order wavefunction: ",dNorm_p,dNorm_h
                 
                 !Now, calculate all interacting greens funtions that we want, by dotting in the first-order space
+                if((nImp.gt.1).and.(tLR_ReoptGS)) then
+                    call stop_all(t_r,'Cannot do dotting of vectors here, since the LHS vectors are still being computed')
+                endif
                 do j = 1,nImp
                     ResponseFn_p(j,pertsite) = zzero
                     ResponseFn_h(pertsite,j) = zzero
@@ -663,6 +757,9 @@ module LinearResponse
             deallocate(RHS)
             if(tPrecond_MinRes) deallocate(Precond_Diag)
         endif
+        if(tLR_ReoptGS) then
+            deallocate(W,GSHam)
+        endif
 
         !Deallocate determinant lists
         if(allocated(FCIDetList)) deallocate(FCIDetList)
@@ -680,7 +777,7 @@ module LinearResponse
         if(allocated(Np1bBitList)) deallocate(Np1bBitList)
 
         !Stored intermediates
-        deallocate(NFCIHam,Nm1FCIHam_beta,Np1FCIHam_alpha,Emb_h0v_se)
+        deallocate(NFCIHam,Nm1FCIHam_beta,Np1FCIHam_alpha)
         deallocate(Coup_Create_alpha,Coup_Ann_alpha)
         deallocate(FockSchmidt_SE,FockSchmidt_SE_VV,FockSchmidt_SE_CC)
         deallocate(FockSchmidt_SE_VX,FockSchmidt_SE_CX,FockSchmidt_SE_XV,FockSchmidt_SE_XC)
@@ -2204,7 +2301,7 @@ module LinearResponse
 
         !umat and tmat for the active space
         call CreateIntMats(tComp=.true.)
-        
+
         !Enumerate excitations for fully coupled space
         !Seperate the lists into different Ms sectors in the N+- lists
         call GenDets(Elec,EmbSize,.true.,.true.,.true.) 
@@ -3114,11 +3211,11 @@ module LinearResponse
         i = nGSSpace*3 + nLinearSystem*5
         write(6,"(A,F12.5,A)") "Memory required for wavefunctions: ",real(i,dp)*ComptoMb, " Mb"
         
-        !Since this does not depend at all on the new basis, since the ground state has a completely
-        !disjoint basis to |1>, the RHS of the equations can be precomputed
         allocate(Cre_0(nLinearSystem,nImp_GF))
         allocate(Ann_0(nLinearSystem,nImp_GF))
         if(.not.tLR_ReoptGS) then
+            !Since this does not depend at all on the new basis, since the ground state has a completely
+            !disjoint basis to |1>, the RHS of the equations can be precomputed
             Psi_0(:) = zzero 
             Psi_0(1:nFCIDet) = HL_Vec(:)    
             GFChemPot = HL_Energy
