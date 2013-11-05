@@ -824,7 +824,8 @@ module MomSpectra
             do i = 1,n
                 !Run over omega values
 
-                call FindChangeZ(Omega,mu,LocalCoupFunc(:,:,i),GlobalCoup(:,:,i),k_Hams,Grad(:,:,i),FuncVal(:,:,i),ChangeZ,AbsChange)
+                call FindChangeZ(Omega,mu,LocalCoupFunc(:,:,i),GlobalCoup(:,:,i),k_Hams,Grad(:,:,i),    &
+                    FuncVal(:,:,i),ChangeZ,AbsChange)
                 if(AbsChange.gt.MaxAbsChange) MaxAbsChange = AbsChange
 
                 !Update the global coupling parameter
