@@ -96,7 +96,8 @@ module LinearResponse
         !   break hermiticity, since the bra and ket may now actually be different (for the off diagonal greens functions).
         if(tLR_ReoptGS) then
             if(nImp.gt.1) call stop_all(t_r,'Still some (conceptial) problems with reoptimizing ground state with > 1 impurity.')
-            write(6,"(A)") "Reoptimizing the ground state for each frequency. This will make all calculations more expensive (and not necessarily better?)"
+            write(6,"(A)") "Reoptimizing the ground state for each frequency. " &
+     &          //"This will make all calculations more expensive (and not necessarily better?)"
         endif
 
         !umat and tmat for the active space
