@@ -1109,13 +1109,6 @@ Program RealHub
             if(tFinishedU) exit
             if(.not.tSingFiss) write(6,*) "Running DMET calculation with U = ",U
         
-            allocate(MeanFieldDM(nSites,nSites))    !DM from mean-field
-            MeanFieldDM(:,:) = zero
-            if(tUHF) then
-                allocate(MeanFieldDM_b(nSites,nSites))
-                MeanFieldDM_b(:,:) = zero
-            endif
-
             !Calculate the core hamiltonian based on the hopping matrix of the hubbard model in real space
             !If reading in the hopping matrix, it is done here and stored in h0
             call make_hop_mat()
@@ -1130,6 +1123,13 @@ Program RealHub
 
             !Loop over occupation numbers 
             do Occ=1,N_Occs
+
+                allocate(MeanFieldDM(nSites,nSites))    !DM from mean-field
+                MeanFieldDM(:,:) = zero
+                if(tUHF) then
+                    allocate(MeanFieldDM_b(nSites,nSites))
+                    MeanFieldDM_b(:,:) = zero
+                endif
 
                 call OpenDMETFile(DMETfile)
                 write(DMETfile,"(A)") " #Iteration  E_DMET/Imp   E_HL   d[V]   Initial_Err[1RDM]   "    &

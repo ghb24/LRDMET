@@ -1402,7 +1402,7 @@ module mat_tools
         OccOrbs(:,:) = HFOrbs(:,1:nOcc)
         !Now construct the density matrix in the original AO basis. The eigenvectors are given as AO x MO, so we want to contract out the
         !MO contributions in order to get the 1DM in the AO basis.
-        call DGEMM('N','T',nSites,nSites,nOcc,Occupancy,OccOrbs,nSites,OccOrbs,nSites,0.0_dp,MeanFieldDM,nSites)
+        call DGEMM('N','T',nSites,nSites,nOcc,Occupancy,OccOrbs,nSites,OccOrbs,nSites,zero,MeanFieldDM,nSites)
 
         if(tUHF) then
             OccOrbs(:,:) = HFOrbs_b(:,1:nOcc)
