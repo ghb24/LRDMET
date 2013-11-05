@@ -147,13 +147,15 @@ module LRDriver
             write(6,*) "7"
             call flush(6)
             call CheckNICoupFnsSame(nESteps,LocalCoupFn,GlobalCoup,GFChemPot)
-            call writedynamicfunction(nESteps,GlobalCoup,'GlobalCoupling_Z',tag=iter,tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.)
+            call writedynamicfunction(nESteps,GlobalCoup,'GlobalCoupling_Z',tag=iter,tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.false.)
 
             !Construct interacting greens function from the global coupling
             !calculate G_00
             write(6,"(A)") "Calculating high-level correlation function..."
             write(6,*) "8"
             call flush(6)
+            !TEST!
+            !GlobalCoup(:,:,:) = zzero
             call SchmidtGF_wSE(G_Mat,GFChemPot,GlobalCoup,nESteps)
             write(6,"(A)") "High-level correlation function obtained."
 
@@ -163,7 +165,7 @@ module LRDriver
             !This takes the old SE, and outputs the new one.
             SE_Old(:,:,:) = SE(:,:,:)
             call Calc_SE(nESteps,Hybrid,G_Mat,GFChemPot,SE,MaxDiffSE)
-            call writedynamicfunction(nESteps,SE,'SelfEnergy',tag=iter,tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.)
+            call writedynamicfunction(nESteps,SE,'SelfEnergy',tag=iter,tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.false.)
 
             !Finally, should we do this all in a larger self-consistency, 
             !such that the self energy is used for the frequency dependent bath?
@@ -172,7 +174,7 @@ module LRDriver
                 exit
             endif
 
-            if(iter.eq.2) call stop_all(t_r,'end')
+            if(iter.eq.1) call stop_all(t_r,'SELF ENERGY CAUSAL (in first iteration)! YAY!')
 
         enddo
 

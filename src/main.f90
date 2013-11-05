@@ -828,10 +828,6 @@ Program RealHub
             call stop_all(t_r,'To solve DMET_LR, must perform complete diag or non-direct davidson, '   &
      &          //'rather than direct davidson solver')
         endif
-        if(tSC_LR.and.tLR_ReoptGS.and.tLR_DMET) then
-            call stop_all(t_r,"Reoptimizing ground state not sorted yet for self-consistent response "  &
-     &          //"calculations - probably shouldn't happen")
-        endif
         if((iReuse_SE.ne.0).and.(.not.tSC_LR)) then
             call stop_all(t_r,'Cannot reuse self energy if there is no self-consistency in reponse')
         endif
@@ -1113,13 +1109,6 @@ Program RealHub
             if(tFinishedU) exit
             if(.not.tSingFiss) write(6,*) "Running DMET calculation with U = ",U
         
-            allocate(MeanFieldDM(nSites,nSites))    !DM from mean-field
-            MeanFieldDM(:,:) = zero
-            if(tUHF) then
-                allocate(MeanFieldDM_b(nSites,nSites))
-                MeanFieldDM_b(:,:) = zero
-            endif
-
             !Calculate the core hamiltonian based on the hopping matrix of the hubbard model in real space
             !If reading in the hopping matrix, it is done here and stored in h0
             call make_hop_mat()
@@ -1134,6 +1123,13 @@ Program RealHub
 
             !Loop over occupation numbers 
             do Occ=1,N_Occs
+
+                allocate(MeanFieldDM(nSites,nSites))    !DM from mean-field
+                MeanFieldDM(:,:) = zero
+                if(tUHF) then
+                    allocate(MeanFieldDM_b(nSites,nSites))
+                    MeanFieldDM_b(:,:) = zero
+                endif
 
                 call OpenDMETFile(DMETfile)
                 write(DMETfile,"(A)") " #Iteration  E_DMET/Imp   E_HL   d[V]   Initial_Err[1RDM]   "    &
