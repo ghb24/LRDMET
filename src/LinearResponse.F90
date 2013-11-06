@@ -8272,16 +8272,28 @@ module LinearResponse
         real(dp), intent(in) :: Omega,GFChemPot
         complex(dp), intent(out) :: NI_LRMat_Cre(nImp,nImp),NI_LRMat_Ann(nImp,nImp)
         complex(dp), intent(in) :: SE(nImp,nImp)
-        real(dp), intent(out) :: SchmidtGF_Ann_Ket_Re(1:nOcc-nImp,nImp),SchmidtGF_Ann_Ket_Im(1:nOcc-nImp,nImp)
-        real(dp), intent(out) :: SchmidtGF_Ann_Bra_Re(1:nOcc-nImp,nImp),SchmidtGF_Ann_Bra_Im(1:nOcc-nImp,nImp)
-        real(dp), intent(out) :: SchmidtGF_Cre_Ket_Re(nOcc+nImp+1:nSites,nImp),SchmidtGF_Cre_Ket_Im(nOcc+nImp+1:nSites,nImp)
-        real(dp), intent(out) :: SchmidtGF_Cre_Bra_Re(nOcc+nImp+1:nSites,nImp),SchmidtGF_Cre_Bra_Im(nOcc+nImp+1:nSites,nImp)
+!        real(dp), intent(out) :: SchmidtGF_Ann_Ket_Re(1:nOcc-nImp,nImp)
+!        real(dp), intent(out) :: SchmidtGF_Ann_Ket_Im(1:nOcc-nImp,nImp)
+!        real(dp), intent(out) :: SchmidtGF_Ann_Bra_Re(1:nOcc-nImp,nImp)
+!        real(dp), intent(out) :: SchmidtGF_Ann_Bra_Im(1:nOcc-nImp,nImp)
+!        real(dp), intent(out) :: SchmidtGF_Cre_Ket_Re(nOcc+nImp+1:nSites,nImp)
+!        real(dp), intent(out) :: SchmidtGF_Cre_Ket_Im(nOcc+nImp+1:nSites,nImp)
+!        real(dp), intent(out) :: SchmidtGF_Cre_Bra_Re(nOcc+nImp+1:nSites,nImp)
+!        real(dp), intent(out) :: SchmidtGF_Cre_Bra_Im(nOcc+nImp+1:nSites,nImp)
+        real(dp) :: SchmidtGF_Ann_Ket_Re(1:nOcc-nImp,nImp)
+        real(dp) :: SchmidtGF_Ann_Ket_Im(1:nOcc-nImp,nImp)
+        real(dp) :: SchmidtGF_Ann_Bra_Re(1:nOcc-nImp,nImp)
+        real(dp) :: SchmidtGF_Ann_Bra_Im(1:nOcc-nImp,nImp)
+        real(dp) :: SchmidtGF_Cre_Ket_Re(nOcc+nImp+1:nSites,nImp)
+        real(dp) :: SchmidtGF_Cre_Ket_Im(nOcc+nImp+1:nSites,nImp)
+        real(dp) :: SchmidtGF_Cre_Bra_Re(nOcc+nImp+1:nSites,nImp)
+        real(dp) :: SchmidtGF_Cre_Bra_Im(nOcc+nImp+1:nSites,nImp)
 
-        real(dp), allocatable :: Work(:)
+        real(dp), allocatable :: Work(:),temp_re(:,:),temp_im(:,:)
         complex(dp), allocatable :: LVec_R(:,:),RVec_R(:,:),EVals_R(:),k_Ham(:,:),ztemp(:,:),CompHam(:,:)
         complex(dp), allocatable :: AO_OneE_Ham(:,:),W_Vals(:),RVec(:,:),LVec(:,:)
         complex(dp), allocatable :: HFPertBasis_Ann_Ket(:,:),HFPertBasis_Cre_Ket(:,:),temp(:,:),temp2(:,:)
-        complex(dp), allocatable :: HFPertBasis_Ann_Bra(:,:),HFPertBasis_Cre_Bra(:,:),cWork(:),EmbeddedBasis_C(:,:)
+        complex(dp), allocatable :: HFPertBasis_Ann_Bra(:,:),HFPertBasis_Cre_Bra(:,:),cWork(:)
         integer :: lwork,info,i,a,pertBra,j,pertsite,nVirt,CoreEnd,VirtStart,ActiveStart,ActiveEnd,nCore
         integer :: kPnt,ind_1,ind_2
         complex(dp) :: test
@@ -8468,12 +8480,12 @@ module LinearResponse
 
         !Now, seperate this response vector into the real and imaginary components
         temp_re(:,:) = real(temp(:,:),dp)
-        temp_im(:,:) = aimag(temp(:,:),dp)
+        temp_im(:,:) = aimag(temp(:,:))
 
         !Now rotate these seperately into the occupied schmidt basis
-        call DGEMM('T','N',nCore,nImp,nSites,one,FullSchmidtTrans(:,1:CoreEnd),nSites,temp_re,nSites,zero,  &
+        call DGEMM('T','N',nCore,nImp,nSites,one,FullSchmidtBasis(:,1:CoreEnd),nSites,temp_re,nSites,zero,  &
             SchmidtGF_Ann_Ket_Re(1:CoreEnd,:),nCore)
-        call DGEMM('T','N',nCore,nImp,nSites,one,FullSchmidtTrans(:,1:CoreEnd),nSites,temp_im,nSites,zero,  &
+        call DGEMM('T','N',nCore,nImp,nSites,one,FullSchmidtBasis(:,1:CoreEnd),nSites,temp_im,nSites,zero,  &
             SchmidtGF_Ann_Ket_Im(1:CoreEnd,:),nCore)
 
         !Now do the same for the bra contraction coefficients, which are in the space of L*
@@ -8488,36 +8500,27 @@ module LinearResponse
         deallocate(temp2)
 
         temp_re(:,:) = real(temp(:,:),dp)
-        temp_im(:,:) = aimag(temp(:,:),dp)
+        temp_im(:,:) = aimag(temp(:,:))
 
         !Now rotate these seperately into the occupied schmidt basis
-        call DGEMM('T','N',nCore,nImp,nSites,one,FullSchmidtTrans(:,1:CoreEnd),nSites,temp_re,nSites,zero,  &
+        call DGEMM('T','N',nCore,nImp,nSites,one,FullSchmidtBasis(:,1:CoreEnd),nSites,temp_re,nSites,zero,  &
             SchmidtGF_Ann_Bra_Re(1:CoreEnd,:),nCore)
-        call DGEMM('T','N',nCore,nImp,nSites,one,FullSchmidtTrans(:,1:CoreEnd),nSites,temp_im,nSites,zero,  &
+        call DGEMM('T','N',nCore,nImp,nSites,one,FullSchmidtBasis(:,1:CoreEnd),nSites,temp_im,nSites,zero,  &
             SchmidtGF_Ann_Bra_Im(1:CoreEnd,:),nCore)
-
-
-        !*** UP TO HERE ***
-
-
-
-
-
-
-
-
-
-
-
-
 
         !Do the same with the particle NI GF
         call ZGEMM('N','N',nSites,nImp,nSites-nOcc,zone,RVec_R(:,nOcc+1:nSites),nSites,  &
             HFPertBasis_Cre_Ket,nSites-nOcc,zzero,temp,nSites)
-        !Now rotate into schmidt basis
-        call ZGEMM('T','N',nVirt,nImp,nSites,zone,FullSchmidtTrans_C(:,VirtStart:nSites),nSites,temp,nSites,zzero,    &
-            SchmidtPertGF_Cre_Ket(VirtStart:nSites,:),nVirt)
-        !Now for the Bra version of the particle NI GF
+        !Split up into components
+        temp_re(:,:) = real(temp(:,:),dp)
+        temp_im(:,:) = aimag(temp(:,:))
+        !Rotate into Schmidt
+        call DGEMM('T','N',nVirt,nImp,nSites,one,FullSchmidtBasis(:,VirtStart:nSites),nSites,temp_re,nSites,zero,   &
+            SchmidtGF_Cre_Ket_Re(VirtStart:nSites,:),nVirt)
+        call DGEMM('T','N',nVirt,nImp,nSites,one,FullSchmidtBasis(:,VirtStart:nSites),nSites,temp_im,nSites,zero,   &
+            SchmidtGF_Cre_Ket_Im(VirtStart:nSites,:),nVirt)
+
+        !Now for the Cre_Bra coefficients
         allocate(temp2(nSites,nOcc+1:nSites))
         do i = nOcc+1,nSites
             do j = 1,nSites
@@ -8525,11 +8528,17 @@ module LinearResponse
             enddo
         enddo
         call ZGEMM('N','N',nSites,nImp,nSites-nOcc,zone,temp2(:,nOcc+1:nSites),nSites,  &
-            HFPertBasis_Cre_Bra,nSites-nOcc,zzero,temp,nSites)
-        !Now rotate into schmidt basis
-        call ZGEMM('T','N',nVirt,nImp,nSites,zone,FullSchmidtTrans_C(:,VirtStart:nSites),nSites,temp,nSites,zzero,    &
-            SchmidtPertGF_Cre_Bra(VirtStart:nSites,:),nVirt)
-        deallocate(temp,temp2)
+            HFPertBasis_Cre_Bra(nOcc+1:nSites,:),nSites-nOcc,zzero,temp,nSites)
+        deallocate(temp2)
+        temp_re(:,:) = real(temp(:,:),dp)
+        temp_im(:,:) = aimag(temp(:,:))
+        !Rotate each component
+        call DGEMM('T','N',nVirt,nImp,nSites,one,FullSchmidtBasis(:,VirtStart:nSites),nSites,temp_re,nSites,zero,   &
+            SchmidtGF_Cre_Bra_Re(VirtStart:nSites,:),nVirt)
+        call DGEMM('T','N',nVirt,nImp,nSites,one,FullSchmidtBasis(:,VirtStart:nSites),nSites,temp_im,nSites,zero,   &
+            SchmidtGF_Cre_Bra_Im(VirtStart:nSites,:),nVirt)
+
+        deallocate(temp)
         deallocate(HFPertBasis_Ann_Bra,HFPertBasis_Cre_Bra)
         deallocate(HFPertBasis_Ann_Ket,HFPertBasis_Cre_Ket,LVec_R,RVec_R,EVals_R)
 
