@@ -15,11 +15,14 @@ module LRDriver
         real(dp) :: Omega,GFChemPot,OmegaVal
         integer :: nESteps,iter,i,k,l,iunit,j
         complex(dp), allocatable :: SE(:,:,:),G_Mat(:,:,:),SE_Old(:,:,:),LocalMomGF(:,:,:)
-        real(dp) :: dSE_Tol,MaxDiffSE,MinDiffSE,MeanDiffSE,MaxDiffGF,MeanDiffGF
+        real(dp) :: dChangeSE_Tol,dFuncTol,MaxDiffSE,MinDiffSE,MeanDiffSE,MaxDiffGF,MeanDiffGF
         character(64) :: filename,filename2
+        logical, allocatable :: tOmegaConv(:)
+        logical :: tSuccess
         character(len=*), parameter :: t_r='SC_Mom_LR_NoDyson'
 
-        dSE_Tol = 1.0e-9_dp
+        dChangeSE_Tol = 1.0e-9_dp
+        dFuncTol = 1.0e-8_dp
         
         !How many frequency points are there exactly?
         Omega = Start_Omega
@@ -34,6 +37,9 @@ module LRDriver
         allocate(SE_Old(nImp,nImp,nESteps))
         allocate(G_Mat(nImp,nImp,nESteps))
         allocate(LocalMomGF(nImp,nImp,nESteps))
+
+        !Array of all frequency points, and whether they have correctly converged or not
+        allocate(tOmegaConv(nESteps))
 
         call Init_SE(nESteps,SE)
 
@@ -54,11 +60,22 @@ module LRDriver
             call writedynamicfunction(nESteps,G_Mat,'G_Imp',tag=iter,tCheckCausal=.true.,tCheckOffDiagHerm=.true.)
             write(6,"(A)") "Impurity Greens function causal"
 
+            if(tSE_Scan) then
+                call PlotSigmaSurface(nESteps,G_Mat,GFChemPot)
+                call stop_all(t_r,'Finished Scanning Self-energy')
+            endif
+
             !Now, numerically calculate the self energy, st. the lattice and impurity greens function match
             SE_Old(:,:,:) = SE(:,:,:)
-            call ConvergeGlobalCoupling(nESteps,G_Mat,SE,GFChemPot,dSE_Tol)
+            call ConvergeGlobalCoupling(nESteps,G_Mat,SE,GFChemPot,dFuncTol,dChangeSE_Tol,tOmegaConv,tSuccess)
             write(6,*) "2"
             call flush(6)
+            if(.not.tSuccess) then
+                !Turn to a simplex algorithm to converge the points that failed with newton-raphson.
+                call ConvergeGlobalCoupling_Direct(nESteps,G_Mat,SE,GFChemPot,dFuncTol,dChangeSE_Tol,tOmegaConv,tSuccess)
+            endif
+            call stop_all(t_r,'end')
+
             !Now check whether we are actually converged, i.e. does the lattice greens function match the impurity greens function
             !Construct FT of k-space GFs and take zeroth part.
             call FindLocalMomGF(nESteps,SE,LocalMomGF)
@@ -78,8 +95,8 @@ module LRDriver
 
             write(6,"(I7,4G15.7)") iter,MaxDiffSE,MeanDiffSE,MaxDiffGF,MeanDiffGF
 
-            if(MaxDiffSE.lt.dSE_Tol) then
-                write(6,"(A,G15.8)") "Self-energy macroiteration converged to: ",dSE_Tol
+            if(MaxDiffSE.lt.dChangeSE_Tol) then
+                write(6,"(A,G15.8)") "Self-energy macroiteration converged to: ",dChangeSE_Tol
                 exit
             endif
 
@@ -114,7 +131,7 @@ module LRDriver
         enddo
         close(iunit)
 
-        deallocate(SE,SE_Old,G_Mat,LocalMomGF)
+        deallocate(SE,SE_Old,G_Mat,LocalMomGF,tOmegaConv)
 
     end subroutine SC_Mom_LR_NoDyson
     
@@ -130,6 +147,8 @@ module LRDriver
         complex(dp), allocatable :: SE(:,:,:),G_Mat(:,:,:),SE_Old(:,:,:)
         complex(dp), allocatable :: Hybrid(:,:,:),InvLocalMomGF(:,:,:),LocalMomGF(:,:,:)
         complex(dp), allocatable :: LocalCoupFn(:,:,:),GlobalCoup(:,:,:)
+        logical, allocatable :: tOmegaConv(:)
+        logical :: tSuccess
         character(64) :: filename,filename2
         logical :: exists
         character(len=*), parameter :: t_r='SC_Mom_LR_Z'
@@ -157,6 +176,8 @@ module LRDriver
         LocalMomGF(:,:,:) = zzero
         LocalCoupFn(:,:,:) = zzero
         GlobalCoup(:,:,:) = zzero
+
+        allocate(tOmegaConv(nESteps))
         
         call Init_SE(nESteps,SE)
 
@@ -209,7 +230,8 @@ module LRDriver
             !which mimics the effect of the hybridization on the whole lattice.
             write(6,*) "6"
             call flush(6)
-            call ConvergeGlobalCoupling(nESteps,LocalCoupFn,GlobalCoup,GFChemPot,1.0e-9_dp)
+            tOmegaConv(:) = .false.
+            call ConvergeGlobalCoupling(nESteps,LocalCoupFn,GlobalCoup,GFChemPot,1.0e-9_dp,1.0e-10_dp,tOmegaConv,tSuccess)
 
             !Check here that the two coupling functions are identical
             write(6,*) "7"
@@ -275,7 +297,7 @@ module LRDriver
         enddo
         close(iunit)
 
-        deallocate(LocalCoupFn,SE,SE_Old,G_Mat,Hybrid,InvLocalMomGF,LocalMomGF,GlobalCoup)
+        deallocate(LocalCoupFn,SE,SE_Old,G_Mat,Hybrid,InvLocalMomGF,LocalMomGF,GlobalCoup,tOmegaConv)
 
     end subroutine SC_Mom_LR_Z
 

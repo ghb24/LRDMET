@@ -863,15 +863,42 @@ module MomSpectra
 
     end subroutine writedynamicfunction
 
+    !A simplex algorithm for a direct minimization ofr the cost function
+    subroutine ConvergeGlobalCoupling_Direct(n,G,SE,mu,dFuncTol,dChangeSE_Tol,tOmegaConv,tSuccess)
+        implicit none
+        integer, intent(in) :: n
+        complex(dp), intent(in) :: G(nImp,nImp,n)
+        complex(dp), intent(inout) :: SE(nImp,nImp,n)
+        real(dp), intent(in) :: mu,dFuncTol,dChangeSE_Tol
+        logical, intent(inout) :: tOmegaConv(n)
+        logical, intent(out) :: tSuccess
+
+        integer :: i,nFreqVal
+        character(len=*), parameter :: t_r='ConvergeGlobalCoupling_Direct'
+
+        tSuccess = .false.
+
+        nFreqVal = 0
+        do i = 1,n
+            if(.not.tOmegaConv(i)) nFreqVal = nFreqVal + 1
+        enddo
+
+        if(nFreqVal.eq.0) call stop_all(t_r,'All frequency values seem converged. Should not be in simplex routine?')
+        write(6,"(I7,A,I7,A)") nFreqVal," frequency points out of ",n," failed to converge with NR. "
+        write(6,"(A)") "Attempting to converge them with simplex minimization of cost function."
+
+    end subroutine ConvergeGlobalCoupling_Direct
+
     !Via a NR algorithm, iteratively converge the global coupling (Z) of the cluster to the lattice
     !LocalCoupFunc is X'(omega)
-    subroutine ConvergeGlobalCoupling(n,LocalCoupFunc,GlobalCoup,mu,dConvTol)
+    subroutine ConvergeGlobalCoupling(n,LocalCoupFunc,GlobalCoup,mu,dFuncTol,dConvTol,tOmegaConv,tSuccess)
         use matrixops, only: mat_inv
         implicit none
         integer, intent(in) :: n
         complex(dp), intent(in) :: LocalCoupFunc(nImp,nImp,n)
         complex(dp), intent(inout) :: GlobalCoup(nImp,nImp,n)
-        real(dp), intent(in) :: mu,dConvTol
+        real(dp), intent(in) :: mu,dConvTol,dFuncTol
+        logical, intent(out) :: tSuccess,tOmegaConv(n)
 
         real(dp) :: Omega
         real(dp) :: AbsChange,MaxAbsChange
@@ -884,6 +911,7 @@ module MomSpectra
 !        dDampedNR = 0.2_dp
 !        dConvTol = 1.0e-10_dp
         write(6,*) "Converging global coupling matrix..."
+        tOmegaConv(:) = .false.
 
         allocate(FuncVal(nImp,nImp,n))
         allocate(Grad(nImp,nImp,n))
@@ -902,23 +930,29 @@ module MomSpectra
 
             MaxAbsChange = zero
             Omega = Start_Omega
+            tSuccess = .true.
             do i = 1,n
                 !Run over omega values
 
                 call FindChangeZ(Omega,mu,LocalCoupFunc(:,:,i),GlobalCoup(:,:,i),k_Hams,Grad(:,:,i),    &
-                    FuncVal(:,:,i),ChangeZ,AbsChange)
-                if(AbsChange.gt.MaxAbsChange) MaxAbsChange = AbsChange
+                    FuncVal(:,:,i),ChangeZ,AbsChange,tOmegaConv(i),dFuncTol,dConvTol)
 
-                !Update the global coupling parameter
-                !GlobalCoup(:,:,i) = GlobalCoup(:,:,i) + (dDampedNR*ChangeZ(:,:))
-                GlobalCoup(:,:,i) = GlobalCoup(:,:,i) + ChangeZ(:,:)
+                if(.not.tOmegaConv(i)) then
+                    tSuccess = .false.  !We have not converged all freq
+                    if(AbsChange.gt.MaxAbsChange) MaxAbsChange = AbsChange
+
+                    !Update the global coupling parameter
+                    !GlobalCoup(:,:,i) = GlobalCoup(:,:,i) + (dDampedNR*ChangeZ(:,:))
+                    GlobalCoup(:,:,i) = GlobalCoup(:,:,i) + ChangeZ(:,:)
+                endif
+
                 Omega = Omega + Omega_Step
             enddo
 
             write(6,*) "MaxAbsChange: ",MaxAbsChange
-            call writedynamicfunction(n,GlobalCoup,'ConvZ')
+            call writedynamicfunction(n,GlobalCoup,'Conv_SE')
         
-            !TEST! calulate and write out X, to compare to X'
+            !TEST! calulate and write out G0, to compare to G_imp
             allocate(InvMat(nImp,nImp))
             allocate(Fn(nImp,nImp,n))
             do kPnt = 1,nKPnts
@@ -939,16 +973,21 @@ module MomSpectra
             enddo   !enddo k-point
             !Divide the entire local greens function by the 'volume' of the brillouin zone
             Fn(:,:,:) = Fn(:,:,:) / real(nSites/nImp,dp)
-            call writedynamicfunction(n,Fn,'X_Fn_NR')
+            call writedynamicfunction(n,Fn,'G0_NR')
             call writedynamicfunction(n,FuncVal,'FuncVal')
             call writedynamicfunction(n,Grad,'Grad')
             deallocate(InvMat)
             deallocate(Fn)
             !END TEST
 
-            if(MaxAbsChange.lt.dConvTol) then
+!            if(MaxAbsChange.lt.dConvTol) then
+            if(tSuccess) then
                 write(6,"(A,G14.7)") "Convergence of global coupling function achieved to accuracy of: ",dConvTol
                 write(6,"(A,I9)") "Number of microiterations required: ",iter
+                exit
+            elseif(iter.gt.100) then
+                write(6,"(A)") "Newton-Raphson root finding failed after 100 iterations." 
+                write(6,"(A)") "Turning to simplex minimization for remaining frequency points"
                 exit
             endif
         enddo
@@ -956,7 +995,7 @@ module MomSpectra
 
     end subroutine ConvergeGlobalCoupling
                 
-    subroutine FindChangeZ(Omega,mu,X_prime,Z,k_Hams,Grad,Func,ChangeZ,AbsChange)
+    subroutine FindChangeZ(Omega,mu,X_prime,Z,k_Hams,Grad,Func,ChangeZ,AbsChange,tConv,dFuncTol,dChangeTol)
         use matrixops, only: mat_inv
         implicit none
         real(dp), intent(in) :: Omega,mu
@@ -966,10 +1005,17 @@ module MomSpectra
         complex(dp), intent(in) :: Grad(nImp,nImp),Func(nImp,nImp)
         complex(dp), intent(out) :: ChangeZ(nImp,nImp)
         real(dp), intent(out) :: AbsChange
+        logical, intent(inout) :: tConv !Is this frequency point converged?
+        real(dp), intent(in) :: dFuncTol,dChangeTol !Tolerance for function magnitude, and change in function
 
         integer :: OptType,i,j,kPnt
         real(dp) :: OptDamp,CurrOptRes,r(3)
         complex(dp), allocatable :: NewFn(:,:),Fn(:,:),NewZ(:,:),InvMat(:,:)
+
+        if(tConv) then 
+            AbsChange = zero
+            return    !We don't have anything to do here
+        endif
 
         ChangeZ(:,:) = zzero
         AbsChange = zero
@@ -995,6 +1041,20 @@ module MomSpectra
             !If the gradient is not small, then simply use an undamped newton raphson step
             ChangeZ(:,:) = - Func(:,:) / Grad(:,:)
             AbsChange = sum(abs(ChangeZ(:,:))) 
+            if((sum(abs(Func)).lt.dFuncTol).and.(AbsChange.lt.dChangeTol)) then
+                !Changes small, and function small.
+
+                !However, also check that the value of Z (self-energy) is actually causal
+                do i = 1,nImp
+                    if(aimag(Z(i,i)).gt.zero) then
+                        !not causal
+                        tConv = .false.
+                        exit
+                    else
+                        tConv = .true.
+                    endif
+                enddo
+            endif
         elseif(OptType.eq.2) then
             !Do a linesearch along the gradient direction.
             CurrOptRes = sum(abs(Func(:,:)))
@@ -1072,6 +1132,77 @@ module MomSpectra
 
         deallocate(NewFn,Fn,NewZ,InvMat)
     end subroutine FindChangeZ
+
+    !Write out the surface of |F(Sigma)|^2 as a function of sigma.
+    !If this doesn't fit zero, there is no solution.
+    !This is only done for the frequency Start_Omega
+    subroutine PlotSigmaSurface(n,G,mu)
+        use utils, only: get_free_unit
+        implicit none
+        integer, intent(in) :: n
+        complex(dp), intent(in) :: G(nImp,nImp,n)
+        real(dp), intent(in) :: mu
+        complex(dp) :: A,Factor,MinSE,MaxSE
+        integer :: iunit,kPnt
+        real(dp) :: Omega,SE_Real,SE_Im,MaxValue,MinValue
+        complex(dp), allocatable :: k_Hams(:,:,:)
+        character(len=*), parameter :: t_r='PlotSigmaSurface'
+
+        if(nImp.gt.1) call stop_all(t_r,'Routine only designed for one impurity')
+        
+        !Open file
+        iunit = get_free_unit()
+        open(iunit,file='SigmaScan',status='unknown')
+
+        Omega = Start_Omega
+        Factor = dcmplx(real(nSites/nImp,dp),zero)
+        
+        allocate(k_Hams(nImp,nImp,nKPnts))
+        call CreateKHamBlocks(k_Hams)
+
+        MaxValue = zero
+        MinValue = huge(1.0_dp)
+        MinSE = zzero
+        MaxSE = zzero
+
+        SE_Real = Start_SE_Real
+        do while((SE_Real.lt.max(Start_SE_Real,End_SE_Real)+1.0e-6_dp).and.(SE_Real.gt.min(Start_SE_Real,End_SE_Real)-1.0e-5_dp))
+            SE_Im = Start_SE_Im
+            do while((SE_Im.lt.max(Start_SE_Im,End_SE_Im)+1.0e-6_dp).and.(SE_Im.gt.min(Start_SE_Im,End_SE_Im)-1.0e-5_dp))
+                A = zzero
+                do kPnt = 1,nKPnts
+                    A = A + zone/(dcmplx(Omega+mu-SE_Real,dDelta-SE_Im) - k_Hams(1,1,kPnt))
+                enddo
+                A = A * Factor
+
+                A = A - G(1,1,1)
+                A = A * conjg(A)
+
+                write(iunit,"(3G20.10)") SE_Real,SE_Im,real(A,dp)
+                if(real(A,dp).gt.MaxValue) then
+                    MaxValue = real(A,dp)
+                    MaxSE = dcmplx(SE_Real,SE_Im)
+                endif
+                if(real(A,dp).lt.MinValue) then
+                    MinValue = real(A,dp)
+                    MinSE = dcmplx(SE_Real,SE_Im)
+                endif
+                SE_Im = SE_Im + SE_Step_Im
+            enddo
+            write(iunit,"(A)") ""
+            SE_Real = SE_Real + SE_Step_Real
+        enddo
+
+        write(6,*) "Maximum value of function was: ",MaxValue
+        write(6,*) "This was found at a SE of: ",MaxSE
+        write(6,*) 
+        write(6,*) "Minimum value of function was: ",MinValue
+        write(6,*) "This was found at a SE of: ",MinSE
+
+        close(iunit)
+        deallocate(k_Hams)
+
+    end subroutine PlotSigmaSurface
 
     !Get function values and gradients for all values of omega
     !LocalCoupFunc is the X'(omega) function with the local GF - local hybridization

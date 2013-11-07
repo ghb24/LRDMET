@@ -124,6 +124,7 @@ Program RealHub
         NIGF_WeightFac = 0.0_dp
         tRead_SelfEnergy = .false.
         tRandom_Init_SE = .false.
+        tSE_Scan = .false.
 
     end subroutine set_defaults
 
@@ -596,6 +597,16 @@ Program RealHub
                 tRead_SelfEnergy = .true.
             case("RANDOM_SELFENERGY")
                 tRandom_Init_SE = .true.
+            case("SCAN_SELFENERGY_RE")
+                tSE_Scan = .true.
+                call readf(Start_SE_Real)
+                call readf(End_SE_Real)
+                call readf(SE_Step_Real)
+            case("SCAN_SELFENERGY_IM")
+                tSE_Scan = .true.
+                call readf(Start_SE_Im)
+                call readf(End_SE_Im)
+                call readf(SE_Step_Im)
             case("END")
                 exit
             case default

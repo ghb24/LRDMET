@@ -204,6 +204,11 @@ module Globals
     logical :: tRead_SelfEnergy ! Read in converged self-energy from previous calculation
     logical :: tRandom_Init_SE  ! Initialize self-energy with random numbers
     integer :: TDLat_Ni,TDLat_Nj
+
+    !Debugging for Self-consistency
+    logical :: tSE_Scan
+    real(dp) :: Start_SE_Real,End_SE_Real,SE_Step_Real
+    real(dp) :: Start_SE_Im,End_SE_Im,SE_Step_Im
     
     !DMET_LR global data
     !When a non-hermitian self-energy is added, we need to seperately calculate the non-interacting wavefunctions expressed in the right-eigenvector space
