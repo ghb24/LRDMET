@@ -8,6 +8,115 @@ module LRDriver
     implicit none
 
     contains
+
+    subroutine SC_Mom_LR_NoDyson()
+        use utils, only: get_free_unit,append_ext_real,append_ext
+        implicit none
+        real(dp) :: Omega,GFChemPot,OmegaVal
+        integer :: nESteps,iter,i,k,l,iunit,j
+        complex(dp), allocatable :: SE(:,:,:),G_Mat(:,:,:),SE_Old(:,:,:),LocalMomGF(:,:,:)
+        real(dp) :: dSE_Tol,MaxDiffSE,MinDiffSE,MeanDiffSE,MaxDiffGF,MeanDiffGF
+        character(64) :: filename,filename2
+        character(len=*), parameter :: t_r='SC_Mom_LR_NoDyson'
+
+        dSE_Tol = 1.0e-9_dp
+        
+        !How many frequency points are there exactly?
+        Omega = Start_Omega
+        nESteps = 0
+        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+            nESteps = nESteps + 1
+            Omega = Omega + Omega_Step
+        enddo
+        
+        !Find the k-independent self-consistent self-energy
+        allocate(SE(nImp,nImp,nESteps))
+        allocate(SE_Old(nImp,nImp,nESteps))
+        allocate(G_Mat(nImp,nImp,nESteps))
+        allocate(LocalMomGF(nImp,nImp,nESteps))
+
+        call Init_SE(nESteps,SE)
+
+        !Set chemical potential (This will only be right for half-filling)
+        GFChemPot = U/2.0_dp
+        iter = 0
+
+        do while(.true.)
+
+            iter = iter + 1
+
+            write(6,*) "Starting iteration: ",iter
+
+            !First, do high-level calculation, with SE for bath construction
+            call SchmidtGF_wSE(G_Mat,GFChemPot,SE,nESteps)
+            write(6,*) "1"
+            call flush(6)
+            call writedynamicfunction(nESteps,G_Mat,'G_Imp',tag=iter,tCheckCausal=.true.,tCheckOffDiagHerm=.true.)
+            write(6,"(A)") "Impurity Greens function causal"
+
+            !Now, numerically calculate the self energy, st. the lattice and impurity greens function match
+            SE_Old(:,:,:) = SE(:,:,:)
+            call ConvergeGlobalCoupling(nESteps,G_Mat,SE,GFChemPot,dSE_Tol)
+            write(6,*) "2"
+            call flush(6)
+            !Now check whether we are actually converged, i.e. does the lattice greens function match the impurity greens function
+            !Construct FT of k-space GFs and take zeroth part.
+            call FindLocalMomGF(nESteps,SE,LocalMomGF)
+            !call FindRealSpaceLocalMomGF(nESteps,SE,LocalMomGF)
+            write(6,*) "3"
+            call flush(6)
+            call writedynamicfunction(nESteps,LocalMomGF,'LocalMomGF',tag=iter,tCheckCausal=.true.,tCheckOffDiagHerm=.true.)
+            write(6,"(A)") "Lattice greens function causal"
+            call CheckGFsSame(nESteps,G_Mat,LocalMomGF,1.0e-8_dp)
+            write(6,"(A)") "Lattice GF = Impurity GF"
+
+            call writedynamicfunction(nESteps,SE,'SelfEnergy',tag=iter,tCheckCausal=.true.,tCheckOffDiagHerm=.true.)
+            write(6,"(A)") "Self energy causal"
+
+            !Find the change in self-energy (and greens functions)
+            call FindSEDiffs(SE,SE_Old,G_Mat,LocalMomGF,nESteps,MaxDiffSE,MinDiffSE,MeanDiffSE,MaxDiffGF,MeanDiffGF)
+
+            write(6,"(I7,4G15.7)") iter,MaxDiffSE,MeanDiffSE,MaxDiffGF,MeanDiffGF
+
+            if(MaxDiffSE.lt.dSE_Tol) then
+                write(6,"(A,G15.8)") "Self-energy macroiteration converged to: ",dSE_Tol
+                exit
+            endif
+
+!            if(iter.eq.1) call stop_all(t_r,'SELF ENERGY CAUSAL (in first iteration)! YAY!')
+        enddo
+
+        write(6,"(A)") "Writing out converged self-energy"
+        iunit = get_free_unit()
+        call append_ext_real('Converged_SE',U,filename)
+        if(.not.tHalfFill) then
+            call append_ext(filename,nOcc,filename2)
+        else
+            filename2 = filename
+        endif
+        open(unit=iunit,file=filename2,status='unknown')
+        Omega = Start_Omega
+        i = 0
+        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+            i = i + 1
+            !Write out *lower* triangle
+            write(iunit,"(G25.10)",advance='no') Omega
+            do k = 1,nImp
+                do l = k,nImp
+                    if((k.eq.nImp).and.(l.eq.nImp)) then
+                        exit
+                    endif
+                    write(iunit,"(2G25.10)",advance='no') real(SE(l,k,i),dp),aimag(SE(l,k,i))
+                enddo
+            enddo
+            write(iunit,"(2G25.10)") real(SE(nImp,nImp,i),dp),aimag(SE(nImp,nImp,i))
+            Omega = Omega + Omega_Step
+        enddo
+        close(iunit)
+
+        deallocate(SE,SE_Old,G_Mat,LocalMomGF)
+
+    end subroutine SC_Mom_LR_NoDyson
     
     !Attempt to get k-space spectral functions by self-consistenly calculating k-independent hybridization and self-energy contributions
     !As opposed to the routine below, this one attempts to use a global hybridization in the construction of the bath, rather than the 
@@ -48,50 +157,8 @@ module LRDriver
         LocalMomGF(:,:,:) = zzero
         LocalCoupFn(:,:,:) = zzero
         GlobalCoup(:,:,:) = zzero
-
-        if(tRead_SelfEnergy) then
-            write(6,"(A)") "Reading in self-energy..."
-            call append_ext_real('Converged_SE',U,filename)
-            if(.not.tHalfFill) then
-                call append_ext(filename,nOcc,filename2)
-            else
-                filename2 = filename
-            endif
-            inquire(file=filename2,exist=exists)
-            if(.not.exists) then
-                write(6,*) "Converged self-energy does not exist, filename: ",filename2
-                call stop_all(t_r,'Cannot find file with converged selfenergy')
-            endif
-            
-            iunit = get_free_unit()
-            open(unit=iunit,file=filename2,status='unknown')
-            Omega = Start_Omega
-            i = 0
-            do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
-                i = i + 1
-                !Read in *lower* triangle
-                read(iunit,"(G25.10)",advance='no') OmegaVal
-                if(abs(OmegaVal-Omega).gt.1.0e-8_dp) then
-                    write(6,*) OmegaVal,Omega
-                    call stop_all(t_r,'Omega values do not match up for read-in self-energy')
-                endif
-                do k = 1,nImp
-                    do l = k,nImp
-                        if((k.eq.nImp).and.(l.eq.nImp)) then
-                            exit
-                        endif
-                        read(iunit,"(2G25.10)",advance='no') reSE,imSE
-                        SE(l,k,i) = dcmplx(reSE,imSE)
-                    enddo
-                enddo
-                read(iunit,"(2G25.10)") reSE,imSE
-                SE(nImp,nImp,i) = dcmplx(reSE,imSE)
-                Omega = Omega + Omega_Step
-            enddo
-            close(iunit)
-        else
-            SE(:,:,:) = zzero
-        endif
+        
+        call Init_SE(nESteps,SE)
 
         !Set chemical potential (This will only be right for half-filling)
         GFChemPot = U/2.0_dp
@@ -142,7 +209,7 @@ module LRDriver
             !which mimics the effect of the hybridization on the whole lattice.
             write(6,*) "6"
             call flush(6)
-            call ConvergeGlobalCoupling(nESteps,LocalCoupFn,GlobalCoup,GFChemPot)
+            call ConvergeGlobalCoupling(nESteps,LocalCoupFn,GlobalCoup,GFChemPot,1.0e-9_dp)
 
             !Check here that the two coupling functions are identical
             write(6,*) "7"

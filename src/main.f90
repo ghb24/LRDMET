@@ -1316,7 +1316,8 @@ Program RealHub
                     !Perform linear response on the resulting DMET state
                     if(tSC_LR) then
 !                        call SC_Mom_LR()    !The LR routine will be called inside here
-                        call SC_Mom_LR_Z()
+                        !call SC_Mom_LR_Z()
+                        call SC_Mom_LR_NoDyson()
                     else
                         call MR_LinearResponse()
                     endif

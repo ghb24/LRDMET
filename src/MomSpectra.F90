@@ -9,6 +9,63 @@ module MomSpectra
     implicit none
 
     contains
+    
+    subroutine Init_SE(n,SE)
+        use utils, only: get_free_unit,append_ext_real,append_ext
+        implicit none
+        integer, intent(in) :: n
+        complex(dp), intent(out) :: SE(nImp,nImp,n)
+        real(dp) :: OmegaVal,Omega,reSE,imSE
+        integer :: i,iunit,k,l
+        logical :: exists
+        character(64) :: filename,filename2
+        character(len=*), parameter :: t_r='Init_SE'
+
+        SE(:,:,:) = zzero
+    
+        if(tRead_SelfEnergy) then
+            write(6,"(A)") "Reading in self-energy..."
+            call append_ext_real('Converged_SE',U,filename)
+            if(.not.tHalfFill) then
+                call append_ext(filename,nOcc,filename2)
+            else
+                filename2 = filename
+            endif
+            inquire(file=filename2,exist=exists)
+            if(.not.exists) then
+                write(6,*) "Converged self-energy does not exist, filename: ",filename2
+                call stop_all(t_r,'Cannot find file with converged selfenergy')
+            endif
+            
+            iunit = get_free_unit()
+            open(unit=iunit,file=filename2,status='unknown')
+            Omega = Start_Omega
+            i = 0
+            do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+                i = i + 1
+                !Read in *lower* triangle
+                read(iunit,"(G25.10)",advance='no') OmegaVal
+                if(abs(OmegaVal-Omega).gt.1.0e-8_dp) then
+                    write(6,*) OmegaVal,Omega
+                    call stop_all(t_r,'Omega values do not match up for read-in self-energy')
+                endif
+                do k = 1,nImp
+                    do l = k,nImp
+                        if((k.eq.nImp).and.(l.eq.nImp)) then
+                            exit
+                        endif
+                        read(iunit,"(2G25.10)",advance='no') reSE,imSE
+                        SE(l,k,i) = dcmplx(reSE,imSE)
+                    enddo
+                enddo
+                read(iunit,"(2G25.10)") reSE,imSE
+                SE(nImp,nImp,i) = dcmplx(reSE,imSE)
+                Omega = Omega + Omega_Step
+            enddo
+            close(iunit)
+        endif
+
+    end subroutine Init_SE
 
     !Routine to read in a correlated greens function, and self-consistently converge
     !a self energy from the 1-electron hemailtonian to get it to match this.
@@ -650,6 +707,30 @@ module MomSpectra
         deallocate(LocalH,TrueLocGF)
 
     end subroutine CheckNIGFsSame
+            
+    subroutine CheckGFsSame(n,G,G_,dTol)
+        implicit none
+        integer, intent(in) :: n
+        complex(dp), intent(in) :: G(nImp,nImp,n)
+        complex(dp), intent(in) :: G_(nImp,nImp,n)
+        real(dp) , intent(in) :: dTol
+        character(len=*), parameter :: t_r='CheckGFsSame'
+        integer :: i,j,k
+
+        do i = 1,n
+            do j = 1,nImp
+                do k = 1,nImp
+                    if(abs(G(k,j,i)-G_(k,j,i)).gt.dTol) then
+                        write(6,*) "Frequency point: ",i
+                        write(6,*) "Element: ",j,k
+                        write(6,*) "Values: ",G(k,j,i),G_(k,j,i)
+                        call stop_all(t_r,'Local functions not the same')
+                    endif
+                enddo
+            enddo
+        enddo
+
+    end subroutine CheckGFsSame
 
     !Now calculate X', the local coupling function, as
     ![omega + mu + i delta - h00 - Delta]^-1
@@ -784,15 +865,15 @@ module MomSpectra
 
     !Via a NR algorithm, iteratively converge the global coupling (Z) of the cluster to the lattice
     !LocalCoupFunc is X'(omega)
-    subroutine ConvergeGlobalCoupling(n,LocalCoupFunc,GlobalCoup,mu)
+    subroutine ConvergeGlobalCoupling(n,LocalCoupFunc,GlobalCoup,mu,dConvTol)
         use matrixops, only: mat_inv
         implicit none
         integer, intent(in) :: n
         complex(dp), intent(in) :: LocalCoupFunc(nImp,nImp,n)
         complex(dp), intent(inout) :: GlobalCoup(nImp,nImp,n)
-        real(dp), intent(in) :: mu
+        real(dp), intent(in) :: mu,dConvTol
 
-        real(dp) :: dConvTol,Omega
+        real(dp) :: Omega
         real(dp) :: AbsChange,MaxAbsChange
         complex(dp), allocatable :: FuncVal(:,:,:),Grad(:,:,:)
         complex(dp), allocatable :: ChangeZ(:,:),k_Hams(:,:,:)
@@ -801,7 +882,7 @@ module MomSpectra
         character(len=*), parameter :: t_r='ConvergeGlobalCoupling'
         
 !        dDampedNR = 0.2_dp
-        dConvTol = 1.0e-10_dp
+!        dConvTol = 1.0e-10_dp
         write(6,*) "Converging global coupling matrix..."
 
         allocate(FuncVal(nImp,nImp,n))

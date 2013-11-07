@@ -79,6 +79,8 @@ module LinearResponse
                 write(6,"(A)") "Solving linear system with direct inversion of hamiltonian"
             elseif(iSolveLR.eq.4) then
                 write(6,"(A)") "Solving linear system via complete diagonalization of hamiltonian"
+            elseif(iSolveLR.eq.5) then
+                write(6,"(A)") "Solving linear system via complete diagonalization of hermitian hamiltonian"
             else
                 call stop_all(t_r,"Linear equation solver unknown")
             endif

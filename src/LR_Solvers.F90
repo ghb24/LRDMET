@@ -186,10 +186,10 @@ module LRSolvers
         complex(dp), intent(inout) :: LHS(nLinearSystem,nLinearSystem)
         complex(dp), intent(inout) :: RHS(nLinearSystem)
         integer, allocatable :: Pivots(:)
-        integer :: i,lWork
-        real(dp), allocatable :: Work(:)
+        integer :: i,j,lWork
+        real(dp), allocatable :: Work(:),Real_W(:)
         complex(dp), allocatable :: cWork(:),tempc(:,:),RVec(:,:),LVec(:,:),H_Valsc(:)
-        complex(dp), allocatable :: CanTrans(:,:)
+        complex(dp), allocatable :: CanTrans(:,:),TempH(:,:)
         character(len=*), parameter :: t_r='SolveCompLinearSystem'
     
         if(iSolveLR.eq.1) then
@@ -275,7 +275,60 @@ module LRSolvers
             !Copy final solution to RHS
             RHS(:) = cWork(:)
             deallocate(cWork,tempc,H_Valsc,LVec,RVec)
+        elseif(iSolveLR.eq.5) then
+            !Assume that the LHS *is* hermitian (check this), apart from the diagonal broadening. 
+            !Remove the broadening, and do a complete diagonalization
+            allocate(TempH(nLinearSystem,nLinearSystem))
+            TempH(:,:) = LHS(:,:)
+            do i = 1,nLinearSystem
+                TempH(i,i) = TempH(i,i) - dcmplx(zero,dDelta)
+            enddo
+            !Now, check hermiticity
+            do i = 1,nLinearSystem
+                do j = 1,nLinearSystem
+                    if(abs(TempH(i,j)-conjg(TempH(j,i))).gt.1.0e-8_dp) then
+                        write(6,*) i,j,TempH(i,j),TempH(j,i)
+                        call stop_all(t_r,'Hessian not hermitian')
+                    endif
+                enddo
+                if(abs(aimag(TempH(i,i))).gt.1.0e-8_dp) then
+                    call stop_all(t_r,'Diagonals of hessian not real')
+                endif
+            enddo
+            !write(6,*) "LHS hermitian"
+            allocate(Work(max(1, 3*nLinearSystem-2)))
+            allocate(Real_W(nLinearSystem))
+            Real_W(:) = zero
+            lWork = -1
+            allocate(cWork(1))
+            call zheev('V','U',nLinearSystem,TempH,nLinearSystem,Real_W,cWork,lWork,Work,info)
+            if(info.ne.0) call stop_all(t_r,'Workspace query failed')
+            lwork = int(cWork(1))+1
+            deallocate(cWork)
+            allocate(cWork(lwork))
+            call zheev('V','U',nLinearSystem,TempH,nLinearSystem,Real_W,cWork,lWork,Work,info)
+            if(info.ne.0) call stop_all(t_r,'Diag of LHS failed')
+            deallocate(Work,cWork)
 
+            !Now, find inverse in eigenbasis (adding back in the broadening)
+            allocate(tempc(nLinearSystem,nLinearSystem))    !Temp array to build inverse in
+            tempc(:,:) = zzero
+            do i = 1,nLinearSystem
+                tempc(i,i) = zone/dcmplx(Real_W(i),dDelta)
+            enddo
+            !Rotate back to original basis
+            allocate(CanTrans(nLinearSystem,nLinearSystem))
+            call ZGEMM('N','N',nLinearSystem,nLinearSystem,nLinearSystem,zone,TempH(:,:),nLinearSystem, &
+                    tempc,nLinearSystem,zzero,CanTrans,nLinearSystem)
+            call ZGEMM('N','C',nLinearSystem,nLinearSystem,nLinearSystem,zone,CanTrans,nLinearSystem,   &
+                    TempH,nLinearSystem,zzero,tempc,nLinearSystem)
+            deallocate(CanTrans)
+            !Tempc is now the inverse in the original basis. Apply it to the RHS
+            allocate(cWork(nLinearSystem))
+            call ZGEMV('N',nLinearSystem,nLinearSystem,zone,tempc,nLinearSystem,RHS,1,zzero,cWork,1)
+            !Copy & overwrite RHS
+            RHS(:) = cWork(:)
+            deallocate(cWork,tempc,TempH,Real_W)
         endif
 
     end subroutine SolveCompLinearSystem
