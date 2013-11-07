@@ -106,6 +106,7 @@ module LRDriver
             !Construct FT of k-space GFs and take zeroth part.
             !write(6,*) "FT'ing mean-field greens functions for local part"
             call FindLocalMomGF(nESteps,SE,LocalMomGF)
+            !call FindRealSpaceLocalMomGF(nESteps,SE,LocalMomGF)
             write(6,*) "1"
             call flush(6)
             call writedynamicfunction(nESteps,LocalMomGF,'LocalMomGF',tag=iter,tCheckCausal=.true.,tCheckOffDiagHerm=.true.)

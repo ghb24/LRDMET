@@ -499,7 +499,6 @@ module LinearResponse
                         endif
                     enddo
                 enddo
-                
 
                 !Now, check hessian is hermitian
                 do i = 1,nLinearSystem
@@ -517,6 +516,12 @@ module LinearResponse
                             call stop_all(t_r,'Hole hessian for EC-LR not hermitian')
                         endif
                     enddo
+                    if(abs(aimag(LinearSystem_p(i,i))).gt.1.0e-8_dp) then
+                        call stop_all(t_r,'Diagonal element complex in particle hessian. Not hermitian')
+                    endif
+                    if(abs(aimag(LinearSystem_h(i,i))).gt.1.0e-8_dp) then
+                        call stop_all(t_r,'Diagonal element complex in hole hessian. Not hermitian')
+                    endif
                 enddo
                 if(tLR_ReoptGS) then
                     !Check GS hamiltonian is hermitian
@@ -8541,6 +8546,10 @@ module LinearResponse
         deallocate(temp)
         deallocate(HFPertBasis_Ann_Bra,HFPertBasis_Cre_Bra)
         deallocate(HFPertBasis_Ann_Ket,HFPertBasis_Cre_Ket,LVec_R,RVec_R,EVals_R)
+
+        do i = VirtStart,nSites
+            write(6,*) i,SchmidtGF_Cre_Bra_Re(i,pertsite),SchmidtGF_Cre_Ket_Re(i,pertsite)
+        enddo
 
     end subroutine FindNI_Charged_wSE_Real
 
