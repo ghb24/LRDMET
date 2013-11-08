@@ -1098,7 +1098,7 @@ module MomSpectra
                     !We have a problem. Gradient is small, and every direction along the gradient direction seems to increase the value of the function.
                     !Change to a random value of Z, and try again next iteration
                     !I guess we could choose a finer mesh?
-                    write(6,*) "Choosing random new Z as at stationary point..."
+                    write(6,*) "Choosing random new Z as at stationary point...",Z(:,:)
                     do i = 1,nImp
                         do j = 1,nImp
                             call random_number(r(:))
@@ -1173,7 +1173,7 @@ module MomSpectra
                 do kPnt = 1,nKPnts
                     A = A + zone/(dcmplx(Omega+mu-SE_Real,dDelta-SE_Im) - k_Hams(1,1,kPnt))
                 enddo
-                A = A * Factor
+                A = A / Factor
 
                 A = A - G(1,1,1)
                 A = A * conjg(A)
