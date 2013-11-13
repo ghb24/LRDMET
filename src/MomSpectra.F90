@@ -891,7 +891,7 @@ module MomSpectra
 
     !Via a NR algorithm, iteratively converge the global coupling (Z) of the cluster to the lattice
     !LocalCoupFunc is X'(omega)
-    subroutine ConvergeGlobalCoupling(n,LocalCoupFunc,GlobalCoup,mu,dFuncTol,dConvTol,tOmegaConv,tSuccess)
+    subroutine ConvergeGlobalCoupling(n,LocalCoupFunc,GlobalCoup,mu,dFuncTol,dConvTol,tOmegaConv,tSuccess,iMaxIter)
         use matrixops, only: mat_inv
         implicit none
         integer, intent(in) :: n
@@ -899,6 +899,7 @@ module MomSpectra
         complex(dp), intent(inout) :: GlobalCoup(nImp,nImp,n)
         real(dp), intent(in) :: mu,dConvTol,dFuncTol
         logical, intent(out) :: tSuccess,tOmegaConv(n)
+        integer, intent(in) :: iMaxIter
 
         real(dp) :: Omega
         real(dp) :: AbsChange,MaxAbsChange
@@ -985,8 +986,8 @@ module MomSpectra
                 write(6,"(A,G14.7)") "Convergence of global coupling function achieved to accuracy of: ",dConvTol
                 write(6,"(A,I9)") "Number of microiterations required: ",iter
                 exit
-            elseif(iter.gt.100) then
-                write(6,"(A)") "Newton-Raphson root finding failed after 100 iterations." 
+            elseif(iter.gt.iMaxIter) then
+                write(6,"(A,I8,A)") "Newton-Raphson root finding failed after ",iMaxIter," iterations." 
                 write(6,"(A)") "Turning to simplex minimization for remaining frequency points"
                 exit
             endif
@@ -1203,6 +1204,175 @@ module MomSpectra
         deallocate(k_Hams)
 
     end subroutine PlotSigmaSurface
+
+!For frequencies that do not converge, or are not causal, simply set their value to be equal to the 
+!last causal self-energy
+    subroutine fit_noncausal_SE(n,SE,tOmegaConv,tSuccess)
+        implicit none
+        integer, intent(in) :: n
+        complex(dp), intent(inout) :: SE(nImp,nImp,n)
+        logical, intent(inout) :: tOmegaConv(n)
+        logical, intent(in) :: tSuccess
+
+        integer :: i,iZeroFreq,j
+        real(dp) :: Omega
+        complex(dp) :: dFreqFinalCausal(nImp),SE_LastConv(nImp)
+        integer :: iFreqCausalFail(nImp)
+        character(len=*), parameter :: t_r='fit_noncausal_SE'
+
+
+        if(.false.) then
+            !This option makes the self-energy the same from the first non-causal/unconverged value.
+            if(Omega_Step.lt.zero) call stop_all(t_r,'Currently only working ramping up in frequency')
+
+            iZeroFreq = -1
+            iFreqCausalFail(:) = -1
+            dFreqFinalCausal(:) = zzero
+
+            Omega = Start_Omega
+            i = 0
+            do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+                i = i + 1
+
+                if(Omega.ge.zero) then
+                    if(iZeroFreq.eq.-1) iZeroFreq = i
+                    !Are we non-causal in any of the self-energy components?
+                    do j = 1,nImp
+                        if(((aimag(SE(j,j,i)).gt.zero).or.(.not.tOmegaConv(i))).and.(iFreqCausalFail(j).eq.-1)) then
+                            !This is the first non-causal/converged frequency in the positive region for GF j
+                            iFreqCausalFail(j) = i
+                            dFreqFinalCausal(j) = SE(j,j,i-1)
+                            write(6,"(A,I6,A,F13.7)") "First non-causal positive frequency point for self-energy component ",j," at: ",Omega
+                        endif
+                    enddo
+                endif
+                Omega = Omega + Omega_Step
+            enddo
+
+            if(sum(iFreqCausalFail(:)).eq.-nImp) then
+                write(6,*) "Self-energy appears causal for all frequencies!"
+                if(.not.tSuccess) then
+                    write(6,*) "However, some frequency points are unconverged (though causal). These will be set to be equal to their neighbouring self-energy."
+                endif
+            endif
+
+            do i = 1,nImp
+                if(iFreqCausalFail(i).ne.-1) then
+                    write(6,*) "For component ",i," non-causal/converged energy at datapoint ",iFreqCausalFail(i)
+                    write(6,*) "Fixing subsequent datapoints to equal the last causal and converged self-energy of: ",dFreqFinalCausal(i)
+                endif
+            enddo
+
+            !Now, in the simplest approximation, just set the non-causal frequency points to equal the final causal frequency point.
+            do i = 1,nImp
+                do j = iFreqCausalFail(i),n
+                    SE(i,i,j) = dFreqFinalCausal(i)
+                    tOmegaConv(j) = .true.
+                enddo
+            enddo
+
+            !What about unconverged, but causal frequency points. Set them to be the last converged datapoint.
+            if(.not.tOmegaConv(iZeroFreq)) call stop_all(t_r,'Zero frequency value did not converge')
+            do i = iZeroFreq,n
+                do j = 1,nImp
+                    if(.not.tOmegaConv(i)) then 
+                        call stop_all(t_r,'We should not get here any more')
+                        SE(j,j,i) = SE_LastConv(j)
+                    else
+                        SE_LastConv(j) = SE(j,j,i)
+                    endif
+                enddo
+            enddo
+
+            iFreqCausalFail(:) = -1
+            dFreqFinalCausal(:) = zzero
+            !Now, repeat for the negative frequencies
+            do i = iZeroFreq,1,-1
+                do j = 1,nImp
+                    if(((aimag(SE(j,j,i)).gt.zero).or.(.not.tOmegaConv(i))).and.(iFreqCausalFail(j).eq.-1)) then
+                        !This is the first non-causal frequency in the negative region for GF j
+                        iFreqCausalFail(j) = i
+                        dFreqFinalCausal(j) = SE(j,j,i+1)
+                        write(6,"(A,I6,A,F13.7)") "First non-causal/converged negative frequency point for self-energy component ",j," at: ",i
+                    endif
+                enddo
+            enddo
+
+            if(sum(iFreqCausalFail(:)).eq.-nImp) then
+                write(6,*) "Self-energy appears causal for all negative frequencies!"
+                if(.not.tSuccess) then
+                    write(6,*) "However, some frequency points are unconverged (though causal). These will be set to their nearest neighbouring value"
+                endif
+            endif
+
+            do i = 1,nImp
+                if(iFreqCausalFail(i).ne.-1) then
+                    write(6,*) "For component ",i," non-causal energy at datapoint ", iFreqCausalFail(i)
+                    write(6,*) "Fixing subsequent datapoints to equal the last causal self-energy of: ",dFreqFinalCausal(i)
+                endif
+            enddo
+
+            do i = 1, nImp
+                do j = iFreqCausalFail(i),1,-1
+                    SE(i,i,j) = dFreqFinalCausal(i)
+                    tOmegaConv(j) = .true.
+                enddo
+            enddo
+
+            !What about unconverged, but causal frequency points. Set them to be the last converged datapoint.
+            do i = iZeroFreq,1,-1
+                do j = 1,nImp
+                    if(.not.tOmegaConv(i)) then
+                        call stop_all(t_r,'Should not get here any more')
+                        SE(j,j,i) = SE_LastConv(j)
+                    else
+                        SE_LastConv(j) = SE(j,j,i)
+                    endif
+                enddo
+            enddo
+        else
+            !Here, we instead only make the unconverged/non-causal self-energy points equal to their previous value.
+
+            !Find the midpoint (only for half-filling!)
+            Omega = Start_Omega
+            i = 0
+            do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
+                i = i + 1
+
+                if(Omega.ge.zero) then
+                    iZeroFreq = i
+                    exit
+                endif
+                Omega = Omega + Omega_Step
+            enddo
+
+            do i = 1,nImp
+                SE_LastConv(i) = SE(i,i,iZeroFreq)
+            enddo
+
+            do i = iZeroFreq,n
+                do j = 1,nImp
+                    if((.not.tOmegaConv(i)).or.(aimag(SE(j,j,i)).gt.zero)) then
+                        SE(j,j,i) = SE_LastConv(j)
+                    else
+                        SE_LastConv(j) = SE(j,j,i)
+                    endif
+                enddo
+            enddo
+            
+            do i = iZeroFreq-1,1,-1
+                do j = 1,nImp
+                    if((.not.tOmegaConv(i)).or.(aimag(SE(j,j,i)).gt.zero)) then
+                        SE(j,j,i) = SE_LastConv(j)
+                    else
+                        SE_LastConv(j) = SE(j,j,i)
+                    endif
+                enddo
+            enddo
+
+        endif
+
+    end subroutine fit_noncausal_SE
 
     !Get function values and gradients for all values of omega
     !LocalCoupFunc is the X'(omega) function with the local GF - local hybridization

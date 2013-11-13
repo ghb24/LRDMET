@@ -67,14 +67,15 @@ module LRDriver
 
             !Now, numerically calculate the self energy, st. the lattice and impurity greens function match
             SE_Old(:,:,:) = SE(:,:,:)
-            call ConvergeGlobalCoupling(nESteps,G_Mat,SE,GFChemPot,dFuncTol,dChangeSE_Tol,tOmegaConv,tSuccess)
+            call ConvergeGlobalCoupling(nESteps,G_Mat,SE,GFChemPot,dFuncTol,dChangeSE_Tol,tOmegaConv,tSuccess,150)
             write(6,*) "2"
             call flush(6)
-            if(.not.tSuccess) then
+            !Now, simply set the values of the frequency outside the causal range to simply be equal to the largest frequency causal self-energy.
+            call fit_noncausal_SE(nESteps,SE,tOmegaConv,tSuccess)
+            !if(.not.tSuccess) then
                 !Turn to a simplex algorithm to converge the points that failed with newton-raphson.
-                call ConvergeGlobalCoupling_Direct(nESteps,G_Mat,SE,GFChemPot,dFuncTol,dChangeSE_Tol,tOmegaConv,tSuccess)
-            endif
-            call stop_all(t_r,'end')
+                !call ConvergeGlobalCoupling_Direct(nESteps,G_Mat,SE,GFChemPot,dFuncTol,dChangeSE_Tol,tOmegaConv,tSuccess)
+            !endif
 
             !Now check whether we are actually converged, i.e. does the lattice greens function match the impurity greens function
             !Construct FT of k-space GFs and take zeroth part.
@@ -84,8 +85,8 @@ module LRDriver
             call flush(6)
             call writedynamicfunction(nESteps,LocalMomGF,'LocalMomGF',tag=iter,tCheckCausal=.true.,tCheckOffDiagHerm=.true.)
             write(6,"(A)") "Lattice greens function causal"
-            call CheckGFsSame(nESteps,G_Mat,LocalMomGF,1.0e-8_dp)
-            write(6,"(A)") "Lattice GF = Impurity GF"
+            !call CheckGFsSame(nESteps,G_Mat,LocalMomGF,1.0e-8_dp)
+            !write(6,"(A)") "Lattice GF = Impurity GF"
 
             call writedynamicfunction(nESteps,SE,'SelfEnergy',tag=iter,tCheckCausal=.true.,tCheckOffDiagHerm=.true.)
             write(6,"(A)") "Self energy causal"
@@ -100,7 +101,7 @@ module LRDriver
                 exit
             endif
 
-!            if(iter.eq.1) call stop_all(t_r,'SELF ENERGY CAUSAL (in first iteration)! YAY!')
+            !if(iter.eq.1) call stop_all(t_r,'SELF ENERGY CAUSAL (in first iteration)! YAY!')
         enddo
 
         write(6,"(A)") "Writing out converged self-energy"
@@ -231,12 +232,12 @@ module LRDriver
             write(6,*) "6"
             call flush(6)
             tOmegaConv(:) = .false.
-            call ConvergeGlobalCoupling(nESteps,LocalCoupFn,GlobalCoup,GFChemPot,1.0e-9_dp,1.0e-10_dp,tOmegaConv,tSuccess)
+            call ConvergeGlobalCoupling(nESteps,LocalCoupFn,GlobalCoup,GFChemPot,1.0e-9_dp,1.0e-10_dp,tOmegaConv,tSuccess,150)
 
             !Check here that the two coupling functions are identical
             write(6,*) "7"
             call flush(6)
-            call CheckNICoupFnsSame(nESteps,LocalCoupFn,GlobalCoup,GFChemPot)
+            !call CheckNICoupFnsSame(nESteps,LocalCoupFn,GlobalCoup,GFChemPot)
             call writedynamicfunction(nESteps,GlobalCoup,'GlobalCoupling_Z',tag=iter,   &
                 tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.false.)
 
@@ -265,7 +266,7 @@ module LRDriver
                 exit
             endif
 
-            if(iter.eq.1) call stop_all(t_r,'SELF ENERGY CAUSAL (in first iteration)! YAY!')
+            !if(iter.eq.1) call stop_all(t_r,'SELF ENERGY CAUSAL (in first iteration)! YAY!')
 
         enddo
 
