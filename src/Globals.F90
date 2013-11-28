@@ -78,6 +78,8 @@ module Globals
     real(dp) :: rtol_LR         !Tolerance for exit criterion for linear solver
     real(dp) :: Lambda=1.0_dp          !Strength of perturbation
     real(dp) :: Start_Omega,End_Omega,Omega_Step    !Parameters for Omega sweep
+    real(dp) :: Start_Omega_Im,End_Omega_Im,Omega_Step_Im    !Parameters for Matsubara axis sweep
+    logical :: tRealSpaceSC     !Whether to attempt self-consistency on the real or matsubara axis
     logical :: tDumpFCIDUMP
     logical :: tAnderson        !Whether to do anderson model, rather than hubbard model
     logical :: tChemPot         !Whether to include a chemical potential of U/2 at the impurity site of the anderson model

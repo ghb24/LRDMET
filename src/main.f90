@@ -125,6 +125,7 @@ Program RealHub
         tRead_SelfEnergy = .false.
         tRandom_Init_SE = .false.
         tSE_Scan = .false.
+        tRealSpaceSC = .false.  !By default, attempt self-consistency on the matsubara axis
 
     end subroutine set_defaults
 
@@ -1325,13 +1326,7 @@ Program RealHub
 
                 if(tLR_DMET) then
                     !Perform linear response on the resulting DMET state
-                    if(tSC_LR) then
-!                        call SC_Mom_LR()    !The LR routine will be called inside here
-                        !call SC_Mom_LR_Z()
-                        call SC_Mom_LR_NoDyson()
-                    else
-                        call MR_LinearResponse()
-                    endif
+                    call MR_LinearResponse()
                 endif
                 deallocate(HFOrbs)
                 if(tUHF) deallocate(HFOrbs_b)
