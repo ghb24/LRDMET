@@ -1763,7 +1763,8 @@ module SelfConsistentLR
                             !This is the first non-causal/converged frequency in the positive region for GF j
                             iFreqCausalFail(j) = i
                             dFreqFinalCausal(j) = SE(j,j,i-1)
-                            write(6,"(A,I6,A,F13.7)") "First non-causal positive frequency point for self-energy component ",j," at: ",Omega
+                            write(6,"(A,I6,A,F13.7)") "First non-causal positive frequency point for self-energy component ", & 
+                                j," at: ",Omega
                         endif
                     enddo
                 endif
@@ -1773,14 +1774,16 @@ module SelfConsistentLR
             if(sum(iFreqCausalFail(:)).eq.-nImp) then
                 write(6,*) "Self-energy appears causal for all frequencies!"
                 if(.not.tSuccess) then
-                    write(6,*) "However, some frequency points are unconverged (though causal). These will be set to be equal to their neighbouring self-energy."
+                    write(6,*) "However, some frequency points are unconverged (though causal)." 
+                    write(6,*) "These will be set to be equal to their neighbouring self-energy."
                 endif
             endif
 
             do i = 1,nImp
                 if(iFreqCausalFail(i).ne.-1) then
                     write(6,*) "For component ",i," non-causal/converged energy at datapoint ",iFreqCausalFail(i)
-                    write(6,*) "Fixing subsequent datapoints to equal the last causal and converged self-energy of: ",dFreqFinalCausal(i)
+                    write(6,*) "Fixing subsequent datapoints to equal the last causal and converged self-energy of: ", &
+                        dFreqFinalCausal(i)
                 endif
             enddo
 
@@ -1822,7 +1825,8 @@ module SelfConsistentLR
             if(sum(iFreqCausalFail(:)).eq.-nImp) then
                 write(6,*) "Self-energy appears causal for all negative frequencies!"
                 if(.not.tSuccess) then
-                    write(6,*) "However, some frequency points are unconverged (though causal). These will be set to their nearest neighbouring value"
+                    write(6,*) "However, some frequency points are unconverged (though causal)." 
+                    write(6,*) "These will be set to their nearest neighbouring value"
                 endif
             endif
 
