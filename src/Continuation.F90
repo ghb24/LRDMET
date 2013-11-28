@@ -2,9 +2,70 @@ module Continuation
     use const
     use errors, only: stop_all,warning
     use globals
+    use LinearResponse, only: GetNextOmega
     implicit none
 
     contains
+
+        subroutine FromMatsubaraToRealFreq(n_Im,n_Re,Fn_Im,Fn_Re,Fn_Re_Err)
+            implicit none
+            integer, intent(in) :: n_Im,n_Re
+            complex(dp), intent(in) :: Fn_Im(nImp,nImp,n_Im)
+            complex(dp), intent(out) :: Fn_Re(nImp,nImp,n_Re)
+            complex(dp), intent(out) :: Fn_Re_Err(nImp,nImp,n_Re)
+
+            integer :: el_1,el_2,i,OmegaVal
+            real(dp) :: Omega
+            complex(dp) :: RealFreqPoint
+            complex(dp), allocatable :: ImData(:),ImFreqPoints(:)
+
+            Fn_Re(:,:,:) = zzero
+            Fn_Re_Err(:,:,:) = zzero
+
+            allocate(ImData(n_Im))
+            allocate(ImFreqPoints(n_Im))
+            !Fill array with matsubara frequency points
+            ImFreqPoints(:) = zzero
+            OmegaVal = 0
+            do while(.true.)
+                call GetNextOmega(Omega,OmegaVal,tMatbrAxis=.true.)
+                if(OmegaVal.lt.0) exit
+                ImFreqPoints(OmegaVal) = dcmplx(zero,Omega)
+            enddo
+
+            do el_1 = 1,nImp
+                do el_2 = el_1,nImp
+
+                    ImData(:) = Fn_Im(el_1,el_2,:)
+
+                    OmegaVal = 0
+                    do while(.true.)
+                        !Cycle through the *real* frequency values
+                        call GetNextOmega(Omega,OmegaVal,tMatbrAxis=.false.)
+                        if(OmegaVal.lt.0) exit
+
+                        !Which real frequency point do we want
+                        RealFreqPoint = dcmplx(Omega,dDelta)
+
+                        !Simple fit to Pade approximant
+                        call ratint(ImFreqPoints,ImData,n_Im,RealFreqPoint,Fn_Re(el_1,el_2,OmegaVal),Fn_Re_Err(el_1,el_2,OmegaVal))
+
+                    enddo
+
+                    if(el_1.ne.el_2) then
+                        !Copy the data to the other side to ensure off-diagonal hermiticity
+                        do i = 1,n_Re
+                            Fn_Re(el_2,el_1,i) = dconjg(Fn_Re(el_1,el_2,i))
+                            Fn_Re_Err(el_2,el_1,i) = dconjg(Fn_Re_Err(el_1,el_2,i))
+                        enddo
+                    endif
+
+                enddo
+            enddo
+
+            deallocate(ImFreqPoints,ImData)
+
+        end subroutine FromMatsubaraToRealFreq
 
         !A simple function (from numerical recipies!) for rational function interpolation
         !Fit the imaginary time data to a rational function, which theoretically can capture poles on the real axis.

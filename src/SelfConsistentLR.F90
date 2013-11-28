@@ -4,6 +4,7 @@ module SelfConsistentLR
     use LinearResponse
     use MomSpectra
     use globals
+    use Continuation
     use utils, only: get_free_unit,append_ext_real,append_ext
     implicit none
 
@@ -15,6 +16,7 @@ module SelfConsistentLR
         real(dp) :: GFChemPot,Omega
         integer :: nESteps_Im,nESteps_Re,OmegaVal
         complex(dp), allocatable :: SE_Im(:,:,:),SE_Old_Im(:,:,:),G_Mat_Im(:,:,:)
+        complex(dp), allocatable :: G_Mat_Re(:,:,:),G_Mat_Re_Err(:,:,:),SE_Re(:,:,:)
 
         !Set chemical potential (This will only be right for half-filling)
         GFChemPot = U/2.0_dp
@@ -42,8 +44,21 @@ module SelfConsistentLR
         call Init_SE(nESteps_Im,SE_Im)
 
         call SchmidtGF_wSE(G_Mat_Im,GFChemPot,SE_Im,nESteps_Im,tMatbrAxis=.true.)
+        call writedynamicfunction(nESteps_Im,G_Mat_Im,'G_Imp_Im',tMatbrAxis=.true.)
 
-        return
+        !Try analytically continuing it straight away!
+        allocate(G_Mat_Re(nImp,nImp,nESteps_Re))
+        allocate(G_Mat_Re_Err(nImp,nImp,nESteps_Re))
+        call FromMatsubaraToRealFreq(nESteps_Im,nESteps_Re,G_Mat_Im,G_Mat_Re,G_Mat_Re_Err)
+        call writedynamicfunction(nESteps_Re,G_Mat_Re,'G_Imp_Re_cont',tMatbrAxis=.false.,ErrMat=G_Mat_Re_Err)
+
+        !Now, compare it to the real frequency calculated greens function
+        allocate(SE_Re(nImp,nImp,nESteps_Re))
+        call Init_SE(nESteps_Re,SE_Re)
+        call SchmidtGF_wSE(G_Mat_Re,GFChemPot,SE_Re,nESteps_Re,tMatbrAxis=.false.)
+        call writedynamicfunction(nESteps_Re,G_Mat_Re,'G_Imp_Re',tMatbrAxis=.false.)
+
+        deallocate(SE_Re,G_Mat_Re,G_Mat_Re_Err,G_Mat_Im,SE_Old_Im,SE_Im)
 
     end subroutine SC_Imaginary_Dyson
 
@@ -1265,7 +1280,7 @@ module SelfConsistentLR
     end subroutine CalcLocalCoupling
 
     !Write out the isotropic average of a dynamic function in the impurity space.
-    subroutine writedynamicfunction(n,Func,FileRoot,tag,tCheckCausal,tCheckOffDiagHerm,tWarn)
+    subroutine writedynamicfunction(n,Func,FileRoot,tag,tCheckCausal,tCheckOffDiagHerm,tWarn,tMatbrAxis,ErrMat)
         implicit none
         integer, intent(in) :: n
         complex(dp), intent(in) :: Func(nImp,nImp,n)
@@ -1274,12 +1289,14 @@ module SelfConsistentLR
         logical, intent(in), optional :: tCheckCausal
         logical, intent(in), optional :: tCheckOffDiagHerm
         logical, intent(in), optional :: tWarn  !If true, don't die if non-causal
+        logical, intent(in), optional :: tMatbrAxis !If true, then this correlation function is defined on the Im Axis
+        complex(dp), intent(in), optional :: ErrMat(nImp,nImp,n)    !Optional errors on the function
 
         character(64) :: filename
-        logical :: tCheckOffDiagHerm_,tCheckCausal_,tWarn_
+        logical :: tCheckOffDiagHerm_,tCheckCausal_,tWarn_,tMatbrAxis_
         integer :: iunit,i,j,k
         real(dp) :: Omega
-        complex(dp) :: IsoAv
+        complex(dp) :: IsoAv,IsoErr
         character(len=*), parameter :: t_r='writedynamicfunction'
 
         if(present(tCheckCausal)) then
@@ -1300,6 +1317,12 @@ module SelfConsistentLR
             tWarn_ = .false.    !i.e. die by default
         endif
 
+        if(present(tMatbrAxis)) then
+            tMatbrAxis_ = .true.
+        else
+            tMatbrAxis_ = .false.
+        endif
+
         if(present(tag)) then
             call append_ext(FileRoot,tag,filename)
         else
@@ -1307,15 +1330,18 @@ module SelfConsistentLR
         endif
         iunit = get_free_unit()
         open(unit=iunit,file=filename,status='unknown')
-        Omega = Start_Omega
+
         i=0
-        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
-            i = i + 1
+        do while(.true.)
+            call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis_)
+            if(i.lt.0) exit
             if(i.gt.n) call stop_all(t_r,'Wrong number of frequency points used')
             !Find isotropic part
             IsoAv = zzero
+            IsoErr = zzero
             do j = 1,nImp
                 IsoAv = IsoAv + Func(j,j,i)
+                if(present(ErrMat)) IsoErr = IsoErr + ErrMat(j,j,i)
                 if(tCheckOffDiagHerm_) then
                     do k = 1,nImp
                         if(k.ne.j) then
@@ -1336,6 +1362,7 @@ module SelfConsistentLR
                 endif
             enddo
             IsoAv = IsoAv / real(nImp,dp)
+            IsoErr = IsoErr / real(nImp,dp)
             if(tCheckCausal_.and.(aimag(IsoAv).gt.1.0e-8_dp)) then
                 write(6,*) "While writing file: ",filename
                 if(present(tag)) write(6,*) "Filename extension: ",tag
@@ -1348,8 +1375,11 @@ module SelfConsistentLR
                 endif
             endif
 
-            write(iunit,"(3G25.10)") Omega,real(IsoAv,dp),aimag(IsoAv)
-            Omega = Omega + Omega_Step
+            if(present(ErrMat)) then
+                write(iunit,"(5G25.10)") Omega,real(IsoAv,dp),aimag(IsoAv),real(IsoErr,dp),aimag(IsoErr)
+            else
+                write(iunit,"(3G25.10)") Omega,real(IsoAv,dp),aimag(IsoAv)
+            endif
         enddo
         close(iunit)
 
