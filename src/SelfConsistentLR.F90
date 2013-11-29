@@ -14,9 +14,14 @@ module SelfConsistentLR
     subroutine SC_Imaginary_Dyson()
         implicit none
         real(dp) :: GFChemPot,Omega
-        integer :: nESteps_Im,nESteps_Re,OmegaVal
+        integer :: nESteps_Im,nESteps_Re,OmegaVal,iter
         complex(dp), allocatable :: SE_Im(:,:,:),SE_Old_Im(:,:,:),G_Mat_Im(:,:,:)
-        complex(dp), allocatable :: G_Mat_Re(:,:,:),G_Mat_Re_Err(:,:,:),SE_Re(:,:,:)
+        complex(dp), allocatable :: G_Mat_Re(:,:,:),SE_Re_Err(:,:,:),SE_Re(:,:,:)
+        complex(dp), allocatable :: LatticeGF_Im(:,:,:)
+        real(dp) :: MaxDiffSE,MinDiffSE,MeanDiffSE,MaxDiffGF,MeanDiffGF
+        real(dp) :: dChangeSE_Tol
+        
+        dChangeSE_Tol = 1.0e-7_dp
 
         !Set chemical potential (This will only be right for half-filling)
         GFChemPot = U/2.0_dp
@@ -25,8 +30,6 @@ module SelfConsistentLR
         nESteps_Im = 0
         nESteps_Re = 0
         OmegaVal = 0
-        write(6,*) "Get here"
-        call flush(6)
         do while(.true.)
             call GetNextOmega(Omega,OmegaVal,tMatbrAxis=.true.)
             !write(6,*) "Counting: ",OmegaVal,Omega
@@ -45,25 +48,82 @@ module SelfConsistentLR
         allocate(SE_Old_Im(nImp,nImp,nESteps_Im))
         allocate(G_Mat_Im(nImp,nImp,nESteps_Im))
         call Init_SE(nESteps_Im,SE_Im)
+        call writedynamicFunction(nESteps_Im,SE_Im,'SE_Im',tag=0,tMatbrAxis=.true.)
 
-        call SchmidtGF_wSE(G_Mat_Im,GFChemPot,SE_Im,nESteps_Im,tMatbrAxis=.true.)
-        call writedynamicfunction(nESteps_Im,G_Mat_Im,'G_Imp_Im',tMatbrAxis=.true.)
+        allocate(LatticeGF_Im(nImp,nImp,nESteps_Im))
 
-        !Try analytically continuing it straight away!
-        allocate(G_Mat_Re(nImp,nImp,nESteps_Re))
-        allocate(G_Mat_Re_Err(nImp,nImp,nESteps_Re))
-        call FromMatsubaraToRealFreq(nESteps_Im,nESteps_Re,G_Mat_Im,G_Mat_Re,G_Mat_Re_Err)
-        call writedynamicfunction(nESteps_Re,G_Mat_Re,'G_Imp_Re_cont',tMatbrAxis=.false.,ErrMat=G_Mat_Re_Err)
+        iter = 0
+        !Very simple attempted convergence of the self energy, via iterative applications of Dyson's equation on the imaginary axis
+        do while(.true.)
 
-        !Now, compare it to the real frequency calculated greens function
+            iter = iter + 1
+
+            !High level calculation on matsubara axis
+            call SchmidtGF_wSE(G_Mat_Im,GFChemPot,SE_Im,nESteps_Im,tMatbrAxis=.true.)
+            call writedynamicfunction(nESteps_Im,G_Mat_Im,'G_Imp_Im',tag=iter,tMatbrAxis=.true.)
+
+            !Calculate lattice greens function with imaginary self-energy on matsubara axis
+            call FindLocalMomGF(nESteps_Im,SE_Im,LatticeGF_Im,tMatbrAxis=.true.)
+            call writedynamicfunction(nESteps_Im,LatticeGF_Im,'G_0_Im',tag=iter,tMatbrAxis=.true.)
+
+            !Now update the self-energy via Dysons equation
+            SE_Old_Im(:,:,:) = SE_Im(:,:,:)
+            call Calc_SE_Update(nESteps_Im,SE_Im,G_Mat_Im,LatticeGF_Im)
+            call writedynamicFunction(nESteps_Im,SE_Im,'SE_Im',tag=iter,tMatbrAxis=.true.)
+
+            call FindSEDiffs(SE_Im,SE_Old_Im,G_Mat_Im,LatticeGF_Im,nESteps_Im,MaxDiffSE,MinDiffSE,MeanDiffSE,   &
+                MaxDiffGF,MeanDiffGF)
+
+            write(6,'(A,I6,5F14.8)') "Iter finished: ",iter,MaxDiffSE,MinDiffSE,MeanDiffSE,MaxDiffGF,MeanDiffGF
+            if((MaxDiffSE/damping_SE).lt.dChangeSE_Tol) then
+                write(6,"(A,G15.8)") "Self-energy macroiteration converged to: ",dChangeSE_Tol
+                exit
+            endif
+        enddo
+
+        deallocate(SE_Old_Im)
+
+        !Try analytically continuing the self energy
         allocate(SE_Re(nImp,nImp,nESteps_Re))
-        call Init_SE(nESteps_Re,SE_Re)
-        call SchmidtGF_wSE(G_Mat_Re,GFChemPot,SE_Re,nESteps_Re,tMatbrAxis=.false.)
-        call writedynamicfunction(nESteps_Re,G_Mat_Re,'G_Imp_Re',tMatbrAxis=.false.)
+        allocate(SE_Re_Err(nImp,nImp,nESteps_Re))
+        call FromMatsubaraToRealFreq(nESteps_Im,nESteps_Re,SE_Im,SE_Re,SE_Re_Err)
+        call writedynamicfunction(nESteps_Re,SE_Re,'SE_Re_cont',tMatbrAxis=.false.,ErrMat=SE_Re_Err,    &
+            tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.)
 
-        deallocate(SE_Re,G_Mat_Re,G_Mat_Re_Err,G_Mat_Im,SE_Old_Im,SE_Im)
+        !Now, use this analytically continued self energy to compute the real frequency spectral function 
+        allocate(G_Mat_Re(nImp,nImp,nESteps_Re))
+        call SchmidtGF_wSE(G_Mat_Re,GFChemPot,SE_Re,nESteps_Re,tMatbrAxis=.false.)
+        call writedynamicfunction(nESteps_Re,G_Mat_Re,'G_Imp_Final',tMatbrAxis=.false.,tCheckCausal=.true., &
+            tCheckOffDiagHerm=.true.,tWarn=.true.)
+
+        deallocate(SE_Re,SE_Re_Err,SE_Old_Im,SE_Im,G_Mat_Re,G_Mat_Im,LatticeGF_Im)
 
     end subroutine SC_Imaginary_Dyson
+
+    subroutine Calc_SE_Update(n,SE,G_Imp,G_Lat)
+        implicit none
+        integer, intent(in) :: n
+        complex(dp), intent(inout) :: SE(nImp,nImp,n)
+        complex(dp), intent(in) :: G_Imp(nImp,nImp,n)
+        complex(dp), intent(in) :: G_Lat(nImp,nImp,n)
+
+        complex(dp), allocatable :: InvG_Imp(:,:,:),InvG_Lat(:,:,:)
+
+        !First, invert both greens functions
+        allocate(InvG_Imp(nImp,nImp,n))
+        InvG_Imp(:,:,:) = G_Imp(:,:,:)
+        call InvertLocalNonHermGF(n,InvG_Imp)
+
+        allocate(InvG_Lat(nImp,nImp,n))
+        InvG_Lat(:,:,:) = G_Lat(:,:,:)
+        call InvertLocalNonHermGF(n,InvG_Lat)
+
+        !Now, apply dysons equation
+        SE(:,:,:) = SE(:,:,:) + (Damping_SE * ( InvG_Lat(:,:,:) - InvG_Imp(:,:,:) ))
+
+        deallocate(InvG_Imp,InvG_Lat)
+
+    end subroutine Calc_SE_Update
 
 
     !Real space self-consistency without dyson equation
@@ -2579,20 +2639,28 @@ module SelfConsistentLR
     !1/V \sum_k [w + mu + i/eta - h_k - SE]^-1      where V is volume of the BZ
     !TODO: Care needed with sign of broadening?
     !Check that this gives as expected
-    subroutine FindLocalMomGF(n,SE,LocalMomGF)
+    subroutine FindLocalMomGF(n,SE,LocalMomGF,tMatbrAxis)
         use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
         use sort_mod, only: Orthonorm_zgeev_vecs
         implicit none
         integer, intent(in) :: n
         complex(dp), intent(in) :: SE(nImp,nImp,n)
         complex(dp), intent(out) :: LocalMomGF(nImp,nImp,n)
+        logical, intent(in), optional :: tMatbrAxis
         complex(dp), allocatable :: RotMat(:,:),k_Ham(:,:),CompHam(:,:),cWork(:)
         complex(dp), allocatable :: RVec(:,:),LVec(:,:),W_Vals(:),ztemp(:,:)
         complex(dp) :: InvMat(nImp,nImp),ztemp2(nImp,nImp)
         real(dp), allocatable :: Work(:)
         integer :: kPnt,ind_1,ind_2,i,j,SS_Period,lwork,info
         real(dp) :: Omega,mu
+        logical :: tMatbrAxis_
         character(len=*), parameter :: t_r='FindLocalMomGF'
+
+        if(present(tMatbrAxis)) then
+            tMatbrAxis_ = tMatbrAxis
+        else
+            tMatbrAxis_ = .false.
+        endif
 
         if(.not.tDiag_kspace) then
             call FindRealSpaceLocalMomGF(n,SE,LocalMomGF)
@@ -2603,6 +2671,7 @@ module SelfConsistentLR
         SS_Period = nImp
         if(.not.tAnderson) then
             !In the hubbard model, apply a chemical potential of U/2
+            !This should really be passed in
             mu = U/2.0_dp
         else
             mu = 0.0_dp
@@ -2639,15 +2708,19 @@ module SelfConsistentLR
             !call writematrixcomp(k_Ham,'k-space ham is: ',.false.)
 
             i = 0
-            Omega = Start_Omega
-            do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
-                i = i + 1
+            do while(.true.)
+                call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis_)
+                if(i.lt.0) exit
                 if(i.gt.n) call stop_all(t_r,'Too many freq points')
 
                 !Find inverse greens function for this k-point
                 InvMat(:,:) = - k_Ham(:,:) - SE(:,:,i)
                 do j = 1,SS_Period
-                    InvMat(j,j) = InvMat(j,j) + dcmplx(Omega + mu,dDelta)
+                    if(tMatbrAxis_) then
+                        InvMat(j,j) = InvMat(j,j) + dcmplx(mu,Omega)
+                    else
+                        InvMat(j,j) = InvMat(j,j) + dcmplx(Omega + mu,dDelta)
+                    endif
                 enddo
 
                 !Now, diagonalize this
@@ -2684,8 +2757,6 @@ module SelfConsistentLR
 
                 !write(6,*) "For frequency: ",Omega
                 !call writematrixcomp(InvMat,'k-space greens function is: ',.false.)
-
-                Omega = Omega + Omega_Step
             enddo   !Enddo frequency point i
 
         enddo   !enddo k-point
