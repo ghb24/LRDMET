@@ -584,6 +584,10 @@ Program RealHub
                 if(item.lt.nitems) then
                     call readi(iGF_Fit)
                 endif
+            case("MATSUBARA_FREQ")
+                call readf(Start_Omega_Im)
+                call readf(End_Omega_Im)
+                call readf(Omega_Step_Im)
             case("REUSE_SELFENERGY")
                 call readi(iReuse_SE)
             case("MANYBODY_SELFENERGY")
@@ -613,6 +617,7 @@ Program RealHub
             case default
                 write(6,"(A)") "ALLOWED KEYWORDS IN SELF_CONSISTENCY BLOCK: "
                 write(6,"(A)") "MANYBODY_SELFENERGY"
+                write(6,"(A)") "MATSUBARA_FREQ"
                 write(6,"(A)") "REUSE_SELFENERGY"
                 write(6,"(A)") "SELFENERGY_DAMPING"
                 write(6,"(A)") "SELFENERGY_ITERATIONS"
