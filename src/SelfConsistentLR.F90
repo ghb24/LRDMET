@@ -74,6 +74,9 @@ module SelfConsistentLR
             call FindSEDiffs(SE_Im,SE_Old_Im,G_Mat_Im,LatticeGF_Im,nESteps_Im,MaxDiffSE,MinDiffSE,MeanDiffSE,   &
                 MaxDiffGF,MeanDiffGF)
 
+            !Not strictly converged, but if we want to change parameters...
+            call WriteConvSE(nESteps_Im,SE_Im,tMatbrAxis=.true.)
+
             write(6,'(A,I6,5F14.8)') "Iter finished: ",iter,MaxDiffSE,MinDiffSE,MeanDiffSE,MaxDiffGF,MeanDiffGF
             if((MaxDiffSE/damping_SE).lt.dChangeSE_Tol) then
                 write(6,"(A,G15.8)") "Self-energy macroiteration converged to: ",dChangeSE_Tol
@@ -96,7 +99,7 @@ module SelfConsistentLR
         call writedynamicfunction(nESteps_Re,G_Mat_Re,'G_Imp_Final',tMatbrAxis=.false.,tCheckCausal=.true., &
             tCheckOffDiagHerm=.true.,tWarn=.true.)
 
-        deallocate(SE_Re,SE_Re_Err,SE_Old_Im,SE_Im,G_Mat_Re,G_Mat_Im,LatticeGF_Im)
+        deallocate(SE_Re,SE_Re_Err,SE_Im,G_Mat_Re,G_Mat_Im,LatticeGF_Im)
 
     end subroutine SC_Imaginary_Dyson
 
@@ -130,10 +133,9 @@ module SelfConsistentLR
     subroutine SC_Mom_LR_NoDyson()
         implicit none
         real(dp) :: Omega,GFChemPot,OmegaVal
-        integer :: nESteps,iter,i,k,l,iunit,j
+        integer :: nESteps,iter,i,k,l,j
         complex(dp), allocatable :: SE(:,:,:),G_Mat(:,:,:),SE_Old(:,:,:),LocalMomGF(:,:,:)
         real(dp) :: dChangeSE_Tol,dFuncTol,MaxDiffSE,MinDiffSE,MeanDiffSE,MaxDiffGF,MeanDiffGF
-        character(64) :: filename,filename2
         logical, allocatable :: tOmegaConv(:)
         logical :: tSuccess
         character(len=*), parameter :: t_r='SC_Mom_LR_NoDyson'
@@ -221,19 +223,46 @@ module SelfConsistentLR
             !if(iter.eq.1) call stop_all(t_r,'SELF ENERGY CAUSAL (in first iteration)! YAY!')
         enddo
 
+
+        deallocate(SE,SE_Old,G_Mat,LocalMomGF,tOmegaConv)
+
+    end subroutine SC_Mom_LR_NoDyson
+
+    !Write out a converged self-energy for potential re-reading in later
+    subroutine WriteConvSE(n,SE,tMatbrAxis)
+        implicit none
+        integer, intent(in) :: n
+        complex(dp), intent(in) :: SE(nImp,nImp,n)
+        logical, intent(in), optional :: tMatbrAxis
+        logical :: tMatbrAxis_
+        integer :: iunit,i,k,l
+        real(dp) :: Omega
+        character(64) :: filename,filename2
+
+        if(present(tMatbrAxis)) then
+            tMatbrAxis_ = tMatbrAxis
+        else
+            tMatbrAxis_ = .false.
+        endif
+        
         write(6,"(A)") "Writing out converged self-energy"
         iunit = get_free_unit()
-        call append_ext_real('Converged_SE',U,filename)
+        if(tMatbrAxis_) then
+            call append_ext_real('Converged_SE_Im',U,filename)
+        else
+            call append_ext_real('Converged_SE',U,filename)
+        endif
         if(.not.tHalfFill) then
             call append_ext(filename,nOcc,filename2)
         else
             filename2 = filename
         endif
         open(unit=iunit,file=filename2,status='unknown')
-        Omega = Start_Omega
+
         i = 0
-        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
-            i = i + 1
+        do while(.true.)
+            call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis_)
+            if(i.lt.0) exit
             !Write out *lower* triangle
             write(iunit,"(G25.10)",advance='no') Omega
             do k = 1,nImp
@@ -245,13 +274,10 @@ module SelfConsistentLR
                 enddo
             enddo
             write(iunit,"(2G25.10)") real(SE(nImp,nImp,i),dp),aimag(SE(nImp,nImp,i))
-            Omega = Omega + Omega_Step
         enddo
         close(iunit)
 
-        deallocate(SE,SE_Old,G_Mat,LocalMomGF,tOmegaConv)
-
-    end subroutine SC_Mom_LR_NoDyson
+    end subroutine WriteConvSE
     
     !Attempt to get k-space spectral functions by self-consistenly calculating k-independent hybridization and self-energy contributions
     !As opposed to the routine below, this one attempts to use a global hybridization in the construction of the bath, rather than the 
@@ -386,33 +412,7 @@ module SelfConsistentLR
 
         enddo
 
-        write(6,"(A)") "Writing out converged self-energy"
-        iunit = get_free_unit()
-        call append_ext_real('Converged_SE',U,filename)
-        if(.not.tHalfFill) then
-            call append_ext(filename,nOcc,filename2)
-        else
-            filename2 = filename
-        endif
-        open(unit=iunit,file=filename2,status='unknown')
-        Omega = Start_Omega
-        i = 0
-        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
-            i = i + 1
-            !Write out *lower* triangle
-            write(iunit,"(G25.10)",advance='no') Omega
-            do k = 1,nImp
-                do l = k,nImp
-                    if((k.eq.nImp).and.(l.eq.nImp)) then
-                        exit
-                    endif
-                    write(iunit,"(2G25.10)",advance='no') real(SE(l,k,i),dp),aimag(SE(l,k,i))
-                enddo
-            enddo
-            write(iunit,"(2G25.10)") real(SE(nImp,nImp,i),dp),aimag(SE(nImp,nImp,i))
-            Omega = Omega + Omega_Step
-        enddo
-        close(iunit)
+        call WriteConvSE(nESteps,SE,tMatbrAxis=.false.)
 
         deallocate(LocalCoupFn,SE,SE_Old,G_Mat,Hybrid,InvLocalMomGF,LocalMomGF,GlobalCoup,tOmegaConv)
 
@@ -442,49 +442,7 @@ module SelfConsistentLR
         allocate(SE_Old(nImp,nImp,nESteps))
         allocate(G_Mat(nImp,nImp,nESteps))
 
-        if(tRead_SelfEnergy) then
-            write(6,"(A)") "Reading in self-energy..."
-            call append_ext_real('Converged_SE',U,filename)
-            if(.not.tHalfFill) then
-                call append_ext(filename,nOcc,filename2)
-            else
-                filename2 = filename
-            endif
-            inquire(file=filename2,exist=exists)
-            if(.not.exists) then
-                write(6,*) "Converged self-energy does not exist, filename: ",filename2
-                call stop_all(t_r,'Cannot find file with converged selfenergy')
-            endif
-            
-            iunit = get_free_unit()
-            open(unit=iunit,file=filename2,status='unknown')
-            Omega = Start_Omega
-            i = 0
-            do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
-                i = i + 1
-                !Read in *lower* triangle
-                read(iunit,"(G25.10)",advance='no') OmegaVal
-                if(abs(OmegaVal-Omega).gt.1.0e-8_dp) then
-                    write(6,*) OmegaVal,Omega
-                    call stop_all(t_r,'Omega values do not match up for read-in self-energy')
-                endif
-                do k = 1,nImp
-                    do l = k,nImp
-                        if((k.eq.nImp).and.(l.eq.nImp)) then
-                            exit
-                        endif
-                        read(iunit,"(2G25.10)",advance='no') reSE,imSE
-                        SE(l,k,i) = dcmplx(reSE,imSE)
-                    enddo
-                enddo
-                read(iunit,"(2G25.10)") reSE,imSE
-                SE(nImp,nImp,i) = dcmplx(reSE,imSE)
-                Omega = Omega + Omega_Step
-            enddo
-            close(iunit)
-        else
-            SE(:,:,:) = zzero
-        endif
+        call Init_SE(nESteps,SE,tMatbrAxis=.false.)
 
         !Set chemical potential (This will only be right for half-filling)
         GFChemPot = U/2.0_dp
@@ -553,52 +511,37 @@ module SelfConsistentLR
 
         enddo
 
-        write(6,"(A)") "Writing out converged self-energy"
-        iunit = get_free_unit()
-        call append_ext_real('Converged_SE',U,filename)
-        if(.not.tHalfFill) then
-            call append_ext(filename,nOcc,filename2)
-        else
-            filename2 = filename
-        endif
-        open(unit=iunit,file=filename2,status='unknown')
-        Omega = Start_Omega
-        i = 0
-        do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
-            i = i + 1
-            !Write out *lower* triangle
-            write(iunit,"(G25.10)",advance='no') Omega
-            do k = 1,nImp
-                do l = k,nImp
-                    if((k.eq.nImp).and.(l.eq.nImp)) then
-                        exit
-                    endif
-                    write(iunit,"(2G25.10)",advance='no') real(SE(l,k,i),dp),aimag(SE(l,k,i))
-                enddo
-            enddo
-            write(iunit,"(2G25.10)") real(SE(nImp,nImp,i),dp),aimag(SE(nImp,nImp,i))
-            Omega = Omega + Omega_Step
-        enddo
-        close(iunit)
+        call WriteConvSE(nESteps,SE,tMatbrAxis=.false.)
 
     end subroutine SC_Mom_LR
     
     !Initialise the self energy (to zero generally, but can read in one)
-    subroutine Init_SE(n,SE)
+    subroutine Init_SE(n,SE,tMatbrAxis)
         implicit none
         integer, intent(in) :: n
         complex(dp), intent(out) :: SE(nImp,nImp,n)
+        logical, intent(in), optional :: tMatbrAxis
         real(dp) :: OmegaVal,Omega,reSE,imSE
         integer :: i,iunit,k,l
-        logical :: exists
+        logical :: exists,tMatbrAxis_
         character(64) :: filename,filename2
         character(len=*), parameter :: t_r='Init_SE'
+
+        if(present(tMatbrAxis)) then
+            tMatbrAxis_ = tMatbrAxis
+        else
+            tMatbrAxis_ = .false.
+        endif
 
         SE(:,:,:) = zzero
     
         if(tRead_SelfEnergy) then
             write(6,"(A)") "Reading in self-energy..."
-            call append_ext_real('Converged_SE',U,filename)
+            if(tMatbrAxis_) then
+                call append_ext_real('Converged_SE_Im',U,filename)
+            else
+                call append_ext_real('Converged_SE',U,filename)
+            endif
             if(.not.tHalfFill) then
                 call append_ext(filename,nOcc,filename2)
             else
@@ -612,10 +555,10 @@ module SelfConsistentLR
             
             iunit = get_free_unit()
             open(unit=iunit,file=filename2,status='unknown')
-            Omega = Start_Omega
             i = 0
-            do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
-                i = i + 1
+            do while(.true.)
+                call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis_)
+                if(i.lt.0) exit
                 !Read in *lower* triangle
                 read(iunit,"(G25.10)",advance='no') OmegaVal
                 if(abs(OmegaVal-Omega).gt.1.0e-8_dp) then
@@ -633,7 +576,6 @@ module SelfConsistentLR
                 enddo
                 read(iunit,"(2G25.10)") reSE,imSE
                 SE(nImp,nImp,i) = dcmplx(reSE,imSE)
-                Omega = Omega + Omega_Step
             enddo
             close(iunit)
         endif
