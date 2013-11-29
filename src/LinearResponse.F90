@@ -3676,7 +3676,7 @@ module LinearResponse
                     do i = 1,nLinearSystem
                         LinearSystem_p(i,i) = LinearSystem_p(i,i) + dcmplx(Omega+mu+GFChemPot,dDelta)
                     enddo
-                    call writematrixcomp(LinearSystem_p,'LinearSystem_p',.false.)
+!                    call writematrixcomp(LinearSystem_p,'LinearSystem_p',.false.)
 
                     !Now solve these linear equations
                     !call writevectorcomp(Psi1_p,'Cre_0')
@@ -3724,7 +3724,7 @@ module LinearResponse
                     do i = 1,nLinearSystem
                         LinearSystem_h(i,i) = dcmplx(Omega+mu,dDelta) + (LinearSystem_h(i,i) - dcmplx(GFChemPot,0.0_dp))
                     enddo
-                    call writematrixcomp(LinearSystem_h,'LinearSystem_h',.false.)
+!                    call writematrixcomp(LinearSystem_h,'LinearSystem_h',.false.)
                     if(tMinRes_NonDir) then
                         !zShift = dcmplx(-Omega-mu+GFChemPot,-dDelta)
                         zDirMV_Mat => LinearSystem_h
@@ -8740,7 +8740,7 @@ module LinearResponse
             do i = 1,nOcc
                 if(tMatbrAxis) then
                     HFPertBasis_Ann_Ket(i,pertsite) = dconjg(LVec_R(pertsite,i)) / (dcmplx(GFChemPot,Omega) - EVals_R(i))
-                    HFPertBasis_Ann_Bra(i,pertsite) = RVec_R(pertsite,i) / (dcmplx(GFChemPot,Omega) - dconjg(EVals_R(i)))
+                    HFPertBasis_Ann_Bra(i,pertsite) = RVec_R(pertsite,i) / (dcmplx(GFChemPot,-Omega) - dconjg(EVals_R(i)))
                 else
                     HFPertBasis_Ann_Ket(i,pertsite) = dconjg(LVec_R(pertsite,i)) / (dcmplx(Omega+GFChemPot,dDelta) - EVals_R(i))
                     HFPertBasis_Ann_Bra(i,pertsite) = RVec_R(pertsite,i) / (dcmplx(Omega+GFChemPot,-dDelta) - dconjg(EVals_R(i)))
@@ -8749,7 +8749,7 @@ module LinearResponse
             do a = nOcc+1,nSites
                 if(tMatbrAxis) then
                     HFPertBasis_Cre_Ket(a,pertsite) = dconjg(LVec_R(pertsite,a)) / (dcmplx(GFChemPot,Omega) - EVals_R(a))
-                    HFPertBasis_Cre_Bra(a,pertsite) = RVec_R(pertsite,a) / (dcmplx(GFChemPot,Omega)-dconjg(EVals_R(a)))
+                    HFPertBasis_Cre_Bra(a,pertsite) = RVec_R(pertsite,a) / (dcmplx(GFChemPot,-Omega)-dconjg(EVals_R(a)))
                 else
                     HFPertBasis_Cre_Ket(a,pertsite) = dconjg(LVec_R(pertsite,a)) / (dcmplx(Omega+GFChemPot,dDelta) - EVals_R(a))
                     HFPertBasis_Cre_Bra(a,pertsite) = RVec_R(pertsite,a) / (dcmplx(Omega+GFChemPot,-dDelta)-dconjg(EVals_R(a)))
@@ -9459,6 +9459,8 @@ module LinearResponse
         integer, intent(inout) :: OmegaVal
         logical, intent(in) :: tMatbrAxis
 
+!        write(6,*) "In Get Next Omega: ",OmegaVal
+
         if(OmegaVal.eq.0) then
             if(tMatbrAxis) then
                 Omega = Start_Omega_Im
@@ -9466,25 +9468,27 @@ module LinearResponse
                 Omega = Start_Omega
             endif
             OmegaVal = OmegaVal + 1
+!            write(6,*) "Returned Omega: ",Omega
             return
         endif
 
         OmegaVal = OmegaVal + 1
         if(tMatbrAxis) then
             Omega = Omega + Omega_Step_Im
-            if((Omega.lt.(max(Start_Omega_Im,End_Omega_Im)+1.0e-6_dp))  &
-                    .and.(Omega.gt.(min(Start_Omega_Im,End_Omega_Im)-1.0e-6_dp))) then
+            if((Omega.gt.(max(Start_Omega_Im,End_Omega_Im)+1.0e-6_dp))  &
+                    .or.(Omega.lt.(min(Start_Omega_Im,End_Omega_Im)-1.0e-6_dp))) then
                 !Hit exit criterion
                 OmegaVal = -1
             endif
         else
             Omega = Omega + Omega_Step
-            if((Omega.lt.(max(Start_Omega,End_Omega)+1.0e-6_dp))  &
-                    .and.(Omega.gt.(min(Start_Omega,End_Omega)-1.0e-6_dp))) then
+            if((Omega.gt.(max(Start_Omega,End_Omega)+1.0e-6_dp))  &
+                    .or.(Omega.lt.(min(Start_Omega,End_Omega)-1.0e-6_dp))) then
                 !Hit exit criterion
                 OmegaVal = -1
             endif
         endif
+!        write(6,*) "Returned Omega: ",Omega
 
     end subroutine GetNextOmega
 

@@ -48,6 +48,8 @@ module Continuation
                         RealFreqPoint = dcmplx(Omega,dDelta)
 
                         !Simple fit to Pade approximant
+                        write(6,'(A,2F15.8)') "Analytically continuing to frequency point: ",RealFreqPoint
+                        call flush(6)
                         call ratint(ImFreqPoints,ImData,n_Im,RealFreqPoint,Fn_Re(el_1,el_2,OmegaVal),Fn_Re_Err(el_1,el_2,OmegaVal))
 
                     enddo
@@ -99,7 +101,7 @@ module Continuation
                     return
                 elseif (h_r.lt.hh) then
                     ns = i
-                    hh = h
+                    hh = h_r
                 endif
                 c(i) = ya(i)
                 d(i) = ya(i) + tiny(h_r)
@@ -112,7 +114,7 @@ module Continuation
                     h = xa(i+m)-x
                     t = (xa(i)-x)*d(i)/h
                     dd = t - c(i+1)
-                    if(abs(dd).eq.zero) call stop_all(t_r,'Interpolating function has a plot at the requested frequency')
+                    if(abs(dd).eq.zero) call stop_all(t_r,'Interpolating function has a pole at the requested frequency')
                     dd = w / dd
                     d(i) = c(i+1) * dd
                     c(i) = t * dd

@@ -25,8 +25,11 @@ module SelfConsistentLR
         nESteps_Im = 0
         nESteps_Re = 0
         OmegaVal = 0
+        write(6,*) "Get here"
+        call flush(6)
         do while(.true.)
             call GetNextOmega(Omega,OmegaVal,tMatbrAxis=.true.)
+            !write(6,*) "Counting: ",OmegaVal,Omega
             if(OmegaVal.lt.0) exit
             nESteps_Im = nESteps_Im + 1
         enddo
@@ -1318,7 +1321,7 @@ module SelfConsistentLR
         endif
 
         if(present(tMatbrAxis)) then
-            tMatbrAxis_ = .true.
+            tMatbrAxis_ = tMatbrAxis
         else
             tMatbrAxis_ = .false.
         endif
