@@ -1787,6 +1787,7 @@ module mat_tools
         integer, intent(in) :: nLat,iCoupLength,SS_Period
         real(dp), intent(inout) :: Ham(nLat,nLat)
         real(dp), intent(in) :: Couplings(iCoupLength,SS_Period)
+        integer :: CoupInd,i,j,ImpCoup
         character(len=*), parameter :: t_r='AddPeriodicImpCoupling_RealSpace'
 
         if(LatticeDim.eq.2) call stop_all(t_r,'Lattice coupling not set up for 2D lattices yet')
@@ -1826,16 +1827,36 @@ module mat_tools
 
         !First, simply put in the direct couplings to neighbours in one direction
         do i = 1,nLat
-            ImpCoup = mod(i,SS_Period)  !Which impurity coupling are we considering
+            ImpCoup = mod(i,SS_Period)    !Which impurity coupling are we considering
+            if(ImpCoup.eq.0) ImpCoup = SS_Period
             do j = 1,iCoupLength
-                if((i+ImpCoup-1+(j*SS_Period)).gt.nLat) exit    !Do not go "around" the ring. We will deal with this afterwards, since this
+                if((i+(j*SS_Period)).gt.nLat) exit    !Do not go "around" the ring. We will deal with this afterwards, since this
                                                                 !may require different boundary conditions
-                Ham(i,i+ImpCoup-1+(j*SS_Period)) = Couplings(j,ImpCoup)
-                Ham(i+ImpCoup-1+(j*SS_Period),i) = Couplings(j,ImpCoup)
+                Ham(i,i+(j*SS_Period)) = Couplings(j,ImpCoup)
+                Ham(i+(j*SS_Period),i) = Couplings(j,ImpCoup)
             enddo
         enddo
 
         !Now, also put in the coupling in the other direction
+        do i = 1,iCoupLength*SS_Period
+            ImpCoup = mod(i,SS_Period)
+            if(ImpCoup.eq.0) ImpCoup = SS_Period
+
+            CoupInd = iCoupLength + 1
+            do j = nLat - (iCoupLength*SS_Period) + i, nLat, SS_Period
+                CoupInd = CoupInd - 1   !Start with last coupling value
+                if(tAntiPeriodic) then
+                    Ham(i,j) = - Couplings(CoupInd,ImpCoup)
+                    Ham(j,i) = - Couplings(CoupInd,ImpCoup)
+                elseif(tPeriodic) then
+                    Ham(i,j) = Couplings(CoupInd,ImpCoup)
+                    Ham(j,i) = Couplings(CoupInd,ImpCoup)
+                else
+                    !OBCs
+                    continue
+                endif
+            enddo
+        enddo
 
     end subroutine AddPeriodicImpCoupling_RealSpace
 
@@ -1858,6 +1879,7 @@ module mat_tools
         complex(dp), allocatable :: r_vecs(:,:),Vec_temp(:),Vec_temp2(:)
         integer :: lWork,info,i,j,k,kSpace_ind,ki,kj,bandi,bandj,Ind_i,Ind_j,ind_1,ind_2
         integer :: ii,jj,xb,yb,impy,impx,impsite
+        real(dp), allocatable :: Couplings(:,:)
         character(len=*), parameter :: t_r='DiagOneEOp'
 
         if(tKSpace_Diag) then
@@ -1865,14 +1887,21 @@ module mat_tools
                 call stop_all(t_r,'Cannot do k-space diagonalizations - impurity site tiling is not same as direct lattice')
             endif
 
-!            call writematrix(Ham,'Ham_realspace',.true.)
-!            do j=1,nLat
-!                do i=3,nLat-1
-!                    Ham(mod(i+j-1,nLat),j) = 10.0_dp/real(i,dp)
-!                    Ham(j,mod(i+j-1,nLat)) = 10.0_dp/real(i,dp)
-!                enddo
-!            enddo
-!            call writematrix(Ham,'Ham_realspace',.true.)
+            call writematrix(Ham,'Ham_realspace',.true.)
+            Ham(:,:) = zero
+            allocate(Couplings(3,SS_Period))
+            do i = 1,3
+                Couplings(i,:) = -10.0_dp/real(i,dp)
+            enddo
+            call AddPeriodicImpCoupling_RealSpace(Ham,nLat,3,SS_Period,Couplings)
+            deallocate(Couplings)
+            !do j=1,nLat
+            !    do i=3,nLat-1
+            !        Ham(mod(i+j-1,nLat),j) = 10.0_dp/real(i,dp)
+            !        Ham(j,mod(i+j-1,nLat)) = 10.0_dp/real(i,dp)
+            !    enddo
+            !enddo
+            call writematrix(Ham,'Ham_realspace',.true.)
 
             allocate(CompHam(nLat,nLat))
             do i=1,nLat
