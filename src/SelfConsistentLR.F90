@@ -10,6 +10,16 @@ module SelfConsistentLR
 
     contains
 
+    !Self-consistently fit a frequency *independent* lattice coupling to the impurity in order to
+    !match the matsubara greens functions
+    subroutine SC_FitLatticeGF_Im()
+        implicit none
+        character(len=*), parameter :: t_r='SC_FitLatticeGF_Im'
+
+        call stop_all(t_r,'end')
+
+    end subroutine SC_FitLatticeGF_Im
+
     !Attempt for self-consistency on the matsubara axis via simple application of dysons equation
     subroutine SC_Imaginary_Dyson()
         implicit none

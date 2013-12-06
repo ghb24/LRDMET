@@ -20,7 +20,10 @@ module LRDriver
             !call SC_Mom_LR_Z()
         else
             !Self-consistency on the imaginary axis
-            call SC_Imaginary_Dyson()
+            !Direct application of Dysons equation on the Im axis
+            !call SC_Imaginary_Dyson()
+            !Fitting of a frequency independent lattice coupling
+            call SC_FitLatticeGF_Im()
         endif
 
     end subroutine SelfConsistent_MR_LR

@@ -1779,6 +1779,66 @@ module mat_tools
 
     end subroutine GetKSpaceOrbs
 
+    !Add coupling from the impurity sites to the other sites in the lattice
+    !This is done to maintain the translational symmetry of the original impurity unit cell
+    !If a cluster calculation, then the lattice coupling is seperate for each impurity of the unit cell
+    subroutine AddPeriodicImpCoupling_RealSpace(Ham,nLat,iCoupLength,SS_Period,Couplings)
+        implicit none
+        integer, intent(in) :: nLat,iCoupLength,SS_Period
+        real(dp), intent(inout) :: Ham(nLat,nLat)
+        real(dp), intent(in) :: Couplings(iCoupLength,SS_Period)
+        character(len=*), parameter :: t_r='AddPeriodicImpCoupling_RealSpace'
+
+        if(LatticeDim.eq.2) call stop_all(t_r,'Lattice coupling not set up for 2D lattices yet')
+
+        !Max number of couplings given by (nSites-nImp)/(2 x nImp)
+        if(iCoupLength.gt.((nLat-SS_Period)/(2*SS_Period))) then
+            call stop_all(t_r,'Impurity coupling should not extend beyond half the number of cell repeats in each dimension')
+        endif
+        if(SS_Period.gt.nImp) then
+            call stop_all(t_r,'Coupling cannot connect to more sites than in the impurity unit cell')
+        endif
+
+        !Since the couplings need to maintain periodicity, we need them to apply to sites forwards and backwards.
+        !Antiperiodic BCs should mean that we flip sign if we go around the lattice.
+        !Example below for nLat=18, iCoupLength=3, SS_Period=2, Couplings= (/A,B,C  a,b,c/)
+        ! *-*-A-0-B-0-C-0-0-0-0-0-C-0-B-0-A-0
+        ! *-*-0-a-0-b-0-c-0-0-0-0-0-c-0-b-0-a
+        ! A-0-*-*-A-0-B-0-C-0-0-0-0-0-C-0-B-0
+        ! 0-a-*-*-0-a-0-b-0-c-0-0-0-0-0-c-0-b
+        ! B-0-C-0-*-*-A-0-B-0-C-0-0-0-0-0-C-0
+        ! 0-b-0-c-*-*-0-a-0-b-0-c-0-0-0-0-0-c
+        ! C-0-B-0-A-0-*-*-A-0-B-0-C-0-0-0-0-0
+        ! 0-c-0-b-0-a-*-*-0-a-0-b-0-c-0-0-0-0
+        ! 0-0-C-0-B-0-A-0-*-*-A-0-B-0-C-0-0-0
+        ! 0-0-0-c-0-b-0-a-*-*-0-a-0-b-0-c-0-0
+        !                     *-*-A-0-B-0-C-0
+        !                     *-*-0-a-0-b-0-c
+        !                         *-*-A-0-B-0
+        !                         *-*-0-a-0-b
+        !                             *-*-A-0
+        !                             *-*-0-a
+        !                                 *-*
+        !                                 *-*
+
+        !A coupling of iCoupLength=1, SS_Period=1, Couplings=(/1/) will give normal lattice hamiltonian
+        !If APBCs, then the corner couplings will be negative
+
+        !First, simply put in the direct couplings to neighbours in one direction
+        do i = 1,nLat
+            ImpCoup = mod(i,SS_Period)  !Which impurity coupling are we considering
+            do j = 1,iCoupLength
+                if((i+ImpCoup-1+(j*SS_Period)).gt.nLat) exit    !Do not go "around" the ring. We will deal with this afterwards, since this
+                                                                !may require different boundary conditions
+                Ham(i,i+ImpCoup-1+(j*SS_Period)) = Couplings(j,ImpCoup)
+                Ham(i+ImpCoup-1+(j*SS_Period),i) = Couplings(j,ImpCoup)
+            enddo
+        enddo
+
+        !Now, also put in the coupling in the other direction
+
+    end subroutine AddPeriodicImpCoupling_RealSpace
+
     !Routine to diagonalize a 1-electron, real operator, with the lattice periodicity.
     !the SS_Period is the size of the supercell repeating unit (e.g. the coupling correlation potential)
     !This will be equivalent to the number of bands per kpoint
@@ -1804,6 +1864,15 @@ module mat_tools
             if(LatticeDim.eq.2) then
                 call stop_all(t_r,'Cannot do k-space diagonalizations - impurity site tiling is not same as direct lattice')
             endif
+
+!            call writematrix(Ham,'Ham_realspace',.true.)
+!            do j=1,nLat
+!                do i=3,nLat-1
+!                    Ham(mod(i+j-1,nLat),j) = 10.0_dp/real(i,dp)
+!                    Ham(j,mod(i+j-1,nLat)) = 10.0_dp/real(i,dp)
+!                enddo
+!            enddo
+!            call writematrix(Ham,'Ham_realspace',.true.)
 
             allocate(CompHam(nLat,nLat))
             do i=1,nLat
@@ -1868,6 +1937,7 @@ module mat_tools
                 !Do these satisfy the original eigenvalue problem?
                 allocate(cWork(nLat))
                 do i = 1,nLat
+!                    write(6,*) "Checking eigenvector: ",i
                     call ZGEMV('N',nLat,nLat,zone,CompHam,nLat,r_vecs(:,i),1,zzero,cWork,1)
                     do j = 1,nLat
                         if(abs(cWork(j)-(Vals(i)*r_vecs(j,i))).gt.1.0e-8_dp) then
