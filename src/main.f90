@@ -126,6 +126,8 @@ Program RealHub
         tRandom_Init_SE = .false.
         tSE_Scan = .false.
         tRealSpaceSC = .false.  !By default, attempt self-consistency on the matsubara axis
+        iLatticeFitType = 1     !By default, fit the greens functions (rather than inverses)
+        iFitGFWeighting = 0     !By default, when doing lattice fits, fit to a flat model, rather than bias low weighted excitations
 
     end subroutine set_defaults
 

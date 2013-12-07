@@ -206,6 +206,8 @@ module Globals
     logical :: tRead_SelfEnergy ! Read in converged self-energy from previous calculation
     logical :: tRandom_Init_SE  ! Initialize self-energy with random numbers
     integer :: TDLat_Ni,TDLat_Nj
+    integer :: iLatticeFitType  !When fitting lattice coupling, this defines whether to match the greens functions, or inverse greens functions
+    integer :: iFitGFWeighting  !When fitting lattice couplings, this defines whether to weight the residual (0=flat,1=1/w,2=1/w^2)
 
     !Debugging for Self-consistency
     logical :: tSE_Scan

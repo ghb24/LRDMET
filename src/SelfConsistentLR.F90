@@ -6,9 +6,86 @@ module SelfConsistentLR
     use globals
     use Continuation
     use utils, only: get_free_unit,append_ext_real,append_ext
+    use mat_tools, only: AddPeriodicImpCoupling_RealSpace 
     implicit none
 
     contains
+
+    !Return the residual (dist) for a set of lattice couplings to the impurity, maintaining translational symmetry, to the 
+    !impurity greens function. This can come with different weighting factors.
+    !This can actually be done on either the real or imaginary axis
+    !There are some different options. 
+    !   1) Different weighting factors. iFitGFWeighting. 0 = flat, 1 = 1/w, 2 = 1/w^2
+    !   2) Minimize sum_w W(w) Tr|G_0(w) - G(w)|^2 or with the inverse functions (which renders it equivalent to fitting the hybridization in some way)
+    !   3) Different lattice coupling definitions? (i.e. complex couplings? (probably not), independent bath fits for each site?)
+
+    !NOTE: If LatticeFitType = 2 (i.e. the inverse of the functions), then G_Imp is sent in as the *inverse* of the
+    !impurity greens function. Not the greens function itself.
+    subroutine CalcLatticeFitResidual(G_Imp,nESteps,Couplings,iNumCoups,dist,tMatbrAxis)
+        implicit none
+        integer, intent(in) :: nESteps,iNumCoups
+        complex(dp), intent(in) :: G_Imp(nImp,nImp,nESteps)
+        real(dp), intent(in) :: Couplings(iNumCoups,nImp)
+        real(dp), intent(out) :: dist
+        logical, intent(in) :: tMatbrAxis
+        real(dp), allocatable :: h_lat_fit(:,:)
+        complex(dp), allocatable :: SE_Dummy(:,:,:),Lattice_GF(:,:,:),DiffMat(:,:,:),DiffMatSq(:,:,:)
+        real(dp) :: Omega
+        integer :: i,j,k
+        character(len=*), parameter :: t_r='CalcLatticeFitResidual'
+
+        !TODO: Fix this, so that the self-energy is an optional argument
+        allocate(SE_Dummy(nImp,nImp,nESteps))
+
+        !We need to calculate the lattice greens function with the attached coupling
+        allocate(h_lat_fit(nSites,nSites))
+        h_lat_fit(:,:) = h0v(:,:)
+        !Add the extended, periodized, non-local couplings to the rest of the lattice
+        call AddPeriodicImpCoupling_RealSpace(h_lat_fit,nSites,iNumCoups,nImp,Couplings)
+
+        !Now, calculate the local lattice greens function
+        allocate(Lattice_GF(nImp,nImp,nESteps))
+        call FindLocalMomGF(nESteps,SE_Dummy,Lattice_GF,tMatbrAxis=tMatbrAxis,ham=h_lat_fit)
+
+        if(iLatticeFitType.eq.2) then
+            !If required (i.e. we are fitting the inverses of the functions), invert the lattice greens function
+            call InvertLocalNonHermGF(nESteps,Lattice_GF)
+        endif
+
+        !Now, take the difference between the functions
+        allocate(DiffMat(nImp,nImp,nESteps))
+        allocate(DiffMatSq(nImp,nImp,nESteps))
+        DiffMat(:,:,:) = Lattice_GF(:,:,:) - G_Imp(:,:,:)
+
+        !Take mod square and trace (Same as taking the abs square of the values)
+        DiffMat(:,:,:) = DiffMat(:,:,:) * dconjg(DiffMat(:,:,:))
+
+        dist = zero
+        i = 0
+        do while(.true.)
+            call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis)
+            if(i.lt.0) exit
+            if(i.gt.nESteps) call stop_all(t_r,'Too many frequency points')
+
+            !Now, sum the squares, with the appropriate weighting factor
+            do j = 1,nImp
+                do k = 1,nImp
+                    if(iFitGFWeighting.eq.0) then
+                        !Flat weighting
+                        dist = dist + real(DiffMat(k,j,i),dp)
+                    elseif(iFitGFWeighting.eq.1) then
+                        !1/w weighting
+                        dist = dist + real(DiffMat(k,j,i),dp)/Omega
+                    else
+                        !1/w^2 weighting
+                        dist = dist + real(DiffMat(k,j,i),dp)/(Omega**2)
+                    endif
+                enddo
+            enddo
+        enddo
+
+        deallocate(h_lat_fit,SE_Dummy,DiffMat,Lattice_GF)
+    end subroutine CalcLatticeFitResidual
 
     !Self-consistently fit a frequency *independent* lattice coupling to the impurity in order to
     !match the matsubara greens functions
@@ -2589,9 +2666,12 @@ module SelfConsistentLR
     !This calculates the sum of all the k-space greens functions over the 'n' frequency points
     !The hamiltonian in this case is taken to be h0v (i.e. with the correlation potential)
     !1/V \sum_k [w + mu + i/eta - h_k - SE]^-1      where V is volume of the BZ
-    !TODO: Care needed with sign of broadening?
     !Check that this gives as expected
-    subroutine FindLocalMomGF(n,SE,LocalMomGF,tMatbrAxis)
+    !Can optionally be computed in real (default) or matsubara axis
+    !Can optionally take a periodic lattice hamiltonian on which to calculate greens function (will then not use self-energy)
+    !TODO: Speed this routine up! 1) Will then, the simple matinv routine be faster (probably). 
+    !       2) Can we avoid doing the explicit rotations of all blocks?
+    subroutine FindLocalMomGF(n,SE,LocalMomGF,tMatbrAxis,ham)
         use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
         use sort_mod, only: Orthonorm_zgeev_vecs
         implicit none
@@ -2599,13 +2679,14 @@ module SelfConsistentLR
         complex(dp), intent(in) :: SE(nImp,nImp,n)
         complex(dp), intent(out) :: LocalMomGF(nImp,nImp,n)
         logical, intent(in), optional :: tMatbrAxis
+        real(dp), intent(in), optional :: ham(nSites,nSites)
         complex(dp), allocatable :: RotMat(:,:),k_Ham(:,:),CompHam(:,:),cWork(:)
         complex(dp), allocatable :: RVec(:,:),LVec(:,:),W_Vals(:),ztemp(:,:)
         complex(dp) :: InvMat(nImp,nImp),ztemp2(nImp,nImp)
         real(dp), allocatable :: Work(:)
         integer :: kPnt,ind_1,ind_2,i,j,SS_Period,lwork,info
         real(dp) :: Omega,mu
-        logical :: tMatbrAxis_
+        logical :: tMatbrAxis_,tCoupledHam_
         character(len=*), parameter :: t_r='FindLocalMomGF'
 
         if(present(tMatbrAxis)) then
@@ -2614,7 +2695,14 @@ module SelfConsistentLR
             tMatbrAxis_ = .false.
         endif
 
+        if(present(ham)) then
+            tCoupledHam_ = .true.
+        else
+            tCoupledHam_ = .false.
+        endif
+
         if(.not.tDiag_kspace) then
+            if(tMatbrAxis_.or.tCoupledHam_) call stop_all(t_r,'Fixme')
             call FindRealSpaceLocalMomGF(n,SE,LocalMomGF)
             return
         endif
@@ -2632,11 +2720,20 @@ module SelfConsistentLR
         allocate(RotMat(nSites,SS_Period))
         allocate(k_Ham(SS_Period,SS_Period))
         allocate(CompHam(nSites,nSites))
-        do i = 1,nSites
-            do j = 1,nSites
-                CompHam(j,i) = dcmplx(h0v(j,i),zero)
+        if(tCoupledHam_) then
+            !Use passed in lattice hamiltonian
+            do i = 1,nSites
+                do j = 1,nSites
+                    CompHam(j,i) = dcmplx(ham(j,i),zero)
+                enddo
             enddo
-        enddo
+        else
+            do i = 1,nSites
+                do j = 1,nSites
+                    CompHam(j,i) = dcmplx(h0v(j,i),zero)
+                enddo
+            enddo
+        endif
 
         !Data for the diagonalization of the one-electron k-dependent Greens functions
         allocate(RVec(SS_Period,SS_Period))
@@ -2666,7 +2763,12 @@ module SelfConsistentLR
                 if(i.gt.n) call stop_all(t_r,'Too many freq points')
 
                 !Find inverse greens function for this k-point
-                InvMat(:,:) = - k_Ham(:,:) - SE(:,:,i)
+                if(tCoupledHam_) then
+                    !No self-energy
+                    InvMat(:,:) = - k_Ham(:,:) 
+                else
+                    InvMat(:,:) = - k_Ham(:,:) - SE(:,:,i)
+                endif
                 do j = 1,SS_Period
                     if(tMatbrAxis_) then
                         InvMat(j,j) = InvMat(j,j) + dcmplx(mu,Omega)
