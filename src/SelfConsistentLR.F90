@@ -21,9 +21,12 @@ module SelfConsistentLR
         complex(dp), allocatable :: SE_Re(:,:,:),G_Mat_Re(:,:,:)
         complex(dp), allocatable :: Lattice_GF(:,:,:)
         real(dp), allocatable :: h_lat_fit(:,:),Couplings(:,:)
+        real(dp), allocatable :: AllDiffs(:,:)
+        complex(dp), allocatable :: DiffImpGF(:,:,:),G_Mat_Im_Old(:,:,:)
         real(dp) :: FinalDist
-        integer :: iter
-
+        integer :: i,iter
+        integer, parameter :: iMaxIter_Fit = 1000
+        real(dp), parameter :: dDeltaImpThresh = 1.0e-6_dp 
         character(len=*), parameter :: t_r='SC_FitLatticeGF_Im'
 
         !Set chemical potential (This will only be right for half-filling)
@@ -63,11 +66,19 @@ module SelfConsistentLR
         !Write out lattice greens function
         call writedynamicfunction(nESteps_Im,Lattice_GF,'G_Lat_Im',tag=0,tMatbrAxis=.true.)
 
+        allocate(G_Mat_Im_Old(nImp,nImp,nESteps_Im))
+        allocate(DiffImpGF(nImp,nImp,nESteps_Im))
+        G_Mat_Im(:,:,:) = zzero
+
+        allocate(AllDiffs(2,iMaxIter_Fit))
+        AllDiffs(:,:) = zero
+
         iter = 0
         do while(.true.)
             iter = iter + 1
             
             !High level calculation on matsubara axis, with no self-energy, and just the normal lattice hamiltonian
+            G_Mat_Im_Old(:,:,:) = G_Mat_Im(:,:,:)
             call SchmidtGF_wSE(G_Mat_Im,GFChemPot,SE_Im,nESteps_Im,tMatbrAxis=.true.,ham=h_lat_fit)
             call writedynamicfunction(nESteps_Im,G_Mat_Im,'G_Imp_Im',tag=iter,tMatbrAxis=.true.)
             call flush(6)
@@ -86,18 +97,45 @@ module SelfConsistentLR
             call writedynamicfunction(nESteps_Im,Lattice_GF,'G_Lat_Im',tag=iter,tMatbrAxis=.true.)
 
             !Calculate & write out stats (all of them)
+            if(iter.gt.iMaxIter_Fit) then
+                write(6,"(A,I9)") "Exiting. Max iters hit of: ",iMaxIter_Fit
+                exit
+            endif
+            AllDiffs(1,iter) = FinalDist
+            DiffImpGF(:,:,:) = G_Mat_Im_Old(:,:,:) - G_Mat_Im(:,:,:)
+            DiffImpGF(:,:,:) = DiffImpGF(:,:,:) * dconjg(DiffImpGF(:,:,:))
+            AllDiffs(2,iter) = sum(real(DiffImpGF(:,:,:),dp))
 
-            !What is my convergence criteria??
+            write(6,"(A)") ""
+            write(6,"(A,I7,A)") "***   COMPLETED MACROITERATION ",iter," ***"
+            write(6,"(A)") " Iter.     FitResidual     Delta_GF_Imp "
+            do i = 1,iter
+                write(6,"(I7,2G20.13)") i,AllDiffs(1,i),AllDiffs(2,i)
+            enddo
+            write(6,"(A)") ""
+            call flush(6)
 
+            if(AllDiffs(2,iter).lt.dDeltaImpThresh) then
+                write(6,"(A)") "Success! Convergence on imaginary axis successful"
+                write(6,"(A,G20.13)") "Impurity greens function changing on imaginary axis by less than: ",dDeltaImpThresh
+                exit
+            endif
         enddo
 
-        !Write out final fit parameters
+        !We should write these out to a file so that we can restart from them at a later date (possibly with more variables).
+        write(6,"(A)") "Final *impurity independent* lattice coupling parameters: "
+        do i = 1,iLatticeCoups
+            write(6,"(I6,G20.13)") i,Couplings(i,1)
+        enddo
+        write(6,"(A)") "" 
 
-        deallocate(G_Mat_Im,SE_Im,Lattice_GF)
+        deallocate(G_Mat_Im,SE_Im,Lattice_GF,G_Mat_Im_Old,DiffImpGF,AllDiffs)
         allocate(G_Mat_Re(nImp,nImp,nESteps_Re))
         allocate(SE_Re(nImp,nImp,nESteps_Re))
         allocate(Lattice_GF(nImp,nImp,nESteps_Re))
             
+        write(6,"(A)") "Now calculating spectral functions on the REAL axis"
+        call flush(6)
         !What does the final lattice greens function look like on the real axis?
         call FindLocalMomGF(nESteps_Re,SE_Re,Lattice_GF,tMatbrAxis=.false.,ham=h_lat_fit)
         !Write out lattice greens function
