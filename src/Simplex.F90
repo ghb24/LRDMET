@@ -128,7 +128,10 @@ INTEGER, PARAMETER :: lout = 6
 
 !     IF PROGRESS REPORTS HAVE BEEN REQUESTED, PRINT HEADING
 
-IF (iprint > 0) WRITE (lout,5000) iprint
+IF (iprint > 0) then
+    WRITE (lout,5000) iprint
+    call flush(lout)
+endif
 
 !     CHECK INPUT ARGUMENTS
 
@@ -170,6 +173,7 @@ DO i = 1, np1
   neval = neval + 1
   IF (iprint > 0) THEN
     WRITE (lout,5100) neval, h(i), p
+    call flush(lout)
   END IF
 END DO
 

@@ -108,7 +108,7 @@ module SelfConsistentLR
 
             write(6,"(A)") ""
             write(6,"(A,I7,A)") "***   COMPLETED MACROITERATION ",iter," ***"
-            write(6,"(A)") " Iter.     FitResidual     Delta_GF_Imp "
+            write(6,"(A)") "     Iter.  FitResidual        Delta_GF_Imp "
             do i = 1,iter
                 write(6,"(I7,2G20.13)") i,AllDiffs(1,i),AllDiffs(2,i)
             enddo
