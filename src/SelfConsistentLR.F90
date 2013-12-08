@@ -186,6 +186,8 @@ module SelfConsistentLR
         !Now, calculate the local lattice greens function
         allocate(Lattice_GF(nImp,nImp,nESteps))
         call FindLocalMomGF(nESteps,SE_Dummy,Lattice_GF,tMatbrAxis=tMatbrAxis,ham=h_lat_fit)
+        !write(6,*) "Imp GF: ",G_Imp(1,1,:)
+        !write(6,*) "Lattice GF: ",Lattice_GF(1,1,:)
 
         if(iLatticeFitType.eq.2) then
             !If required (i.e. we are fitting the inverses of the functions), invert the lattice greens function
@@ -204,6 +206,9 @@ module SelfConsistentLR
         i = 0
         do while(.true.)
             call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis)
+            if((Omega.lt.1.0e-9_dp).and.(iFitGFWeighting.ne.0)) then
+                call stop_all(t_r,'Should not be sampling w=0 with a non-flat weighting function')
+            endif
             if(i.lt.0) exit
             if(i.gt.nESteps) call stop_all(t_r,'Too many frequency points')
 
