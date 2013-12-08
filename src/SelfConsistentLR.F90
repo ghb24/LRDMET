@@ -2923,6 +2923,7 @@ module SelfConsistentLR
     subroutine FindLocalMomGF(n,SE,LocalMomGF,tMatbrAxis,ham)
         use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
         use sort_mod, only: Orthonorm_zgeev_vecs
+        use matrixops, only: mat_inv
         implicit none
         integer, intent(in) :: n
         complex(dp), intent(in) :: SE(nImp,nImp,n)
@@ -3026,37 +3027,41 @@ module SelfConsistentLR
                     endif
                 enddo
 
-                !Now, diagonalize this
-                !The self-energy is *not* hermitian
-                allocate(cWork(1))
-                lwork = -1
-                info = 0
-                call zgeev('V','V',SS_Period,InvMat,SS_Period,W_Vals,LVec,SS_Period,RVec,SS_Period,cWork,lWork,Work,info)
-                if(info.ne.0) call stop_all(t_r,'Workspace query failed')
-                lwork = int(abs(cWork(1)))+1
-                deallocate(cWork)
-                allocate(cWork(lWork))
-                call zgeev('V','V',SS_Period,InvMat,SS_Period,W_Vals,LVec,SS_Period,RVec,SS_Period,cWork,lWork,Work,info)
-                if(info.ne.0) call stop_all(t_r,'Diagonalization of 1-electron GF failed')
-                deallocate(cWork)
+!                !Now, diagonalize this
+!                !The self-energy is *not* hermitian
+!                allocate(cWork(1))
+!                lwork = -1
+!                info = 0
+!                call zgeev('V','V',SS_Period,InvMat,SS_Period,W_Vals,LVec,SS_Period,RVec,SS_Period,cWork,lWork,Work,info)
+!                if(info.ne.0) call stop_all(t_r,'Workspace query failed')
+!                lwork = int(abs(cWork(1)))+1
+!                deallocate(cWork)
+!                allocate(cWork(lWork))
+!                call zgeev('V','V',SS_Period,InvMat,SS_Period,W_Vals,LVec,SS_Period,RVec,SS_Period,cWork,lWork,Work,info)
+!                if(info.ne.0) call stop_all(t_r,'Diagonalization of 1-electron GF failed')
+!                deallocate(cWork)
+!
+!                !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
+!                !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
+!                call Order_zgeev_vecs(W_Vals,LVec,RVec)
+!                !call writevectorcomp(W_Vals,'Eigenvalues ordered')
+!                !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
+!                call Orthonorm_zgeev_vecs(SS_Period,W_Vals,LVec,RVec)
+!                !Calculate greens function for this k-vector
+!                InvMat(:,:) = zzero
+!                do j = 1,SS_Period
+!                    InvMat(j,j) = zone / W_Vals(j)
+!                enddo
+!                !Now rotate this back into the original basis
+!                call zGEMM('N','N',SS_Period,SS_Period,SS_Period,zone,RVec,SS_Period,InvMat,SS_Period,zzero,ztemp2,SS_Period)
+!                call zGEMM('N','C',SS_Period,SS_Period,SS_Period,zone,ztemp2,SS_Period,LVec,SS_Period,zzero,InvMat,SS_Period)
 
-                !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
-                !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
-                call Order_zgeev_vecs(W_Vals,LVec,RVec)
-                !call writevectorcomp(W_Vals,'Eigenvalues ordered')
-                !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
-                call Orthonorm_zgeev_vecs(SS_Period,W_Vals,LVec,RVec)
-                !Calculate greens function for this k-vector
-                InvMat(:,:) = zzero
-                do j = 1,SS_Period
-                    InvMat(j,j) = zone / W_Vals(j)
-                enddo
-                !Now rotate this back into the original basis
-                call zGEMM('N','N',SS_Period,SS_Period,SS_Period,zone,RVec,SS_Period,InvMat,SS_Period,zzero,ztemp2,SS_Period)
-                call zGEMM('N','C',SS_Period,SS_Period,SS_Period,zone,ztemp2,SS_Period,LVec,SS_Period,zzero,InvMat,SS_Period)
+                !Instead of explicit diagonalization, we can just invert
+                call mat_inv(InvMat,ztemp2)
+
                 !InvMat is now the non-interacting greens function for this k: TEST THIS!
                 !Sum this into the *local* greens function (i.e. a fourier transform of r=0 component)
-                LocalMomGF(:,:,i) = LocalMomGF(:,:,i) + InvMat(:,:)
+                LocalMomGF(:,:,i) = LocalMomGF(:,:,i) + ztemp2(:,:)
 
                 !write(6,*) "For frequency: ",Omega
                 !call writematrixcomp(InvMat,'k-space greens function is: ',.false.)
