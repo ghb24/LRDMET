@@ -212,7 +212,10 @@ Main_loop: DO
   CALL functn(pstar,hstar,n_dum,nop,g_dum,tmataxis_dum)
   neval = neval + 1
   IF (iprint > 0) THEN
-    IF (MOD(neval,iprint) == 0) WRITE (lout,5100) neval, hstar, pstar
+    IF (MOD(neval,iprint) == 0) then
+        WRITE (lout,5100) neval, hstar, pstar
+        call flush(lout)
+    endif
   END IF
 
 !     IF HSTAR < HMIN, REFLECT PBAR THROUGH PSTAR,
@@ -223,7 +226,10 @@ Main_loop: DO
     CALL functn(pstst,hstst, n_dum,nop,g_dum,tMataxis_dum)
     neval = neval + 1
     IF (iprint > 0) THEN
-      IF (MOD(neval,iprint) == 0) WRITE (lout,5100) neval, hstst, pstst
+      IF (MOD(neval,iprint) == 0) then
+          WRITE (lout,5100) neval, hstst, pstst
+          call flush(lout)
+      endif
     END IF
 
 !     IF HSTST < HMIN REPLACE CURRENT MAXIMUM POINT BY PSTST AND
@@ -269,7 +275,10 @@ Main_loop: DO
   CALL functn(pstst,hstst, n_dum,nop,g_dum,tMataxis_dum)
   neval = neval + 1
   IF (iprint > 0) THEN
-    IF (MOD(neval,iprint) == 0) WRITE (lout,5100) neval, hstst, pstst
+    IF (MOD(neval,iprint) == 0) then
+        WRITE (lout,5100) neval, hstst, pstst
+        call flush(lout)
+    endif
   END IF
 
 !     IF HSTST < HMAX REPLACE P(IMAX) BY PSTST & HMAX BY HSTST.
@@ -294,7 +303,10 @@ Main_loop: DO
       CALL functn(p,h(i), n_dum,nop,g_dum,tMataxis_dum)
       neval = neval + 1
       IF (iprint > 0) THEN
-        IF (MOD(neval,iprint) == 0) WRITE (lout,5100) neval, h(i), p
+        IF (MOD(neval,iprint) == 0) then
+            WRITE (lout,5100) neval, h(i), p
+            call flush(lout)
+        endif
       END IF
     END IF
   END DO
@@ -329,7 +341,10 @@ Main_loop: DO
   CALL functn(p,func, n_dum,nop,g_dum,tMataxis_dum)
   neval = neval + 1
   IF (iprint > 0) THEN
-    IF (MOD(neval,iprint) == 0) WRITE (lout,5100) neval, func, p
+    IF (MOD(neval,iprint) == 0) then
+        WRITE (lout,5100) neval, func, p
+        call flush(lout)
+    endif
   END IF
 
 !     TEST WHETHER THE NO. OF FUNCTION VALUES ALLOWED, maxfn, HAS BEEN
@@ -342,6 +357,7 @@ Main_loop: DO
     WRITE (lout,5300) hstd
     WRITE (lout,5400) p
     WRITE (lout,5500) func
+    call flush(lout)
     RETURN
   END IF
 
@@ -353,6 +369,7 @@ Main_loop: DO
     WRITE (lout,5600)
     WRITE (lout,5400) p
     WRITE (lout,5500) func
+    call flush(lout)
   END IF
 
   IF (iflag == 0 .OR. ABS(savemn-hmean) >= stopcr) THEN
@@ -369,6 +386,7 @@ IF (iprint >= 0) THEN
   WRITE (lout,5700) neval
   WRITE (lout,5800) p
   WRITE (lout,5900) func
+  call flush(lout)
 END IF
 IF (iquad <= 0) RETURN
 
@@ -500,6 +518,7 @@ pmin = pmin - pstst
 IF (iprint >= 0) THEN
   WRITE (lout,6300) ymin, pmin
   WRITE (lout,6400)
+  call flush(lout)
 END IF
 
 !     Q*BMAT*Q'/2 IS CALCULATED & ITS LOWER TRIANGLE STORED IN VC

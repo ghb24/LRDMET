@@ -16,11 +16,13 @@ module SelfConsistentLR
     subroutine SC_FitLatticeGF_Im()
         implicit none
         real(dp) :: GFChemPot,Omega
-        integer :: nESteps_Im,OmegaVal
-
+        integer :: nESteps_Im,nESteps_Re,OmegaVal
         complex(dp), allocatable :: SE_Im(:,:,:),G_Mat_Im(:,:,:)
+        complex(dp), allocatable :: SE_Re(:,:,:),G_Mat_Re(:,:,:)
+        complex(dp), allocatable :: Lattice_GF(:,:,:)
         real(dp), allocatable :: h_lat_fit(:,:),Couplings(:,:)
         real(dp) :: FinalDist
+        integer :: iter
 
         character(len=*), parameter :: t_r='SC_FitLatticeGF_Im'
 
@@ -29,12 +31,18 @@ module SelfConsistentLR
 
         !How many frequency points are there exactly?
         nESteps_Im = 0
+        nESteps_Re = 0
         OmegaVal = 0
         do while(.true.)
             call GetNextOmega(Omega,OmegaVal,tMatbrAxis=.true.)
-            !write(6,*) "Counting: ",OmegaVal,Omega
             if(OmegaVal.lt.0) exit
             nESteps_Im = nESteps_Im + 1
+        enddo
+        OmegaVal = 0
+        do while(.true.)
+            call GetNextOmega(Omega,OmegaVal,tMatbrAxis=.false.)
+            if(OmegaVal.lt.0) exit
+            nESteps_Re = nESteps_Re + 1
         enddo
 
         !Initially, just see if we can fit the two different Matsubara spectral functions
@@ -49,22 +57,58 @@ module SelfConsistentLR
         Couplings(1,:) = -1.0_dp    !This is the normal nearest neighbour coupling in the hubbard model. We will start from this
 
         allocate(G_Mat_Im(nImp,nImp,nESteps_Im))
+        allocate(Lattice_GF(nImp,nImp,nESteps_Im))
+        !Write out the initial lattice greens function
+        call FindLocalMomGF(nESteps_Im,SE_Im,Lattice_GF,tMatbrAxis=.true.,ham=h_lat_fit)
+        !Write out lattice greens function
+        call writedynamicfunction(nESteps_Im,Lattice_GF,'G_Lat_Im',tag=0,tMatbrAxis=.true.)
+
+        iter = 0
+        do while(.true.)
+            iter = iter + 1
             
-        !High level calculation on matsubara axis, with no self-energy, and just the normal lattice hamiltonian
-        call SchmidtGF_wSE(G_Mat_Im,GFChemPot,SE_Im,nESteps_Im,tMatbrAxis=.true.,ham=h0v)
-        call writedynamicfunction(nESteps_Im,G_Mat_Im,'G_Imp_Im',tMatbrAxis=.true.)
+            !High level calculation on matsubara axis, with no self-energy, and just the normal lattice hamiltonian
+            call SchmidtGF_wSE(G_Mat_Im,GFChemPot,SE_Im,nESteps_Im,tMatbrAxis=.true.,ham=h_lat_fit)
+            call writedynamicfunction(nESteps_Im,G_Mat_Im,'G_Imp_Im',tag=iter,tMatbrAxis=.true.)
+            call flush(6)
 
-        if(iLatticeFitType.eq.2) then
-            !Invert the high-level greens function, since we are fitting the residual of the inverses
-            call InvertLocalNonHermGF(nESteps_Im,G_Mat_Im)
-        endif
-        call FitLatticeCouplings(G_Mat_Im,nESteps_Im,Couplings,iLatticeCoups,FinalDist,.true.)
+            if(iLatticeFitType.eq.2) then
+                !Invert the high-level greens function, since we are fitting the residual of the inverses
+                call InvertLocalNonHermGF(nESteps_Im,G_Mat_Im)
+            endif
+            call FitLatticeCouplings(G_Mat_Im,nESteps_Im,Couplings,iLatticeCoups,FinalDist,.true.)
 
-!        !Add the extended, periodized, non-local couplings to the rest of the lattice
-!        call AddPeriodicImpCoupling_RealSpace(h_lat_fit,nSites,iNumCoups,nImp,Couplings)
+            !Add the new lattice couplings to the lattice hamiltonian
+            call AddPeriodicImpCoupling_RealSpace(h_lat_fit,nSites,iLatticeCoups,nImp,Couplings)
+            !Now, calculate the local lattice greens function
+            call FindLocalMomGF(nESteps_Im,SE_Im,Lattice_GF,tMatbrAxis=.true.,ham=h_lat_fit)
+            !Write out lattice greens function
+            call writedynamicfunction(nESteps_Im,Lattice_GF,'G_Lat_Im',tag=iter,tMatbrAxis=.true.)
 
-        deallocate(h_lat_fit,Couplings,SE_Im,G_Mat_Im)
-        call stop_all(t_r,'end')
+            !Calculate & write out stats (all of them)
+
+            !What is my convergence criteria??
+
+        enddo
+
+        !Write out final fit parameters
+
+        deallocate(G_Mat_Im,SE_Im,Lattice_GF)
+        allocate(G_Mat_Re(nImp,nImp,nESteps_Re))
+        allocate(SE_Re(nImp,nImp,nESteps_Re))
+        allocate(Lattice_GF(nImp,nImp,nESteps_Re))
+            
+        !What does the final lattice greens function look like on the real axis?
+        call FindLocalMomGF(nESteps_Re,SE_Re,Lattice_GF,tMatbrAxis=.false.,ham=h_lat_fit)
+        !Write out lattice greens function
+        !Is it the same as the impurity greens function on the real axis. This would be nice.
+        call writedynamicfunction(nESteps_Re,Lattice_GF,'G_Lat_Re_Final',tMatbrAxis=.false.)
+
+        !Finally, calculate the greens function in real-frequency space.
+        call SchmidtGF_wSE(G_Mat_Re,GFChemPot,SE_Re,nESteps_Re,tMatbrAxis=.false.,ham=h_lat_fit)
+        call writedynamicfunction(nESteps_Re,G_Mat_Re,'G_Imp_Re_Final',tMatbrAxis=.false.)
+
+        deallocate(h_lat_fit,Couplings,SE_Re,G_Mat_Re,Lattice_GF)
 
     end subroutine SC_FitLatticeGF_Im
 
