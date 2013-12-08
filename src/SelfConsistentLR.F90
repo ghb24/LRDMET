@@ -10,6 +10,64 @@ module SelfConsistentLR
     implicit none
 
     contains
+    
+    !Self-consistently fit a frequency *independent* lattice coupling to the impurity in order to
+    !match the matsubara greens functions
+    subroutine SC_FitLatticeGF_Im()
+        implicit none
+        real(dp) :: GFChemPot,Omega
+        integer :: nESteps_Im,OmegaVal
+
+        complex(dp), allocatable :: SE_Im(:,:,:),G_Mat_Im(:,:,:)
+        real(dp), allocatable :: h_lat_fit(:,:),Couplings(:,:)
+        real(dp) :: FinalDist
+
+        character(len=*), parameter :: t_r='SC_FitLatticeGF_Im'
+
+        !Set chemical potential (This will only be right for half-filling)
+        GFChemPot = U/2.0_dp
+
+        !How many frequency points are there exactly?
+        nESteps_Im = 0
+        OmegaVal = 0
+        do while(.true.)
+            call GetNextOmega(Omega,OmegaVal,tMatbrAxis=.true.)
+            !write(6,*) "Counting: ",OmegaVal,Omega
+            if(OmegaVal.lt.0) exit
+            nESteps_Im = nESteps_Im + 1
+        enddo
+
+        !Initially, just see if we can fit the two different Matsubara spectral functions
+        write(6,*) "Number of Matsubara frequency points: ",nESteps_Im
+
+        allocate(SE_Im(nImp,nImp,nESteps_Im))
+        SE_Im(:,:,:) = zzero
+        allocate(h_lat_fit(nSites,nSites))
+        h_lat_fit(:,:) = h0v(:,:)
+        allocate(Couplings(iLatticeCoups,nImp))
+        Couplings(:,:) = zero
+        Couplings(1,:) = -1.0_dp    !This is the normal nearest neighbour coupling in the hubbard model. We will start from this
+
+        allocate(G_Mat_Im(nImp,nImp,nESteps_Im))
+            
+        !High level calculation on matsubara axis, with no self-energy, and just the normal lattice hamiltonian
+        call SchmidtGF_wSE(G_Mat_Im,GFChemPot,SE_Im,nESteps_Im,tMatbrAxis=.true.,ham=h0v)
+        call writedynamicfunction(nESteps_Im,G_Mat_Im,'G_Imp_Im',tMatbrAxis=.true.)
+
+        if(iLatticeFitType.eq.2) then
+            !Invert the high-level greens function, since we are fitting the residual of the inverses
+            call InvertLocalNonHermGF(nESteps_Im,G_Mat_Im)
+        endif
+        call FitLatticeCouplings(G_Mat_Im,nESteps_Im,Couplings,iLatticeCoups,FinalDist,.true.)
+
+!        !Add the extended, periodized, non-local couplings to the rest of the lattice
+!        call AddPeriodicImpCoupling_RealSpace(h_lat_fit,nSites,iNumCoups,nImp,Couplings)
+
+        deallocate(h_lat_fit,Couplings,SE_Im,G_Mat_Im)
+        call stop_all(t_r,'end')
+
+    end subroutine SC_FitLatticeGF_Im
+
 
     !Return the residual (dist) for a set of lattice couplings to the impurity, maintaining translational symmetry, to the 
     !impurity greens function. This can come with different weighting factors.
@@ -87,63 +145,6 @@ module SelfConsistentLR
         deallocate(h_lat_fit,SE_Dummy,DiffMat,Lattice_GF)
 
     end subroutine CalcLatticeFitResidual
-
-    !Self-consistently fit a frequency *independent* lattice coupling to the impurity in order to
-    !match the matsubara greens functions
-    subroutine SC_FitLatticeGF_Im()
-        implicit none
-        real(dp) :: GFChemPot,Omega
-        integer :: nESteps_Im,OmegaVal
-
-        complex(dp), allocatable :: SE_Im(:,:,:),G_Mat_Im(:,:,:)
-        real(dp), allocatable :: h_lat_fit(:,:),Couplings(:,:)
-        real(dp) :: FinalDist
-
-        character(len=*), parameter :: t_r='SC_FitLatticeGF_Im'
-
-        !Set chemical potential (This will only be right for half-filling)
-        GFChemPot = U/2.0_dp
-
-        !How many frequency points are there exactly?
-        nESteps_Im = 0
-        OmegaVal = 0
-        do while(.true.)
-            call GetNextOmega(Omega,OmegaVal,tMatbrAxis=.true.)
-            !write(6,*) "Counting: ",OmegaVal,Omega
-            if(OmegaVal.lt.0) exit
-            nESteps_Im = nESteps_Im + 1
-        enddo
-
-        !Initially, just see if we can fit the two different Matsubara spectral functions
-        write(6,*) "Number of Matsubara frequency points: ",nESteps_Im
-
-        allocate(SE_Im(nImp,nImp,nESteps_Im))
-        SE_Im(:,:,:) = zzero
-        allocate(h_lat_fit(nSites,nSites))
-        h_lat_fit(:,:) = h0v(:,:)
-        allocate(Couplings(iLatticeCoups,nImp))
-        Couplings(:,:) = zero
-        Couplings(1,:) = -1.0_dp    !This is the normal nearest neighbour coupling in the hubbard model. We will start from this
-
-        allocate(G_Mat_Im(nImp,nImp,nESteps_Im))
-            
-        !High level calculation on matsubara axis, with no self-energy, and just the normal lattice hamiltonian
-        call SchmidtGF_wSE(G_Mat_Im,GFChemPot,SE_Im,nESteps_Im,tMatbrAxis=.true.,ham=h0v)
-        call writedynamicfunction(nESteps_Im,G_Mat_Im,'G_Imp_Im',tMatbrAxis=.true.)
-
-        if(iLatticeFitType.eq.2) then
-            !Invert the high-level greens function, since we are fitting the residual of the inverses
-            call InvertLocalNonHermGF(nESteps_Im,G_Mat_Im)
-        endif
-        call FitLatticeCouplings(G_Mat_Im,nESteps_Im,Couplings,iLatticeCoups,FinalDist,.true.)
-
-!        !Add the extended, periodized, non-local couplings to the rest of the lattice
-!        call AddPeriodicImpCoupling_RealSpace(h_lat_fit,nSites,iNumCoups,nImp,Couplings)
-
-        deallocate(h_lat_fit,Couplings,SE_Im,G_Mat_Im)
-        call stop_all(t_r,'end')
-
-    end subroutine SC_FitLatticeGF_Im
 
     !Use a minimization routine to fit the greens functions by adjusting the lattice coupling
     subroutine FitLatticeCouplings(G_Imp,n,Couplings,iNumCoups,FinalErr,tMatbrAxis)
