@@ -8,7 +8,7 @@ PUBLIC :: minim
 CONTAINS
 
 SUBROUTINE minim(p, step, nop, func, maxfn, iprint, stopcr, nloop, iquad,  &
-                 simp, var, functn, ifault)
+                 simp, var, functn, ifault, n_dum, g_dum, tMataxis_dum)
 
 !     A PROGRAM FOR FUNCTION MINIMIZATION USING THE SIMPLEX METHOD.
 
@@ -86,12 +86,21 @@ REAL (dp), INTENT(IN)      :: stopcr, simp
 REAL (dp), INTENT(IN OUT)  :: p(:), step(:)
 REAL (dp), INTENT(OUT)     :: var(:), func
 
+!Additional information passed in, just to get to the function evaluator
+integer, intent(in) :: n_dum
+complex(dp), intent(in) :: g_dum(:,:,:)
+logical, intent(in) :: tMataxis_dum
+
 INTERFACE
-  SUBROUTINE functn(p, func)
+  SUBROUTINE functn(p, func, n_dum, nop, g_dum, tMataxis_dum)
+    use const, only: dp
     IMPLICIT NONE
-    INTEGER, PARAMETER     :: dp = SELECTED_REAL_KIND(12, 60)
-    REAL (dp), INTENT(IN)  :: p(:)
+!    INTEGER, PARAMETER     :: dp = SELECTED_REAL_KIND(12, 60)
+    integer, intent(in) :: n_dum,nop
+    REAL (dp), INTENT(IN)  :: p(nop)
     REAL (dp), INTENT(OUT) :: func
+    complex(dp), intent(in) :: g_dum(:,:,:)
+    logical, intent(in) :: tMataxis_dum
   END SUBROUTINE functn
 END INTERFACE
 
@@ -136,7 +145,7 @@ iflag = 0
 !     IF NAP = 0 EVALUATE FUNCTION AT THE STARTING POINT AND RETURN
 
 IF (nap <= 0) THEN
-  CALL functn(p,func)
+  CALL functn(p,func, n_dum, nop, g_dum, tMataxis_dum)
   RETURN
 END IF
 
@@ -155,7 +164,7 @@ END DO
 np1 = nap + 1
 DO i = 1, np1
   p = g(i,:)
-  CALL functn(p,h(i))
+  CALL functn(p,h(i), n_dum,nop,g_dum,tMataxis_dum)
   neval = neval + 1
   IF (iprint > 0) THEN
     WRITE (lout,5100) neval, h(i), p
@@ -198,7 +207,7 @@ Main_loop: DO
 !     HSTAR = FUNCTION VALUE AT PSTAR.
 
   pstar = a * (pbar - g(imax,:)) + pbar
-  CALL functn(pstar,hstar)
+  CALL functn(pstar,hstar,n_dum,nop,g_dum,tmataxis_dum)
   neval = neval + 1
   IF (iprint > 0) THEN
     IF (MOD(neval,iprint) == 0) WRITE (lout,5100) neval, hstar, pstar
@@ -209,7 +218,7 @@ Main_loop: DO
 
   IF (hstar < hmin) THEN
     pstst = c * (pstar - pbar) + pbar
-    CALL functn(pstst,hstst)
+    CALL functn(pstst,hstst, n_dum,nop,g_dum,tMataxis_dum)
     neval = neval + 1
     IF (iprint > 0) THEN
       IF (MOD(neval,iprint) == 0) WRITE (lout,5100) neval, hstst, pstst
@@ -255,7 +264,7 @@ Main_loop: DO
 !     HSTST = FUNCTION VALUE AT PSTST.
 
   pstst = b * g(imax,:) + (one-b) * pbar
-  CALL functn(pstst,hstst)
+  CALL functn(pstst,hstst, n_dum,nop,g_dum,tMataxis_dum)
   neval = neval + 1
   IF (iprint > 0) THEN
     IF (MOD(neval,iprint) == 0) WRITE (lout,5100) neval, hstst, pstst
@@ -280,7 +289,7 @@ Main_loop: DO
         IF (step(j) /= zero) g(i,j) = (g(i,j) + g(imin,j)) * half
         p(j) = g(i,j)
       END DO
-      CALL functn(p,h(i))
+      CALL functn(p,h(i), n_dum,nop,g_dum,tMataxis_dum)
       neval = neval + 1
       IF (iprint > 0) THEN
         IF (MOD(neval,iprint) == 0) WRITE (lout,5100) neval, h(i), p
@@ -315,7 +324,7 @@ Main_loop: DO
       p(i) = SUM( g(1:np1,i) ) / np1
     END IF
   END DO
-  CALL functn(p,func)
+  CALL functn(p,func, n_dum,nop,g_dum,tMataxis_dum)
   neval = neval + 1
   IF (iprint > 0) THEN
     IF (MOD(neval,iprint) == 0) WRITE (lout,5100) neval, func, p
@@ -380,7 +389,7 @@ DO i = 1, np1
         IF (step(j) /= zero) g(i,j) = (g(i,j)-p(j)) + g(i,j)
         pstst(j) = g(i,j)
       END DO
-      CALL functn(pstst,h(i))
+      CALL functn(pstst,h(i), n_dum,nop,g_dum,tMataxis_dum)
       nmore = nmore + 1
       neval = neval + 1
       IF (h(i) >= hmin) CYCLE
@@ -397,7 +406,7 @@ END DO
 DO i = 1, nap
   i1 = i + 1
   pstar = (g(1,:) + g(i1,:)) * half
-  CALL functn(pstar,aval(i))
+  CALL functn(pstar,aval(i), n_dum, nop,g_dum,tMataxis_dum)
   nmore = nmore + 1
   neval = neval + 1
 END DO
@@ -412,7 +421,7 @@ DO i = 1, nap
   DO j = 1, i1
     j1 = j + 1
     pstst = (g(i2,:) + g(j1,:)) * half
-    CALL functn(pstst,hstst)
+    CALL functn(pstst,hstst, n_dum,nop,g_dum,tMataxis_dum)
     nmore = nmore + 1
     neval = neval + 1
     l = i * (i-1) / 2 + j

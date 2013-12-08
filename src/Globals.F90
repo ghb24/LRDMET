@@ -208,6 +208,7 @@ module Globals
     integer :: TDLat_Ni,TDLat_Nj
     integer :: iLatticeFitType  !When fitting lattice coupling, this defines whether to match the greens functions, or inverse greens functions
     integer :: iFitGFWeighting  !When fitting lattice couplings, this defines whether to weight the residual (0=flat,1=1/w,2=1/w^2)
+    integer :: iLatticeCoups    !The number of lattice couplings to the impurity site
 
     !Debugging for Self-consistency
     logical :: tSE_Scan

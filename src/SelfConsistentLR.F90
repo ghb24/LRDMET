@@ -85,17 +85,174 @@ module SelfConsistentLR
         enddo
 
         deallocate(h_lat_fit,SE_Dummy,DiffMat,Lattice_GF)
+
     end subroutine CalcLatticeFitResidual
 
     !Self-consistently fit a frequency *independent* lattice coupling to the impurity in order to
     !match the matsubara greens functions
     subroutine SC_FitLatticeGF_Im()
         implicit none
+        real(dp) :: GFChemPot,Omega
+        integer :: nESteps_Im,OmegaVal
+
+        complex(dp), allocatable :: SE_Im(:,:,:),G_Mat_Im(:,:,:)
+        real(dp), allocatable :: h_lat_fit(:,:),Couplings(:,:)
+        real(dp) :: FinalDist
+
         character(len=*), parameter :: t_r='SC_FitLatticeGF_Im'
 
+        !Set chemical potential (This will only be right for half-filling)
+        GFChemPot = U/2.0_dp
+
+        !How many frequency points are there exactly?
+        nESteps_Im = 0
+        OmegaVal = 0
+        do while(.true.)
+            call GetNextOmega(Omega,OmegaVal,tMatbrAxis=.true.)
+            !write(6,*) "Counting: ",OmegaVal,Omega
+            if(OmegaVal.lt.0) exit
+            nESteps_Im = nESteps_Im + 1
+        enddo
+
+        !Initially, just see if we can fit the two different Matsubara spectral functions
+        write(6,*) "Number of Matsubara frequency points: ",nESteps_Im
+
+        allocate(SE_Im(nImp,nImp,nESteps_Im))
+        SE_Im(:,:,:) = zzero
+        allocate(h_lat_fit(nSites,nSites))
+        h_lat_fit(:,:) = h0v(:,:)
+        allocate(Couplings(iLatticeCoups,nImp))
+        Couplings(:,:) = zero
+        Couplings(1,:) = -1.0_dp    !This is the normal nearest neighbour coupling in the hubbard model. We will start from this
+
+        allocate(G_Mat_Im(nImp,nImp,nESteps_Im))
+            
+        !High level calculation on matsubara axis, with no self-energy, and just the normal lattice hamiltonian
+        call SchmidtGF_wSE(G_Mat_Im,GFChemPot,SE_Im,nESteps_Im,tMatbrAxis=.true.,ham=h0v)
+        call writedynamicfunction(nESteps_Im,G_Mat_Im,'G_Imp_Im',tMatbrAxis=.true.)
+
+        if(iLatticeFitType.eq.2) then
+            !Invert the high-level greens function, since we are fitting the residual of the inverses
+            call InvertLocalNonHermGF(nESteps_Im,G_Mat_Im)
+        endif
+        call FitLatticeCouplings(G_Mat_Im,nESteps_Im,Couplings,iLatticeCoups,FinalDist,.true.)
+
+!        !Add the extended, periodized, non-local couplings to the rest of the lattice
+!        call AddPeriodicImpCoupling_RealSpace(h_lat_fit,nSites,iNumCoups,nImp,Couplings)
+
+        deallocate(h_lat_fit,Couplings,SE_Im,G_Mat_Im)
         call stop_all(t_r,'end')
 
     end subroutine SC_FitLatticeGF_Im
+
+    !Use a minimization routine to fit the greens functions by adjusting the lattice coupling
+    subroutine FitLatticeCouplings(G_Imp,n,Couplings,iNumCoups,FinalErr,tMatbrAxis)
+        use Nelder_Mead
+        implicit none
+        integer, intent(in) :: n    !Number of frequency points
+        integer, intent(in) :: iNumCoups    !Number of independent coupling parameters
+        complex(dp), intent(in) :: G_Imp(nImp,nImp,n)   !This may be the inverse
+        real(dp), intent(inout) :: Couplings(iNumCoups,nImp)    !The lattice couplings
+        real(dp), intent(out) :: FinalErr
+        logical, intent(in) :: tMatbrAxis
+        logical, parameter :: tSimplex=.true.
+
+        real(dp), allocatable :: step(:),vars(:),var(:)
+        integer :: nop,i,maxf,iprint,nloop,iquad,ierr
+        real(dp) :: stopcr,simp
+        logical :: tfirst
+        character(len=*), parameter :: t_r='FitLatticeCouplings'
+
+        !Initially, just use the Simplex module, although we should try
+        !the modified Powell algorithm later too, which is likely to be much faster
+
+        if(tSimplex) then
+
+            !Starting values are assumed to be read in
+            allocate(step(iNumCoups))
+            allocate(vars(iNumCoups))
+            allocate(var(iNumCoups))
+            step(:) = 0.1_dp
+            nop = iNumCoups
+            do i = 1,iNumCoups
+                vars(i) = Couplings(i,1)
+            enddo
+
+            !Set max no of function evaluations = 200, print every 25
+            maxf = 20*iNumCoups
+            iprint = 25
+
+            !Set value for stopping criterion. Stopping occurs when the 
+            !standard deviation of the values of the objective function at
+            !the points of the current simplex < stopcr
+            stopcr = 1.0e-4_dp
+            nloop = 2*iNumCoups !This is how often the stopping criterion is checked
+
+            !Fit a quadratic surface to be sure a minimum has been found
+            iquad = 1
+
+            !As function value is being evaluated in real(dp), it should
+            !be accurate to about 15 dp. If we set simp = 1.d-6, we should
+            !get about 9dp accuracy in fitting the surface
+            simp = 1.0e-6_dp
+
+            !Now call minim to do the work
+            tfirst = .true.
+            do while(.true.)
+                call minim(vars, step, iNumCoups, FinalErr, maxf, iprint, stopcr, nloop, &
+                    iquad, simp, var, MinCoups, ierr, n, G_Imp, tMatbrAxis)
+
+                if(ierr.eq.0) exit
+                if(.not.tFirst) exit
+                tFirst = .false.    !We have found a minimum, but run again with a small number of iterations to check it is stable
+                maxf = 3*iNumCoups
+            enddo
+
+            !On output, Err is the minimized objective function, var contains the diagonal of the inverse of the information matrix, whatever that is
+            if(ierr.eq.0) then
+                write(6,"(A)") "Simplex optimization successful."
+                write(6,"(A,F14.7)") "Minimized residual: ",FinalErr
+            elseif(ierr.eq.4) then
+                call stop_all(t_r,'nloop < 1')
+            elseif(ierr.eq.3) then
+                call stop_all(t_r,'iNumCoups < 1')
+            elseif(ierr.eq.2) then
+                call stop_all(t_r,'Information matrix is not +ve semi-definite')
+            elseif(ierr.eq.1) then
+                call stop_all(t_r,'Max number of Simplex function evaluations reached. Increase iteration number.')
+            endif
+
+            !Update couplings
+            do i = 1,nImp
+                Couplings(:,i) = vars(:)
+            enddo
+
+            deallocate(step,vars,var)
+        endif
+
+    end subroutine FitLatticeCouplings
+
+    !Wrapper function to evaluate residual for the simplex algorithm
+    subroutine MinCoups(vars,dist,n,iNumCoups,G,tMatbrAxis)
+        implicit none
+        integer, intent(in) :: n,iNumCoups
+        real(dp), intent(in) :: vars(iNumCoups)
+        real(dp), intent(out) :: dist
+        complex(dp), intent(in) :: G(nImp,nImp,n)
+        logical, intent(in) :: tMatbrAxis
+
+        real(dp), allocatable :: CoupsTemp(:,:)
+        integer :: i
+
+        allocate(CoupsTemp(iNumCoups,nImp))
+        do i = 1,nImp
+            CoupsTemp(:,i) = vars(:)
+        enddo
+
+        call CalcLatticeFitResidual(G,n,CoupsTemp,iNumCoups,dist,tMatbrAxis)
+
+        deallocate(CoupsTemp)
+    end subroutine MinCoups
 
     !Attempt for self-consistency on the matsubara axis via simple application of dysons equation
     subroutine SC_Imaginary_Dyson()

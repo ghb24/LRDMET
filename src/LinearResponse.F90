@@ -12,7 +12,7 @@ module LinearResponse
     
     !Calculate linear response for charged excitations - add the hole creation to particle creation
     !This is a tester routine to calculate the whole GF matrix, and include an optional self-energy in the bath construction
-    subroutine SchmidtGF_wSE(G_Mat,GFChemPot,SE,nESteps,tMatbrAxis)
+    subroutine SchmidtGF_wSE(G_Mat,GFChemPot,SE,nESteps,tMatbrAxis,ham)
         use mat_tools, only: add_localpot_comp_inplace
         use utils, only: get_free_unit,append_ext_real,append_ext
         use DetBitOps, only: DecodeBitDet,SQOperator,CountBits
@@ -27,7 +27,8 @@ module LinearResponse
         real(dp), intent(in) :: GFChemPot
         complex(dp), intent(out) :: G_Mat(nImp,nImp,nESteps)
         logical, intent(in), optional :: tMatbrAxis
-        logical :: tMatbrAxis_
+        real(dp), intent(in), optional :: ham(nSites,nSites)
+        logical :: tMatbrAxis_,tLatHamProvided_
         complex(dp), allocatable :: NFCIHam(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
         real(dp), allocatable :: dNorm_p(:),dNorm_h(:),W(:)
         complex(dp), allocatable , target :: LinearSystem_p(:,:),LinearSystem_h(:,:)
@@ -57,6 +58,12 @@ module LinearResponse
         else
             !If not specified, calculate greens functions on the real axis
             tMatbrAxis_ = .false.
+        endif
+        if(present(ham)) then
+            !Optional argument to provide your own lattice hamiltonian
+            tLatHamProvided_ = .true.
+        else
+            tLatHamProvided_ = .false.
         endif
 
         maxminres_iter = iMinRes_MaxIter
@@ -110,6 +117,9 @@ module LinearResponse
             if(nImp.gt.1) call stop_all(t_r,'Still some (conceptial) problems with reoptimizing ground state with > 1 impurity.')
             write(6,"(A)") "Reoptimizing the ground state for each frequency. " &
      &          //"This will make all calculations more expensive (and not necessarily better?)"
+        endif
+        if(tLatHamProvided_) then
+            write(6,"(A)") "Non-standard Lattice hamiltonian to be used for calculation of greens function"
         endif
 
         !umat and tmat for the active space
