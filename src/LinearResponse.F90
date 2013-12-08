@@ -120,6 +120,8 @@ module LinearResponse
         endif
         if(tLatHamProvided_) then
             write(6,"(A)") "Non-standard Lattice hamiltonian to be used for calculation of greens function"
+            write(6,"(A)") "Currently, this will only be for defining the bath space, " &
+                //"rather than contributing to the one-electron hamiltonian in the bath"
         endif
 
         !umat and tmat for the active space
@@ -389,7 +391,12 @@ module LinearResponse
             !Potentially create the desired h0v_se and emb_h0v_se here, if you want to include the self-energy.
             !Otherwise, just fill with h0v and emb_h0v
             SelfE(:,:) = SE(:,:,OmegaVal)
-            call FindNI_Charged_wSE(Omega,GFChemPot,NI_LRMat_Cre,NI_LRMat_Ann,SelfE,tMatbrAxis_)
+            if(tLatHamProvided_) then
+                !Here, we want to create the dynamic bath space from the passed in lattice hamiltonian, rather than the ground state one
+                call FindNI_Charged_wSE(Omega,GFChemPot,NI_LRMat_Cre,NI_LRMat_Ann,SelfE,tMatbrAxis_,ham)
+            else
+                call FindNI_Charged_wSE(Omega,GFChemPot,NI_LRMat_Cre,NI_LRMat_Ann,SelfE,tMatbrAxis_)
+            endif
 
             !If we have a self-consistent self-energy contribution, we also need to update
             !the hamiltonians which have been stored.
@@ -8602,7 +8609,7 @@ module LinearResponse
     !The NI_LRMat_Cre and NI_LRMat_Ann matrices are returned as the non-interacting LR
     !The global matrices SchmidtPertGF_Cre and SchmidtPertGF_Ann are filled, as well as the
     !new one-electron hamiltonians for the interacting problem: Emb_h0v_SE and FockSchmidt_SE
-    subroutine FindNI_Charged_wSE(Omega,GFChemPot,NI_LRMat_Cre,NI_LRMat_Ann,SE,tMatbrAxis)
+    subroutine FindNI_Charged_wSE(Omega,GFChemPot,NI_LRMat_Cre,NI_LRMat_Ann,SE,tMatbrAxis,ham)
         use mat_tools, only: add_localpot_comp_inplace
         use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
         use sort_mod, only: Orthonorm_zgeev_vecs
@@ -8611,6 +8618,7 @@ module LinearResponse
         complex(dp), intent(out) :: NI_LRMat_Cre(nImp,nImp),NI_LRMat_Ann(nImp,nImp)
         complex(dp), intent(in) :: SE(nImp,nImp)
         logical, intent(in) :: tMatbrAxis
+        real(dp), intent(in), optional :: ham(nSites,nSites)
         real(dp), allocatable :: Work(:)
         complex(dp), allocatable :: LVec_R(:,:),RVec_R(:,:),EVals_R(:),k_Ham(:,:),ztemp(:,:),CompHam(:,:)
         complex(dp), allocatable :: AO_OneE_Ham(:,:),W_Vals(:),RVec(:,:),LVec(:,:),FullSchmidtTrans_C(:,:)
@@ -8647,11 +8655,20 @@ module LinearResponse
             allocate(ztemp(nSites,nImp))
 
             allocate(CompHam(nSites,nSites))
-            do i = 1,nSites
-                do j = 1,nSites
-                    CompHam(j,i) = dcmplx(h0v(j,i),zero)
+            if(present(ham)) then
+                !Use the passed in hamiltonian to create the bath space
+                do i = 1,nSites
+                    do j = 1,nSites
+                        CompHam(j,i) = dcmplx(ham(j,i),zero)
+                    enddo
                 enddo
-            enddo
+            else
+                do i = 1,nSites
+                    do j = 1,nSites
+                        CompHam(j,i) = dcmplx(h0v(j,i),zero)
+                    enddo
+                enddo
+            endif
 
             do kPnt = 1,nKPnts
                 ind_1 = ((kPnt-1)*nImp) + 1
@@ -8696,11 +8713,19 @@ module LinearResponse
         else
             !Diagonalize in r-space
             allocate(AO_OneE_Ham(nSites,nSites))
-            do i = 1,nSites
-                do j = 1,nSites
-                    AO_OneE_Ham(j,i) = dcmplx(h0v(j,i),zero)
+            if(present(ham)) then
+                do i = 1,nSites
+                    do j = 1,nSites
+                        AO_OneE_Ham(j,i) = dcmplx(ham(j,i),zero)
+                    enddo
                 enddo
-            enddo
+            else
+                do i = 1,nSites
+                    do j = 1,nSites
+                        AO_OneE_Ham(j,i) = dcmplx(h0v(j,i),zero)
+                    enddo
+                enddo
+            endif
             !Stripe the complex self-energy through the AO one-electron hamiltonian
             call add_localpot_comp_inplace(AO_OneE_Ham,SE)
 

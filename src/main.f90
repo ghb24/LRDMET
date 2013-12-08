@@ -128,6 +128,8 @@ Program RealHub
         tRealSpaceSC = .false.  !By default, attempt self-consistency on the matsubara axis
         iLatticeFitType = 1     !By default, fit the greens functions (rather than inverses)
         iFitGFWeighting = 0     !By default, when doing lattice fits, fit to a flat model, rather than bias low weighted excitations
+        iLatticeCoups = 0
+        iMaxFitMicroIter = 0
 
     end subroutine set_defaults
 
@@ -590,6 +592,14 @@ Program RealHub
                 call readf(Start_Omega_Im)
                 call readf(End_Omega_Im)
                 call readf(Omega_Step_Im)
+            case("LATTICE_FIT")
+                call readi(iLatticeFitType) 
+            case("LATTICE_FIT_WEIGHTING")
+                call readi(iFitGFWeighting)
+            case("LATTICE_COUPLINGS")
+                call readi(iLatticeCoups)
+            case("MAXITER_LATTICEFIT")
+                call readi(iMaxFitMicroIter)
             case("REUSE_SELFENERGY")
                 call readi(iReuse_SE)
             case("MANYBODY_SELFENERGY")
@@ -618,6 +628,10 @@ Program RealHub
                 exit
             case default
                 write(6,"(A)") "ALLOWED KEYWORDS IN SELF_CONSISTENCY BLOCK: "
+                write(6,"(A)") "LATTICE_FIT"
+                write(6,"(A)") "LATTICE_FIT_WEIGHTING"
+                write(6,"(A)") "LATTICE_COUPLINGS"
+                write(6,"(A)") "MAXITER_LATTICEFIT"
                 write(6,"(A)") "MANYBODY_SELFENERGY"
                 write(6,"(A)") "MATSUBARA_FREQ"
                 write(6,"(A)") "REUSE_SELFENERGY"
@@ -921,6 +935,9 @@ Program RealHub
         endif
         if(tDiag_KSpace.and.LatticeDim.eq.2) then
             call stop_all(t_r,'Cannot currently do k-space diagonalizations for 2D models. Fix me!')
+        endif
+        if(tSC_LR.and.(.not.tRealSpaceSC).and.(iLatticeCoups.eq.0)) then
+            call stop_all(t_r,'Matsubara self-consistency, but no number of lattice coupling parameters specified')
         endif
 
     end subroutine check_input

@@ -1,5 +1,6 @@
 MODULE Nelder_Mead
 use const, only: dp
+use Globals, only: nImp
 
 IMPLICIT NONE
 PRIVATE
@@ -88,18 +89,19 @@ REAL (dp), INTENT(OUT)     :: var(:), func
 
 !Additional information passed in, just to get to the function evaluator
 integer, intent(in) :: n_dum
-complex(dp), intent(in) :: g_dum(:,:,:)
+complex(dp), intent(in) :: g_dum(nImp,nImp,n_dum)
 logical, intent(in) :: tMataxis_dum
 
 INTERFACE
   SUBROUTINE functn(p, func, n_dum, nop, g_dum, tMataxis_dum)
     use const, only: dp
+    use Globals, only: nImp
     IMPLICIT NONE
 !    INTEGER, PARAMETER     :: dp = SELECTED_REAL_KIND(12, 60)
     integer, intent(in) :: n_dum,nop
     REAL (dp), INTENT(IN)  :: p(nop)
     REAL (dp), INTENT(OUT) :: func
-    complex(dp), intent(in) :: g_dum(:,:,:)
+    complex(dp), intent(in) :: g_dum(nImp,nImp,n_dum)
     logical, intent(in) :: tMataxis_dum
   END SUBROUTINE functn
 END INTERFACE

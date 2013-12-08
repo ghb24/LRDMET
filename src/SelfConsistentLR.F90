@@ -33,7 +33,7 @@ module SelfConsistentLR
         real(dp) :: Omega
         integer :: i,j,k
         character(len=*), parameter :: t_r='CalcLatticeFitResidual'
-
+        
         !TODO: Fix this, so that the self-energy is an optional argument
         allocate(SE_Dummy(nImp,nImp,nESteps))
 
@@ -178,8 +178,12 @@ module SelfConsistentLR
                 vars(i) = Couplings(i,1)
             enddo
 
-            !Set max no of function evaluations = 200, print every 25
-            maxf = 20*iNumCoups
+            !Set max no of function evaluations. Default = 20*variables, print every 25
+            if(iMaxFitMicroIter.eq.0) then
+                maxf = 20*iNumCoups
+            else
+                maxf = iMaxFitMicroIter
+            endif
             iprint = 25
 
             !Set value for stopping criterion. Stopping occurs when the 
