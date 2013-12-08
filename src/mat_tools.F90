@@ -2466,6 +2466,117 @@ module mat_tools
 
     end subroutine DiagOneEOp
 
+    !Diagonalize a lattice matrix, with optional k-independent additional terms,
+    !in kspace or real space.
+    subroutine DiagNonHermLatticeHam(ham,LatVals,LatVecs_L,LatVecs_R,k_ind_mat)
+        use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
+        use sort_mod, only: Orthonorm_zgeev_vecs
+        implicit none
+        real(dp), intent(in) :: ham(nSites,nSites)
+        complex(dp), intent(out) :: LatVals(nSites)
+        complex(dp), intent(out) :: LatVecs_R(nSites,nSites),LatVecs_L(nSites,nSites)
+        complex(dp), intent(in), optional :: k_ind_mat(nImp,nImp)   !An optinoal matrix to stripe through the space
+
+        complex(dp), allocatable :: k_Ham(:,:),RVec(:,:),LVec(:,:),W_Vals(:)
+        real(dp), allocatable :: Work(:)
+        complex(dp), allocatable :: ztemp(:,:),ham_temp(:,:),cWork(:)
+        integer :: i,j,kPnt,ind_1,ind_2,lwork,info
+        character(len=*), parameter :: t_r='DiagLatticeHam'
+
+        if(tDiag_kspace) then
+            !Diagonalize in the k-space supercell
+            !Self-energy is then added to each kpoint
+            allocate(k_Ham(nImp,nImp))
+            allocate(RVec(nImp,nImp))
+            allocate(LVec(nImp,nImp))
+            allocate(W_Vals(nImp))
+            allocate(Work(max(1,2*nImp)))
+            allocate(ztemp(nSites,nImp))
+
+            allocate(ham_temp(nSites,nSites))
+            do i = 1,nSites
+                do j = 1,nSites
+                    ham_temp(j,i) = cmplx(ham(j,i),zero,dp)
+                enddo
+            enddo
+
+            do kPnt = 1,nKPnts
+                ind_1 = ((kPnt-1)*nImp) + 1
+                ind_2 = nImp*kPnt
+
+                !Transform one-electron hamiltonian into this k-basis
+                call ZGEMM('N','N',nSites,nImp,nSites,zone,Ham_temp,nSites,RtoK_Rot(:,ind_1:ind_2),nSites,zzero,ztemp,nSites)
+                call ZGEMM('C','N',nImp,nImp,nSites,zone,RtoK_Rot(:,ind_1:ind_2),nSites,ztemp,nSites,zzero,k_Ham,nImp)
+
+                if(present(k_ind_mat)) then
+                    !Include a k-independent, complex matrix to all kpoints
+                    k_Ham(:,:) = k_Ham(:,:) + k_ind_mat(:,:)
+                endif
+
+                !Now diagonalize this 
+                allocate(cWork(1))
+                lwork = -1
+                info = 0
+                call zgeev('V','V',nImp,k_Ham,nImp,W_Vals,LVec,nImp,RVec,nImp,cWork,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'Workspace query failed')
+                lwork = int(abs(cWork(1)))+1
+                deallocate(cWork)
+                allocate(cWork(lWork))
+                call zgeev('V','V',nImp,k_Ham,nImp,W_Vals,LVec,nImp,RVec,nImp,cWork,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'Diagonalization of 1-electron GF failed')
+                deallocate(cWork)
+
+                !Rotate eigenvalues and eigenvectors back into r-space
+                call ZGEMM('N','N',nSites,nImp,nImp,zone,RtoK_Rot(:,ind_1:ind_2),nSites,LVec,nImp,  &
+                    zzero,LatVecs_L(:,ind_1:ind_2),nSites)
+                call ZGEMM('N','N',nSites,nImp,nImp,zone,RtoK_Rot(:,ind_1:ind_2),nSites,RVec,nImp,  &
+                    zzero,LatVecs_R(:,ind_1:ind_2),nSites)
+                LatVals(ind_1:ind_2) = W_Vals(:)
+
+            enddo
+            deallocate(Ham_temp,ztemp,Work,W_Vals,LVec,RVec,k_Ham)
+        else
+            !Diagonalize in r-space
+            allocate(Ham_temp(nSites,nSites))
+            do i = 1,nSites
+                do j = 1,nSites
+                    Ham_temp(j,i) = cmplx(ham(j,i),zero,dp)
+                enddo
+            enddo
+            if(present(k_ind_mat)) then
+                !Stripe the complex self-energy through the AO one-electron hamiltonian
+                call add_localpot_comp_inplace(Ham_temp,k_ind_mat)
+            endif
+
+            !Now, diagonalize the resultant non-hermitian one-electron hamiltonian
+            LatVals = zzero
+            LatVecs_L = zzero
+            LatVecs_R = zzero
+            allocate(Work(max(1,2*nSites)))
+            allocate(cWork(1))
+            lwork = -1
+            info = 0
+            call zgeev('V','V',nSites,Ham_temp,nSites,LatVals,LatVecs_L,nSites,LatVecs_R,nSites,cWork,lWork,Work,info)
+            if(info.ne.0) call stop_all(t_r,'Workspace query failed')
+            lwork = int(abs(cWork(1)))+1
+            deallocate(cWork)
+            allocate(cWork(lWork))
+            call zgeev('V','V',nSites,Ham_temp,nSites,LatVals,LatVecs_L,nSites,LatVecs_R,nSites,cWork,lWork,Work,info)
+            if(info.ne.0) call stop_all(t_r,'Diag of H + SE failed')
+            deallocate(work,cWork,Ham_temp)
+
+        endif
+    
+        !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
+        !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
+        call Order_zgeev_vecs(LatVals,LatVecs_L,LatVecs_R)
+        !call writevectorcomp(W_Vals,'Eigenvalues ordered')
+        !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
+        call Orthonorm_zgeev_vecs(nSites,LatVals,LatVecs_L,LatVecs_R)
+
+    end subroutine DiagNonHermLatticeHam
+
+
     !Convert a real-space symmetric operator into a k-space operator.
     !In: The operator in real space. Size = nSuperCell x nSupercell
     !   However, it assumes periodicity, such that only the first unit cell, and its connections to the other unit cells

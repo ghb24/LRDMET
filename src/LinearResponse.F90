@@ -3,6 +3,7 @@ module LinearResponse
     use timing
     use errors, only: stop_all,warning
     use mat_tools, only: WriteVector,WriteMatrix,WriteVectorInt,WriteMatrixComp,WriteVectorComp,znrm2
+    use mat_tools, only: DiagNonHermLatticeHam
     use globals
     use LRSolvers
     implicit none
@@ -38,6 +39,7 @@ module LinearResponse
         complex(dp), allocatable :: Psi1_p(:),Psi1_h(:),Ga_i_F_xi_Bra(:,:),Ga_i_F_ij(:,:),ni_lr_Mat(:,:)
         complex(dp), allocatable :: temp_vecc(:),Work(:),Psi_0(:),RHS(:)
         complex(dp), allocatable :: NI_LRMat_Cre(:,:),NI_LRMat_Ann(:,:),GSHam(:,:)
+        complex(dp), allocatable :: LatVals(:),LatVecs_R(:,:),LatVecs_L(:,:)
         integer, allocatable :: Coup_Ann_alpha(:,:,:),Coup_Create_alpha(:,:,:)
         integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,ierr,info,iunit,nCore
         integer :: nLinearSystem,nOrbs,nVirt,tempK,VIndex,VirtStart,VirtEnd
@@ -122,6 +124,22 @@ module LinearResponse
             write(6,"(A)") "Non-standard Lattice hamiltonian to be used for calculation of greens function"
             write(6,"(A)") "Currently, this will only be for defining the bath space, " &
                 //"rather than contributing to the one-electron hamiltonian in the bath"
+        endif
+
+        if(tLatHamProvided_) then
+            !We assume that there is no self-energy contribution.
+            if(tCheck) then
+                if(sum(abs(SE(:,:,:))).gt.1.0e-7_dp) then
+                    call stop_all(t_r,'We have assumed that there is no self-energy in this mode')
+                endif
+            endif
+            !And then, the lattice hamiltonian is frequency independent.
+            !We can then diagonalize it here to save time later.
+
+            allocate(LatVals(nSites))
+            allocate(LatVecs_R(nSites,nSites))
+            allocate(LatVecs_L(nSites,nSites))
+            call DiagNonHermLatticeHam(ham,LatVals,LatVecs_R,LatVecs_L)
         endif
 
         !umat and tmat for the active space
@@ -393,7 +411,8 @@ module LinearResponse
             SelfE(:,:) = SE(:,:,OmegaVal)
             if(tLatHamProvided_) then
                 !Here, we want to create the dynamic bath space from the passed in lattice hamiltonian, rather than the ground state one
-                call FindNI_Charged_wSE(Omega,GFChemPot,NI_LRMat_Cre,NI_LRMat_Ann,SelfE,tMatbrAxis_,ham)
+                call FindNI_Charged_wSE(Omega,GFChemPot,NI_LRMat_Cre,NI_LRMat_Ann,SelfE,tMatbrAxis_,ham,    &
+                    LatVals=LatVals,LatVecs_L=LatVecs_L,LatVecs_R=LatVecs_R)
             else
                 call FindNI_Charged_wSE(Omega,GFChemPot,NI_LRMat_Cre,NI_LRMat_Ann,SelfE,tMatbrAxis_)
             endif
@@ -837,6 +856,10 @@ module LinearResponse
         deallocate(FockSchmidt_SE,FockSchmidt_SE_VV,FockSchmidt_SE_CC)
         deallocate(FockSchmidt_SE_VX,FockSchmidt_SE_CX,FockSchmidt_SE_XV,FockSchmidt_SE_XC)
         deallocate(Gc_a_F_ax_Bra,Gc_a_F_ax_Ket,Gc_b_F_ab,Ga_i_F_xi_Bra,Ga_i_F_xi_Ket,Ga_i_F_ij)
+
+        if(allocated(LatVals)) deallocate(LatVals)
+        if(allocated(LatVecs_R)) deallocate(LatVecs_R)
+        if(allocated(LatVecs_L)) deallocate(LatVecs_L)
 
     end subroutine SchmidtGF_wSE
     
@@ -8609,7 +8632,7 @@ module LinearResponse
     !The NI_LRMat_Cre and NI_LRMat_Ann matrices are returned as the non-interacting LR
     !The global matrices SchmidtPertGF_Cre and SchmidtPertGF_Ann are filled, as well as the
     !new one-electron hamiltonians for the interacting problem: Emb_h0v_SE and FockSchmidt_SE
-    subroutine FindNI_Charged_wSE(Omega,GFChemPot,NI_LRMat_Cre,NI_LRMat_Ann,SE,tMatbrAxis,ham)
+    subroutine FindNI_Charged_wSE(Omega,GFChemPot,NI_LRMat_Cre,NI_LRMat_Ann,SE,tMatbrAxis,ham,latvals,latvecs_L,latvecs_R)
         use mat_tools, only: add_localpot_comp_inplace
         use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
         use sort_mod, only: Orthonorm_zgeev_vecs
@@ -8619,6 +8642,9 @@ module LinearResponse
         complex(dp), intent(in) :: SE(nImp,nImp)
         logical, intent(in) :: tMatbrAxis
         real(dp), intent(in), optional :: ham(nSites,nSites)
+        complex(dp), intent(in), optional :: latvals(nSites)
+        complex(dp), intent(in), optional :: latvecs_L(nSites,nSites)
+        complex(dp), intent(in), optional :: latvecs_R(nSites,nSites)
         real(dp), allocatable :: Work(:)
         complex(dp), allocatable :: LVec_R(:,:),RVec_R(:,:),EVals_R(:),k_Ham(:,:),ztemp(:,:),CompHam(:,:)
         complex(dp), allocatable :: AO_OneE_Ham(:,:),W_Vals(:),RVec(:,:),LVec(:,:),FullSchmidtTrans_C(:,:)
@@ -8643,117 +8669,20 @@ module LinearResponse
         allocate(EVals_R(nSites))
         allocate(LVec_R(nSites,nSites)) !These represent the real-space L & R eigenvectors, rather than k-space
         allocate(RVec_R(nSites,nSites))
-
-        if(tDiag_kspace) then
-            !Diagonalize in the k-space supercell
-            !Self-energy is then added to each kpoint
-            allocate(k_Ham(nImp,nImp))
-            allocate(RVec(nImp,nImp))
-            allocate(LVec(nImp,nImp))
-            allocate(W_Vals(nImp))
-            allocate(Work(max(1,2*nImp)))
-            allocate(ztemp(nSites,nImp))
-
-            allocate(CompHam(nSites,nSites))
-            if(present(ham)) then
-                !Use the passed in hamiltonian to create the bath space
-                do i = 1,nSites
-                    do j = 1,nSites
-                        CompHam(j,i) = dcmplx(ham(j,i),zero)
-                    enddo
-                enddo
-            else
-                do i = 1,nSites
-                    do j = 1,nSites
-                        CompHam(j,i) = dcmplx(h0v(j,i),zero)
-                    enddo
-                enddo
-            endif
-
-            do kPnt = 1,nKPnts
-                ind_1 = ((kPnt-1)*nImp) + 1
-                ind_2 = nImp*kPnt
-
-                !Transform one-electron hamiltonian into this k-basis
-                call ZGEMM('N','N',nSites,nImp,nSites,zone,CompHam,nSites,RtoK_Rot(:,ind_1:ind_2),nSites,zzero,ztemp,nSites)
-                call ZGEMM('C','N',nImp,nImp,nSites,zone,RtoK_Rot(:,ind_1:ind_2),nSites,ztemp,nSites,zzero,k_Ham,nImp)
-
-                !Now, add the self-energy (in k-space) and diagonalize this k-space hamiltonian
-                k_Ham(:,:) = k_Ham(:,:) + SE(:,:)
-
-                !Now diagonalize this (don't add the diagonals)
-                allocate(cWork(1))
-                lwork = -1
-                info = 0
-                call zgeev('V','V',nImp,k_Ham,nImp,W_Vals,LVec,nImp,RVec,nImp,cWork,lWork,Work,info)
-                if(info.ne.0) call stop_all(t_r,'Workspace query failed')
-                lwork = int(abs(cWork(1)))+1
-                deallocate(cWork)
-                allocate(cWork(lWork))
-                call zgeev('V','V',nImp,k_Ham,nImp,W_Vals,LVec,nImp,RVec,nImp,cWork,lWork,Work,info)
-                if(info.ne.0) call stop_all(t_r,'Diagonalization of 1-electron GF failed')
-                deallocate(cWork)
-                !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
-                !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
-!                call Order_zgeev_vecs(W_Vals,LVec,RVec)
-                !call writevectorcomp(W_Vals,'Eigenvalues ordered')
-                !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
-!                call Orthonorm_zgeev_vecs(SS_Period,W_Vals,LVec,RVec)
-
-                !Rotate eigenvalues and eigenvectors back into r-space
-                call ZGEMM('N','N',nSites,nImp,nImp,zone,RtoK_Rot(:,ind_1:ind_2),nSites,LVec,nImp,  &
-                    zzero,LVec_R(:,ind_1:ind_2),nSites)
-                call ZGEMM('N','N',nSites,nImp,nImp,zone,RtoK_Rot(:,ind_1:ind_2),nSites,RVec,nImp,  &
-                    zzero,RVec_R(:,ind_1:ind_2),nSites)
-                EVals_R(ind_1:ind_2) = W_Vals(:)
-
-            enddo
-            deallocate(CompHam,ztemp,Work,W_Vals,LVec,RVec,k_Ham)
-
+        
+        if(present(latvals).and.present(latvecs_R).and.present(latvecs_L)) then
+            !The eigenvalues/vectors of the diagonalized lattice hamiltonian have actually been passed in.
+            !We don't need to diagonalize again
+            EVals_R(:) = latvals(:)
+            LVec_R(:,:) = latvecs_L(:,:)
+            RVec_R(:,:) = latvecs_R(:,:)
         else
-            !Diagonalize in r-space
-            allocate(AO_OneE_Ham(nSites,nSites))
             if(present(ham)) then
-                do i = 1,nSites
-                    do j = 1,nSites
-                        AO_OneE_Ham(j,i) = dcmplx(ham(j,i),zero)
-                    enddo
-                enddo
+                call DiagNonHermLatticeHam(ham,EVals_R,LVec_R,RVec_R,k_ind_mat=SE)
             else
-                do i = 1,nSites
-                    do j = 1,nSites
-                        AO_OneE_Ham(j,i) = dcmplx(h0v(j,i),zero)
-                    enddo
-                enddo
+                call DiagNonHermLatticeHam(h0v,EVals_R,LVec_R,RVec_R,k_ind_mat=SE)
             endif
-            !Stripe the complex self-energy through the AO one-electron hamiltonian
-            call add_localpot_comp_inplace(AO_OneE_Ham,SE)
-
-            !Now, diagonalize the resultant non-hermitian one-electron hamiltonian
-            RVec_R = zzero
-            LVec_R = zzero
-            EVals_R = zzero
-            allocate(Work(max(1,2*nSites)))
-            allocate(cWork(1))
-            lwork = -1
-            info = 0
-            call zgeev('V','V',nSites,AO_OneE_Ham,nSites,EVals_R,LVec_R,nSites,RVec_R,nSites,cWork,lWork,Work,info)
-            if(info.ne.0) call stop_all(t_r,'Workspace query failed')
-            lwork = int(abs(cWork(1)))+1
-            deallocate(cWork)
-            allocate(cWork(lWork))
-            call zgeev('V','V',nSites,AO_OneE_Ham,nSites,EVals_R,LVec_R,nSites,RVec_R,nSites,cWork,lWork,Work,info)
-            if(info.ne.0) call stop_all(t_r,'Diag of H + SE failed')
-            deallocate(work,cWork,AO_OneE_Ham)
-
         endif
-            
-        !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
-        !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
-        call Order_zgeev_vecs(EVals_R,LVec_R,RVec_R)
-        !call writevectorcomp(W_Vals,'Eigenvalues ordered')
-        !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
-        call Orthonorm_zgeev_vecs(nSites,EVals_R,LVec_R,RVec_R)
         
         !Memory to temperarily store the first order wavefunctions of each impurity site, in the right MO basis (For the Kets)
         !and the left MO space (for the Bras)
