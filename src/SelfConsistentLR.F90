@@ -135,6 +135,7 @@ module SelfConsistentLR
         allocate(G_Mat_Re(nImp,nImp,nESteps_Re))
         allocate(SE_Re(nImp,nImp,nESteps_Re))
         allocate(Lattice_GF(nImp,nImp,nESteps_Re))
+        SE_Re(:,:,:) = zzero
             
         write(6,"(A)") "Now calculating spectral functions on the REAL axis"
         call flush(6)
