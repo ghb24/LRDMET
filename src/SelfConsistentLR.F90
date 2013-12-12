@@ -62,7 +62,8 @@ module SelfConsistentLR
         allocate(G_Mat_Im(nImp,nImp,nESteps_Im))
         allocate(Lattice_GF(nImp,nImp,nESteps_Im))
         !Write out the initial lattice greens function
-        call FindLocalMomGF(nESteps_Im,SE_Im,Lattice_GF,tMatbrAxis=.true.,ham=h_lat_fit)
+        !call FindLocalMomGF(nESteps_Im,SE_Im,Lattice_GF,tMatbrAxis=.true.,ham=h_lat_fit)
+        call FindLocalMomGF(nESteps_Im,SE_Im,Lattice_GF,tMatbrAxis=.true.,ham=h_lat_fit,CouplingLength=iLatticeCoups)
         !Write out lattice greens function
         call writedynamicfunction(nESteps_Im,Lattice_GF,'G_Lat_Im',tag=0,tMatbrAxis=.true.)
 
@@ -92,7 +93,8 @@ module SelfConsistentLR
             !Add the new lattice couplings to the lattice hamiltonian
             call AddPeriodicImpCoupling_RealSpace(h_lat_fit,nSites,iLatticeCoups,nImp,Couplings)
             !Now, calculate the local lattice greens function
-            call FindLocalMomGF(nESteps_Im,SE_Im,Lattice_GF,tMatbrAxis=.true.,ham=h_lat_fit)
+            call FindLocalMomGF(nESteps_Im,SE_Im,Lattice_GF,tMatbrAxis=.true.,ham=h_lat_fit,CouplingLength=iLatticeCoups)
+            !call FindLocalMomGF(nESteps_Im,SE_Im,Lattice_GF,tMatbrAxis=.true.,ham=h_lat_fit)
             !Write out lattice greens function
             call writedynamicfunction(nESteps_Im,Lattice_GF,'G_Lat_Im',tag=iter,tMatbrAxis=.true.)
 
@@ -137,7 +139,8 @@ module SelfConsistentLR
         write(6,"(A)") "Now calculating spectral functions on the REAL axis"
         call flush(6)
         !What does the final lattice greens function look like on the real axis?
-        call FindLocalMomGF(nESteps_Re,SE_Re,Lattice_GF,tMatbrAxis=.false.,ham=h_lat_fit)
+        call FindLocalMomGF(nESteps_Re,SE_Re,Lattice_GF,tMatbrAxis=.false.,ham=h_lat_fit,CouplingLength=iLatticeCoups)
+        !call FindLocalMomGF(nESteps_Re,SE_Re,Lattice_GF,tMatbrAxis=.false.,ham=h_lat_fit)
         !Write out lattice greens function
         !Is it the same as the impurity greens function on the real axis. This would be nice.
         call writedynamicfunction(nESteps_Re,Lattice_GF,'G_Lat_Re_Final',tMatbrAxis=.false.)
@@ -161,6 +164,7 @@ module SelfConsistentLR
 
     !NOTE: If LatticeFitType = 2 (i.e. the inverse of the functions), then G_Imp is sent in as the *inverse* of the
     !impurity greens function. Not the greens function itself.
+    !Note that this can become expensive - it is a n_sites^2 calculation at best
     subroutine CalcLatticeFitResidual(G_Imp,nESteps,Couplings,iNumCoups,dist,tMatbrAxis)
         implicit none
         integer, intent(in) :: nESteps,iNumCoups
@@ -185,7 +189,11 @@ module SelfConsistentLR
 
         !Now, calculate the local lattice greens function
         allocate(Lattice_GF(nImp,nImp,nESteps))
-        call FindLocalMomGF(nESteps,SE_Dummy,Lattice_GF,tMatbrAxis=tMatbrAxis,ham=h_lat_fit)
+        !call writematrix(Couplings,'Couplings',.false.)
+        !call writematrix(h_lat_fit,'h_lat_fit',.true.)
+        !call FindLocalMomGF(nESteps,SE_Dummy,Lattice_GF,tMatbrAxis=tMatbrAxis,ham=h_lat_fit)
+        call FindLocalMomGF(nESteps,SE_Dummy,Lattice_GF,tMatbrAxis=tMatbrAxis,ham=h_lat_fit,CouplingLength=iNumCoups)
+        !call stop_all(t_r,'end')
         !write(6,*) "Imp GF: ",G_Imp(1,1,:)
         !write(6,*) "Lattice GF: ",Lattice_GF(1,1,:)
 
@@ -260,7 +268,7 @@ module SelfConsistentLR
             allocate(step(iNumCoups))
             allocate(vars(iNumCoups))
             allocate(var(iNumCoups))
-            step(:) = 0.1_dp
+            step(:) = 0.05_dp
             nop = iNumCoups
             do i = 1,iNumCoups
                 vars(i) = Couplings(i,1)
@@ -2918,11 +2926,8 @@ module SelfConsistentLR
     !Check that this gives as expected
     !Can optionally be computed in real (default) or matsubara axis
     !Can optionally take a periodic lattice hamiltonian on which to calculate greens function (will then not use self-energy)
-    !TODO: Speed this routine up! 1) Will then, the simple matinv routine be faster (probably). 
-    !       2) Can we avoid doing the explicit rotations of all blocks?
-    subroutine FindLocalMomGF(n,SE,LocalMomGF,tMatbrAxis,ham)
-        use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
-        use sort_mod, only: Orthonorm_zgeev_vecs
+    !Can optionally take a coupling length for the non-local terms of the matrix, which should speed up the FT to k-space
+    subroutine FindLocalMomGF(n,SE,LocalMomGF,tMatbrAxis,ham,CouplingLength)
         use matrixops, only: mat_inv
         implicit none
         integer, intent(in) :: n
@@ -2930,13 +2935,14 @@ module SelfConsistentLR
         complex(dp), intent(out) :: LocalMomGF(nImp,nImp,n)
         logical, intent(in), optional :: tMatbrAxis
         real(dp), intent(in), optional :: ham(nSites,nSites)
-        complex(dp), allocatable :: RotMat(:,:),k_Ham(:,:),CompHam(:,:),cWork(:)
+        integer, intent(in), optional :: CouplingLength
+        complex(dp), allocatable :: k_Ham(:,:),CompHam(:,:),cWork(:)
         complex(dp), allocatable :: RVec(:,:),LVec(:,:),W_Vals(:),ztemp(:,:)
         complex(dp) :: InvMat(nImp,nImp),ztemp2(nImp,nImp)
         real(dp), allocatable :: Work(:)
-        integer :: kPnt,ind_1,ind_2,i,j,SS_Period,lwork,info
+        integer :: kPnt,ind_1,ind_2,i,j,SS_Period,lwork,info,k
         real(dp) :: Omega,mu
-        logical :: tMatbrAxis_,tCoupledHam_
+        logical :: tMatbrAxis_,tCoupledHam_,tSparseCoupling
         character(len=*), parameter :: t_r='FindLocalMomGF'
 
         if(present(tMatbrAxis)) then
@@ -2949,6 +2955,12 @@ module SelfConsistentLR
             tCoupledHam_ = .true.
         else
             tCoupledHam_ = .false.
+        endif
+
+        if(present(CouplingLength)) then
+            tSparseCoupling = .true.
+        else
+            tSparseCoupling = .false.
         endif
 
         if(.not.tDiag_kspace) then
@@ -2967,7 +2979,7 @@ module SelfConsistentLR
             mu = 0.0_dp
         endif
 
-        allocate(RotMat(nSites,SS_Period))
+        !allocate(RotMat(nSites,SS_Period))
         allocate(k_Ham(SS_Period,SS_Period))
         allocate(CompHam(nSites,nSites))
         if(tCoupledHam_) then
@@ -2986,10 +2998,10 @@ module SelfConsistentLR
         endif
 
         !Data for the diagonalization of the one-electron k-dependent Greens functions
-        allocate(RVec(SS_Period,SS_Period))
-        allocate(LVec(SS_Period,SS_Period))
-        allocate(W_Vals(SS_Period))
-        allocate(Work(max(1,2*SS_Period)))
+!        allocate(RVec(SS_Period,SS_Period))
+!        allocate(LVec(SS_Period,SS_Period))
+!        allocate(W_Vals(SS_Period))
+!        allocate(Work(max(1,2*SS_Period)))
         allocate(ztemp(nSites,SS_Period))
 
         do kPnt = 1,nKPnts
@@ -2998,9 +3010,42 @@ module SelfConsistentLR
             ind_2 = SS_Period*kPnt
                 
             !Transform the one-electron hamiltonian into this k-basis
-            RotMat(:,:) = RtoK_Rot(:,ind_1:ind_2)
-            call ZGEMM('N','N',nSites,SS_Period,nSites,zone,CompHam,nSites,RotMat,nSites,zzero,ztemp,nSites)
-            call ZGEMM('C','N',SS_Period,SS_Period,nSites,zone,RotMat,nSites,ztemp,nSites,zzero,k_Ham,SS_Period)
+            !RotMat(:,:) = RtoK_Rot(:,ind_1:ind_2)
+            if(tSparseCoupling) then
+                !Exploit the fact that the real-space lattice is sparse, to only FT the non-zero elements in real space
+                ztemp(:,:) = zzero
+                do i = 1,nSites
+                    do j = 1,SS_Period
+
+                        !Sparse summation over non-zero elements of the real space lattice only, rather than full coupling
+                        do k = max(i-CouplingLength,1),min(i+CouplingLength,nSites)
+                            ztemp(i,j) = ztemp(i,j) + CompHam(i,k)*RtoK_Rot(k,ind_1+j-1)
+                            !write(6,*) "Main contrib: ",k,CompHam(i,k),RtoK_Rot(k,ind_1+j-1),CompHam(i,k)*RtoK_Rot(k,ind_1+j-1)
+                        enddo
+
+                        if(i-CouplingLength.lt.1) then
+                            !We are wrapping around the lattice. Include the 'top right' triangle of couplings
+                            do k = nSites-(CouplingLength-i),nSites
+                                ztemp(i,j) = ztemp(i,j) + CompHam(i,k)*RtoK_Rot(k,ind_1+j-1)
+                                !write(6,*) "TR: ",k,CompHam(i,k),RtoK_Rot(k,ind_1+j-1),CompHam(i,k)*RtoK_Rot(k,ind_1+j-1)
+                            enddo
+
+                        elseif(i+CouplingLength.gt.nSites) then
+                            !We are wrapping around the lattice. Include the 'bottom left' triangle of couplings
+                            do k = 1,(i-nSites)+CouplingLength
+                                ztemp(i,j) = ztemp(i,j) + CompHam(i,k)*RtoK_Rot(k,ind_1+j-1)
+                                !write(6,*) "BL: ",k,CompHam(i,k),RtoK_Rot(k,ind_1+j-1),CompHam(i,k)*RtoK_Rot(k,ind_1+j-1)
+                            enddo
+
+                        endif
+                    enddo
+                enddo
+            else
+                call ZGEMM('N','N',nSites,SS_Period,nSites,zone,CompHam,nSites,RtoK_Rot(:,ind_1:ind_2),nSites,zzero,ztemp,nSites)
+            endif
+!            call writematrixcomp(RtoK_Rot(:,ind_1:ind_2),'Rotation',.true.)
+!            call writematrixcomp(ztemp,'Intermediate',.true.)
+            call ZGEMM('C','N',SS_Period,SS_Period,nSites,zone,RtoK_Rot(:,ind_1:ind_2),nSites,ztemp,nSites,zzero,k_Ham,SS_Period)
             !k_Ham is the complex, one-electron hamiltonian (with correlation potential) for this k-point
 
             !write(6,*) "For k-point: ",kPnt
@@ -3075,9 +3120,8 @@ module SelfConsistentLR
 !        LocalMomGF(:,:,:) = LocalMomGF(:,:,:) / BZVol
         LocalMomGF(:,:,:) = LocalMomGF(:,:,:) / real(nSites/nImp,dp)
         
-        deallocate(RotMat,k_Ham,CompHam,RVec,LVec,W_Vals,Work,ztemp)
+        deallocate(k_Ham,CompHam,ztemp)
 
     end subroutine FindLocalMomGF
-
 
 end module SelfConsistentLR
