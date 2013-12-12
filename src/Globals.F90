@@ -207,6 +207,7 @@ module Globals
     logical :: tRandom_Init_SE  ! Initialize self-energy with random numbers
     integer :: TDLat_Ni,TDLat_Nj
     integer :: iLatticeFitType  !When fitting lattice coupling, this defines whether to match the greens functions, or inverse greens functions
+    integer :: iFitAlgo         !The fitting algorithm to use. 1 = simplex, 2 = Powell
     integer :: iFitGFWeighting  !When fitting lattice couplings, this defines whether to weight the residual (0=flat,1=1/w,2=1/w^2)
     integer :: iLatticeCoups    !The number of lattice couplings to the impurity site
     integer :: iMaxFitMicroIter !The number of microiterations to use to try and fit the lattice couplings

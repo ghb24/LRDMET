@@ -130,6 +130,7 @@ Program RealHub
         iFitGFWeighting = 0     !By default, when doing lattice fits, fit to a flat model, rather than bias low weighted excitations
         iLatticeCoups = 0
         iMaxFitMicroIter = 0
+        iFitAlgo = 1            !Which fitting algorithm to use. 1 = simplex, 2 = Powell
 
     end subroutine set_defaults
 
@@ -583,6 +584,8 @@ Program RealHub
             if(teof) exit
             call readu(w)
             select case(w)
+            case("FIT_ALGO")
+                call readi(iFitAlgo)
             case("SELF-CONSISTENCY")
                 tSC_LR = .true.
                 if(item.lt.nitems) then
@@ -628,6 +631,7 @@ Program RealHub
                 exit
             case default
                 write(6,"(A)") "ALLOWED KEYWORDS IN SELF_CONSISTENCY BLOCK: "
+                write(6,"(A)") "FIT_ALGO"
                 write(6,"(A)") "LATTICE_FIT"
                 write(6,"(A)") "LATTICE_FIT_WEIGHTING"
                 write(6,"(A)") "LATTICE_COUPLINGS"

@@ -215,7 +215,7 @@ module SelfConsistentLR
         i = 0
         do while(.true.)
             call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis)
-            if((Omega.lt.1.0e-9_dp).and.(iFitGFWeighting.ne.0)) then
+            if((abs(Omega).lt.1.0e-9_dp).and.(iFitGFWeighting.ne.0)) then
                 call stop_all(t_r,'Should not be sampling w=0 with a non-flat weighting function')
             endif
             if(i.lt.0) exit
@@ -229,7 +229,7 @@ module SelfConsistentLR
                         dist = dist + real(DiffMat(k,j,i),dp)
                     elseif(iFitGFWeighting.eq.1) then
                         !1/w weighting
-                        dist = dist + real(DiffMat(k,j,i),dp)/Omega
+                        dist = dist + real(DiffMat(k,j,i),dp)/abs(Omega)
                     else
                         !1/w^2 weighting
                         dist = dist + real(DiffMat(k,j,i),dp)/(Omega**2)
@@ -244,7 +244,7 @@ module SelfConsistentLR
 
     !Use a minimization routine to fit the greens functions by adjusting the lattice coupling
     subroutine FitLatticeCouplings(G_Imp,n,Couplings,iNumCoups,FinalErr,tMatbrAxis)
-        use Nelder_Mead
+        use MinAlgos   
         implicit none
         integer, intent(in) :: n    !Number of frequency points
         integer, intent(in) :: iNumCoups    !Number of independent coupling parameters
@@ -252,18 +252,42 @@ module SelfConsistentLR
         real(dp), intent(inout) :: Couplings(iNumCoups,nImp)    !The lattice couplings
         real(dp), intent(out) :: FinalErr
         logical, intent(in) :: tMatbrAxis
-        logical, parameter :: tSimplex=.true.
 
         real(dp), allocatable :: step(:),vars(:),var(:)
         integer :: nop,i,maxf,iprint,nloop,iquad,ierr
-        real(dp) :: stopcr,simp
+        real(dp) :: stopcr,simp,rhobeg,rhoend
         logical :: tfirst
         character(len=*), parameter :: t_r='FitLatticeCouplings'
 
-        !Initially, just use the Simplex module, although we should try
-        !the modified Powell algorithm later too, which is likely to be much faster
+        if(iFitAlgo.eq.2) then
+            !Use modified Powell algorithm for optimization (based on fitting to quadratics)
 
-        if(tSimplex) then
+            allocate(vars(iNumCoups))
+            do i = 1,iNumCoups
+                vars(i) = Couplings(i,1)
+            enddo
+
+            rhobeg = 0.05_dp
+            rhoend = 1.0e-6_dp
+            iprint = 3
+            if(iMaxFitMicroIter.eq.0) then
+                maxf = 20*iNumCoups
+            else
+                maxf = iMaxFitMicroIter
+            endif
+
+            !Vars is updated to be the best value to minimize the residual
+            call uobyqa(iNumCoups,vars,rhobeg,rhoend,iprint,maxf,FinalErr,MinCoups, n, G_Imp, tMatbrAxis)
+
+            !Update couplings
+            do i = 1,nImp
+                Couplings(:,i) = vars(:)
+            enddo
+
+            deallocate(vars)
+
+        elseif(iFitAlgo.eq.1) then
+            !Use simplex method for optimization without derivatives
 
             !Starting values are assumed to be read in
             allocate(step(iNumCoups))
