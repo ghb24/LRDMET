@@ -269,7 +269,7 @@ module SelfConsistentLR
 
             rhobeg = 0.05_dp
             rhoend = 1.0e-6_dp
-            iprint = 3
+            iprint = 2
             if(iMaxFitMicroIter.eq.0) then
                 maxf = 20*iNumCoups
             else
