@@ -2,6 +2,7 @@ module LRSolvers
     use const
     use globals
     use errors, only: stop_all,warning
+!    use mat_tools, only: writevector,writematrixcomp
     implicit none
     !Parameters for matrix-vector multiplications within iterative solvers
     complex(dp), pointer :: zDirMV_Mat(:,:)
@@ -295,7 +296,16 @@ module LRSolvers
                     call stop_all(t_r,'Diagonals of hessian not real')
                 endif
             enddo
+
+!            !Block out all bath spaces and move them to energy -999
+!            TempH(3:nLinearSystem,:) = zzero
+!            TempH(:,3:nLinearSystem) = zzero
+!            do i=3,nLinearSystem
+!                TempH(i,i) = dcmplx(-999.0,zero)
+!            enddo
+
             !write(6,*) "LHS hermitian"
+!            call writematrixcomp(TempH,'Hessian (wo broadening)',.true.) 
             allocate(Work(max(1, 3*nLinearSystem-2)))
             allocate(Real_W(nLinearSystem))
             Real_W(:) = zero
@@ -309,6 +319,12 @@ module LRSolvers
             call zheev('V','U',nLinearSystem,TempH,nLinearSystem,Real_W,cWork,lWork,Work,info)
             if(info.ne.0) call stop_all(t_r,'Diag of LHS failed')
             deallocate(Work,cWork)
+
+
+            !Eigenvalues of Hessian at this frequency:
+!            call writevector(Real_W,'Hessian eigenvalues')
+!            call writematrixcomp(TempH,'Hessian eigenvectors',.true.)
+
 
             !Now, find inverse in eigenbasis (adding back in the broadening)
             allocate(tempc(nLinearSystem,nLinearSystem))    !Temp array to build inverse in

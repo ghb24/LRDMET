@@ -2574,10 +2574,12 @@ module LinearResponse
         if(.not.tLR_ReoptGS) then
             Psi_0(:) = zzero 
             Psi_0(1:nFCIDet) = HL_Vec(:)    
+!            call writevector(HL_Vec,'GS Vec')
             GFChemPot = HL_Energy
             do i = 1,nImp_GF
                 call ApplySP_PertGS_EC(Psi_0,nGSSpace,Cre_0(:,i),Ann_0(:,i),nLinearSystem,i,tSwapExcits=tBetaExcit)
             enddo
+!            call writevectorcomp(Ann_0(:,1),'Ann Vec')
         endif
         
         !Store the fock matrix in complex form, so that we can ZGEMM easily
@@ -3139,6 +3141,8 @@ module LinearResponse
                 write(6,"(A)") "Solving linear system with direct inversion of hamiltonian"
             elseif(iSolveLR.eq.4) then
                 write(6,"(A)") "Solving linear system via complete diagonalization of hamiltonian"
+            elseif(iSolveLR.eq.5) then
+                write(6,"(A)") "Solving linear system via complete diagonalization of hermitian hamiltonian"
             else
                 call stop_all(t_r,"Linear equation solver unknown")
             endif
@@ -3297,8 +3301,10 @@ module LinearResponse
             Psi_0(:) = zzero 
             Psi_0(1:nFCIDet) = HL_Vec(:)    
             GFChemPot = HL_Energy
+!            call writevector(HL_Vec(:),'Psi_0')
             do i = 1,nImp_GF
                 call ApplySP_PertGS_EC(Psi_0,nGSSpace,Cre_0(:,i),Ann_0(:,i),nLinearSystem,i)
+!                call writevectorcomp(Ann_0(:,1),'Ann_0')
             enddo
         endif
         
@@ -4071,6 +4077,8 @@ module LinearResponse
                 write(6,"(A)") "Solving linear system with direct inversion of hamiltonian"
             elseif(iSolveLR.eq.4) then
                 write(6,"(A)") "Solving linear system via complete diagonalization of hamiltonian"
+            elseif(iSolveLR.eq.5) then
+                write(6,"(A)") "Solving linear system via complete diagonalization of hermitian hamiltonian"
             else
                 call stop_all(t_r,"Linear equation solver unknown")
             endif
