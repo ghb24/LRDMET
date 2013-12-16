@@ -56,8 +56,9 @@ module SelfConsistentLR
         allocate(h_lat_fit(nSites,nSites))
         h_lat_fit(:,:) = h0v(:,:)
         allocate(Couplings(iLatticeCoups,nImp))
-        Couplings(:,:) = zero
-        Couplings(1,:) = -1.0_dp    !This is the normal nearest neighbour coupling in the hubbard model. We will start from this
+
+        call InitLatticeCouplings(Couplings,iLatticeCoups)
+        call AddPeriodicImpCoupling_RealSpace(h_lat_fit,nSites,iLatticeCoups,nImp,Couplings)
 
         allocate(G_Mat_Im(nImp,nImp,nESteps_Im))
         allocate(Lattice_GF(nImp,nImp,nESteps_Im))
@@ -97,6 +98,9 @@ module SelfConsistentLR
             !call FindLocalMomGF(nESteps_Im,SE_Im,Lattice_GF,tMatbrAxis=.true.,ham=h_lat_fit)
             !Write out lattice greens function
             call writedynamicfunction(nESteps_Im,Lattice_GF,'G_Lat_Im',tag=iter,tMatbrAxis=.true.)
+
+            !Write out the lattice couplings
+            call WriteLatticeCouplings(iLatticeCoups,Couplings)
 
             !Calculate & write out stats (all of them)
             if(iter.gt.iMaxIter_Fit) then
@@ -378,6 +382,52 @@ module SelfConsistentLR
 
         deallocate(CoupsTemp)
     end subroutine MinCoups
+
+    subroutine WriteLatticeCouplings(iLatticeCoups,Couplings)
+        implicit none
+        integer, intent(in) :: iLatticeCoups
+        real(dp), intent(in) :: Couplings(iLatticeCoups,nImp)
+        integer :: iunit
+
+        iunit = get_free_unit()
+        open(unit=iunit,file='LatCouplings',status='unknown')
+        write(iunit,*) iLatticeCoups
+        write(iunit,*) Couplings(1:iLatticeCoups,1)
+        close(iunit)
+
+    end subroutine WriteLatticeCouplings
+        
+    subroutine InitLatticeCouplings(Couplings,iLatticeCoups)
+        implicit none
+        integer, intent(in) :: iLatticeCoups
+        real(dp), intent(out) :: Couplings(iLatticeCoups,nImp)
+        integer :: iunit,iloclatcoups,i
+        logical :: exists
+        character(len=*), parameter :: t_r='ReadInLatticeCouplings'
+
+        Couplings(:,:) = zzero
+
+        if(tReadCouplings) then
+            inquire(file='LatCouplings_Read',exist=exists)
+            if(.not.exists) then
+                call stop_all(t_r,'LatCouplings_Read file does not exist')
+            endif
+            iunit = get_free_unit()
+            open(unit=iunit,file='LatCouplings_Read',status='old')
+            read(iunit,*) iloclatcoups  !This does not need to be the same as iLatticeCoups
+            iloclatcoups = min(iLatticeCoups,iloclatcoups)
+            read(iunit,*) Couplings(1:iloclatcoups,1) !Fill the coupslings
+            do i = 2,nImp
+                !Copy them to the other impurities
+                Couplings(:,i) = Couplings(:,1)
+            enddo
+            close(iunit)
+        else
+            Couplings(1,:) = -1.0_dp    !This is the normal nearest neighbour coupling in the hubbard model. We will start from this
+        endif
+
+    end subroutine InitLatticeCouplings
+
 
     !Attempt for self-consistency on the matsubara axis via simple application of dysons equation
     subroutine SC_Imaginary_Dyson()

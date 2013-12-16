@@ -211,6 +211,7 @@ module Globals
     integer :: iFitGFWeighting  !When fitting lattice couplings, this defines whether to weight the residual (0=flat,1=1/w,2=1/w^2)
     integer :: iLatticeCoups    !The number of lattice couplings to the impurity site
     integer :: iMaxFitMicroIter !The number of microiterations to use to try and fit the lattice couplings
+    logical :: tReadCouplings   !Whether to read in the initial lattice couplings for the im axis fit
 
     !Debugging for Self-consistency
     logical :: tSE_Scan

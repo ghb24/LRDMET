@@ -131,6 +131,7 @@ Program RealHub
         iLatticeCoups = 0
         iMaxFitMicroIter = 0
         iFitAlgo = 1            !Which fitting algorithm to use. 1 = simplex, 2 = Powell
+        tReadCouplings = .false.    !Whether to read in previous lattice couplings fits
 
     end subroutine set_defaults
 
@@ -603,6 +604,8 @@ Program RealHub
                 call readi(iLatticeCoups)
             case("MAXITER_LATTICEFIT")
                 call readi(iMaxFitMicroIter)
+            case("READ_LATTICE_COUPLINGS")
+                tReadCouplings = .true.
             case("REUSE_SELFENERGY")
                 call readi(iReuse_SE)
             case("MANYBODY_SELFENERGY")
@@ -636,6 +639,7 @@ Program RealHub
                 write(6,"(A)") "LATTICE_FIT_WEIGHTING"
                 write(6,"(A)") "LATTICE_COUPLINGS"
                 write(6,"(A)") "MAXITER_LATTICEFIT"
+                write(6,"(A)") "READ_LATTICE_COUPLINGS"
                 write(6,"(A)") "MANYBODY_SELFENERGY"
                 write(6,"(A)") "MATSUBARA_FREQ"
                 write(6,"(A)") "REUSE_SELFENERGY"
