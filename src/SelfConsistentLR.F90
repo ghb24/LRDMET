@@ -429,7 +429,7 @@ module SelfConsistentLR
                 Couplings(:,i) = Couplings(:,1)
             enddo
             close(iunit)
-            write(6,"(A)") "Lattice couplings read in from disk, and initialised to: ",Couplings(:,1)
+            write(6,*) "Lattice couplings read in from disk, and initialised to: ",Couplings(:,1)
         else
             Couplings(1,:) = -1.0_dp    !This is the normal nearest neighbour coupling in the hubbard model. We will start from this
         endif
