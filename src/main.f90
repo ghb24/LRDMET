@@ -587,17 +587,14 @@ Program RealHub
             call readu(w)
             select case(w)
             case("FIT_ALGO")
+                !1 = simplex, 2 = powell
                 call readi(iFitAlgo)
-            case("SELF-CONSISTENCY")
-                tSC_LR = .true.
-                if(item.lt.nitems) then
-                    call readi(iGF_Fit)
-                endif
             case("MATSUBARA_FREQ")
                 call readf(Start_Omega_Im)
                 call readf(End_Omega_Im)
                 call readf(Omega_Step_Im)
             case("LATTICE_FIT")
+                !1 = normal, 2 = inverse
                 call readi(iLatticeFitType) 
             case("LATTICE_FIT_WEIGHTING")
                 call readi(iFitGFWeighting)
@@ -633,6 +630,10 @@ Program RealHub
                 call readf(Start_SE_Im)
                 call readf(End_SE_Im)
                 call readf(SE_Step_Im)
+            case("SELF-CONSISTENCY")
+                if(item.lt.nitems) then
+                    call readi(iGF_Fit)
+                endif
             case("END")
                 exit
             case default

@@ -72,7 +72,7 @@ module SelfConsistentLR
         allocate(DiffImpGF(nImp,nImp,nESteps_Im))
         G_Mat_Im(:,:,:) = zzero
 
-        allocate(AllDiffs(2,iMaxIter_Fit))
+        allocate(AllDiffs(2,0:iMaxIter_Fit))
         AllDiffs(:,:) = zero
 
         iter = 0
@@ -88,6 +88,11 @@ module SelfConsistentLR
             if(iLatticeFitType.eq.2) then
                 !Invert the high-level greens function, since we are fitting the residual of the inverses
                 call InvertLocalNonHermGF(nESteps_Im,G_Mat_Im)
+            endif
+            if(iter.eq.1) then
+                !calculate the initial residual
+                call CalcLatticeFitResidual(G_Mat_Im,nESteps_Im,Couplings,iLatticeCoups,AllDiffs(1,0),.true.)
+                AllDiffs(2,0) = zero
             endif
             call FitLatticeCouplings(G_Mat_Im,nESteps_Im,Couplings,iLatticeCoups,FinalDist,.true.)
 
@@ -115,7 +120,7 @@ module SelfConsistentLR
             write(6,"(A)") ""
             write(6,"(A,I7,A)") "***   COMPLETED MACROITERATION ",iter," ***"
             write(6,"(A)") "     Iter.  FitResidual        Delta_GF_Imp "
-            do i = 1,iter
+            do i = 0,iter
                 write(6,"(I7,2G20.13)") i,AllDiffs(1,i),AllDiffs(2,i)
             enddo
             write(6,"(A)") ""
@@ -346,9 +351,11 @@ module SelfConsistentLR
             elseif(ierr.eq.3) then
                 call stop_all(t_r,'iNumCoups < 1')
             elseif(ierr.eq.2) then
-                call stop_all(t_r,'Information matrix is not +ve semi-definite')
+                call warning(t_r,'Information matrix is not +ve semi-definite')
+                write(6,"(A,F14.7)") "Final residual: ",FinalErr
             elseif(ierr.eq.1) then
-                call stop_all(t_r,'Max number of Simplex function evaluations reached. Increase iteration number.')
+                call warning(t_r,'Max number of Simplex function evaluations reached.')
+                write(6,"(A,F14.7)") "Final residual: ",FinalErr
             endif
 
             !Update couplings
@@ -422,6 +429,7 @@ module SelfConsistentLR
                 Couplings(:,i) = Couplings(:,1)
             enddo
             close(iunit)
+            write(6,"(A)") "Lattice couplings read in from disk, and initialised to: ",Couplings(:,1)
         else
             Couplings(1,:) = -1.0_dp    !This is the normal nearest neighbour coupling in the hubbard model. We will start from this
         endif
