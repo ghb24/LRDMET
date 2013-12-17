@@ -76,7 +76,7 @@ module SelfConsistentLR
         AllDiffs(:,:) = zero
 
         iter = 0
-        do while(.true.)
+        do while(.not.tSkip_Lattice_Fit)
             iter = iter + 1
             
             !High level calculation on matsubara axis, with no self-energy, and just the normal lattice hamiltonian

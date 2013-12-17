@@ -132,6 +132,7 @@ Program RealHub
         iMaxFitMicroIter = 0
         iFitAlgo = 1            !Which fitting algorithm to use. 1 = simplex, 2 = Powell
         tReadCouplings = .false.    !Whether to read in previous lattice couplings fits
+        tSkip_Lattice_Fit = .false. !Whether to skip the fitting of the lattice
 
     end subroutine set_defaults
 
@@ -606,6 +607,8 @@ Program RealHub
                 call readi(iMaxFitMicroIter)
             case("READ_LATTICE_COUPLINGS")
                 tReadCouplings = .true.
+            case("SKIP_LATTICE_FIT")
+                tSkip_Lattice_Fit = .true.
             case("REUSE_SELFENERGY")
                 call readi(iReuse_SE)
             case("MANYBODY_SELFENERGY")
@@ -640,6 +643,7 @@ Program RealHub
                 write(6,"(A)") "LATTICE_COUPLINGS"
                 write(6,"(A)") "MAXITER_LATTICEFIT"
                 write(6,"(A)") "READ_LATTICE_COUPLINGS"
+                write(6,"(A)") "SKIP_LATTICE_FIT"
                 write(6,"(A)") "MANYBODY_SELFENERGY"
                 write(6,"(A)") "MATSUBARA_FREQ"
                 write(6,"(A)") "REUSE_SELFENERGY"

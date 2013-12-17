@@ -212,6 +212,7 @@ module Globals
     integer :: iLatticeCoups    !The number of lattice couplings to the impurity site
     integer :: iMaxFitMicroIter !The number of microiterations to use to try and fit the lattice couplings
     logical :: tReadCouplings   !Whether to read in the initial lattice couplings for the im axis fit
+    logical :: tSkip_Lattice_Fit    !Whether to skip the fitting of the lattice
 
     !Debugging for Self-consistency
     logical :: tSE_Scan
