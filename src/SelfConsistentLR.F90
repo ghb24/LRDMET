@@ -10,6 +10,226 @@ module SelfConsistentLR
     implicit none
 
     contains
+
+    !Self-consistency in the style of DMFT, converging both an imaginary frequency self-energy and a frequency independent hamiltonian
+    !The aim is to find a self-energy that accurately represents the lattice self-energy
+    !1) Calc G_0
+    !2) Find 'bath' G - i.e. without self-energy on impurity
+    !3) Fit lattice
+    !4) Find G_imp
+    !5) Dyson equation for updated self-energy
+    subroutine SC_FitLat_and_SE_Im()
+        implicit none
+        real(dp) :: GFChemPot,FinalDist,Omega
+        integer :: nESteps_Im,nESteps_Re,OmegaVal,iter,i
+        complex(dp), allocatable :: SE_Im(:,:,:),G_Mat_Im(:,:,:),Lattice_GF(:,:,:)
+        complex(dp), allocatable :: Bath_GF(:,:,:),zero_GF(:,:,:),Cluster_GF(:,:,:)
+        complex(dp), allocatable :: DeltaSE(:,:,:),DiffImpGF(:,:,:),G_Mat_Re(:,:,:)
+        real(dp), allocatable :: h_lat_fit(:,:),Couplings(:,:),G_Mat_Im_Old(:,:,:),AllDiffs(:,:)
+        integer, parameter :: iMaxIter_Fit = 500
+        real(dp), parameter :: dDeltaThresh = 1.0e-6_dp
+        logical, parameter :: tCreateBathGF = .true.
+        character(len=*), parameter :: t_r='SC_FitLat_and_SE_Im'
+
+        !Set chemical potential (This will only be right for half-filling)
+        GFChemPot = U/2.0_dp
+
+        !How many frequency points are there exactly?
+        nESteps_Im = 0
+        nESteps_Re = 0
+        OmegaVal = 0
+        do while(.true.)
+            call GetNextOmega(Omega,OmegaVal,tMatbrAxis=.true.)
+            if(OmegaVal.lt.0) exit
+            nESteps_Im = nESteps_Im + 1
+        enddo
+        OmegaVal = 0
+        do while(.true.)
+            call GetNextOmega(Omega,OmegaVal,tMatbrAxis=.false.)
+            if(OmegaVal.lt.0) exit
+            nESteps_Re = nESteps_Re + 1
+        enddo
+
+        !Initially, just see if we can fit the two different Matsubara spectral functions
+        write(6,*) "Number of Matsubara frequency points: ",nESteps_Im
+
+        !The Greens functions
+        allocate(G_Mat_Im(nImp,nImp,nESteps_Im))
+        allocate(G_Mat_Im_Old(nImp,nImp,nESteps_Im))
+        allocate(Lattice_GF(nImp,nImp,nESteps_Im))
+        allocate(Bath_GF(nImp,nImp,nESteps_Im))
+        allocate(Cluster_GF(nImp,nImp,nESteps_Im))
+
+        !Self-energies
+        allocate(SE_Im(nImp,nImp,nESteps_Im))
+        allocate(DeltaSE(nImp,nImp,nESteps_Im))
+        
+        !Lattice fitting
+        allocate(h_lat_fit(nSites,nSites))
+        allocate(Couplings(iLatticeCoups,nImp))
+
+        !Misc/convergences
+        allocate(zero_GF(nImp,nImp,nESteps_Im))
+        allocate(DiffImpGF(nImp,nImp,nESteps_Im))
+        allocate(AllDiffs(3,1:iMaxIter_Fit))
+
+        !Initialize values
+        !   fit lattice & couplings
+        h_lat_fit(:,:) = h0v(:,:)
+        call InitLatticeCouplings(Couplings,iLatticeCoups)
+        call AddPeriodicImpCoupling_RealSpace(h_lat_fit,nSites,iLatticeCoups,nImp,Couplings)
+
+        !   Self-energy
+        call Init_SE(nESteps_Im,SE_Im,tMatbrAxis=.true.)
+        DeltaSE(:,:,:) = zzero
+        
+        !   Greens functions
+        G_Mat_Im(:,:,:) = zzero
+        G_Mat_Im_Old(:,:,:) = zzero
+        Lattice_GF(:,:,:) = zzero
+        Bath_GF(:,:,:) = zzero
+
+        !   Convergence
+        zero_GF(:,:,:) = zzero
+        DiffImpGF(:,:,:) = zzero
+        AllDiffs(:,:) = zero
+            
+        write(6,"(A)") "Starting self-consistent optimization of greens function..."
+
+        iter = 0
+        do while(.not.tSkip_Lattice_Fit)
+            iter = iter + 1
+
+            write(6,"(A,I7)") "Starting iteration ",iter
+
+            !1) Lattice calculation with self-energy
+            call FindLocalMomGF(nESteps_Im,SE_Im,Lattice_GF,tMatbrAxis=.true.,ham=h0v)
+            call writedynamicfunction(nESteps_Im,Lattice_GF,'G_Lat_Im',tag=iter,tMatbrAxis=.true.)
+
+            write(6,"(A)") "Lattice greens function calculated and written to disk."
+
+            !2) Optionally, create a 'bath' greens function, where the self-energy is removed from the impurity
+            if(tCreateBathGF) then
+                !The 'bath' greens function is defined as [G_0^-1 + SE]^-1
+                Bath_GF(:,:,:) = Lattice_GF(:,:,:)
+                call InvertLocalNonHermGF(nESteps_Im,Bath_GF)
+                Bath_GF(:,:,:) = Bath_GF(:,:,:) + SE_Im(:,:,:)
+                if(iLatticeFitType.ne.2) then
+                    !Don't bother inverting, since we want the inverse of the bath greens function, 
+                    !since we are fitting the residual of the inverses
+                    call InvertLocalNonHermGF(nESteps_Im,Bath_GF)
+                    call writedynamicfunction(nESteps_Im,Bath_GF,'G_Bath_Im',tag=iter,tMatbrAxis=.true.)
+                    write(6,"(A)") "Bath greens function calculated and written to disk."
+                endif
+                write(6,"(A)") "Bath greens function calculated (but not written)."
+            else
+                !Alternatively, set the 'bath' greens function to be the 'lattice' one (with SE over impurity space).
+                Bath_GF(:,:,:) = Lattice_GF(:,:,:)
+                if(iLatticeFitType.eq.2) then
+                    !Invert the bath greens function, since we are fitting the residual of the inverses
+                    call InvertLocalNonHermGF(nESteps_Im,Bath_GF)
+                endif
+            endif
+            
+            !3) Fit a lattice hamiltonian, such that it reproduces the bath greens function
+            !   This will fit couplings on to h0v, with no frequency-dependent potential, to match the 'bath' GF
+            write(6,"(A)") "Fitting static lattice couplings to reproduce bath greens function..."
+            call FitLatticeCouplings(Bath_GF,nESteps_Im,Couplings,iLatticeCoups,FinalDist,.true.)
+            !   Construct this lattice hamiltonian. In the future, remove the embedding 
+            !   potential from h0v, and just use coupling
+            call AddPeriodicImpCoupling_RealSpace(h_lat_fit,nSites,iLatticeCoups,nImp,Couplings)
+            !   For interest, find the 'cluster' greens function, which should now fit the 'bath' greens function
+            call FindLocalMomGF(nESteps_Im,zero_GF,Cluster_GF,tMatbrAxis=.true.,ham=h_lat_fit,CouplingLength=iLatticeCoups)
+            call writedynamicfunction(nESteps_Im,Cluster_GF,'G_Clust_Im',tag=iter,tMatbrAxis=.true.)
+            !Write out the lattice couplings
+            call WriteLatticeCouplings(iLatticeCoups,Couplings)
+            write(6,"(A)") "Fit successful. Couplings and cluster greens function written to disk."
+
+            !4) Perform impurity calculation
+            !   High level calculation on matsubara axis, with no self-energy, and just the fit lattice hamiltonian
+            G_Mat_Im_Old(:,:,:) = G_Mat_Im(:,:,:)
+            write(6,"(A)") "Starting calculation of high-level, impurity greens function"
+            call SchmidtGF_wSE(G_Mat_Im,GFChemPot,zero_GF,nESteps_Im,tMatbrAxis=.true.,ham=h_lat_fit)
+            call writedynamicfunction(nESteps_Im,G_Mat_Im,'G_Imp_Im',tag=iter,tMatbrAxis=.true.)
+
+            !5) Apply Dysons equation, in order to find the correction to the self-energy
+            if(iLatticeFitType.eq.2) then
+                !Bath_GF is *already* the inverse of the bath greens function.
+                !We don't need to invert again
+                continue
+            else
+                !Bath_GF is the bath greens function. Invert it to apply Dysons
+                call InvertLocalNonHermGF(nESteps_Im,Bath_GF)
+            endif
+            !   Invert the impurity greens function
+            call InvertLocalNonHermGF(nESteps_Im,G_Mat_Im)  
+            !   Apply Dyson
+            DeltaSE(:,:,:) = Damping_SE * (Bath_GF(:,:,:) - G_Mat_Im(:,:,:))
+            !   Add this correction to the true self-energy
+            SE_Im(:,:,:) = SE_Im(:,:,:) + DeltaSE(:,:,:)
+            call writedynamicfunction(nESteps_Im,SE_Im,'SE_Im',tag=iter,tMatbrAxis=.true.)
+            write(6,"(A)") "Self-energy updated via Dyson, and written to disk."
+
+            !6) Calc Stats
+            !   1 = residual in lattice fit
+            AllDiffs(1,iter) = FinalDist    !The final residual in the lattice fit         
+            !   2 = change in 'impurity' greens function
+            DiffImpGF(:,:,:) = G_Mat_Im_Old(:,:,:) - G_Mat_Im(:,:,:)
+            DiffImpGF(:,:,:) = DiffImpGF(:,:,:) * dconjg(DiffImpGF(:,:,:))
+            AllDiffs(2,iter) = sum(real(DiffImpGF(:,:,:),dp))
+            !   3 = change in self-energy 
+            DiffImpGF(:,:,:) = DeltaSE(:,:,:) * dconjg(DeltaSE(:,:,:))
+            AllDiffs(3,iter) = sum(real(DiffImpGF(:,:,:),dp))
+            
+            write(6,"(A)") ""
+            write(6,"(A,I7,A)") "***   COMPLETED MACROITERATION ",iter," ***"
+            write(6,"(A)") "     Iter.  FitResidual        Delta_GF_Imp     Delta_SE"
+            do i = 1,iter
+                write(6,"(I7,3G20.13)") i,AllDiffs(1,i),AllDiffs(2,i),AllDiffs(3,i)
+            enddo
+            write(6,"(A)") ""
+            call flush(6)
+
+            if(iter.gt.iMaxIter_Fit) then
+                write(6,"(A,I9)") "Exiting. Max macroiters hit of: ",iMaxIter_Fit
+                exit
+            endif
+
+            !If the change to the self-energy is small enough, we have converged
+            if(AllDiffs(3,iter).lt.dDeltaThresh) then
+                write(6,"(A)") "Success! Convergence of self-energy on imaginary axis successful"
+                write(6,"(A,G20.13)") "Self-energy changing on imaginary axis by less than: ",dDeltaThresh
+                exit
+            endif
+        enddo
+
+        !Write out final self-energy and lattice couplings
+        call writedynamicfunction(nESteps_Im,SE_Im,'Converged_SE_Im',tMatbrAxis=.true.)
+        write(6,"(A)") "Final *frequency independent* lattice coupling parameters for bath fit: "
+        do i = 1,iLatticeCoups
+            write(6,"(I6,G20.13)") i,Couplings(i,1)
+        enddo
+        write(6,"(A)") "" 
+        
+        deallocate(SE_Im,G_Mat_Im,zero_GF,Cluster_GF,Lattice_GF,Bath_GF,DeltaSE,DiffImpGF,G_Mat_Im_Old,AllDiffs)
+
+        write(6,"(A)") "Now calculating spectral functions on the REAL axis..."
+        call flush(6)
+        !First, calculate the real-frequency 'cluster' greens function
+        allocate(zero_GF(nImp,nImp,nESteps_Re))
+        allocate(Cluster_GF(nImp,nImp,nESteps_Re))
+        zero_GF(:,:,:) = zzero
+        call FindLocalMomGF(nESteps_Re,zero_GF,Cluster_GF,tMatbrAxis=.false.,ham=h_lat_fit,CouplingLength=iLatticeCoups)
+        call writedynamicfunction(nESteps_Re,Cluster_GF,'G_Clust_Re_Final',tMatbrAxis=.false.)
+
+        !...and the real-frequency greens function
+        allocate(G_Mat_Re(nImp,nImp,nESteps_Re))
+        call SchmidtGF_wSE(G_Mat_Re,GFChemPot,zero_GF,nESteps_Re,tMatbrAxis=.false.,ham=h_lat_fit)
+        call writedynamicfunction(nESteps_Re,G_Mat_Re,'G_Imp_Re_Final',tMatbrAxis=.false.)
+
+        deallocate(h_lat_fit,Couplings,G_Mat_Re,Cluster_GF)
+
+    end subroutine SC_FitLat_and_SE_Im
     
     !Self-consistently fit a frequency *independent* lattice coupling to the impurity in order to
     !match the matsubara greens functions
@@ -141,7 +361,7 @@ module SelfConsistentLR
         enddo
 
         !We should write these out to a file so that we can restart from them at a later date (possibly with more variables).
-        write(6,"(A)") "Final *impurity independent* lattice coupling parameters: "
+        write(6,"(A)") "Final *frequency independent* lattice coupling parameters: "
         do i = 1,iLatticeCoups
             write(6,"(I6,G20.13)") i,Couplings(i,1)
         enddo
