@@ -31,7 +31,7 @@ module LinearResponse
         real(dp), intent(in), optional :: ham(nSites,nSites)
         logical :: tMatbrAxis_,tLatHamProvided_
         complex(dp), allocatable :: NFCIHam(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
-        real(dp), allocatable :: dNorm_p(:),dNorm_h(:),W(:)
+        real(dp), allocatable :: dNorm_p(:),dNorm_h(:),W(:),temp(:,:),ham_schmidt(:,:)
         complex(dp), allocatable , target :: LinearSystem_p(:,:),LinearSystem_h(:,:)
         complex(dp), allocatable :: Cre_0(:,:),Ann_0(:,:),ResponseFn_p(:,:),ResponseFn_h(:,:)
         complex(dp), allocatable :: Gc_a_F_ax_Bra(:,:),Gc_a_F_ax_Ket(:,:),Gc_b_F_ab(:,:)
@@ -122,8 +122,17 @@ module LinearResponse
         endif
         if(tLatHamProvided_) then
             write(6,"(A)") "Non-standard Lattice hamiltonian to be used for calculation of greens function"
-            write(6,"(A)") "Currently, this will only be for defining the bath space, " &
-                //"rather than contributing to the one-electron hamiltonian in the bath"
+            if(tEnvLatHam) then
+                write(6,"(A)") "Fit lattice terms used for one-electron contributions in environment/dynamic bath space (no static corr pot contrib.)"
+                write(6,"(A)") "Bare one-electron terms in impurity"
+                write(6,"(A)") "GS correlation potential in GS static bath space"
+            else
+                write(6,"(A)") "Passed in lattice h only for defining the bath space, " &
+                    //"rather than contributing to the one-electron hamiltonian in the bath"
+            endif
+        endif
+        if(tEnvLatHam.and.(.not.tLatHamProvided_)) then
+            call stop_all(t_r,'Wanting non-standard one-electron terms in environment, but no hamiltonian passed in')
         endif
 
         if(tLatHamProvided_) then
@@ -140,6 +149,16 @@ module LinearResponse
             allocate(LatVecs_R(nSites,nSites))
             allocate(LatVecs_L(nSites,nSites))
             call DiagNonHermLatticeHam(ham,LatVals,LatVecs_R,LatVecs_L)
+
+            if(tEnvLatHam) then
+                !Construct the environment lattice contributions
+                allocate(temp(nSites,nSites))
+                allocate(ham_schmidt(nSites,nSites))
+                call DGEMM('T','N',nSites,nSites,nSites,one,FullSchmidtBasis,nSites,ham,nSites,zero,temp,nSites)
+                call DGEMM('N','N',nSites,nSites,nSites,one,temp,nSites,FullSchmidtBasis,nSites,zero,ham_schmidt,nSites)
+                !Order of ham_schmidt = core, imp, bath, virt
+                deallocate(temp)
+            endif
         endif
 
         !umat and tmat for the active space
@@ -282,13 +301,29 @@ module LinearResponse
         !Set the impurity parts to the correct values (even though we don't access them from FockSchmidt)
         !They are different since the correlation potential is not defined over the impurity sites.
         FockSchmidt(nOcc-nImp+1:nOcc+nImp,nOcc-nImp+1:nOcc+nImp) = Emb_h0v(:,:)
-        !If we are doing self-consistent linear response, with a self-energy in the HL part, 
-        !then this is calculated later, since it is now omega and iteration dependent
-        do i = 1,nSites
-            do j = 1,nSites
-                FockSchmidt_SE(j,i) = dcmplx(FockSchmidt(j,i),0.0_dp)
+        !Set up the one-electron terms over the external space
+        if(tEnvLatHam) then
+            !Use ham_schmidt over the whole external space from the hamiltonian read in
+            do i = 1,nSites
+                do j = 1,nSites
+                    FockSchmidt_SE(j,i) = dcmplx(ham_schmidt(j,i),zero)
+                enddo
             enddo
-        enddo
+            !Ensure that the 'active space' (inc. static bath) is simply from the GS correlation potential
+            do i = nOcc-nImp+1,nOcc+nImp
+                do j = nOcc-nImp+1,nOcc+nImp
+                    FockSchmidt_SE(j,i) = dcmplx(FockSchmidt(j,i),zero)
+                enddo
+            enddo
+        else
+            !If we are doing self-consistent linear response, with a self-energy in the HL part, 
+            !then this is calculated later, since it is now omega and iteration dependent
+            do i = 1,nSites
+                do j = 1,nSites
+                    FockSchmidt_SE(j,i) = dcmplx(FockSchmidt(j,i),zero)
+                enddo
+            enddo
+        endif
         FockSchmidt_SE_CC(1:CoreEnd,1:CoreEnd) = FockSchmidt_SE(1:CoreEnd,1:CoreEnd)
         FockSchmidt_SE_VV(VirtStart:nSites,VirtStart:nSites) = FockSchmidt_SE(VirtStart:nSites,VirtStart:nSites)
         FockSchmidt_SE_VX(VirtStart:VirtEnd,ActiveStart:ActiveEnd) = FockSchmidt_SE(VirtStart:VirtEnd,ActiveStart:ActiveEnd)
@@ -296,16 +331,6 @@ module LinearResponse
         FockSchmidt_SE_XV(ActiveStart:ActiveEnd,VirtStart:VirtEnd) = FockSchmidt_SE(ActiveStart:ActiveEnd,VirtStart:VirtEnd)
         FockSchmidt_SE_XC(ActiveStart:ActiveEnd,1:CoreEnd) = FockSchmidt_SE(ActiveStart:ActiveEnd,1:CoreEnd)
 
-!        !Emb_h0v_SE and h0v_se
-!        allocate(Emb_h0v_SE(EmbSize,EmbSize))   !The 1-electron hamiltonian (with self-energy correction) over the embedded basis
-!        do i = 1,EmbSize
-!            do j = 1,EmbSize
-!                Emb_h0v_SE(j,i) = dcmplx(Emb_h0v(j,i),0.0_dp)
-!            enddo
-!        enddo
-!        if(allocated(h0v_se)) deallocate(h0v_se)
-!        allocate(h0v_se(nSites,nSites))     !1 electron hamiltonian. Potential
-        
         !Space for useful intermediates
         !For particle addition
         allocate(Gc_a_F_ax_Bra(ActiveStart:ActiveEnd,nImp),stat=ierr)
@@ -860,6 +885,7 @@ module LinearResponse
         if(allocated(LatVals)) deallocate(LatVals)
         if(allocated(LatVecs_R)) deallocate(LatVecs_R)
         if(allocated(LatVecs_L)) deallocate(LatVecs_L)
+        if(allocated(ham_schmidt)) deallocate(ham_schmidt)
 
     end subroutine SchmidtGF_wSE
     

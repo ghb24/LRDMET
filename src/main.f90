@@ -115,7 +115,7 @@ Program RealHub
         tPartialSE_Fit = .false.
         iPartialSE_Fit = 0
         iSE_Constraints = 1
-        Damping_SE = 1.0_dp 
+        Damping_SE = one 
         tConvergeMicroSE = .false.
         iMinRes_MaxIter = 20000
         tBetaExcit = .false.
@@ -133,6 +133,7 @@ Program RealHub
         iFitAlgo = 1            !Which fitting algorithm to use. 1 = simplex, 2 = Powell
         tReadCouplings = .false.    !Whether to read in previous lattice couplings fits
         tSkip_Lattice_Fit = .false. !Whether to skip the fitting of the lattice
+        tEnvLatHam = .false.        !Whether to use the fit hamiltonian as the one-electron external terms
 
     end subroutine set_defaults
 
@@ -606,11 +607,13 @@ Program RealHub
                 tReadCouplings = .true.
             case("SKIP_LATTICE_FIT")
                 tSkip_Lattice_Fit = .true.
+            case("EXT_HAM_FITLATTICE")
+                tEnvLatHam = .true.     !Use the fit hamiltonian as the 1-e terms in the external space
             case("REUSE_SELFENERGY")
                 call readi(iReuse_SE)
             case("MANYBODY_SELFENERGY")
                 tNoHL_SE = .false.
-            case("SELFENERGY_DAMPING")
+            case("DAMPING")
                 call readf(Damping_SE)
             case("SELFENERGY_ITERATIONS")
                 call readi(max_SE_iter)
@@ -645,6 +648,7 @@ Program RealHub
                 write(6,"(A)") "MAXITER_LATTICEFIT"
                 write(6,"(A)") "READ_LATTICE_COUPLINGS"
                 write(6,"(A)") "SKIP_LATTICE_FIT"
+                write(6,"(A)") "EXT_HAM_FITLATTICE"
                 write(6,"(A)") "MANYBODY_SELFENERGY"
                 write(6,"(A)") "MATSUBARA_FREQ"
                 write(6,"(A)") "REUSE_SELFENERGY"

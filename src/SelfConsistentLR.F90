@@ -89,6 +89,13 @@ module SelfConsistentLR
                 !Invert the high-level greens function, since we are fitting the residual of the inverses
                 call InvertLocalNonHermGF(nESteps_Im,G_Mat_Im)
             endif
+
+            if((abs(Damping_SE-one).gt.1.0e-8_dp).and.(iter.gt.1)) then
+                !Take an admixture of the previous two high-level calculations to damp the fit
+                G_Mat_Im(:,:,:) = (Damping_SE*G_Mat_Im(:,:,:)) + ((one-Damping_SE)*G_Mat_Im_Old(:,:,:))
+            endif
+
+
             if(iter.eq.1) then
                 !calculate the initial residual
                 call CalcLatticeFitResidual(G_Mat_Im,nESteps_Im,Couplings,iLatticeCoups,AllDiffs(1,0),.true.)
