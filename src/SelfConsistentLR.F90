@@ -25,7 +25,8 @@ module SelfConsistentLR
         complex(dp), allocatable :: SE_Im(:,:,:),G_Mat_Im(:,:,:),Lattice_GF(:,:,:)
         complex(dp), allocatable :: Bath_GF(:,:,:),zero_GF(:,:,:),Cluster_GF(:,:,:)
         complex(dp), allocatable :: DeltaSE(:,:,:),DiffImpGF(:,:,:),G_Mat_Re(:,:,:)
-        real(dp), allocatable :: h_lat_fit(:,:),Couplings(:,:),G_Mat_Im_Old(:,:,:),AllDiffs(:,:)
+        complex(dp), allocatable :: G_Mat_Im_Old(:,:,:)
+        real(dp), allocatable :: h_lat_fit(:,:),Couplings(:,:),AllDiffs(:,:)
         integer, parameter :: iMaxIter_Fit = 500
         real(dp), parameter :: dDeltaThresh = 1.0e-6_dp
         logical, parameter :: tCreateBathGF = .true.
@@ -115,13 +116,14 @@ module SelfConsistentLR
                 call InvertLocalNonHermGF(nESteps_Im,Bath_GF)
                 Bath_GF(:,:,:) = Bath_GF(:,:,:) + SE_Im(:,:,:)
                 if(iLatticeFitType.ne.2) then
-                    !Don't bother inverting, since we want the inverse of the bath greens function, 
-                    !since we are fitting the residual of the inverses
                     call InvertLocalNonHermGF(nESteps_Im,Bath_GF)
                     call writedynamicfunction(nESteps_Im,Bath_GF,'G_Bath_Im',tag=iter,tMatbrAxis=.true.)
                     write(6,"(A)") "Bath greens function calculated and written to disk."
+                else
+                    !Don't bother inverting, since we want the inverse of the bath greens function, 
+                    !since we are fitting the residual of the inverses
+                    write(6,"(A)") "Bath greens function calculated (but not written)."
                 endif
-                write(6,"(A)") "Bath greens function calculated (but not written)."
             else
                 !Alternatively, set the 'bath' greens function to be the 'lattice' one (with SE over impurity space).
                 Bath_GF(:,:,:) = Lattice_GF(:,:,:)
@@ -147,10 +149,17 @@ module SelfConsistentLR
 
             !4) Perform impurity calculation
             !   High level calculation on matsubara axis, with no self-energy, and just the fit lattice hamiltonian
-            G_Mat_Im_Old(:,:,:) = G_Mat_Im(:,:,:)
             write(6,"(A)") "Starting calculation of high-level, impurity greens function"
             call SchmidtGF_wSE(G_Mat_Im,GFChemPot,zero_GF,nESteps_Im,tMatbrAxis=.true.,ham=h_lat_fit)
             call writedynamicfunction(nESteps_Im,G_Mat_Im,'G_Imp_Im',tag=iter,tMatbrAxis=.true.)
+            !   2 = change in 'impurity' greens function
+!            call writedynamicfunction(nESteps_Im,G_Mat_Im_Old,'G_Mat_Im_Old_temp',tag=iter,tMatbrAxis=.true.)
+!            call writedynamicfunction(nESteps_Im,G_Mat_Im,'G_Mat_Im_temp',tag=iter,tMatbrAxis=.true.)
+            DiffImpGF(:,:,:) = G_Mat_Im_Old(:,:,:) - G_Mat_Im(:,:,:)
+!            call writedynamicfunction(nESteps_Im,DiffImpGF,'DiffImpGF',tag=iter,tMatbrAxis=.true.)
+            DiffImpGF(:,:,:) = DiffImpGF(:,:,:) * dconjg(DiffImpGF(:,:,:))
+            AllDiffs(2,iter) = sum(real(DiffImpGF(:,:,:),dp))
+            G_Mat_Im_Old(:,:,:) = G_Mat_Im(:,:,:)
 
             !5) Apply Dysons equation, in order to find the correction to the self-energy
             if(iLatticeFitType.eq.2) then
@@ -173,10 +182,6 @@ module SelfConsistentLR
             !6) Calc Stats
             !   1 = residual in lattice fit
             AllDiffs(1,iter) = FinalDist    !The final residual in the lattice fit         
-            !   2 = change in 'impurity' greens function
-            DiffImpGF(:,:,:) = G_Mat_Im_Old(:,:,:) - G_Mat_Im(:,:,:)
-            DiffImpGF(:,:,:) = DiffImpGF(:,:,:) * dconjg(DiffImpGF(:,:,:))
-            AllDiffs(2,iter) = sum(real(DiffImpGF(:,:,:),dp))
             !   3 = change in self-energy 
             DiffImpGF(:,:,:) = DeltaSE(:,:,:) * dconjg(DeltaSE(:,:,:))
             AllDiffs(3,iter) = sum(real(DiffImpGF(:,:,:),dp))
