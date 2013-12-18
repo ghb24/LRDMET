@@ -12,7 +12,8 @@ module SelfConsistentLR
     contains
 
     !Self-consistency in the style of DMFT, converging both an imaginary frequency self-energy and a frequency independent hamiltonian
-    !The aim is to find a self-energy that accurately represents the lattice self-energy
+    !The aim is to find a self-energy that accurately represents the lattice self-energy.
+    !At convergence, the *lattice* greens function should equal the *impurity* greens function
     !1) Calc G_0
     !2) Find 'bath' G - i.e. without self-energy on impurity
     !3) Fit lattice
@@ -104,7 +105,7 @@ module SelfConsistentLR
             write(6,"(A,I7)") "Starting iteration ",iter
 
             !1) Lattice calculation with self-energy
-            call FindLocalMomGF(nESteps_Im,SE_Im,Lattice_GF,tMatbrAxis=.true.,ham=h0v)
+            call FindLocalMomGF(nESteps_Im,SE_Im,Lattice_GF,tMatbrAxis=.true.)
             call writedynamicfunction(nESteps_Im,Lattice_GF,'G_Lat_Im',tag=iter,tMatbrAxis=.true.)
 
             write(6,"(A)") "Lattice greens function calculated and written to disk."
@@ -161,7 +162,7 @@ module SelfConsistentLR
             AllDiffs(2,iter) = sum(real(DiffImpGF(:,:,:),dp))
             G_Mat_Im_Old(:,:,:) = G_Mat_Im(:,:,:)
 
-            !5) Apply Dysons equation, in order to find the correction to the self-energy
+            !5) Apply Dysons equation, in order to find the self-energy
             if(iLatticeFitType.eq.2) then
                 !Bath_GF is *already* the inverse of the bath greens function.
                 !We don't need to invert again
@@ -173,9 +174,9 @@ module SelfConsistentLR
             !   Invert the impurity greens function
             call InvertLocalNonHermGF(nESteps_Im,G_Mat_Im)  
             !   Apply Dyson
-            DeltaSE(:,:,:) = Damping_SE * (Bath_GF(:,:,:) - G_Mat_Im(:,:,:))
-            !   Add this correction to the true self-energy
-            SE_Im(:,:,:) = SE_Im(:,:,:) + DeltaSE(:,:,:)
+            DeltaSE(:,:,:) = SE_Im(:,:,:)   !Store old SE
+            SE_Im(:,:,:) = Damping_SE * (Bath_GF(:,:,:) - G_Mat_Im(:,:,:)) + ((one-Damping_SE)*DeltaSE(:,:,:))
+            DeltaSE(:,:,:) = DeltaSE(:,:,:) - SE_Im(:,:,:)  !DeltaSE is now the change to the self-energy 
             call writedynamicfunction(nESteps_Im,SE_Im,'SE_Im',tag=iter,tMatbrAxis=.true.)
             write(6,"(A)") "Self-energy updated via Dyson, and written to disk."
 
