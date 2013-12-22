@@ -23,9 +23,9 @@ module LRDriver
             !Direct application of Dysons equation on the Im axis
             !call SC_Imaginary_Dyson()
             !Fitting of a frequency independent lattice coupling
-            !call SC_FitLatticeGF_Im()
+            call SC_FitLatticeGF_Im()
             !DMFT-style fitting of a lattice & matsubara self-energy
-            call SC_FitLat_and_SE_Im() 
+            !call SC_FitLat_and_SE_Im() 
         endif
 
     end subroutine SelfConsistent_MR_LR

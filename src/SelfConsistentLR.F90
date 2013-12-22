@@ -253,6 +253,7 @@ module SelfConsistentLR
         integer :: i,iter
         integer, parameter :: iMaxIter_Fit = 1000
         real(dp), parameter :: dDeltaImpThresh = 1.0e-6_dp 
+        logical, parameter :: tCalcRealSpectrum = .true.
         character(len=*), parameter :: t_r='SC_FitLatticeGF_Im'
 
         !Set chemical potential (This will only be right for half-filling)
@@ -287,12 +288,19 @@ module SelfConsistentLR
         call AddPeriodicImpCoupling_RealSpace(h_lat_fit,nSites,iLatticeCoups,nImp,Couplings)
 
         allocate(G_Mat_Im(nImp,nImp,nESteps_Im))
+        allocate(G_Mat_Re(nImp,nImp,nESteps_Re))
+        allocate(SE_Re(nImp,nImp,nESteps_Re))
+        SE_Re(:,:,:) = zzero
         allocate(Lattice_GF(nImp,nImp,nESteps_Im))
         !Write out the initial lattice greens function
         !call FindLocalMomGF(nESteps_Im,SE_Im,Lattice_GF,tMatbrAxis=.true.,ham=h_lat_fit)
         call FindLocalMomGF(nESteps_Im,SE_Im,Lattice_GF,tMatbrAxis=.true.,ham=h_lat_fit,CouplingLength=iLatticeCoups)
         !Write out lattice greens function
         call writedynamicfunction(nESteps_Im,Lattice_GF,'G_Lat_Im',tag=0,tMatbrAxis=.true.)
+        if(tCalcRealSpectrum) then
+            call SchmidtGF_wSE(G_Mat_Re,GFChemPot,SE_Re,nESteps_Re,tMatbrAxis=.false.,ham=h_lat_fit)
+            call writedynamicfunction(nESteps_Re,G_Mat_Re,'G_Imp_Re',tag=0,tMatbrAxis=.false.)
+        endif
 
         allocate(G_Mat_Im_Old(nImp,nImp,nESteps_Im))
         allocate(DiffImpGF(nImp,nImp,nESteps_Im))
@@ -339,6 +347,11 @@ module SelfConsistentLR
 
             !Write out the lattice couplings
             call WriteLatticeCouplings(iLatticeCoups,Couplings)
+        
+            if(tCalcRealSpectrum) then
+                call SchmidtGF_wSE(G_Mat_Re,GFChemPot,SE_Re,nESteps_Re,tMatbrAxis=.false.,ham=h_lat_fit)
+                call writedynamicfunction(nESteps_Re,G_Mat_Re,'G_Imp_Re',tag=iter,tMatbrAxis=.false.)
+            endif
 
             !Calculate & write out stats (all of them)
             if(iter.gt.iMaxIter_Fit) then
@@ -374,10 +387,7 @@ module SelfConsistentLR
         write(6,"(A)") "" 
 
         deallocate(G_Mat_Im,SE_Im,Lattice_GF,G_Mat_Im_Old,DiffImpGF,AllDiffs)
-        allocate(G_Mat_Re(nImp,nImp,nESteps_Re))
-        allocate(SE_Re(nImp,nImp,nESteps_Re))
         allocate(Lattice_GF(nImp,nImp,nESteps_Re))
-        SE_Re(:,:,:) = zzero
             
         write(6,"(A)") "Now calculating spectral functions on the REAL axis"
         call flush(6)
@@ -416,8 +426,8 @@ module SelfConsistentLR
         real(dp), intent(out) :: dist
         logical, intent(in) :: tMatbrAxis
         real(dp), allocatable :: h_lat_fit(:,:)
-        complex(dp), allocatable :: SE_Dummy(:,:,:),Lattice_GF(:,:,:),DiffMat(:,:,:),DiffMatSq(:,:,:)
-        real(dp) :: Omega
+        complex(dp), allocatable :: SE_Dummy(:,:,:),Lattice_GF(:,:,:),DiffMat(:,:,:)
+        real(dp) :: Omega,LattWeight
         integer :: i,j,k
         character(len=*), parameter :: t_r='CalcLatticeFitResidual'
         
@@ -444,16 +454,17 @@ module SelfConsistentLR
             !If required (i.e. we are fitting the inverses of the functions), invert the lattice greens function
             call InvertLocalNonHermGF(nESteps,Lattice_GF)
         endif
+        
+        allocate(DiffMat(nImp,nImp,nESteps))
 
         !Now, take the difference between the functions
-        allocate(DiffMat(nImp,nImp,nESteps))
-        allocate(DiffMatSq(nImp,nImp,nESteps))
         DiffMat(:,:,:) = Lattice_GF(:,:,:) - G_Imp(:,:,:)
 
         !Take mod square and trace (Same as taking the abs square of the values)
         DiffMat(:,:,:) = DiffMat(:,:,:) * dconjg(DiffMat(:,:,:))
 
         dist = zero
+        LattWeight = zero
         i = 0
         do while(.true.)
             call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis)
@@ -476,9 +487,17 @@ module SelfConsistentLR
                         !1/w^2 weighting
                         dist = dist + real(DiffMat(k,j,i),dp)/(Omega**2)
                     endif
+                    if(iLatticeFitType.eq.3) then
+                        LattWeight = LattWeight + real(Lattice_GF(k,j,i)*dconjg(Lattice_GF(k,j,i)),dp)
+                    endif
                 enddo
             enddo
         enddo
+
+        if(iLatticeFitType.eq.3) then
+            !Attempt to maximize lattice weight in the spectral window so that we don't optimize to v high frequencies
+            dist = dist/LattWeight
+        endif
 
         deallocate(h_lat_fit,SE_Dummy,DiffMat,Lattice_GF)
 
