@@ -515,54 +515,72 @@ module SelfConsistentLR
         logical, intent(in) :: tMatbrAxis
 
         real(dp), allocatable :: step(:),vars(:),var(:)
-        integer :: nop,i,maxf,iprint,nloop,iquad,ierr
+        integer :: nop,i,maxf,iprint,nloop,iquad,ierr,iRealCoupNum
         real(dp) :: stopcr,simp,rhobeg,rhoend
         logical :: tfirst
         character(len=*), parameter :: t_r='FitLatticeCouplings'
 
+        if(tEveryOtherCoup) then
+            !We actually only have half the number of couplings, since we are not optimizing every other coupling, and
+            !just setting it to zero
+            if(mod(iNumCoups,2).eq.2) then
+                iRealCoupNum = iNumCoups/2
+            else
+                iRealCoupNum = (iNumCoups+1)/2
+            endif
+        else
+            iRealCoupNum = iNumCoups
+        endif
+
         if(iFitAlgo.eq.2) then
             !Use modified Powell algorithm for optimization (based on fitting to quadratics)
 
-            allocate(vars(iNumCoups))
-            do i = 1,iNumCoups
-                vars(i) = Couplings(i,1)
-            enddo
+            allocate(vars(iRealCoupNum))
+            if(tEveryOtherCoup) then
+                do i = 1,iRealCoupNum
+                    vars(i) = Couplings((2*i)-1,1)
+                enddo
+            else
+                do i = 1,iRealCoupNum
+                    vars(i) = Couplings(i,1)
+                enddo
+            endif
 
             rhobeg = 0.05_dp
             rhoend = 1.0e-6_dp
             iprint = 2
             if(iMaxFitMicroIter.eq.0) then
-                maxf = 20*iNumCoups
+                maxf = 20*iRealCoupNum
             else
                 maxf = iMaxFitMicroIter
             endif
 
             !Vars is updated to be the best value to minimize the residual
-            call uobyqa(iNumCoups,vars,rhobeg,rhoend,iprint,maxf,FinalErr,MinCoups, n, G_Imp, tMatbrAxis)
+            call uobyqa(iRealCoupNum,vars,rhobeg,rhoend,iprint,maxf,FinalErr,MinCoups, n, G_Imp, tMatbrAxis)
 
-            !Update couplings
-            do i = 1,nImp
-                Couplings(:,i) = vars(:)
-            enddo
-
-            deallocate(vars)
 
         elseif(iFitAlgo.eq.1) then
             !Use simplex method for optimization without derivatives
 
             !Starting values are assumed to be read in
-            allocate(step(iNumCoups))
-            allocate(vars(iNumCoups))
-            allocate(var(iNumCoups))
+            allocate(step(iRealCoupNum))
+            allocate(vars(iRealCoupNum))
+            allocate(var(iRealCoupNum))
             step(:) = 0.05_dp
-            nop = iNumCoups
-            do i = 1,iNumCoups
-                vars(i) = Couplings(i,1)
-            enddo
+            nop = iRealCoupNum
+            if(tEveryOtherCoup) then
+                do i = 1,iRealCoupNum
+                    vars(i) = Couplings((2*i)-1,1)
+                enddo
+            else
+                do i = 1,iRealCoupNum
+                    vars(i) = Couplings(i,1)
+                enddo
+            endif
 
             !Set max no of function evaluations. Default = 20*variables, print every 25
             if(iMaxFitMicroIter.eq.0) then
-                maxf = 20*iNumCoups
+                maxf = 20*iRealCoupNum
             else
                 maxf = iMaxFitMicroIter
             endif
@@ -572,7 +590,7 @@ module SelfConsistentLR
             !standard deviation of the values of the objective function at
             !the points of the current simplex < stopcr
             stopcr = 1.0e-4_dp
-            nloop = 2*iNumCoups !This is how often the stopping criterion is checked
+            nloop = 2*iRealCoupNum !This is how often the stopping criterion is checked
 
             !Fit a quadratic surface to be sure a minimum has been found
             iquad = 1
@@ -585,13 +603,13 @@ module SelfConsistentLR
             !Now call minim to do the work
             tfirst = .true.
             do while(.true.)
-                call minim(vars, step, iNumCoups, FinalErr, maxf, iprint, stopcr, nloop, &
+                call minim(vars, step, iRealCoupNum, FinalErr, maxf, iprint, stopcr, nloop, &
                     iquad, simp, var, MinCoups, ierr, n, G_Imp, tMatbrAxis)
 
                 if(ierr.eq.0) exit
                 if(.not.tFirst) exit
                 tFirst = .false.    !We have found a minimum, but run again with a small number of iterations to check it is stable
-                maxf = 3*iNumCoups
+                maxf = 3*iRealCoupNum
             enddo
 
             !On output, Err is the minimized objective function, var contains the diagonal of the inverse of the information matrix, whatever that is
@@ -601,7 +619,7 @@ module SelfConsistentLR
             elseif(ierr.eq.4) then
                 call stop_all(t_r,'nloop < 1')
             elseif(ierr.eq.3) then
-                call stop_all(t_r,'iNumCoups < 1')
+                call stop_all(t_r,'iRealCoupNum < 1')
             elseif(ierr.eq.2) then
                 call warning(t_r,'Information matrix is not +ve semi-definite')
                 write(6,"(A,F14.7)") "Final residual: ",FinalErr
@@ -610,45 +628,62 @@ module SelfConsistentLR
                 write(6,"(A,F14.7)") "Final residual: ",FinalErr
             endif
 
-            !Update couplings
+            deallocate(step,var)
+        endif
+            
+        !Update couplings
+        if(tEveryOtherCoup) then
+            !Put back into the couplings array is every other slot
+            Couplings(:,1) = zero
+            do i = 1,iRealCoupNum
+                Couplings((2*i)-1,1) = vars(i)
+            enddo
+            do i = 2,nImp
+                Couplings(:,i) = Couplings(:,1)
+            enddo
+        else
             do i = 1,nImp
                 Couplings(:,i) = vars(:)
             enddo
-
-            deallocate(step,vars,var)
         endif
+
+        deallocate(vars)
 
     end subroutine FitLatticeCouplings
 
     !Wrapper function to evaluate residual for the simplex algorithm
-    subroutine MinCoups(vars,dist,n,iNumCoups,G,tMatbrAxis)
+    subroutine MinCoups(vars,dist,n,iNumOptCoups,G,tMatbrAxis)
         implicit none
-        integer, intent(in) :: n,iNumCoups
-        real(dp), intent(in) :: vars(iNumCoups)
+        integer, intent(in) :: n,iNumOptCoups
+        real(dp), intent(in) :: vars(iNumOptCoups)
         real(dp), intent(out) :: dist
         complex(dp), intent(in) :: G(nImp,nImp,n)
         logical, intent(in) :: tMatbrAxis
 
         real(dp), allocatable :: CoupsTemp(:,:)
-        integer :: i,j
+        integer :: i,j,RealCoupsNum
 
         if(tEveryOtherCoup) then
-            allocate(CoupsTemp(2*iNumCoups-1,nImp))
+            !Expand the couplings back into the full couplings (with the zeros)
+            RealCoupsNum = 2*iNumOptCoups
+            allocate(CoupsTemp(RealCoupsNum,nImp))
             CoupsTemp(:,:) = zero
-            do i = 1,2*iNumCoups-1,2
-                do j = 1,nImp
-                    CoupsTemp(i,j) = vars(j)
-                enddo
+            do i = 1,iNumOptCoups
+                CoupsTemp((i*2)-1,1) = vars(i)
             enddo
-            call CalcLatticeFitResidual(G,n,CoupsTemp,2*iNumCoups-1,dist,tMatbrAxis)
+            do j = 2,nImp
+                CoupsTemp(:,j) = CoupsTemp(:,1)
+            enddo
         else
-            allocate(CoupsTemp(iNumCoups,nImp))
+            RealCoupsNum = iNumOptCoups
+            allocate(CoupsTemp(RealCoupsNum,nImp))
             CoupsTemp(:,:) = zero
             do i = 1,nImp
                 CoupsTemp(:,i) = vars(:)
             enddo
-            call CalcLatticeFitResidual(G,n,CoupsTemp,iNumCoups,dist,tMatbrAxis)
         endif
+            
+        call CalcLatticeFitResidual(G,n,CoupsTemp,RealCoupsNum,dist,tMatbrAxis)
 
         deallocate(CoupsTemp)
     end subroutine MinCoups
@@ -687,6 +722,12 @@ module SelfConsistentLR
             read(iunit,*) iloclatcoups  !This does not need to be the same as iLatticeCoups
             iloclatcoups = min(iLatticeCoups,iloclatcoups)
             read(iunit,*) Couplings(1:iloclatcoups,1) !Fill the coupslings
+            if(tEveryOtherCoup) then
+                !Set every other lattice coupling to zero
+                do i = 2,iloclatcoups,2
+                    Couplings(i,1) = zero
+                enddo
+            endif
             do i = 2,nImp
                 !Copy them to the other impurities
                 Couplings(:,i) = Couplings(:,1)
