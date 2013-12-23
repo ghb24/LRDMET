@@ -630,14 +630,25 @@ module SelfConsistentLR
         logical, intent(in) :: tMatbrAxis
 
         real(dp), allocatable :: CoupsTemp(:,:)
-        integer :: i
+        integer :: i,j
 
-        allocate(CoupsTemp(iNumCoups,nImp))
-        do i = 1,nImp
-            CoupsTemp(:,i) = vars(:)
-        enddo
-
-        call CalcLatticeFitResidual(G,n,CoupsTemp,iNumCoups,dist,tMatbrAxis)
+        if(tEveryOtherCoup) then
+            allocate(CoupsTemp(2*iNumCoups-1,nImp))
+            CoupsTemp(:,:) = zero
+            do i = 1,2*iNumCoups-1,2
+                do j = 1,nImp
+                    CoupsTemp(i,j) = vars(j)
+                enddo
+            enddo
+            call CalcLatticeFitResidual(G,n,CoupsTemp,2*iNumCoups-1,dist,tMatbrAxis)
+        else
+            allocate(CoupsTemp(iNumCoups,nImp))
+            CoupsTemp(:,:) = zero
+            do i = 1,nImp
+                CoupsTemp(:,i) = vars(:)
+            enddo
+            call CalcLatticeFitResidual(G,n,CoupsTemp,iNumCoups,dist,tMatbrAxis)
+        endif
 
         deallocate(CoupsTemp)
     end subroutine MinCoups

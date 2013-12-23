@@ -214,6 +214,7 @@ module Globals
     logical :: tReadCouplings   !Whether to read in the initial lattice couplings for the im axis fit
     logical :: tSkip_Lattice_Fit    !Whether to skip the fitting of the lattice
     logical :: tEnvLatHam           !Whether to use the fit hamiltonian as the one-electron external terms
+    logical :: tEveryOtherCoup      !Ensure that for symmetry reasons every other lattice fit = 0
 
     !Debugging for Self-consistency
     logical :: tSE_Scan

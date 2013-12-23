@@ -134,6 +134,7 @@ Program RealHub
         tReadCouplings = .false.    !Whether to read in previous lattice couplings fits
         tSkip_Lattice_Fit = .false. !Whether to skip the fitting of the lattice
         tEnvLatHam = .false.        !Whether to use the fit hamiltonian as the one-electron external terms
+        tEveryOtherCoup = .true.    !Every other lattice coupling constrained to be zero
 
     end subroutine set_defaults
 
@@ -609,6 +610,8 @@ Program RealHub
                 tSkip_Lattice_Fit = .true.
             case("EXT_HAM_FITLATTICE")
                 tEnvLatHam = .true.     !Use the fit hamiltonian as the 1-e terms in the external space
+            case("EVERYOTHER_LATTICECOUP_ZERO")
+                tEveryOtherCoup = .true.    !Every other lattice coupling constrained to be zero
             case("REUSE_SELFENERGY")
                 call readi(iReuse_SE)
             case("MANYBODY_SELFENERGY")
@@ -649,6 +652,7 @@ Program RealHub
                 write(6,"(A)") "READ_LATTICE_COUPLINGS"
                 write(6,"(A)") "SKIP_LATTICE_FIT"
                 write(6,"(A)") "EXT_HAM_FITLATTICE"
+                write(6,"(A)") "EVERYOTHER_LATTICECOUP_ZERO"
                 write(6,"(A)") "MANYBODY_SELFENERGY"
                 write(6,"(A)") "MATSUBARA_FREQ"
                 write(6,"(A)") "REUSE_SELFENERGY"
