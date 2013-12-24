@@ -129,10 +129,16 @@ module LinearResponse
         if(tLatHamProvided_) then
             write(6,"(A)") "Non-standard Lattice hamiltonian to be used for calculation of greens function"
             if(tEnvLatHam) then
-                write(6,"(A)") "Fit lattice terms used for one-electron contributions in " &
-                    //"environment/dynamic bath space (no static corr pot contrib.)"
-                write(6,"(A)") "Bare one-electron terms in impurity"
-                write(6,"(A)") "GS correlation potential in GS static bath space"
+                if(tStaticBathFitLat) then
+                    write(6,"(A)") "Fit lattice terms used for one-electron contributions in " &
+                        //"external and static bath space (no static corr pot contrib.)"
+                    write(6,"(A)") "Bare one-electron terms in impurity"
+                else
+                    write(6,"(A)") "Fit lattice terms used for one-electron contributions in " &
+                        //"environment/dynamic bath space (no static corr pot contrib.)"
+                    write(6,"(A)") "Bare one-electron terms in impurity"
+                    write(6,"(A)") "GS correlation potential in GS static bath space"
+                endif
             else
                 write(6,"(A)") "Passed in lattice h only for defining the bath space, " &
                     //"rather than contributing to the one-electron hamiltonian in the bath"

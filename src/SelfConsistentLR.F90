@@ -559,7 +559,6 @@ module SelfConsistentLR
             !Vars is updated to be the best value to minimize the residual
             call uobyqa(iRealCoupNum,vars,rhobeg,rhoend,iprint,maxf,FinalErr,MinCoups, n, G_Imp, tMatbrAxis)
 
-
         elseif(iFitAlgo.eq.1) then
             !Use simplex method for optimization without derivatives
             write(6,"(A)") "Optimizing lattice couplings with simplex algorithm"
