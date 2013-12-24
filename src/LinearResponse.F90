@@ -66,6 +66,12 @@ module LinearResponse
             tLatHamProvided_ = .true.
         else
             tLatHamProvided_ = .false.
+            if(tStaticBathFitLat) then
+                call stop_all(t_r,'Desire fit hamiltonian in static bath, but no hamiltonian passed in')
+            endif
+        endif
+        if(tStaticBathFitLat.and.(.not.tEnvLatHam)) then
+            call stop_all(t_r,'Fit lattice hamiltonian in static bath, but not external space??')
         endif
 
         maxminres_iter = iMinRes_MaxIter
@@ -163,7 +169,11 @@ module LinearResponse
         endif
 
         !umat and tmat for the active space
-        call CreateIntMats(tComp=.true.,tTwoElecBath=.false.)
+        if(tStaticBathFitLat) then
+            call CreateIntMats(tComp=.true.,tTwoElecBath=.false.,bathham=ham_schmidt(nOcc-nImp+1:nOcc+nImp,nOcc-nImp+1:nOcc+nImp))
+        else
+            call CreateIntMats(tComp=.true.,tTwoElecBath=.false.)
+        endif
         
         !Enumerate excitations for fully coupled space
         !Seperate the lists into different Ms sectors in the N+- lists
@@ -310,12 +320,21 @@ module LinearResponse
                     FockSchmidt_SE(j,i) = dcmplx(ham_schmidt(j,i),zero)
                 enddo
             enddo
-            !Ensure that the 'active space' (inc. static bath) is simply from the GS correlation potential
-            do i = nOcc-nImp+1,nOcc+nImp
-                do j = nOcc-nImp+1,nOcc+nImp
-                    FockSchmidt_SE(j,i) = dcmplx(FockSchmidt(j,i),zero)
+            if(tStaticBathFitLat) then
+                !Ensure that the impurity part is not from the fit lattice hamiltonian, but rather the plain h 
+                do i = nOcc-nImp+1,nOcc
+                    do j = nOcc-nImp+1,nOcc
+                        FockSchmidt_SE(j,i) = dcmplx(FockSchmidt(j,i),zero)
+                    enddo
                 enddo
-            enddo
+            else
+                !Ensure that the 'active space' (inc. static bath) is simply from the GS correlation potential
+                do i = nOcc-nImp+1,nOcc+nImp
+                    do j = nOcc-nImp+1,nOcc+nImp
+                        FockSchmidt_SE(j,i) = dcmplx(FockSchmidt(j,i),zero)
+                    enddo
+                enddo
+            endif
         else
             !If we are doing self-consistent linear response, with a self-energy in the HL part, 
             !then this is calculated later, since it is now omega and iteration dependent

@@ -1133,13 +1133,15 @@ module solvers
     !put U over the impurity sites.
     !If tComp = .true., then the 1-electron array tmat_comp is filled, and the elements complex
     !Umat is real either way
-    subroutine CreateIntMats(tComp,tTwoElecBath)
+    subroutine CreateIntMats(tComp,tTwoElecBath,BathHam)
         use DetToolsData
         use DetTools, only: umatind
         implicit none
         logical, intent(in), optional :: tComp
         logical, intent(in), optional :: tTwoElecBath
-        logical :: tComp_,tTwoElecBath_
+        real(dp), intent(in), optional :: BathHam(2*nImp,2*nImp)
+        real(dp), allocatable :: Emb1e(:,:)
+        logical :: tComp_,tTwoElecBath_,tBathHam_
         integer :: OrbPairs,UMatSize,j,i,k,l,a
         character(len=*), parameter :: t_r='CreateIntMats'
 
@@ -1155,6 +1157,19 @@ module solvers
             !Assume that we want real 1-electron matrices if not specified otherwise.
             tComp_ = .false.
         endif
+
+        allocate(Emb1e(2*nImp,2*nImp))
+        if(present(BathHam)) then
+            !Use the sent in hamiltonian (over embedded basis) for the bath:bath and bath:impurity coupling one-electron blocks
+            tBathHam_ = .true.
+            !Reallocate, since we want to use the original impurity space
+            Emb1e(:,:) = BathHam(:,:)
+            Emb1e(1:nImp,1:nImp) = Emb_h0v(1:nImp,1:nImp)
+        else
+            tBathHam_ = .false.
+            Emb1e(:,:) = Emb_h0v(:,:)
+        endif
+
 
         !First, allocate and fill the umat and tmat for the FCI space
         OrbPairs = (EmbSizeSpin*(EmbSizeSpin+1))/2
@@ -1225,6 +1240,8 @@ module solvers
             endif
         endif
 
+        if(tBathHam_.and.tUHF) call stop_all(t_r,'Not working with UHF yet - FIXME')
+
         !EmbSizeSpin = EmbSize for RHF, or EmbSize*2 for UHF
         if(tComp_) then
             if(allocated(tmat_comp)) deallocate(tmat_comp)
@@ -1255,9 +1272,9 @@ module solvers
                     endif
                 else
                     if(tComp_) then
-                        tmat_comp(i,j) = dcmplx(Emb_h0v(i,j),0.0_dp)
+                        tmat_comp(i,j) = dcmplx(Emb1e(i,j),0.0_dp)
                     else
-                        tmat(i,j) = Emb_h0v(i,j)
+                        tmat(i,j) = Emb1e(i,j)
                     endif
                 endif
             enddo
@@ -1278,6 +1295,8 @@ module solvers
                 call writematrix(tmat,'tmat',.true.)
             endif
         endif
+        if(allocated(Emb1e)) deallocate(Emb1e)
+
     end subroutine CreateIntMats
 
     subroutine FindFull1RDM(StateBra,StateKet,tGroundState,RDM,RDM_Beta)
