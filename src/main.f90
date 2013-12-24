@@ -134,7 +134,8 @@ Program RealHub
         tReadCouplings = .false.    !Whether to read in previous lattice couplings fits
         tSkip_Lattice_Fit = .false. !Whether to skip the fitting of the lattice
         tEnvLatHam = .false.        !Whether to use the fit hamiltonian as the one-electron external terms
-        tEveryOtherCoup = .true.    !Every other lattice coupling constrained to be zero
+        tEveryOtherCoup = .false.   !Every other lattice coupling constrained to be zero
+        tStaticBathFitLat = .false. !By default no fit hamiltonian in the bath space
 
     end subroutine set_defaults
 
@@ -610,6 +611,9 @@ Program RealHub
                 tSkip_Lattice_Fit = .true.
             case("EXT_HAM_FITLATTICE")
                 tEnvLatHam = .true.     !Use the fit hamiltonian as the 1-e terms in the external space
+            case("BATH_FIT_LAT")
+                tEnvLatHam = .true. !By default also in the external space
+                tStaticBathFitLat = .true.  !Include fit lattice hamiltonian in the bath space.
             case("EVERYOTHER_LATTICECOUP_ZERO")
                 tEveryOtherCoup = .true.    !Every other lattice coupling constrained to be zero
             case("REUSE_SELFENERGY")

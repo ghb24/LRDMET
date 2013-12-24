@@ -534,6 +534,7 @@ module SelfConsistentLR
 
         if(iFitAlgo.eq.2) then
             !Use modified Powell algorithm for optimization (based on fitting to quadratics)
+            write(6,"(A)") "Optimizing lattice couplings with modified Powell algorithm"
 
             allocate(vars(iRealCoupNum))
             if(tEveryOtherCoup) then
@@ -561,6 +562,7 @@ module SelfConsistentLR
 
         elseif(iFitAlgo.eq.1) then
             !Use simplex method for optimization without derivatives
+            write(6,"(A)") "Optimizing lattice couplings with simplex algorithm"
 
             !Starting values are assumed to be read in
             allocate(step(iRealCoupNum))
