@@ -136,6 +136,7 @@ Program RealHub
         tEnvLatHam = .false.        !Whether to use the fit hamiltonian as the one-electron external terms
         tEveryOtherCoup = .false.   !Every other lattice coupling constrained to be zero
         tStaticBathFitLat = .false. !By default no fit hamiltonian in the bath space
+        tOptGF_EVals = .false.      !Optimize lattice couplings, or lattice eigenvalues
 
     end subroutine set_defaults
 
@@ -597,7 +598,7 @@ Program RealHub
                 call readf(End_Omega_Im)
                 call readf(Omega_Step_Im)
             case("LATTICE_FIT")
-                !1 = normal, 2 = inverse
+                !1 = normal, 2 = inverse, 3 = normal/norm
                 call readi(iLatticeFitType) 
             case("LATTICE_FIT_WEIGHTING")
                 call readi(iFitGFWeighting)
@@ -616,6 +617,8 @@ Program RealHub
                 tStaticBathFitLat = .true.  !Include fit lattice hamiltonian in the bath space.
             case("EVERYOTHER_LATTICECOUP_ZERO")
                 tEveryOtherCoup = .true.    !Every other lattice coupling constrained to be zero
+            case("OPT_LATTICE_EVALS")
+                tOptGF_EVals = .true.
             case("REUSE_SELFENERGY")
                 call readi(iReuse_SE)
             case("MANYBODY_SELFENERGY")
@@ -961,8 +964,12 @@ Program RealHub
         if(tDiag_KSpace.and.LatticeDim.eq.2) then
             call stop_all(t_r,'Cannot currently do k-space diagonalizations for 2D models. Fix me!')
         endif
-        if(tSC_LR.and.(.not.tRealSpaceSC).and.(iLatticeCoups.eq.0)) then
-            call stop_all(t_r,'Matsubara self-consistency, but no number of lattice coupling parameters specified')
+        if(tSC_LR.and.(.not.tRealSpaceSC).and.(.not.tOptGF_EVals).and.(iLatticeCoups.eq.0)) then
+            call stop_all(t_r,'Matsubara lattice couplings self-consistency, '  &
+                //'but no number of lattice coupling parameters specified')
+        endif
+        if(tSC_LR.and.tOptGF_EVals.and.(iLatticeCoups.ne.0)) then
+            call stop_all(t_r,'Lattice eigenvalues self-consistency cannot do a smaller number of lattice sites')
         endif
 
     end subroutine check_input

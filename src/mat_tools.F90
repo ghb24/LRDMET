@@ -1788,143 +1788,196 @@ module mat_tools
         real(dp), intent(inout) :: Ham(nLat,nLat)
         real(dp), intent(in) :: Couplings(iCoupLength,SS_Period)
         real(dp), allocatable :: temp(:)
+        complex(dp), allocatable :: ctemp(:,:),cham(:,:)
         integer :: CoupInd,i,j,k,offset,ImpCoup
         logical, parameter :: tOneCouplingSet=.true.
         character(len=*), parameter :: t_r='AddPeriodicImpCoupling_RealSpace'
 
-        if(LatticeDim.eq.2) call stop_all(t_r,'Lattice coupling not set up for 2D lattices yet')
-
-        if(SS_Period.gt.nImp) then
-            call stop_all(t_r,'Coupling cannot connect to more sites than in the impurity unit cell')
-        endif
-
-!        !Since the couplings need to maintain periodicity, we need them to apply to sites forwards and backwards.
-!        !Antiperiodic BCs should mean that we flip sign if we go around the lattice.
-
-        if(tOneCouplingSet) then
-            !Here, we only have one coupling (all columns of Couplings array should be the same)
-            !This is inspired by assuming the supercell changes in a hubbard model with long-range couplings
-            !This will actually be identical to below in the case of a single impurity
-            ! *-*-B-C-0-C-B-A
-            ! *-*-A-B-C-0-C-B
-            ! B-A-*-*-B-C-0-C
-            ! C-B-*-*-A-B-C-0
-            ! 0-C-B-A-*-*-B-C
-            ! C-0-C-B-*-*-A-B
-            ! B-C-0-C-B-A-*-*
-            ! A-B-C-0-C-B-*-*
-            !As below, the top right diagonal will be negative with APBCs
-
-            if(iCoupLength.gt.((nLat-SS_Period)/2)) then
-                call stop_all(t_r,'Impurity coupling should not extend beyond half the lattice in each dimension')
+        if(tOptGF_EVals) then
+            if(nImp.gt.1) call stop_all(t_r,'This is not set up for > 1 imp - bug GHB')
+            !Here, the eigenvalues are the positive/negatice eigenvalues.
+            !Use these to construct the lattice hamtiltonian
+            if(tShift_Mesh) then
+                if(iCoupLength.ne.(nSites/2)) call stop_all(t_r,'Number of variables incorrect?')
+            else
+                if(iCoupLength.ne.((nSites/2)+1)) call stop_all(t_r,'Incorrect number of variables?')
             endif
 
-            do i = 1,nLat
-                offset = mod(i,SS_Period)
-                do j = i+offset+1,i+iCoupLength
-                    if(j.gt.nLat) exit
-                    Ham(i,j) = Couplings(j-i,1)
-                    Ham(j,i) = Couplings(j-i,1)
-                enddo
+            allocate(ctemp(nSites,nSites))
+            allocate(cham(nSites,nSites))
+            cham(:,:) = zzero
+            do i = 1,nSites/2
+                cham(i,i) = dcmplx(Couplings(i,1),zero)
             enddo
+            if(tShift_Mesh) then
+                !No gamma point. All k-points symmetric
+                do i = 1,nSites/2
+                    cham(i+(nSites/2),i+(nSites/2)) = dcmplx(Couplings((nSites/2)-i+1,1),zero)
+                enddo
+            else
+                !Put in the gamma point
+                cham((nSites/2)+1,(nSites/2)+1) = dcmplx(Couplings((nSites/2)+1,1),zero)
+                !Now, add in the other kpoints (not point on BZ boundary at start)
+                do i = 2,nSites/2
+                    cham(i+(nSites/2),i+(nSites/2)) = dcmplx(Couplings((nSites/2)-i+2,1),zero)
+                enddo
+            endif
+            call ZGEMM('N','N',nSites,nSites,nSites,zone,RtoK_Rot,nSites,cham,nSites,zzero,ctemp,nSites)
+            call ZGEMM('N','C',nSites,nSites,nSites,zone,ctemp,nSites,RtoK_Rot,nSites,zzero,cham,nSites)
+            deallocate(ctemp)
 
-            !Now for the terms which wrap around the chain
-            do i = 1,iCoupLength
-                do j = iCoupLength-i+1,1,-1
-                    if(tPeriodic) then
-                        Ham(i,nLat-j+1) = Couplings(j+i-1,1)
-                        Ham(nLat-j+1,i) = Couplings(j+i-1,1)
-                    elseif(tAntiPeriodic) then
-                        Ham(i,nLat-j+1) = - Couplings(j+i-1,1)
-                        Ham(nLat-j+1,i) = - Couplings(j+i-1,1)
-                    else
-                        !OBCs
-                        continue
+            !What about the phase factor? This will be needed when we go to > 1 impurity
+            if(nImp.gt.1) call stop_all(t_r,'Cannot deal with > 1 impurty, as we will have to deal with the phase factor')
+            !write(6,*) cham(1,:)
+
+            do i = 1,nSites
+                do j = 1,nSites
+                    if(abs(aimag(cham(j,i))).gt.1.0e-7_dp) then
+                        write(6,*) cham(j,i)
+                        call stop_all(t_r,'why is this not real?')
                     endif
+                    ham(j,i) = real(cham(j,i),dp)
                 enddo
             enddo
+            deallocate(cham)
+
         else
 
-            !Max number of couplings given by (nSites-nImp)/(2 x nImp)
-            if(iCoupLength.gt.((nLat-SS_Period)/(2*SS_Period))) then
-                call stop_all(t_r,'Impurity coupling should not extend beyond half the number of cell repeats in each dimension')
+            if(LatticeDim.eq.2) call stop_all(t_r,'Lattice coupling not set up for 2D lattices yet')
+
+            if(SS_Period.gt.nImp) then
+                call stop_all(t_r,'Coupling cannot connect to more sites than in the impurity unit cell')
             endif
 
-            !Example below for nLat=18, iCoupLength=3, SS_Period=2, Couplings= (/A,B,C  a,b,c/)
-            ! *-*-A-0-B-0-C-0-0-0-0-0-C-0-B-0-A-0
-            ! *-*-0-a-0-b-0-c-0-0-0-0-0-c-0-b-0-a
-            ! A-0-*-*-A-0-B-0-C-0-0-0-0-0-C-0-B-0
-            ! 0-a-*-*-0-a-0-b-0-c-0-0-0-0-0-c-0-b
-            ! B-0-C-0-*-*-A-0-B-0-C-0-0-0-0-0-C-0
-            ! 0-b-0-c-*-*-0-a-0-b-0-c-0-0-0-0-0-c
-            ! C-0-B-0-A-0-*-*-A-0-B-0-C-0-0-0-0-0
-            ! 0-c-0-b-0-a-*-*-0-a-0-b-0-c-0-0-0-0
-            ! 0-0-C-0-B-0-A-0-*-*-A-0-B-0-C-0-0-0
-            ! 0-0-0-c-0-b-0-a-*-*-0-a-0-b-0-c-0-0
-            !                     *-*-A-0-B-0-C-0
-            !                     *-*-0-a-0-b-0-c
-            !                         *-*-A-0-B-0
-            !                         *-*-0-a-0-b
-            !                             *-*-A-0
-            !                             *-*-0-a
-            !                                 *-*
-            !                                 *-*
+    !        !Since the couplings need to maintain periodicity, we need them to apply to sites forwards and backwards.
+    !        !Antiperiodic BCs should mean that we flip sign if we go around the lattice.
 
-            !A coupling of iCoupLength=1, SS_Period=1, Couplings=(/1/) will give normal lattice hamiltonian
-            !If APBCs, then the corner couplings will be negative
+            if(tOneCouplingSet) then
+                !Here, we only have one coupling (all columns of Couplings array should be the same)
+                !This is inspired by assuming the supercell changes in a hubbard model with long-range couplings
+                !This will actually be identical to below in the case of a single impurity
+                ! *-*-B-C-0-C-B-A
+                ! *-*-A-B-C-0-C-B
+                ! B-A-*-*-B-C-0-C
+                ! C-B-*-*-A-B-C-0
+                ! 0-C-B-A-*-*-B-C
+                ! C-0-C-B-*-*-A-B
+                ! B-C-0-C-B-A-*-*
+                ! A-B-C-0-C-B-*-*
+                !As below, the top right diagonal will be negative with APBCs
 
-            !First, simply put in the direct couplings to neighbours in one direction
-            do i = 1,nLat
-                ImpCoup = mod(i,SS_Period)    !Which impurity coupling are we considering
-                if(ImpCoup.eq.0) ImpCoup = SS_Period
-                do j = 1,iCoupLength
-                    if((i+(j*SS_Period)).gt.nLat) exit    !Do not go "around" the ring. We will deal with this afterwards, since this
-                                                                    !may require different boundary conditions
-                    Ham(i,i+(j*SS_Period)) = Couplings(j,ImpCoup)
-                    Ham(i+(j*SS_Period),i) = Couplings(j,ImpCoup)
+                if(iCoupLength.gt.((nLat-SS_Period)/2)) then
+                    call stop_all(t_r,'Impurity coupling should not extend beyond half the lattice in each dimension')
+                endif
+
+                do i = 1,nLat
+                    offset = mod(i,SS_Period)
+                    do j = i+offset+1,i+iCoupLength
+                        if(j.gt.nLat) exit
+                        Ham(i,j) = Couplings(j-i,1)
+                        Ham(j,i) = Couplings(j-i,1)
+                    enddo
                 enddo
-            enddo
 
-            !Now, also put in the coupling in the other direction
-            do i = 1,iCoupLength*SS_Period
-                ImpCoup = mod(i,SS_Period)
-                if(ImpCoup.eq.0) ImpCoup = SS_Period
-
-                CoupInd = iCoupLength + 1
-                do j = nLat - (iCoupLength*SS_Period) + i, nLat, SS_Period
-                    CoupInd = CoupInd - 1   !Start with last coupling value
-                    if(tAntiPeriodic) then
-                        Ham(i,j) = - Couplings(CoupInd,ImpCoup)
-                        Ham(j,i) = - Couplings(CoupInd,ImpCoup)
-                    elseif(tPeriodic) then
-                        Ham(i,j) = Couplings(CoupInd,ImpCoup)
-                        Ham(j,i) = Couplings(CoupInd,ImpCoup)
-                    else
-                        !OBCs
-                        continue
-                    endif
+                !Now for the terms which wrap around the chain
+                do i = 1,iCoupLength
+                    do j = iCoupLength-i+1,1,-1
+                        if(tPeriodic) then
+                            Ham(i,nLat-j+1) = Couplings(j+i-1,1)
+                            Ham(nLat-j+1,i) = Couplings(j+i-1,1)
+                        elseif(tAntiPeriodic) then
+                            Ham(i,nLat-j+1) = - Couplings(j+i-1,1)
+                            Ham(nLat-j+1,i) = - Couplings(j+i-1,1)
+                        else
+                            !OBCs
+                            continue
+                        endif
+                    enddo
                 enddo
-            enddo
+            else
+
+                !Max number of couplings given by (nSites-nImp)/(2 x nImp)
+                if(iCoupLength.gt.((nLat-SS_Period)/(2*SS_Period))) then
+                    call stop_all(t_r,'Impurity coupling should not extend beyond' &
+                        //' half the number of cell repeats in each dimension')
+                endif
+
+                !Example below for nLat=18, iCoupLength=3, SS_Period=2, Couplings= (/A,B,C  a,b,c/)
+                ! *-*-A-0-B-0-C-0-0-0-0-0-C-0-B-0-A-0
+                ! *-*-0-a-0-b-0-c-0-0-0-0-0-c-0-b-0-a
+                ! A-0-*-*-A-0-B-0-C-0-0-0-0-0-C-0-B-0
+                ! 0-a-*-*-0-a-0-b-0-c-0-0-0-0-0-c-0-b
+                ! B-0-C-0-*-*-A-0-B-0-C-0-0-0-0-0-C-0
+                ! 0-b-0-c-*-*-0-a-0-b-0-c-0-0-0-0-0-c
+                ! C-0-B-0-A-0-*-*-A-0-B-0-C-0-0-0-0-0
+                ! 0-c-0-b-0-a-*-*-0-a-0-b-0-c-0-0-0-0
+                ! 0-0-C-0-B-0-A-0-*-*-A-0-B-0-C-0-0-0
+                ! 0-0-0-c-0-b-0-a-*-*-0-a-0-b-0-c-0-0
+                !                     *-*-A-0-B-0-C-0
+                !                     *-*-0-a-0-b-0-c
+                !                         *-*-A-0-B-0
+                !                         *-*-0-a-0-b
+                !                             *-*-A-0
+                !                             *-*-0-a
+                !                                 *-*
+                !                                 *-*
+
+                !A coupling of iCoupLength=1, SS_Period=1, Couplings=(/1/) will give normal lattice hamiltonian
+                !If APBCs, then the corner couplings will be negative
+
+                !First, simply put in the direct couplings to neighbours in one direction
+                do i = 1,nLat
+                    ImpCoup = mod(i,SS_Period)    !Which impurity coupling are we considering
+                    if(ImpCoup.eq.0) ImpCoup = SS_Period
+                    do j = 1,iCoupLength
+                        if((i+(j*SS_Period)).gt.nLat) exit    !Do not go "around" the ring. We will deal with this afterwards, since this
+                                                                        !may require different boundary conditions
+                        Ham(i,i+(j*SS_Period)) = Couplings(j,ImpCoup)
+                        Ham(i+(j*SS_Period),i) = Couplings(j,ImpCoup)
+                    enddo
+                enddo
+
+                !Now, also put in the coupling in the other direction
+                do i = 1,iCoupLength*SS_Period
+                    ImpCoup = mod(i,SS_Period)
+                    if(ImpCoup.eq.0) ImpCoup = SS_Period
+
+                    CoupInd = iCoupLength + 1
+                    do j = nLat - (iCoupLength*SS_Period) + i, nLat, SS_Period
+                        CoupInd = CoupInd - 1   !Start with last coupling value
+                        if(tAntiPeriodic) then
+                            Ham(i,j) = - Couplings(CoupInd,ImpCoup)
+                            Ham(j,i) = - Couplings(CoupInd,ImpCoup)
+                        elseif(tPeriodic) then
+                            Ham(i,j) = Couplings(CoupInd,ImpCoup)
+                            Ham(j,i) = Couplings(CoupInd,ImpCoup)
+                        else
+                            !OBCs
+                            continue
+                        endif
+                    enddo
+                enddo
+                    
+    !            call writematrix(Ham,'Ham_realspace_BeforeInterchange',.true.)
                 
-!            call writematrix(Ham,'Ham_realspace_BeforeInterchange',.true.)
-            
-!            !OPTIONAL!
-!            !Attempt an alternative tiling, essentially coupling the 'other' bath sites
-!            !This means that we should change the order of the couplings in each supercell block of the lattice
-!            allocate(temp(SS_Period))
-!            do i = 1,nLat   !Run through every lattice site
-!                offset=mod(i,SS_Period) + 1
-!                do j = i+offset,nLat,SS_Period 
-!                    temp(:) = Ham(i,j:j+SS_Period-1)
-!                    do k = 0,SS_Period-1
-!                        !Now, reverse the order
-!                        Ham(i,j+SS_Period-1-k) = temp(k+1)
-!                        Ham(j+SS_Period-1-k,i) = temp(k+1)
-!                    enddo
-!                enddo
-!            enddo
-!            deallocate(temp)
+    !            !OPTIONAL!
+    !            !Attempt an alternative tiling, essentially coupling the 'other' bath sites
+    !            !This means that we should change the order of the couplings in each supercell block of the lattice
+    !            allocate(temp(SS_Period))
+    !            do i = 1,nLat   !Run through every lattice site
+    !                offset=mod(i,SS_Period) + 1
+    !                do j = i+offset,nLat,SS_Period 
+    !                    temp(:) = Ham(i,j:j+SS_Period-1)
+    !                    do k = 0,SS_Period-1
+    !                        !Now, reverse the order
+    !                        Ham(i,j+SS_Period-1-k) = temp(k+1)
+    !                        Ham(j+SS_Period-1-k,i) = temp(k+1)
+    !                    enddo
+    !                enddo
+    !            enddo
+    !            deallocate(temp)
 
+            endif
         endif
 
     end subroutine AddPeriodicImpCoupling_RealSpace

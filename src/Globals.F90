@@ -216,6 +216,7 @@ module Globals
     logical :: tEnvLatHam           !Whether to use the fit hamiltonian as the one-electron external terms
     logical :: tEveryOtherCoup      !Ensure that for symmetry reasons every other lattice fit = 0
     logical :: tStaticBathFitLat    !Also include the fit lattice in the static bath space. 
+    logical :: tOptGF_EVals         !Optimize the lattice eigenvalues rather than the couplings
 
     !Debugging for Self-consistency
     logical :: tSE_Scan

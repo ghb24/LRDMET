@@ -10,6 +10,197 @@ module SelfConsistentLR
     implicit none
 
     contains
+    
+    !Self-consistently fit a frequency *independent* lattice coupling to the impurity in order to
+    !match the matsubara greens functions
+    subroutine SC_FitLatticeGF_Im()
+        implicit none
+        real(dp) :: GFChemPot,Omega
+        integer :: nESteps_Im,nESteps_Re,OmegaVal
+        complex(dp), allocatable :: SE_Im(:,:,:),G_Mat_Im(:,:,:)
+        complex(dp), allocatable :: SE_Re(:,:,:),G_Mat_Re(:,:,:)
+        complex(dp), allocatable :: Lattice_GF(:,:,:)
+        real(dp), allocatable :: h_lat_fit(:,:),Couplings(:,:)
+        real(dp), allocatable :: AllDiffs(:,:)
+        complex(dp), allocatable :: DiffImpGF(:,:,:),G_Mat_Im_Old(:,:,:)
+        real(dp) :: FinalDist
+        integer :: i,iter,iLatParams
+        integer, parameter :: iMaxIter_Fit = 1000
+        real(dp), parameter :: dDeltaImpThresh = 1.0e-6_dp 
+        logical, parameter :: tCalcRealSpectrum = .true.
+        character(len=*), parameter :: t_r='SC_FitLatticeGF_Im'
+
+        !Set chemical potential (This will only be right for half-filling)
+        GFChemPot = U/2.0_dp
+
+        !How many frequency points are there exactly?
+        nESteps_Im = 0
+        nESteps_Re = 0
+        OmegaVal = 0
+        do while(.true.)
+            call GetNextOmega(Omega,OmegaVal,tMatbrAxis=.true.)
+            if(OmegaVal.lt.0) exit
+            nESteps_Im = nESteps_Im + 1
+        enddo
+        OmegaVal = 0
+        do while(.true.)
+            call GetNextOmega(Omega,OmegaVal,tMatbrAxis=.false.)
+            if(OmegaVal.lt.0) exit
+            nESteps_Re = nESteps_Re + 1
+        enddo
+
+        !Initially, just see if we can fit the two different Matsubara spectral functions
+        write(6,*) "Number of Matsubara frequency points: ",nESteps_Im
+        if(tOptGF_EVals) then
+            !We don't actually want to optimize all of these.
+            !e(k) = e(-k), and we are always using a uniform mesh
+            !If gamma-centered mesh, then have nSites/2 + 1 independent parameters (we are sampling k=0)
+            !If Shifted mesh, then we have nSites/2 independent parameters
+            if(tShift_Mesh) then
+                iLatParams = nSites/2
+            else
+                iLatParams = (nSites/2) + 1
+            endif
+            if(iLatticeCoups.ne.0) then
+                call stop_all(t_r,'iLatticeCoups set, but expecting to optimize eigenvalues')
+            endif
+        else
+            !Should we do including the inpurity space in these lattice couplings?
+            iLatParams = iLatticeCoups
+        endif
+
+        allocate(SE_Im(nImp,nImp,nESteps_Im))
+        SE_Im(:,:,:) = zzero
+        allocate(h_lat_fit(nSites,nSites))
+        allocate(Couplings(iLatParams,nImp))
+
+        !This will initialize the lattice eigenvalues/couplings
+        call InitLatticeCouplings(Couplings,iLatParams,h_lat_fit)
+        !This will create the lattice hamiltonian, either from the eigenvalues or the couplings
+        !write(6,*) h_lat_fit(1,:)
+        call AddPeriodicImpCoupling_RealSpace(h_lat_fit,nSites,iLatParams,nImp,Couplings)
+
+        allocate(G_Mat_Im(nImp,nImp,nESteps_Im))
+        allocate(G_Mat_Re(nImp,nImp,nESteps_Re))
+        allocate(SE_Re(nImp,nImp,nESteps_Re))
+        SE_Re(:,:,:) = zzero
+        allocate(Lattice_GF(nImp,nImp,nESteps_Im))
+        !Write out the initial lattice greens function
+        !call FindLocalMomGF(nESteps_Im,SE_Im,Lattice_GF,tMatbrAxis=.true.,ham=h_lat_fit)
+        call FindLocalMomGF(nESteps_Im,SE_Im,Lattice_GF,tMatbrAxis=.true.,ham=h_lat_fit,    &
+            CouplingLength=iLatParams,evals=Couplings(:,1))
+        !Write out lattice greens function
+        call writedynamicfunction(nESteps_Im,Lattice_GF,'G_Lat_Im',tag=0,tMatbrAxis=.true.)
+        if(tCalcRealSpectrum) then
+            call SchmidtGF_wSE(G_Mat_Re,GFChemPot,SE_Re,nESteps_Re,tMatbrAxis=.false.,ham=h_lat_fit)
+            call writedynamicfunction(nESteps_Re,G_Mat_Re,'G_Imp_Re',tag=0,tMatbrAxis=.false.)
+        endif
+
+        allocate(G_Mat_Im_Old(nImp,nImp,nESteps_Im))
+        allocate(DiffImpGF(nImp,nImp,nESteps_Im))
+        G_Mat_Im(:,:,:) = zzero
+
+        allocate(AllDiffs(2,0:iMaxIter_Fit))
+        AllDiffs(:,:) = zero
+
+        iter = 0
+        do while(.not.tSkip_Lattice_Fit)
+            iter = iter + 1
+            
+            !High level calculation on matsubara axis, with no self-energy, and just the normal lattice hamiltonian
+            G_Mat_Im_Old(:,:,:) = G_Mat_Im(:,:,:)
+            call SchmidtGF_wSE(G_Mat_Im,GFChemPot,SE_Im,nESteps_Im,tMatbrAxis=.true.,ham=h_lat_fit)
+            call writedynamicfunction(nESteps_Im,G_Mat_Im,'G_Imp_Im',tag=iter,tMatbrAxis=.true.)
+            call flush(6)
+
+            if(iLatticeFitType.eq.2) then
+                !Invert the high-level greens function, since we are fitting the residual of the inverses
+                call InvertLocalNonHermGF(nESteps_Im,G_Mat_Im)
+            endif
+
+            if((abs(Damping_SE-one).gt.1.0e-8_dp).and.(iter.gt.1)) then
+                !Take an admixture of the previous two high-level calculations to damp the fit
+                G_Mat_Im(:,:,:) = (Damping_SE*G_Mat_Im(:,:,:)) + ((one-Damping_SE)*G_Mat_Im_Old(:,:,:))
+            endif
+
+
+            if(iter.eq.1) then
+                !calculate the initial residual
+                call CalcLatticeFitResidual(G_Mat_Im,nESteps_Im,Couplings,iLatParams,AllDiffs(1,0),.true.)
+                AllDiffs(2,0) = zero
+            endif
+            call FitLatticeCouplings(G_Mat_Im,nESteps_Im,Couplings,iLatParams,FinalDist,.true.)
+            !Add the new lattice couplings to the lattice hamiltonian
+            call AddPeriodicImpCoupling_RealSpace(h_lat_fit,nSites,iLatParams,nImp,Couplings)
+            !Now, calculate the local lattice greens function
+            call FindLocalMomGF(nESteps_Im,SE_Im,Lattice_GF,tMatbrAxis=.true.,ham=h_lat_fit,    &
+                CouplingLength=iLatParams,evals=Couplings(:,1))
+
+            !call FindLocalMomGF(nESteps_Im,SE_Im,Lattice_GF,tMatbrAxis=.true.,ham=h_lat_fit)
+            !Write out lattice greens function
+            call writedynamicfunction(nESteps_Im,Lattice_GF,'G_Lat_Im',tag=iter,tMatbrAxis=.true.)
+
+            !Write out the lattice couplings
+            call WriteLatticeCouplings(iLatParams,Couplings)
+        
+            if(tCalcRealSpectrum) then
+                call SchmidtGF_wSE(G_Mat_Re,GFChemPot,SE_Re,nESteps_Re,tMatbrAxis=.false.,ham=h_lat_fit)
+                call writedynamicfunction(nESteps_Re,G_Mat_Re,'G_Imp_Re',tag=iter,tMatbrAxis=.false.)
+            endif
+
+            !Calculate & write out stats (all of them)
+            if(iter.gt.iMaxIter_Fit) then
+                write(6,"(A,I9)") "Exiting. Max iters hit of: ",iMaxIter_Fit
+                exit
+            endif
+            AllDiffs(1,iter) = FinalDist
+            DiffImpGF(:,:,:) = G_Mat_Im_Old(:,:,:) - G_Mat_Im(:,:,:)
+            DiffImpGF(:,:,:) = DiffImpGF(:,:,:) * dconjg(DiffImpGF(:,:,:))
+            AllDiffs(2,iter) = sum(real(DiffImpGF(:,:,:),dp))
+
+            write(6,"(A)") ""
+            write(6,"(A,I7,A)") "***   COMPLETED MACROITERATION ",iter," ***"
+            write(6,"(A)") "     Iter.  FitResidual        Delta_GF_Imp "
+            do i = 0,iter
+                write(6,"(I7,2G20.13)") i,AllDiffs(1,i),AllDiffs(2,i)
+            enddo
+            write(6,"(A)") ""
+            call flush(6)
+
+            if(AllDiffs(2,iter).lt.dDeltaImpThresh) then
+                write(6,"(A)") "Success! Convergence on imaginary axis successful"
+                write(6,"(A,G20.13)") "Impurity greens function changing on imaginary axis by less than: ",dDeltaImpThresh
+                exit
+            endif
+        enddo
+
+        !We should write these out to a file so that we can restart from them at a later date (possibly with more variables).
+        write(6,"(A)") "Final *frequency independent* lattice coupling parameters: "
+        do i = 1,iLatParams
+            write(6,"(I6,G20.13)") i,Couplings(i,1)
+        enddo
+        write(6,"(A)") "" 
+
+        deallocate(G_Mat_Im,SE_Im,Lattice_GF,G_Mat_Im_Old,DiffImpGF,AllDiffs)
+        allocate(Lattice_GF(nImp,nImp,nESteps_Re))
+            
+        write(6,"(A)") "Now calculating spectral functions on the REAL axis"
+        call flush(6)
+        !What does the final lattice greens function look like on the real axis?
+        call FindLocalMomGF(nESteps_Re,SE_Re,Lattice_GF,tMatbrAxis=.false.,ham=h_lat_fit,   &
+            CouplingLength=iLatParams,evals=Couplings(:,1))
+        !call FindLocalMomGF(nESteps_Re,SE_Re,Lattice_GF,tMatbrAxis=.false.,ham=h_lat_fit)
+        !Write out lattice greens function
+        !Is it the same as the impurity greens function on the real axis. This would be nice.
+        call writedynamicfunction(nESteps_Re,Lattice_GF,'G_Lat_Re_Final',tMatbrAxis=.false.)
+
+        !Finally, calculate the greens function in real-frequency space.
+        call SchmidtGF_wSE(G_Mat_Re,GFChemPot,SE_Re,nESteps_Re,tMatbrAxis=.false.,ham=h_lat_fit)
+        call writedynamicfunction(nESteps_Re,G_Mat_Re,'G_Imp_Re_Final',tMatbrAxis=.false.)
+
+        deallocate(h_lat_fit,Couplings,SE_Re,G_Mat_Re,Lattice_GF)
+
+    end subroutine SC_FitLatticeGF_Im
 
     !Self-consistency in the style of DMFT, converging both an imaginary frequency self-energy and a frequency independent hamiltonian
     !The aim is to find a self-energy that accurately represents the lattice self-energy.
@@ -22,7 +213,7 @@ module SelfConsistentLR
     subroutine SC_FitLat_and_SE_Im()
         implicit none
         real(dp) :: GFChemPot,FinalDist,Omega
-        integer :: nESteps_Im,nESteps_Re,OmegaVal,iter,i
+        integer :: nESteps_Im,nESteps_Re,OmegaVal,iter,i,iLatParams
         complex(dp), allocatable :: SE_Im(:,:,:),G_Mat_Im(:,:,:),Lattice_GF(:,:,:)
         complex(dp), allocatable :: Bath_GF(:,:,:),zero_GF(:,:,:),Cluster_GF(:,:,:)
         complex(dp), allocatable :: DeltaSE(:,:,:),DiffImpGF(:,:,:),G_Mat_Re(:,:,:)
@@ -68,7 +259,8 @@ module SelfConsistentLR
         
         !Lattice fitting
         allocate(h_lat_fit(nSites,nSites))
-        allocate(Couplings(iLatticeCoups,nImp))
+        iLatParams = iLatticeCoups
+        allocate(Couplings(iLatParams,nImp))
 
         !Misc/convergences
         allocate(zero_GF(nImp,nImp,nESteps_Im))
@@ -77,9 +269,8 @@ module SelfConsistentLR
 
         !Initialize values
         !   fit lattice & couplings
-        h_lat_fit(:,:) = h0v(:,:)
-        call InitLatticeCouplings(Couplings,iLatticeCoups)
-        call AddPeriodicImpCoupling_RealSpace(h_lat_fit,nSites,iLatticeCoups,nImp,Couplings)
+        call InitLatticeCouplings(Couplings,iLatParams,h_lat_fit)
+        call AddPeriodicImpCoupling_RealSpace(h_lat_fit,nSites,iLatParams,nImp,Couplings)
 
         !   Self-energy
         call Init_SE(nESteps_Im,SE_Im,tMatbrAxis=.true.)
@@ -137,15 +328,15 @@ module SelfConsistentLR
             !3) Fit a lattice hamiltonian, such that it reproduces the bath greens function
             !   This will fit couplings on to h0v, with no frequency-dependent potential, to match the 'bath' GF
             write(6,"(A)") "Fitting static lattice couplings to reproduce bath greens function..."
-            call FitLatticeCouplings(Bath_GF,nESteps_Im,Couplings,iLatticeCoups,FinalDist,.true.)
+            call FitLatticeCouplings(Bath_GF,nESteps_Im,Couplings,iLatParams,FinalDist,.true.)
             !   Construct this lattice hamiltonian. In the future, remove the embedding 
             !   potential from h0v, and just use coupling
-            call AddPeriodicImpCoupling_RealSpace(h_lat_fit,nSites,iLatticeCoups,nImp,Couplings)
+            call AddPeriodicImpCoupling_RealSpace(h_lat_fit,nSites,iLatParams,nImp,Couplings)
             !   For interest, find the 'cluster' greens function, which should now fit the 'bath' greens function
-            call FindLocalMomGF(nESteps_Im,zero_GF,Cluster_GF,tMatbrAxis=.true.,ham=h_lat_fit,CouplingLength=iLatticeCoups)
+            call FindLocalMomGF(nESteps_Im,zero_GF,Cluster_GF,tMatbrAxis=.true.,ham=h_lat_fit,CouplingLength=iLatParams)
             call writedynamicfunction(nESteps_Im,Cluster_GF,'G_Clust_Im',tag=iter,tMatbrAxis=.true.)
             !Write out the lattice couplings
-            call WriteLatticeCouplings(iLatticeCoups,Couplings)
+            call WriteLatticeCouplings(iLatParams,Couplings)
             write(6,"(A)") "Fit successful. Couplings and cluster greens function written to disk."
 
             !4) Perform impurity calculation
@@ -212,7 +403,7 @@ module SelfConsistentLR
         !Write out final self-energy and lattice couplings
         call writedynamicfunction(nESteps_Im,SE_Im,'Converged_SE_Im',tMatbrAxis=.true.)
         write(6,"(A)") "Final *frequency independent* lattice coupling parameters for bath fit: "
-        do i = 1,iLatticeCoups
+        do i = 1,iLatParams
             write(6,"(I6,G20.13)") i,Couplings(i,1)
         enddo
         write(6,"(A)") "" 
@@ -225,7 +416,7 @@ module SelfConsistentLR
         allocate(zero_GF(nImp,nImp,nESteps_Re))
         allocate(Cluster_GF(nImp,nImp,nESteps_Re))
         zero_GF(:,:,:) = zzero
-        call FindLocalMomGF(nESteps_Re,zero_GF,Cluster_GF,tMatbrAxis=.false.,ham=h_lat_fit,CouplingLength=iLatticeCoups)
+        call FindLocalMomGF(nESteps_Re,zero_GF,Cluster_GF,tMatbrAxis=.false.,ham=h_lat_fit,CouplingLength=iLatParams)
         call writedynamicfunction(nESteps_Re,Cluster_GF,'G_Clust_Re_Final',tMatbrAxis=.false.)
 
         !...and the real-frequency greens function
@@ -236,176 +427,6 @@ module SelfConsistentLR
         deallocate(h_lat_fit,Couplings,G_Mat_Re,Cluster_GF)
 
     end subroutine SC_FitLat_and_SE_Im
-    
-    !Self-consistently fit a frequency *independent* lattice coupling to the impurity in order to
-    !match the matsubara greens functions
-    subroutine SC_FitLatticeGF_Im()
-        implicit none
-        real(dp) :: GFChemPot,Omega
-        integer :: nESteps_Im,nESteps_Re,OmegaVal
-        complex(dp), allocatable :: SE_Im(:,:,:),G_Mat_Im(:,:,:)
-        complex(dp), allocatable :: SE_Re(:,:,:),G_Mat_Re(:,:,:)
-        complex(dp), allocatable :: Lattice_GF(:,:,:)
-        real(dp), allocatable :: h_lat_fit(:,:),Couplings(:,:)
-        real(dp), allocatable :: AllDiffs(:,:)
-        complex(dp), allocatable :: DiffImpGF(:,:,:),G_Mat_Im_Old(:,:,:)
-        real(dp) :: FinalDist
-        integer :: i,iter
-        integer, parameter :: iMaxIter_Fit = 1000
-        real(dp), parameter :: dDeltaImpThresh = 1.0e-6_dp 
-        logical, parameter :: tCalcRealSpectrum = .true.
-        character(len=*), parameter :: t_r='SC_FitLatticeGF_Im'
-
-        !Set chemical potential (This will only be right for half-filling)
-        GFChemPot = U/2.0_dp
-
-        !How many frequency points are there exactly?
-        nESteps_Im = 0
-        nESteps_Re = 0
-        OmegaVal = 0
-        do while(.true.)
-            call GetNextOmega(Omega,OmegaVal,tMatbrAxis=.true.)
-            if(OmegaVal.lt.0) exit
-            nESteps_Im = nESteps_Im + 1
-        enddo
-        OmegaVal = 0
-        do while(.true.)
-            call GetNextOmega(Omega,OmegaVal,tMatbrAxis=.false.)
-            if(OmegaVal.lt.0) exit
-            nESteps_Re = nESteps_Re + 1
-        enddo
-
-        !Initially, just see if we can fit the two different Matsubara spectral functions
-        write(6,*) "Number of Matsubara frequency points: ",nESteps_Im
-
-        allocate(SE_Im(nImp,nImp,nESteps_Im))
-        SE_Im(:,:,:) = zzero
-        allocate(h_lat_fit(nSites,nSites))
-        h_lat_fit(:,:) = h0v(:,:)
-        allocate(Couplings(iLatticeCoups,nImp))
-
-        call InitLatticeCouplings(Couplings,iLatticeCoups)
-        call AddPeriodicImpCoupling_RealSpace(h_lat_fit,nSites,iLatticeCoups,nImp,Couplings)
-
-        allocate(G_Mat_Im(nImp,nImp,nESteps_Im))
-        allocate(G_Mat_Re(nImp,nImp,nESteps_Re))
-        allocate(SE_Re(nImp,nImp,nESteps_Re))
-        SE_Re(:,:,:) = zzero
-        allocate(Lattice_GF(nImp,nImp,nESteps_Im))
-        !Write out the initial lattice greens function
-        !call FindLocalMomGF(nESteps_Im,SE_Im,Lattice_GF,tMatbrAxis=.true.,ham=h_lat_fit)
-        call FindLocalMomGF(nESteps_Im,SE_Im,Lattice_GF,tMatbrAxis=.true.,ham=h_lat_fit,CouplingLength=iLatticeCoups)
-        !Write out lattice greens function
-        call writedynamicfunction(nESteps_Im,Lattice_GF,'G_Lat_Im',tag=0,tMatbrAxis=.true.)
-        if(tCalcRealSpectrum) then
-            call SchmidtGF_wSE(G_Mat_Re,GFChemPot,SE_Re,nESteps_Re,tMatbrAxis=.false.,ham=h_lat_fit)
-            call writedynamicfunction(nESteps_Re,G_Mat_Re,'G_Imp_Re',tag=0,tMatbrAxis=.false.)
-        endif
-
-        allocate(G_Mat_Im_Old(nImp,nImp,nESteps_Im))
-        allocate(DiffImpGF(nImp,nImp,nESteps_Im))
-        G_Mat_Im(:,:,:) = zzero
-
-        allocate(AllDiffs(2,0:iMaxIter_Fit))
-        AllDiffs(:,:) = zero
-
-        iter = 0
-        do while(.not.tSkip_Lattice_Fit)
-            iter = iter + 1
-            
-            !High level calculation on matsubara axis, with no self-energy, and just the normal lattice hamiltonian
-            G_Mat_Im_Old(:,:,:) = G_Mat_Im(:,:,:)
-            call SchmidtGF_wSE(G_Mat_Im,GFChemPot,SE_Im,nESteps_Im,tMatbrAxis=.true.,ham=h_lat_fit)
-            call writedynamicfunction(nESteps_Im,G_Mat_Im,'G_Imp_Im',tag=iter,tMatbrAxis=.true.)
-            call flush(6)
-
-            if(iLatticeFitType.eq.2) then
-                !Invert the high-level greens function, since we are fitting the residual of the inverses
-                call InvertLocalNonHermGF(nESteps_Im,G_Mat_Im)
-            endif
-
-            if((abs(Damping_SE-one).gt.1.0e-8_dp).and.(iter.gt.1)) then
-                !Take an admixture of the previous two high-level calculations to damp the fit
-                G_Mat_Im(:,:,:) = (Damping_SE*G_Mat_Im(:,:,:)) + ((one-Damping_SE)*G_Mat_Im_Old(:,:,:))
-            endif
-
-
-            if(iter.eq.1) then
-                !calculate the initial residual
-                call CalcLatticeFitResidual(G_Mat_Im,nESteps_Im,Couplings,iLatticeCoups,AllDiffs(1,0),.true.)
-                AllDiffs(2,0) = zero
-            endif
-            call FitLatticeCouplings(G_Mat_Im,nESteps_Im,Couplings,iLatticeCoups,FinalDist,.true.)
-
-            !Add the new lattice couplings to the lattice hamiltonian
-            call AddPeriodicImpCoupling_RealSpace(h_lat_fit,nSites,iLatticeCoups,nImp,Couplings)
-            !Now, calculate the local lattice greens function
-            call FindLocalMomGF(nESteps_Im,SE_Im,Lattice_GF,tMatbrAxis=.true.,ham=h_lat_fit,CouplingLength=iLatticeCoups)
-            !call FindLocalMomGF(nESteps_Im,SE_Im,Lattice_GF,tMatbrAxis=.true.,ham=h_lat_fit)
-            !Write out lattice greens function
-            call writedynamicfunction(nESteps_Im,Lattice_GF,'G_Lat_Im',tag=iter,tMatbrAxis=.true.)
-
-            !Write out the lattice couplings
-            call WriteLatticeCouplings(iLatticeCoups,Couplings)
-        
-            if(tCalcRealSpectrum) then
-                call SchmidtGF_wSE(G_Mat_Re,GFChemPot,SE_Re,nESteps_Re,tMatbrAxis=.false.,ham=h_lat_fit)
-                call writedynamicfunction(nESteps_Re,G_Mat_Re,'G_Imp_Re',tag=iter,tMatbrAxis=.false.)
-            endif
-
-            !Calculate & write out stats (all of them)
-            if(iter.gt.iMaxIter_Fit) then
-                write(6,"(A,I9)") "Exiting. Max iters hit of: ",iMaxIter_Fit
-                exit
-            endif
-            AllDiffs(1,iter) = FinalDist
-            DiffImpGF(:,:,:) = G_Mat_Im_Old(:,:,:) - G_Mat_Im(:,:,:)
-            DiffImpGF(:,:,:) = DiffImpGF(:,:,:) * dconjg(DiffImpGF(:,:,:))
-            AllDiffs(2,iter) = sum(real(DiffImpGF(:,:,:),dp))
-
-            write(6,"(A)") ""
-            write(6,"(A,I7,A)") "***   COMPLETED MACROITERATION ",iter," ***"
-            write(6,"(A)") "     Iter.  FitResidual        Delta_GF_Imp "
-            do i = 0,iter
-                write(6,"(I7,2G20.13)") i,AllDiffs(1,i),AllDiffs(2,i)
-            enddo
-            write(6,"(A)") ""
-            call flush(6)
-
-            if(AllDiffs(2,iter).lt.dDeltaImpThresh) then
-                write(6,"(A)") "Success! Convergence on imaginary axis successful"
-                write(6,"(A,G20.13)") "Impurity greens function changing on imaginary axis by less than: ",dDeltaImpThresh
-                exit
-            endif
-        enddo
-
-        !We should write these out to a file so that we can restart from them at a later date (possibly with more variables).
-        write(6,"(A)") "Final *frequency independent* lattice coupling parameters: "
-        do i = 1,iLatticeCoups
-            write(6,"(I6,G20.13)") i,Couplings(i,1)
-        enddo
-        write(6,"(A)") "" 
-
-        deallocate(G_Mat_Im,SE_Im,Lattice_GF,G_Mat_Im_Old,DiffImpGF,AllDiffs)
-        allocate(Lattice_GF(nImp,nImp,nESteps_Re))
-            
-        write(6,"(A)") "Now calculating spectral functions on the REAL axis"
-        call flush(6)
-        !What does the final lattice greens function look like on the real axis?
-        call FindLocalMomGF(nESteps_Re,SE_Re,Lattice_GF,tMatbrAxis=.false.,ham=h_lat_fit,CouplingLength=iLatticeCoups)
-        !call FindLocalMomGF(nESteps_Re,SE_Re,Lattice_GF,tMatbrAxis=.false.,ham=h_lat_fit)
-        !Write out lattice greens function
-        !Is it the same as the impurity greens function on the real axis. This would be nice.
-        call writedynamicfunction(nESteps_Re,Lattice_GF,'G_Lat_Re_Final',tMatbrAxis=.false.)
-
-        !Finally, calculate the greens function in real-frequency space.
-        call SchmidtGF_wSE(G_Mat_Re,GFChemPot,SE_Re,nESteps_Re,tMatbrAxis=.false.,ham=h_lat_fit)
-        call writedynamicfunction(nESteps_Re,G_Mat_Re,'G_Imp_Re_Final',tMatbrAxis=.false.)
-
-        deallocate(h_lat_fit,Couplings,SE_Re,G_Mat_Re,Lattice_GF)
-
-    end subroutine SC_FitLatticeGF_Im
-
 
     !Return the residual (dist) for a set of lattice couplings to the impurity, maintaining translational symmetry, to the 
     !impurity greens function. This can come with different weighting factors.
@@ -433,22 +454,24 @@ module SelfConsistentLR
         
         !TODO: Fix this, so that the self-energy is an optional argument
         allocate(SE_Dummy(nImp,nImp,nESteps))
-
-        !We need to calculate the lattice greens function with the attached coupling
-        allocate(h_lat_fit(nSites,nSites))
-        h_lat_fit(:,:) = h0v(:,:)
-        !Add the extended, periodized, non-local couplings to the rest of the lattice
-        call AddPeriodicImpCoupling_RealSpace(h_lat_fit,nSites,iNumCoups,nImp,Couplings)
-
-        !Now, calculate the local lattice greens function
         allocate(Lattice_GF(nImp,nImp,nESteps))
-        !call writematrix(Couplings,'Couplings',.false.)
-        !call writematrix(h_lat_fit,'h_lat_fit',.true.)
-        !call FindLocalMomGF(nESteps,SE_Dummy,Lattice_GF,tMatbrAxis=tMatbrAxis,ham=h_lat_fit)
-        call FindLocalMomGF(nESteps,SE_Dummy,Lattice_GF,tMatbrAxis=tMatbrAxis,ham=h_lat_fit,CouplingLength=iNumCoups)
-        !call stop_all(t_r,'end')
-        !write(6,*) "Imp GF: ",G_Imp(1,1,:)
-        !write(6,*) "Lattice GF: ",Lattice_GF(1,1,:)
+
+        if(.not.tOptGF_Evals) then
+            !We need to calculate the lattice greens function with the attached coupling
+            allocate(h_lat_fit(nSites,nSites))
+            h_lat_fit(:,:) = h0v(:,:)
+            !Add the extended, periodized, non-local couplings to the rest of the lattice
+            call AddPeriodicImpCoupling_RealSpace(h_lat_fit,nSites,iNumCoups,nImp,Couplings)
+
+            !Now, calculate the local lattice greens function
+            !call writematrix(Couplings,'Couplings',.false.)
+            !call writematrix(h_lat_fit,'h_lat_fit',.true.)
+            !call FindLocalMomGF(nESteps,SE_Dummy,Lattice_GF,tMatbrAxis=tMatbrAxis,ham=h_lat_fit)
+            call FindLocalMomGF(nESteps,SE_Dummy,Lattice_GF,tMatbrAxis=tMatbrAxis,ham=h_lat_fit,CouplingLength=iNumCoups)
+            deallocate(h_lat_fit)
+        else
+            call FindLocalMomGF(nESteps,SE_Dummy,Lattice_GF,tMatbrAxis=tMatbrAxis,CouplingLength=iNumCoups,evals=Couplings(:,1))
+        endif
 
         if(iLatticeFitType.eq.2) then
             !If required (i.e. we are fitting the inverses of the functions), invert the lattice greens function
@@ -499,7 +522,7 @@ module SelfConsistentLR
             dist = dist/LattWeight
         endif
 
-        deallocate(h_lat_fit,SE_Dummy,DiffMat,Lattice_GF)
+        deallocate(SE_Dummy,DiffMat,Lattice_GF)
 
     end subroutine CalcLatticeFitResidual
 
@@ -517,34 +540,48 @@ module SelfConsistentLR
         real(dp), allocatable :: step(:),vars(:),var(:)
         integer :: nop,i,maxf,iprint,nloop,iquad,ierr,iRealCoupNum
         real(dp) :: stopcr,simp,rhobeg,rhoend
-        logical :: tfirst
+        logical :: tfirst,tOptEVals_
         character(len=*), parameter :: t_r='FitLatticeCouplings'
 
-        if(tEveryOtherCoup) then
-            !We actually only have half the number of couplings, since we are not optimizing every other coupling, and
-            !just setting it to zero
-            if(mod(iNumCoups,2).eq.2) then
-                iRealCoupNum = iNumCoups/2
-            else
-                iRealCoupNum = (iNumCoups+1)/2
-            endif
-        else
+        if(tOptGF_EVals) then
             iRealCoupNum = iNumCoups
+            tOptEVals_ = .true.
+        else
+            if(tEveryOtherCoup) then
+                !We actually only have half the number of couplings, since we are not optimizing every other coupling, and
+                !just setting it to zero
+                if(mod(iNumCoups,2).eq.2) then
+                    iRealCoupNum = iNumCoups/2
+                else
+                    iRealCoupNum = (iNumCoups+1)/2
+                endif
+            else
+                iRealCoupNum = iNumCoups
+            endif
+            tOptEVals_ = .false.
         endif
 
         if(iFitAlgo.eq.2) then
             !Use modified Powell algorithm for optimization (based on fitting to quadratics)
-            write(6,"(A)") "Optimizing lattice couplings with modified Powell algorithm"
-
             allocate(vars(iRealCoupNum))
-            if(tEveryOtherCoup) then
-                do i = 1,iRealCoupNum
-                    vars(i) = Couplings((2*i)-1,1)
-                enddo
-            else
+            if(tOptEVals_) then
+                write(6,"(A)") "Optimizing lattice eigenvalues with modified Powell algorithm"
+                if(tShift_Mesh.and.(iRealCoupNum.ne.(nSites/2))) call stop_all(t_r,'Error here')
+                if((.not.tShift_Mesh).and.(iRealCoupNum.ne.((nSites/2)+1))) call stop_all(t_r,'Error here')
                 do i = 1,iRealCoupNum
                     vars(i) = Couplings(i,1)
                 enddo
+            else
+                write(6,"(A)") "Optimizing lattice couplings with modified Powell algorithm"
+                if(tEveryOtherCoup) then
+                    do i = 1,iRealCoupNum
+                        vars(i) = Couplings((2*i)-1,1)
+                    enddo
+                else
+                    do i = 1,iRealCoupNum
+                        vars(i) = Couplings(i,1)
+                    enddo
+                endif
             endif
 
             rhobeg = 0.05_dp
@@ -561,23 +598,32 @@ module SelfConsistentLR
 
         elseif(iFitAlgo.eq.1) then
             !Use simplex method for optimization without derivatives
-            write(6,"(A)") "Optimizing lattice couplings with simplex algorithm"
-
-            !Starting values are assumed to be read in
-            allocate(step(iRealCoupNum))
             allocate(vars(iRealCoupNum))
-            allocate(var(iRealCoupNum))
-            step(:) = 0.05_dp
-            nop = iRealCoupNum
-            if(tEveryOtherCoup) then
-                do i = 1,iRealCoupNum
-                    vars(i) = Couplings((2*i)-1,1)
-                enddo
-            else
+            if(tOptEVals_) then
+                write(6,"(A)") "Optimizing lattice eigenvalues with simplex algorithm"
+                if(tShift_Mesh.and.(iRealCoupNum.ne.(nSites/2))) call stop_all(t_r,'Error here')
+                if((.not.tShift_Mesh).and.(iRealCoupNum.ne.((nSites/2)+1))) call stop_all(t_r,'Error here')
                 do i = 1,iRealCoupNum
                     vars(i) = Couplings(i,1)
                 enddo
+            else
+                write(6,"(A)") "Optimizing lattice couplings with simplex algorithm"
+                if(tEveryOtherCoup) then
+                    do i = 1,iRealCoupNum
+                        vars(i) = Couplings((2*i)-1,1)
+                    enddo
+                else
+                    do i = 1,iRealCoupNum
+                        vars(i) = Couplings(i,1)
+                    enddo
+                endif
             endif
+
+            !Starting values are assumed to be read in
+            allocate(step(iRealCoupNum))
+            allocate(var(iRealCoupNum))
+            step(:) = 0.05_dp
+            nop = iRealCoupNum
 
             !Set max no of function evaluations. Default = 20*variables, print every 25
             if(iMaxFitMicroIter.eq.0) then
@@ -633,19 +679,26 @@ module SelfConsistentLR
         endif
             
         !Update couplings
-        if(tEveryOtherCoup) then
-            !Put back into the couplings array is every other slot
-            Couplings(:,1) = zero
-            do i = 1,iRealCoupNum
-                Couplings((2*i)-1,1) = vars(i)
-            enddo
-            do i = 2,nImp
-                Couplings(:,i) = Couplings(:,1)
-            enddo
-        else
+        if(tOptEVals_) then
+            !We need to translate these eigenvalues back into couplings?
             do i = 1,nImp
                 Couplings(:,i) = vars(:)
             enddo
+        else
+            if(tEveryOtherCoup) then
+                !Put back into the couplings array is every other slot
+                Couplings(:,1) = zero
+                do i = 1,iRealCoupNum
+                    Couplings((2*i)-1,1) = vars(i)
+                enddo
+                do i = 2,nImp
+                    Couplings(:,i) = Couplings(:,1)
+                enddo
+            else
+                do i = 1,nImp
+                    Couplings(:,i) = vars(:)
+                enddo
+            endif
         endif
 
         deallocate(vars)
@@ -664,7 +717,15 @@ module SelfConsistentLR
         real(dp), allocatable :: CoupsTemp(:,:)
         integer :: i,j,RealCoupsNum
 
-        if(tEveryOtherCoup) then
+        if(tOptGF_EVals) then
+            RealCoupsNum = iNumOptCoups
+            allocate(CoupsTemp(RealCoupsNum,nImp))
+            CoupsTemp(:,:) = zero
+            do i = 1,nImp
+                CoupsTemp(:,i) = vars(:)
+            enddo
+
+        elseif(tEveryOtherCoup) then
             !Expand the couplings back into the full couplings (with the zeros)
             RealCoupsNum = 2*iNumOptCoups
             allocate(CoupsTemp(RealCoupsNum,nImp))
@@ -689,54 +750,96 @@ module SelfConsistentLR
         deallocate(CoupsTemp)
     end subroutine MinCoups
 
-    subroutine WriteLatticeCouplings(iLatticeCoups,Couplings)
+    subroutine WriteLatticeCouplings(iLatParams,Couplings)
         implicit none
-        integer, intent(in) :: iLatticeCoups
-        real(dp), intent(in) :: Couplings(iLatticeCoups,nImp)
+        integer, intent(in) :: iLatParams
+        real(dp), intent(in) :: Couplings(iLatParams,nImp)
         integer :: iunit
+        character(len=*), parameter :: t_r='WriteLatticeCouplings'
 
         iunit = get_free_unit()
-        open(unit=iunit,file='LatCouplings',status='unknown')
-        write(iunit,*) iLatticeCoups
-        write(iunit,*) Couplings(1:iLatticeCoups,1)
+        if(tOptGF_EVals) then
+            open(unit=iunit,file='Lat_EVals',status='unknown')
+        else
+            open(unit=iunit,file='LatCouplings',status='unknown')
+        endif
+        write(iunit,*) iLatParams
+        write(iunit,*) Couplings(1:iLatParams,1)
         close(iunit)
 
     end subroutine WriteLatticeCouplings
         
-    subroutine InitLatticeCouplings(Couplings,iLatticeCoups)
+    subroutine InitLatticeCouplings(Couplings,iLatParams,h_lat_fit)
         implicit none
-        integer, intent(in) :: iLatticeCoups
-        real(dp), intent(out) :: Couplings(iLatticeCoups,nImp)
+        integer, intent(in) :: iLatParams
+        real(dp), intent(out) :: Couplings(iLatParams,nImp)
+        real(dp), intent(out) :: h_lat_fit(nSites,nSites)
+        real(dp), allocatable :: lat_evals(:)
         integer :: iunit,iloclatcoups,i
         logical :: exists
         character(len=*), parameter :: t_r='ReadInLatticeCouplings'
 
         Couplings(:,:) = zzero
+        h_lat_fit(:,:) = h0v(:,:)
 
         if(tReadCouplings) then
-            inquire(file='LatCouplings_Read',exist=exists)
-            if(.not.exists) then
-                call stop_all(t_r,'LatCouplings_Read file does not exist')
-            endif
             iunit = get_free_unit()
-            open(unit=iunit,file='LatCouplings_Read',status='old')
-            read(iunit,*) iloclatcoups  !This does not need to be the same as iLatticeCoups
-            iloclatcoups = min(iLatticeCoups,iloclatcoups)
-            read(iunit,*) Couplings(1:iloclatcoups,1) !Fill the coupslings
-            if(tEveryOtherCoup) then
-                !Set every other lattice coupling to zero
-                do i = 2,iloclatcoups,2
-                    Couplings(i,1) = zero
+            if(tOptGF_EVals) then
+                inquire(file='LatEVals_Read',exist=exists)
+                if(.not.exists) then
+                    call stop_all(t_r,'LatEVals_Read file does not exist')
+                endif
+                open(unit=iunit,file='LatEVals_Read',status='old')
+                read(iunit,*) iloclatcoups
+                if(tShift_Mesh.and.(iloclatcoups.ne.(nSites/2))) call stop_all(t_r,'Wrong # of params read in')
+                if((.not.tShift_Mesh).and.(iloclatcoups.ne.((nSites/2)+1))) call stop_all(t_r,'Wrong # of params read in')
+                read(iunit,*) Couplings(1:iloclatcoups,1)
+                do i = 2,nImp
+                    !Copy them to the other impurities
+                    Couplings(:,i) = Couplings(:,1)
                 enddo
+                write(6,*) "Lattice eigenvalues read in from disk, and initialised to: ",Couplings(:,1)
+            else
+                inquire(file='LatCouplings_Read',exist=exists)
+                if(.not.exists) then
+                    call stop_all(t_r,'LatCouplings_Read file does not exist')
+                endif
+                open(unit=iunit,file='LatCouplings_Read',status='old')
+                read(iunit,*) iloclatcoups  !This does not need to be the same as iLatParams
+                iloclatcoups = min(iLatParams,iloclatcoups)
+                read(iunit,*) Couplings(1:iloclatcoups,1) !Fill the coupslings
+                if(tEveryOtherCoup) then
+                    !Set every other lattice coupling to zero
+                    do i = 2,iloclatcoups,2
+                        Couplings(i,1) = zero
+                    enddo
+                endif
+                do i = 2,nImp
+                    !Copy them to the other impurities
+                    Couplings(:,i) = Couplings(:,1)
+                enddo
+                write(6,*) "Lattice couplings read in from disk, and initialised to: ",Couplings(:,1)
             endif
-            do i = 2,nImp
-                !Copy them to the other impurities
-                Couplings(:,i) = Couplings(:,1)
-            enddo
             close(iunit)
-            write(6,*) "Lattice couplings read in from disk, and initialised to: ",Couplings(:,1)
         else
-            Couplings(1,:) = -1.0_dp    !This is the normal nearest neighbour coupling in the hubbard model. We will start from this
+            if(tOptGF_EVals) then
+                !Here, we are optimizing the eigenvalues (well, half of them for BCs), rather than the lattice couplings
+                if(nImp.gt.1) call stop_all(t_r,'Not working for multiple impurity sites yet')
+                if(tShift_Mesh.and.(iLatParams.ne.(nSites/2))) call stop_all(t_r,'Wrong # of params')
+                if((.not.tShift_Mesh).and.(iLatParams.ne.((nSites/2)+1))) call stop_all(t_r,'Wrong # of params')
+                !The eigenvalues are returned in *increasing* k-point order
+                allocate(lat_evals(nSites))
+                call CouplingsToEVals(h_lat_fit,lat_evals)
+                !call writevector(lat_evals,'lat_evals')
+                Couplings(:,1) = lat_evals(1:iLatParams)
+                do i = 2,nImp
+                    Couplings(:,i) = Couplings(:,1)
+                enddo
+                deallocate(lat_evals)
+            else
+                !This is the normal nearest neighbour coupling in the hubbard model. We will start from this
+                Couplings(1,:) = -1.0_dp    
+            endif
         endif
 
     end subroutine InitLatticeCouplings
@@ -3308,6 +3411,100 @@ module SelfConsistentLR
 
     end subroutine FindRealSpaceLocalMomGF
         
+    subroutine CouplingsToEVals(hLat,EVals)
+        implicit none
+        real(dp), intent(in) :: hLat(nSites,nSites)
+        real(dp), intent(out) :: EVals(nSites)
+        integer :: SS_Period,kPnt,ind_1,ind_2,info,lWork,i,j
+        complex(dp), allocatable :: zTemp(:,:),k_Ham(:,:),cWork(:),CompHam(:,:)
+        real(dp), allocatable :: rWork(:)
+        character(len=*), parameter :: t_r='CouplingsToEVals'
+
+        SS_Period = nImp
+
+        allocate(zTemp(nSites,SS_Period))
+        allocate(rWork(max(1,3*SS_Period-2)))
+        allocate(k_Ham(SS_Period,SS_Period))
+        allocate(CompHam(nSites,nSites))
+        do i = 1,nSites
+            do j = 1,nSites
+                CompHam(j,i) = dcmplx(hLat(j,i),zero)
+            enddo
+        enddo
+
+        do kPnt = 1,nKPnts
+            ind_1 = ((kPnt-1)*SS_Period) + 1
+            ind_2 = SS_Period*kPnt
+
+            call ZGEMM('N','N',nSites,SS_Period,nSites,zone,CompHam,nSites,RtoK_Rot(:,ind_1:ind_2),nSites,zzero,ztemp,nSites)
+            call ZGEMM('C','N',SS_Period,SS_Period,nSites,zone,RtoK_Rot(:,ind_1:ind_2),nSites,ztemp,nSites,zzero,k_Ham,SS_Period)
+
+            do i = 1,SS_Period
+                if(abs(aimag(k_ham(i,i))).gt.1.0e-7_dp) then
+                    call writematrixcomp(k_Ham,'k_ham',.false.)
+                    call stop_all(t_r,"Real part of k-transformed hamiltonian diagonal too large")
+                else
+                    k_ham(i,i) = dcmplx(real(k_ham(i,i)),zero)
+                endif
+            enddo
+
+            if(SS_Period.gt.1) then
+                allocate(cWork(1))
+                lWork = -1
+                info = 0 
+                !write(6,*) "KPnt: ",kPnt
+                !call writematrixcomp(k_Ham,'k_ham',.false.)
+                call zheev('V','U',SS_Period,k_Ham,SS_Period,EVals(ind_1:ind_2),cWork,lWork,rWork,info)
+                if(info.ne.0) then
+                    write(6,*) "INFO = ", info
+                    write(6,*) "CWORK = ",cWork(:)
+                    call stop_all(t_r,'Error in diag 1')
+                endif
+                lWork = int(real(cWork(1))) + 1
+                deallocate(cWork)
+                allocate(cWork(lWork))
+                call zheev('V','U',SS_Period,k_Ham,SS_Period,EVals(ind_1:ind_2),cWork,lWork,rWork,info)
+                if(info.ne.0) call stop_all(t_r,'Error in diag 2')
+                deallocate(cWork)
+            else
+                EVals(ind_1:ind_2) = real(k_Ham(1,1),dp)
+            endif
+        enddo
+
+        deallocate(k_Ham,zTemp,CompHam,rWork)
+
+    end subroutine CouplingsToEVals
+            
+    subroutine FindFullLatEvals(evals,nInd_evals,evals_full)
+        implicit none
+        integer, intent(in) :: nInd_evals
+        real(dp), intent(in) :: evals(nInd_evals)
+        real(dp), intent(out) :: evals_full(nSites)
+        integer :: i
+        character(len=*), parameter :: t_r='FindFullLatEvals'
+
+        if(tShift_Mesh) then
+            if(nInd_evals.ne.(nSites/2)) call stop_all(t_r,'Number of independent evals incorrect?')
+        else
+            if(nInd_evals.ne.((nSites/2)+1)) call stop_all(t_r,'# independent evals incorrect?')
+        endif
+
+        evals_full(1:nSites/2) = evals(:)
+        if(tShift_Mesh) then
+            !No gamma point. All k-points symmetric
+            do i = 1,nSites/2
+                evals_full(i+(nSites/2)) = evals((nSites/2)-i+1)
+            enddo
+        else
+            !Put in the gamma point
+            evals_full((nSites/2)+1) = evals((nSites/2)+1)
+            do i = 2,nSites/2
+                evals_full(i+(nSites/2)) = evals((nSites/2)-i+2)
+            enddo
+        endif
+
+    end subroutine FindFullLatEvals
+        
     !This calculates the sum of all the k-space greens functions over the 'n' frequency points
     !The hamiltonian in this case is taken to be h0v (i.e. with the correlation potential)
     !1/V \sum_k [w + mu + i/eta - h_k - SE]^-1      where V is volume of the BZ
@@ -3315,7 +3512,7 @@ module SelfConsistentLR
     !Can optionally be computed in real (default) or matsubara axis
     !Can optionally take a periodic lattice hamiltonian on which to calculate greens function (will then not use self-energy)
     !Can optionally take a coupling length for the non-local terms of the matrix, which should speed up the FT to k-space
-    subroutine FindLocalMomGF(n,SE,LocalMomGF,tMatbrAxis,ham,CouplingLength)
+    subroutine FindLocalMomGF(n,SE,LocalMomGF,tMatbrAxis,ham,CouplingLength,evals)
         use matrixops, only: mat_inv
         implicit none
         integer, intent(in) :: n
@@ -3324,13 +3521,14 @@ module SelfConsistentLR
         logical, intent(in), optional :: tMatbrAxis
         real(dp), intent(in), optional :: ham(nSites,nSites)
         integer, intent(in), optional :: CouplingLength
+        real(dp), intent(in), optional :: evals(:)
         complex(dp), allocatable :: k_Ham(:,:),CompHam(:,:),cWork(:)
         complex(dp), allocatable :: RVec(:,:),LVec(:,:),W_Vals(:),ztemp(:,:)
         complex(dp) :: InvMat(nImp,nImp),ztemp2(nImp,nImp)
-        real(dp), allocatable :: Work(:)
+        real(dp), allocatable :: Work(:), evals_full(:)
         integer :: kPnt,ind_1,ind_2,i,j,SS_Period,lwork,info,k
         real(dp) :: Omega,mu
-        logical :: tMatbrAxis_,tCoupledHam_,tSparseCoupling
+        logical :: tMatbrAxis_,tCoupledHam_,tSparseCoupling,tUseEVals
         character(len=*), parameter :: t_r='FindLocalMomGF'
 
         if(present(tMatbrAxis)) then
@@ -3351,6 +3549,12 @@ module SelfConsistentLR
             tSparseCoupling = .false.
         endif
 
+        if(present(evals).and.tOptGF_EVals) then
+            tUseEVals = .true.
+        else
+            tUseEVals = .false.
+        endif
+
         if(.not.tDiag_kspace) then
             if(tMatbrAxis_.or.tCoupledHam_) call stop_all(t_r,'Fixme')
             call FindRealSpaceLocalMomGF(n,SE,LocalMomGF)
@@ -3365,6 +3569,37 @@ module SelfConsistentLR
             mu = U/2.0_dp
         else
             mu = 0.0_dp
+        endif
+
+        if(tUseEVals) then
+            if(nImp.gt.1) call stop_all(t_r,'Not working for > 1 imp')
+
+            allocate(evals_full(nSites))
+            if(.not.present(CouplingLength)) call stop_all(t_r,'Error')
+            call FindFullLatEvals(evals,CouplingLength,evals_full)
+            
+            i = 0
+            do while(.true.)
+                call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis_)
+                if(i.lt.0) exit
+                if(i.gt.n) call stop_all(t_r,'Too many freq points')
+
+                if(tMatbrAxis_) then
+                    do k = 1,nSites
+                        LocalMomGF(:,:,i) = LocalMomGF(:,:,i) + dconjg(RtoK_Rot(1,k))*RtoK_Rot(1,k) /   &
+                            dcmplx(mu - evals_full(k),Omega)
+                    enddo
+                else
+                    do k = 1,nSites
+                        LocalMomGF(:,:,i) = LocalMomGF(:,:,i) + dconjg(RtoK_Rot(1,k))*RtoK_Rot(1,k) /   &
+                            dcmplx(Omega + mu - evals_full(k),dDelta)
+                    enddo
+                endif
+            enddo
+
+            LocalMomGF(:,:,:) = LocalMomGF(:,:,:) / real(nSites/nImp,dp)
+            deallocate(evals_full)
+            return
         endif
 
         !allocate(RotMat(nSites,SS_Period))
