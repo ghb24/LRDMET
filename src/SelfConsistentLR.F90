@@ -511,7 +511,7 @@ module SelfConsistentLR
                         dist = dist + real(DiffMat(k,j,i),dp)/(Omega**2)
                     endif
                     if(iLatticeFitType.eq.3) then
-                        LattWeight = LattWeight + real(Lattice_GF(k,j,i)*dconjg(Lattice_GF(k,j,i)),dp)
+                        LattWeight = LattWeight + real(abs(Lattice_GF(k,j,i)),dp)
                     endif
                 enddo
             enddo
@@ -586,7 +586,7 @@ module SelfConsistentLR
 
             rhobeg = 0.05_dp
             rhoend = 1.0e-6_dp
-            iprint = 3
+            iprint = 2
             if(iMaxFitMicroIter.eq.0) then
                 maxf = 20*iRealCoupNum
             else
