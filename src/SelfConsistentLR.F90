@@ -19,7 +19,7 @@ module SelfConsistentLR
         integer :: nESteps_Im,nESteps_Re,OmegaVal
         complex(dp), allocatable :: SE_Im(:,:,:),G_Mat_Im(:,:,:)
         complex(dp), allocatable :: SE_Re(:,:,:),G_Mat_Re(:,:,:)
-        complex(dp), allocatable :: Lattice_GF(:,:,:)
+        complex(dp), allocatable :: Lattice_GF(:,:,:),Lattice_GF_Real(:,:,:)
         real(dp), allocatable :: h_lat_fit(:,:),Couplings(:,:)
         real(dp), allocatable :: AllDiffs(:,:)
         complex(dp), allocatable :: DiffImpGF(:,:,:),G_Mat_Im_Old(:,:,:)
@@ -85,6 +85,7 @@ module SelfConsistentLR
         allocate(SE_Re(nImp,nImp,nESteps_Re))
         SE_Re(:,:,:) = zzero
         allocate(Lattice_GF(nImp,nImp,nESteps_Im))
+        allocate(Lattice_GF_Real(nImp,nImp,nESteps_Re))
         !Write out the initial lattice greens function
         !call FindLocalMomGF(nESteps_Im,SE_Im,Lattice_GF,tMatbrAxis=.true.,ham=h_lat_fit)
         call FindLocalMomGF(nESteps_Im,SE_Im,Lattice_GF,tMatbrAxis=.true.,ham=h_lat_fit,    &
@@ -94,6 +95,9 @@ module SelfConsistentLR
         if(tCalcRealSpectrum) then
             call SchmidtGF_wSE(G_Mat_Re,GFChemPot,SE_Re,nESteps_Re,tMatbrAxis=.false.,ham=h_lat_fit)
             call writedynamicfunction(nESteps_Re,G_Mat_Re,'G_Imp_Re',tag=0,tMatbrAxis=.false.)
+            call FindLocalMomGF(nESteps_Re,SE_Re,Lattice_GF_Real,tMatbrAxis=.false.,ham=h_lat_fit,    &
+                CouplingLength=iLatParams,evals=Couplings(:,1))
+            call writedynamicfunction(nESteps_Re,Lattice_GF_Real,'G_Lat_Re',tag=0,tMatbrAxis=.false.)
         endif
 
         allocate(G_Mat_Im_Old(nImp,nImp,nESteps_Im))
@@ -146,6 +150,9 @@ module SelfConsistentLR
             if(tCalcRealSpectrum) then
                 call SchmidtGF_wSE(G_Mat_Re,GFChemPot,SE_Re,nESteps_Re,tMatbrAxis=.false.,ham=h_lat_fit)
                 call writedynamicfunction(nESteps_Re,G_Mat_Re,'G_Imp_Re',tag=iter,tMatbrAxis=.false.)
+                call FindLocalMomGF(nESteps_Re,SE_Re,Lattice_GF_Real,tMatbrAxis=.false.,ham=h_lat_fit,  &
+                    CouplingLength=iLatParams,evals=Couplings(:,1))
+                call writedynamicfunction(nESteps_Re,Lattice_GF_Real,'G_Lat_Re',tag=iter,tMatbrAxis=.false.)
             endif
 
             !Calculate & write out stats (all of them)
@@ -175,13 +182,13 @@ module SelfConsistentLR
         enddo
 
         !We should write these out to a file so that we can restart from them at a later date (possibly with more variables).
-        write(6,"(A)") "Final *frequency independent* lattice coupling parameters: "
+        write(6,"(A)") "Final *frequency independent* lattice parameters: "
         do i = 1,iLatParams
             write(6,"(I6,G20.13)") i,Couplings(i,1)
         enddo
         write(6,"(A)") "" 
 
-        deallocate(G_Mat_Im,SE_Im,Lattice_GF,G_Mat_Im_Old,DiffImpGF,AllDiffs)
+        deallocate(G_Mat_Im,SE_Im,Lattice_GF,Lattice_GF_Real,G_Mat_Im_Old,DiffImpGF,AllDiffs)
         allocate(Lattice_GF(nImp,nImp,nESteps_Re))
             
         write(6,"(A)") "Now calculating spectral functions on the REAL axis"
@@ -2135,7 +2142,7 @@ module SelfConsistentLR
         character(64) :: filename
         logical :: tCheckOffDiagHerm_,tCheckCausal_,tWarn_,tMatbrAxis_
         integer :: iunit,i,j,k
-        real(dp) :: Omega
+        real(dp) :: Omega,Prev_Spec,SpectralWeight
         complex(dp) :: IsoAv,IsoErr
         character(len=*), parameter :: t_r='writedynamicfunction'
 
@@ -2171,6 +2178,8 @@ module SelfConsistentLR
         iunit = get_free_unit()
         open(unit=iunit,file=filename,status='unknown')
 
+        SpectralWeight = 0.0_dp
+        Prev_Spec = 0.0_dp
         i=0
         do while(.true.)
             call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis_)
@@ -2218,9 +2227,22 @@ module SelfConsistentLR
             if(present(ErrMat)) then
                 write(iunit,"(5G25.10)") Omega,real(IsoAv,dp),aimag(IsoAv),real(IsoErr,dp),aimag(IsoErr)
             else
+                if(i.ne.1) then
+                    if(tMatbrAxis_) then
+                        SpectralWeight = SpectralWeight + Omega_Step_Im*(Prev_Spec-aimag(IsoAv))/(2.0_dp*pi)
+                    else
+                        SpectralWeight = SpectralWeight + Omega_Step*(Prev_Spec-aimag(IsoAv))/(2.0_dp*pi)
+                    endif
+                    Prev_Spec = -aimag(IsoAv)
+                endif
                 write(iunit,"(3G25.10)") Omega,real(IsoAv,dp),aimag(IsoAv)
             endif
         enddo
+        if(tMatbrAxis_) then
+            write(6,"(A,F17.10)") "Total approximate spectral weight on Matsubara axis: ",SpectralWeight
+        else
+            write(6,"(A,F17.10)") "Total approximate spectral weight on real axis: ",SpectralWeight
+        endif
         close(iunit)
 
     end subroutine writedynamicfunction
