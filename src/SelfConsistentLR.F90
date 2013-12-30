@@ -586,7 +586,7 @@ module SelfConsistentLR
 
             rhobeg = 0.05_dp
             rhoend = 1.0e-6_dp
-            iprint = 2
+            iprint = 3
             if(iMaxFitMicroIter.eq.0) then
                 maxf = 20*iRealCoupNum
             else
@@ -3489,7 +3489,8 @@ module SelfConsistentLR
             if(nInd_evals.ne.((nSites/2)+1)) call stop_all(t_r,'# independent evals incorrect?')
         endif
 
-        evals_full(1:nSites/2) = evals(:)
+        !write(6,*) "tShift_Mesh: ",tShift_Mesh,nInd_evals,nSites,size(evals_full),size(evals)
+        evals_full(1:nSites/2) = evals(1:nSites/2)
         if(tShift_Mesh) then
             !No gamma point. All k-points symmetric
             do i = 1,nSites/2
