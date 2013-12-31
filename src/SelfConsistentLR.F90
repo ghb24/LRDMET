@@ -3620,7 +3620,6 @@ module SelfConsistentLR
                 endif
             enddo
 
-            LocalMomGF(:,:,:) = LocalMomGF(:,:,:) / real(nSites/nImp,dp)
             deallocate(evals_full)
             return
         endif
