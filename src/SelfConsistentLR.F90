@@ -456,8 +456,10 @@ module SelfConsistentLR
         logical, intent(in) :: tMatbrAxis
         real(dp), allocatable :: h_lat_fit(:,:)
         complex(dp), allocatable :: SE_Dummy(:,:,:),Lattice_GF(:,:,:),DiffMat(:,:,:)
+        real(dp), allocatable :: DiffMatr(:,:,:)
         real(dp) :: Omega,LattWeight
         integer :: i,j,k
+        integer, parameter :: iNormPower = 1    !The power of the matrix norm for the residual
         character(len=*), parameter :: t_r='CalcLatticeFitResidual'
         
         !TODO: Fix this, so that the self-energy is an optional argument
@@ -487,12 +489,13 @@ module SelfConsistentLR
         endif
         
         allocate(DiffMat(nImp,nImp,nESteps))
+        allocate(DiffMatr(nImp,nImp,nESteps))
 
         !Now, take the difference between the functions
         DiffMat(:,:,:) = Lattice_GF(:,:,:) - G_Imp(:,:,:)
 
-        !Take mod square and trace (Same as taking the abs square of the values)
-        DiffMat(:,:,:) = DiffMat(:,:,:) * dconjg(DiffMat(:,:,:))
+        !Take abs values 
+        DiffMatr(:,:,:) = abs(DiffMat(:,:,:))
 
         dist = zero
         LattWeight = zero
@@ -510,16 +513,16 @@ module SelfConsistentLR
                 do k = 1,nImp
                     if(iFitGFWeighting.eq.0) then
                         !Flat weighting
-                        dist = dist + real(DiffMat(k,j,i),dp)
+                        dist = dist + (DiffMatr(k,j,i)**iNormPower)
                     elseif(iFitGFWeighting.eq.1) then
                         !1/w weighting
-                        dist = dist + real(DiffMat(k,j,i),dp)/abs(Omega)
+                        dist = dist + (DiffMatr(k,j,i)**iNormPower)/abs(Omega)
                     else
                         !1/w^2 weighting
-                        dist = dist + real(DiffMat(k,j,i),dp)/(Omega**2)
+                        dist = dist + (DiffMatr(k,j,i)**iNormPower)/(Omega**2)
                     endif
                     if(iLatticeFitType.eq.3) then
-                        LattWeight = LattWeight + real(abs(Lattice_GF(k,j,i)),dp)
+                        LattWeight = LattWeight + (abs(Lattice_GF(k,j,i)))**iNormPower
                     endif
                 enddo
             enddo
@@ -530,7 +533,7 @@ module SelfConsistentLR
             dist = dist/LattWeight
         endif
 
-        deallocate(SE_Dummy,DiffMat,Lattice_GF)
+        deallocate(SE_Dummy,DiffMat,Lattice_GF,DiffMatr)
 
     end subroutine CalcLatticeFitResidual
 
