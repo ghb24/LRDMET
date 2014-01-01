@@ -131,6 +131,7 @@ module SelfConsistentLR
             if(iter.eq.1) then
                 !calculate the initial residual
                 call CalcLatticeFitResidual(G_Mat_Im,nESteps_Im,Couplings,iLatParams,AllDiffs(1,0),.true.)
+                write(6,"(A,F20.10)") "Initial matsubara axis spectrum residual: ",AllDiffs(1,0)
                 AllDiffs(2,0) = zero
             endif
             call FitLatticeCouplings(G_Mat_Im,nESteps_Im,Couplings,iLatParams,FinalDist,.true.)
