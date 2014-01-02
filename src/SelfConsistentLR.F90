@@ -530,6 +530,8 @@ module SelfConsistentLR
 
         if(iLatticeFitType.eq.3) then
             !Attempt to maximize lattice weight in the spectral window so that we don't optimize to v high frequencies
+        !    write(6,*) "Dist = ",dist
+        !    write(6,*) "Lattweight = ",LattWeight
             dist = dist/LattWeight
         endif
 
@@ -765,17 +767,19 @@ module SelfConsistentLR
         implicit none
         integer, intent(in) :: iLatParams
         real(dp), intent(in) :: Couplings(iLatParams,nImp)
-        integer :: iunit
+        integer :: iunit,i
         character(len=*), parameter :: t_r='WriteLatticeCouplings'
 
         iunit = get_free_unit()
         if(tOptGF_EVals) then
-            open(unit=iunit,file='Lat_EVals',status='unknown')
+            open(unit=iunit,file='LatEVals',status='unknown')
         else
             open(unit=iunit,file='LatCouplings',status='unknown')
         endif
         write(iunit,*) iLatParams
-        write(iunit,*) Couplings(1:iLatParams,1)
+        do i = 1,iLatParams
+            write(iunit,*) Couplings(i,1)
+        enddo
         close(iunit)
 
     end subroutine WriteLatticeCouplings
@@ -804,7 +808,9 @@ module SelfConsistentLR
                 read(iunit,*) iloclatcoups
                 if(tShift_Mesh.and.(iloclatcoups.ne.(nSites/2))) call stop_all(t_r,'Wrong # of params read in')
                 if((.not.tShift_Mesh).and.(iloclatcoups.ne.((nSites/2)+1))) call stop_all(t_r,'Wrong # of params read in')
-                read(iunit,*) Couplings(1:iloclatcoups,1)
+                do i = 1,iloclatcoups
+                    read(iunit,*) Couplings(i,1)
+                enddo
                 do i = 2,nImp
                     !Copy them to the other impurities
                     Couplings(:,i) = Couplings(:,1)
@@ -818,7 +824,9 @@ module SelfConsistentLR
                 open(unit=iunit,file='LatCouplings_Read',status='old')
                 read(iunit,*) iloclatcoups  !This does not need to be the same as iLatParams
                 iloclatcoups = min(iLatParams,iloclatcoups)
-                read(iunit,*) Couplings(1:iloclatcoups,1) !Fill the coupslings
+                do i = 1,iloclatcoups
+                    read(iunit,*) Couplings(i,1) !Fill the coupslings
+                enddo
                 if(tEveryOtherCoup) then
                     !Set every other lattice coupling to zero
                     do i = 2,iloclatcoups,2
