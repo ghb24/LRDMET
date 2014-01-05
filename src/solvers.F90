@@ -593,9 +593,10 @@ module solvers
             !Now for 1electron contributions
             do i=1,nSites
                 do j=1,i
-                    if(tChemPot.and.(i.eq.1).and.(j.eq.1)) then
-                        write(iunit,"(F16.12,4I8)") h0(1,1)-(U/2.0_dp),1,1,0,0
-                    elseif(abs(h0(i,j)).gt.1.0e-10_dp) then
+!                    if(tChemPot.and.(i.eq.1).and.(j.eq.1)) then
+!                        write(iunit,"(F16.12,4I8)") h0(1,1)-(U/2.0_dp),1,1,0,0
+!                    elseif(abs(h0(i,j)).gt.1.0e-10_dp) then
+                    if(abs(h0(i,j)).gt.1.0e-10_dp) then
                         write(iunit,"(F16.12,4I8)") h0(i,j),i,j,0,0
                     endif
                 enddo
@@ -671,9 +672,9 @@ module solvers
                     endif
                 enddo
             enddo
-            if(tChemPot) then
-                tmat(1,1) = tmat(1,1) - U/2.0_dp
-            endif
+            !if(tChemPot) then
+            !    tmat(1,1) = tmat(1,1) - U/2.0_dp
+            !endif
 
             !Now generate all determinants in the active space
             if(allocated(FCIDetList)) deallocate(FCIDetList)
@@ -1279,15 +1280,15 @@ module solvers
                 endif
             enddo
         enddo
-        if(tChemPot) then
-            if(tComp_) then
-                tmat_comp(1,1) = tmat_comp(1,1) - dcmplx(U/2.0_dp,0.0_dp)
-                if(tUHF) tmat_comp(2,2) = tmat_comp(2,2) - dcmplx(U/2.0_dp)
-            else
-                tmat(1,1) = tmat(1,1) - U/2.0_dp
-                if(tUHF) tmat(2,2) = tmat(2,2) - U/2.0_dp
-            endif
-        endif
+!        if(tChemPot) then
+!            if(tComp_) then
+!                tmat_comp(1,1) = tmat_comp(1,1) - dcmplx(U/2.0_dp,0.0_dp)
+!                if(tUHF) tmat_comp(2,2) = tmat_comp(2,2) - dcmplx(U/2.0_dp)
+!            else
+!                tmat(1,1) = tmat(1,1) - U/2.0_dp
+!                if(tUHF) tmat(2,2) = tmat(2,2) - U/2.0_dp
+!            endif
+!        endif
         if(tWriteOut) then
             if(tComp_) then
                 call writematrixcomp(tmat_comp,'tmat_comp',.true.)

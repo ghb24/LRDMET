@@ -2719,9 +2719,10 @@ Program RealHub
         endif
         do i=1,nSites
             do j=1,i
-                if(tChemPot.and.(i.eq.j).and.(i.eq.1)) then
-                    write(iunit,'(1X,G20.14,4I3)') h0(i,j)-(U/2.0_dp),i,j,0,0
-                elseif(abs(h0(i,j)).gt.1.0e-8_dp) then
+!                if(tChemPot.and.(i.eq.j).and.(i.eq.1)) then
+!                    write(iunit,'(1X,G20.14,4I3)') h0(i,j)-(U/2.0_dp),i,j,0,0
+!                elseif(abs(h0(i,j)).gt.1.0e-8_dp) then
+                if(abs(h0(i,j)).gt.1.0e-8_dp) then
                     WRITE(iunit,'(1X,G20.12,4I3)') h0(i,j),i,j,0,0
                 endif
             enddo

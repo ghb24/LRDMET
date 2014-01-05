@@ -168,6 +168,8 @@ module SingRefLR
         allocate(ni_lr(nImp_GF))
         allocate(ni_lr_b(nImp_GF))
 
+        call writematrix(HFOrbs,'HFOrbs',.true.)
+
         Omega = Start_Omega
         do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
 
@@ -431,9 +433,9 @@ module SingRefLR
             call dgemm('t','n',nSites,nSites,nSites,1.0_dp,FullHFOrbs,nSites,h0,nSites,0.0_dp,temp,nSites)
             call dgemm('n','n',nSites,nSites,nSites,1.0_dp,temp,nSites,FullHFOrbs,nSites,0.0_dp,tmat,nSites)
             deallocate(temp)
-            if(tChemPot) then
-                tmat(1,1) = tmat(1,1) - U/2.0_dp
-            endif
+!            if(tChemPot) then
+!                tmat(1,1) = tmat(1,1) - U/2.0_dp
+!            endif
             OrbPairs = (nSites*(nSites+1))/2
             umatsize = (OrbPairs*(OrbPairs+1))/2 
             allocate(umat(umatsize))

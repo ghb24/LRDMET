@@ -31,7 +31,14 @@ module SelfConsistentLR
         character(len=*), parameter :: t_r='SC_FitLatticeGF_Im'
 
         !Set chemical potential (This will only be right for half-filling)
-        GFChemPot = U/2.0_dp
+        if(.not.tAnderson) then
+            !Hubbard chemical potential
+            GFChemPot = U/2.0_dp
+        else
+            !For anderson model, we want h0v to be h0 with -U/2 on impurity
+            !Then, we want no chemical potential for the linear response.
+            GFChemPot = zero
+        endif
 
         !How many frequency points are there exactly?
         nESteps_Im = 0
@@ -78,6 +85,7 @@ module SelfConsistentLR
         call InitLatticeCouplings(Couplings,iLatParams,h_lat_fit)
         !This will create the lattice hamiltonian, either from the eigenvalues or the couplings
         !write(6,*) h_lat_fit(1,:)
+        call writematrix(h_lat_fit,'h_lat_fit_init',.true.)
         call AddPeriodicImpCoupling_RealSpace(h_lat_fit,nSites,iLatParams,nImp,Couplings)
 
         allocate(G_Mat_Im(nImp,nImp,nESteps_Im))
@@ -530,8 +538,8 @@ module SelfConsistentLR
 
         if(iLatticeFitType.eq.3) then
             !Attempt to maximize lattice weight in the spectral window so that we don't optimize to v high frequencies
-        !    write(6,*) "Dist = ",dist
-        !    write(6,*) "Lattweight = ",LattWeight
+            !write(6,*) "Dist = ",dist
+            !write(6,*) "Lattweight = ",LattWeight
             dist = dist/LattWeight
         endif
 
@@ -3603,7 +3611,7 @@ module SelfConsistentLR
             !This should really be passed in
             mu = U/2.0_dp
         else
-            mu = 0.0_dp
+            mu = zero 
         endif
 
         if(tUseEVals) then

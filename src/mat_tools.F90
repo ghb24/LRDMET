@@ -250,6 +250,10 @@ module mat_tools
                 h0(nSites,1) = -t
             endif
 
+            if(tChemPot.and.tAnderson) then
+                h0(1,1) = h0(1,1) - (U/2.0_dp)
+            endif
+
         elseif(LatticeDim.eq.2) then
 
             do site = 0,nSites-1
@@ -993,8 +997,8 @@ module mat_tools
                 !Include the on-site repulsion
                 fock(i,i) = fock(i,i) + U * 0.5_dp * (real(NEl,dp)/real(nSites,dp))
             enddo
-        elseif(tChemPot) then
-            fock(1,1) = fock(1,1) - (U/2.0_dp)
+!        elseif(tChemPot) then
+!            fock(1,1) = fock(1,1) - (U/2.0_dp)
         endif
         
         if(allocated(FullHFOrbs)) then
@@ -1095,10 +1099,10 @@ module mat_tools
             !Convert core hamiltonian into HF basis
             allocate(temp(nSites,nSites))
             allocate(h0HF(nSites,nSites))
-            if(tChemPot.and.tAnderson) h0(1,1) = h0(1,1) - U/2.0_dp
+!            if(tChemPot.and.tAnderson) h0(1,1) = h0(1,1) - U/2.0_dp
             call dgemm('t','n',nSites,nSites,nSites,1.0_dp,FullHFOrbs,nSites,h0,nSites,0.0_dp,temp,nSites)
             call dgemm('n','n',nSites,nSites,nSites,1.0_dp,temp,nSites,FullHFOrbs,nSites,0.0_dp,h0HF,nSites)
-            if(tChemPot.and.tAnderson) h0(1,1) = h0(1,1) + U/2.0_dp
+!            if(tChemPot.and.tAnderson) h0(1,1) = h0(1,1) + U/2.0_dp
             deallocate(temp)
 
             if(.true.) then
@@ -1357,6 +1361,7 @@ module mat_tools
         !Now just diagonalise this fock matrix, rather than use diis
         !First, diagonalize one-body hamiltonian
         HFOrbs(:,:) = Fock(:,:)
+        if(tChemPot.and.tAnderson) HFOrbs(1,1) = HFOrbs(1,1) + U/2.0_dp
         HFEnergies(:) = zero  
         if(tDiag_kspace) then
             call DiagOneEOp(HFOrbs,HFEnergies,nImp,nSites,tDiag_kspace)

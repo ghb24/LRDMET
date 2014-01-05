@@ -31,7 +31,7 @@ module LinearResponse
         real(dp), intent(in), optional :: ham(nSites,nSites)
         logical :: tMatbrAxis_,tLatHamProvided_
         complex(dp), allocatable :: NFCIHam(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
-        real(dp), allocatable :: dNorm_p(:),dNorm_h(:),W(:),temp(:,:),ham_schmidt(:,:)
+        real(dp), allocatable :: dNorm_p(:),dNorm_h(:),W(:),temp(:,:),ham_schmidt(:,:),Emb_h_fit(:,:)
         complex(dp), allocatable , target :: LinearSystem_p(:,:),LinearSystem_h(:,:)
         complex(dp), allocatable :: Cre_0(:,:),Ann_0(:,:),ResponseFn_p(:,:),ResponseFn_h(:,:)
         complex(dp), allocatable :: Gc_a_F_ax_Bra(:,:),Gc_a_F_ax_Ket(:,:),Gc_b_F_ab(:,:)
@@ -176,7 +176,16 @@ module LinearResponse
 
         !umat and tmat for the active space
         if(tStaticBathFitLat) then
-            call CreateIntMats(tComp=.true.,tTwoElecBath=.false.,bathham=ham_schmidt(nOcc-nImp+1:nOcc+nImp,nOcc-nImp+1:nOcc+nImp))
+            allocate(Emb_h_fit(EmbSize,EmbSize))
+            Emb_h_fit(:,:) = zero
+            !For the uncontracted space, we want to use the bare 1e hamiltonian over the impurity (and impurity-bath coupling?)
+            !Fot the uncontracted, static bath space, use the fit hamiltonian
+            if(.not.allocated(Emb_h0)) call stop_all(t_r,'Error here')
+            Emb_h_fit(:,1:nImp) = Emb_h0(:,1:nImp)
+            Emb_h_fit(1:nImp,:) = Emb_h0(1:nImp,:)
+            Emb_h_fit(nImp+1:EmbSize,nImp+1:EmbSize) = ham_schmidt(nOcc+1:nOcc+nImp,nOcc+1:nOcc+nImp)
+            call CreateIntMats(tComp=.true.,tTwoElecBath=.false.,bathham=Emb_h_fit)
+            deallocate(Emb_h_fit)
         else
             call CreateIntMats(tComp=.true.,tTwoElecBath=.false.)
         endif
