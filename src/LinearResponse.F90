@@ -181,11 +181,14 @@ module LinearResponse
             !For the uncontracted space, we want to use the bare 1e hamiltonian over the impurity (and impurity-bath coupling?)
             !Fot the uncontracted, static bath space, use the fit hamiltonian
             if(.not.allocated(Emb_h0)) call stop_all(t_r,'Error here')
-            Emb_h_fit(:,1:nImp) = Emb_h0(:,1:nImp)
-            Emb_h_fit(1:nImp,:) = Emb_h0(1:nImp,:)
+            Emb_h_fit(:,1:nImp) = Emb_h0v(:,1:nImp)
+            Emb_h_fit(1:nImp,:) = Emb_h0v(1:nImp,:)
             Emb_h_fit(nImp+1:EmbSize,nImp+1:EmbSize) = ham_schmidt(nOcc+1:nOcc+nImp,nOcc+1:nOcc+nImp)
             call CreateIntMats(tComp=.true.,tTwoElecBath=.false.,bathham=Emb_h_fit)
+            !call writematrix(Emb_h_fit,'Emb_h_fit',.false.)
             deallocate(Emb_h_fit)
+            !write(6,*) "tmat_comp:", tmat_comp(:,:)
+            !call writematrix(tmat,'tmat_comp',.false.)
         else
             call CreateIntMats(tComp=.true.,tTwoElecBath=.false.)
         endif

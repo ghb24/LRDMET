@@ -85,7 +85,7 @@ module SelfConsistentLR
         call InitLatticeCouplings(Couplings,iLatParams,h_lat_fit)
         !This will create the lattice hamiltonian, either from the eigenvalues or the couplings
         !write(6,*) h_lat_fit(1,:)
-        call writematrix(h_lat_fit,'h_lat_fit_init',.true.)
+        !call writematrix(h_lat_fit,'h_lat_fit_init',.true.)
         call AddPeriodicImpCoupling_RealSpace(h_lat_fit,nSites,iLatParams,nImp,Couplings)
 
         allocate(G_Mat_Im(nImp,nImp,nESteps_Im))
@@ -467,7 +467,7 @@ module SelfConsistentLR
         real(dp), allocatable :: DiffMatr(:,:,:)
         real(dp) :: Omega,LattWeight
         integer :: i,j,k
-        integer, parameter :: iNormPower = 1    !The power of the matrix norm for the residual
+        integer, parameter :: iNormPower = 2    !The power of the matrix norm for the residual
         character(len=*), parameter :: t_r='CalcLatticeFitResidual'
         
         !TODO: Fix this, so that the self-energy is an optional argument
@@ -803,6 +803,7 @@ module SelfConsistentLR
         character(len=*), parameter :: t_r='ReadInLatticeCouplings'
 
         Couplings(:,:) = zzero
+        !h_lat_fit(:,:) = h0(:,:)
         h_lat_fit(:,:) = h0v(:,:)
 
         if(tReadCouplings) then

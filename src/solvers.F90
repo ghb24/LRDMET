@@ -1161,11 +1161,10 @@ module solvers
 
         allocate(Emb1e(2*nImp,2*nImp))
         if(present(BathHam)) then
-            !Use the sent in hamiltonian (over embedded basis) for the bath:bath and bath:impurity coupling one-electron blocks
+            !Use the sent in hamiltonian over embedded basis for the one-electron blocks
             tBathHam_ = .true.
-            !Reallocate, since we want to use the original impurity space
             Emb1e(:,:) = BathHam(:,:)
-            Emb1e(1:nImp,1:nImp) = Emb_h0v(1:nImp,1:nImp)
+            !Emb1e(1:nImp,1:nImp) = Emb_h0v(1:nImp,1:nImp)
         else
             tBathHam_ = .false.
             Emb1e(:,:) = Emb_h0v(:,:)
