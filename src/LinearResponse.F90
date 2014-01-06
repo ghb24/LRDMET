@@ -353,6 +353,7 @@ module LinearResponse
                     enddo
                 enddo
             endif
+            !We want the coupling to the impurity to be *just* from the h0v matrix rotated into the schmidt basis.
         else
             !If we are doing self-consistent linear response, with a self-energy in the HL part, 
             !then this is calculated later, since it is now omega and iteration dependent
