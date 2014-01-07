@@ -38,7 +38,7 @@ LOGICAL, INTENT(IN)        :: tMat
 ! EXTERNAL fcn
 
 INTERFACE
-  SUBROUTINE fcn(m, n, x, fvec, iflag, nESteps, G, tMat)
+  SUBROUTINE fcn(m, n, x, fvec, iflag, nESteps, G, tMat, fjac_dim)
     use const, only: dp
     use Globals, only: nImp
     IMPLICIT NONE
@@ -49,6 +49,7 @@ INTERFACE
     INTEGER, INTENT(IN)        :: nESteps
     COMPLEX(dp), INTENT(IN)    :: G(nImp,nImp,nESteps)
     LOGICAL, INTENT(IN)        :: tMat 
+    REAL(dp), INTENT(INOUT), OPTIONAL :: fjac_dim(m,n)
   END SUBROUTINE fcn
 END INTERFACE
 
@@ -204,7 +205,7 @@ LOGICAL, INTENT(IN)        :: tMat
 ! EXTERNAL fcn
 
 INTERFACE
-  SUBROUTINE fcn(m, n, x, fvec, iflag, nESteps, G, tMat)
+  SUBROUTINE fcn(m, n, x, fvec, iflag, nESteps, G, tMat, fjac_dum)
     use const, only: dp
     use Globals, only: nImp
     IMPLICIT NONE
@@ -215,6 +216,7 @@ INTERFACE
     INTEGER, INTENT(IN)        :: nESteps
     COMPLEX(dp), INTENT(IN)    :: G(nImp,nImp,nESteps)
     LOGICAL, INTENT(IN)        :: tMat
+    REAL(dp), INTENT(INOUT), OPTIONAL :: fjac_dum(m,n)
   END SUBROUTINE fcn
 END INTERFACE
 
@@ -619,7 +621,7 @@ END SUBROUTINE lmdif
 
 
 
-SUBROUTINE lmder1(fcn, m, n, x, fvec, fjac, tol, info, ipvt)
+SUBROUTINE lmder1(fcn, m, n, x, fvec, fjac, tol, info, ipvt, nESteps, G, tMat)
  
 ! Code converted using TO_F90 by Alan Miller
 ! Date: 1999-12-09  Time: 12:45:54
@@ -628,26 +630,31 @@ SUBROUTINE lmder1(fcn, m, n, x, fvec, fjac, tol, info, ipvt)
 
 INTEGER, INTENT(IN)        :: m
 INTEGER, INTENT(IN)        :: n
-REAL (dp), INTENT(IN OUT)  :: x(:)
-REAL (dp), INTENT(OUT)     :: fvec(:)
-REAL (dp), INTENT(IN OUT)  :: fjac(:,:)    ! fjac(ldfjac,n)
+REAL (dp), INTENT(IN OUT)  :: x(n)
+REAL (dp), INTENT(OUT)     :: fvec(m)
+REAL (dp), INTENT(OUT)  :: fjac(m,n)    ! fjac(ldfjac,n)
 REAL (dp), INTENT(IN)      :: tol
 INTEGER, INTENT(OUT)       :: info
-INTEGER, INTENT(IN OUT)    :: ipvt(:)
-
+INTEGER, INTENT(IN OUT)    :: ipvt(n)
+INTEGER, INTENT(IN)        :: nESteps
+COMPLEX(dp), INTENT(IN)    :: G(nImp,nImp,nESteps)
+LOGICAL, INTENT(IN)        :: tMat
 
 ! EXTERNAL fcn
 
 INTERFACE
-  SUBROUTINE fcn(m, n, x, fvec, fjac, iflag)
+  SUBROUTINE fcn(m, n, x, fvec, iflag, nESteps, G, tMat, fjac)
     use const, only: dp
     use Globals, only: nImp
     IMPLICIT NONE
     INTEGER, INTENT(IN)        :: m, n
-    REAL (dp), INTENT(IN)      :: x(:)
-    REAL (dp), INTENT(IN OUT)  :: fvec(:)
-    REAL (dp), INTENT(OUT)     :: fjac(:,:)
+    REAL (dp), INTENT(IN)      :: x(n)
+    REAL (dp), INTENT(IN OUT)  :: fvec(m)
     INTEGER, INTENT(IN OUT)    :: iflag
+    INTEGER, INTENT(IN)        :: nESteps
+    COMPLEX(dp), INTENT(IN)    :: G(nImp,nImp,nESteps)
+    LOGICAL, INTENT(IN)        :: tMat
+    REAL (dp), INTENT(INOUT), OPTIONAL     :: fjac(m,n)
   END SUBROUTINE fcn
 END INTERFACE
 
@@ -785,7 +792,7 @@ gtol = zero
 mode = 1
 nprint = 0
 CALL lmder(fcn, m, n, x, fvec, fjac, ftol, xtol, gtol, maxfev,  &
-           mode, factor, nprint, info, nfev, njev, ipvt)
+           mode, factor, nprint, info, nfev, njev, ipvt, nESteps, G, tMat)
 IF (info == 8) info = 4
 
 10 RETURN
@@ -797,7 +804,7 @@ END SUBROUTINE lmder1
 
 
 SUBROUTINE lmder(fcn, m, n, x, fvec, fjac, ftol, xtol, gtol, maxfev, &
-                 mode, factor, nprint, info, nfev, njev, ipvt)
+                 mode, factor, nprint, info, nfev, njev, ipvt, nESteps, G, tMat)
  
 ! Code converted using TO_F90 by Alan Miller
 ! Date: 1999-12-09  Time: 12:45:50
@@ -820,17 +827,23 @@ INTEGER, INTENT(OUT)       :: info
 INTEGER, INTENT(OUT)       :: nfev
 INTEGER, INTENT(OUT)       :: njev
 INTEGER, INTENT(OUT)       :: ipvt(:)
+INTEGER, INTENT(IN)        :: nESteps
+COMPLEX(dp), INTENT(IN)    :: G(nImp,nImp,nESteps)
+LOGICAL, INTENT(IN)        :: tMat
 
 INTERFACE
-  SUBROUTINE fcn(m, n, x, fvec, fjac, iflag)
+  SUBROUTINE fcn(m, n, x, fvec, iflag, nESteps, G, tMat, fjac)
     use const, only: dp
     use Globals, only: nImp
     IMPLICIT NONE
     INTEGER, INTENT(IN)        :: m, n
-    REAL (dp), INTENT(IN)      :: x(:)
-    REAL (dp), INTENT(IN OUT)  :: fvec(:)
-    REAL (dp), INTENT(OUT)     :: fjac(:,:)
+    REAL (dp), INTENT(IN)      :: x(n)
+    REAL (dp), INTENT(IN OUT)  :: fvec(m)
     INTEGER, INTENT(IN OUT)    :: iflag
+    INTEGER, INTENT(IN)        :: nESteps
+    COMPLEX(dp), INTENT(IN)    :: G(nImp,nImp,nESteps)
+    LOGICAL, INTENT(IN)        :: tMat
+    REAL (dp), INTENT(INOUT), OPTIONAL     :: fjac(m,n)
   END SUBROUTINE fcn
 END INTERFACE
 
@@ -1032,7 +1045,7 @@ END DO
 !     evaluate the function at the starting point and calculate its norm.
 
 20 iflag = 1
-CALL fcn(m, n, x, fvec, fjac, iflag)
+CALL fcn(m, n, x, fvec, iflag, nESteps, G, tMat, fjac)
 nfev = 1
 IF (iflag < 0) GO TO 300
 fnorm = enorm(m, fvec)
@@ -1047,7 +1060,7 @@ iter = 1
 !        calculate the jacobian matrix.
 
 30 iflag = 2
-CALL fcn(m, n, x, fvec, fjac, iflag)
+CALL fcn(m, n, x, fvec, iflag, nESteps, G, tMat, fjac)
 njev = njev + 1
 IF (iflag < 0) GO TO 300
 
@@ -1055,7 +1068,7 @@ IF (iflag < 0) GO TO 300
 
 IF (nprint <= 0) GO TO 40
 iflag = 0
-IF (MOD(iter-1,nprint) == 0) CALL fcn(m, n, x, fvec, fjac, iflag)
+IF (MOD(iter-1,nprint) == 0) CALL fcn(m, n, x, fvec, iflag, nESteps, G, tMat, fjac)
 IF (iflag < 0) GO TO 300
 
 !        compute the qr factorization of the jacobian.
@@ -1142,7 +1155,7 @@ IF (iter == 1) delta = MIN(delta,pnorm)
 !           evaluate the function at x + p and calculate its norm.
 
 iflag = 1
-CALL fcn(m, n, wa2, wa4, fjac, iflag)
+CALL fcn(m, n, wa2, wa4, iflag, nESteps, G, tMat, fjac)
 nfev = nfev + 1
 IF (iflag < 0) GO TO 300
 fnorm1 = enorm(m, wa4)
@@ -1229,7 +1242,7 @@ GO TO 30
 
 300 IF (iflag < 0) info = iflag
 iflag = 0
-IF (nprint > 0) CALL fcn(m, n, x, fvec, fjac, iflag)
+IF (nprint > 0) CALL fcn(m, n, x, fvec, iflag, nESteps, G, tMat, fjac)
 RETURN
 
 !     last card of subroutine lmder.
@@ -1960,7 +1973,7 @@ COMPLEX(dp), INTENT(IN)    :: G(nImp,nImp,nESteps)
 LOGICAL, INTENT(IN)        :: tMat
 
 INTERFACE
-  SUBROUTINE fcn(m, n, x, fvec, iflag, nESteps, G, tMat)
+  SUBROUTINE fcn(m, n, x, fvec, iflag, nESteps, G, tMat, fjac_dum)
     use const, only: dp
     use Globals, only: nImp
     IMPLICIT NONE
@@ -1971,6 +1984,7 @@ INTERFACE
     INTEGER, INTENT(IN)        :: nESteps
     COMPLEX(dp), INTENT(IN)    :: G(nImp,nImp,nESteps)
     LOGICAL, INTENT(IN)        :: tMat
+    REAL(dp), INTENT(INOUT), OPTIONAL :: fjac_dum(m,n)
   END SUBROUTINE fcn
 END INTERFACE
 

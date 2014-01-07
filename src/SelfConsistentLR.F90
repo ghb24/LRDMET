@@ -472,7 +472,7 @@ module SelfConsistentLR
         real(dp), intent(out) :: dist
         logical, intent(in) :: tMatbrAxis
         real(dp), intent(out), optional :: dSeperateFuncs(nImp,nImp,nESteps)  
-        real(dp), intent(out), optional :: dJacobian(nESteps,iNumCoups)
+        real(dp), intent(out), optional :: dJacobian(nESteps,iNumCoups)  !TODO: This will be wrong for > 1 imp
         real(dp), allocatable :: h_lat_fit(:,:)
         complex(dp), allocatable :: SE_Dummy(:,:,:),Lattice_GF(:,:,:),DiffMat(:,:,:)
         real(dp), allocatable :: DiffMatr(:,:,:)
@@ -535,9 +535,11 @@ module SelfConsistentLR
                                 !1/w weighting
                                 !We actually divide by the sqrt of Omega, since the LM optimization will automatically take the squares of the functions
                                 dSeperateFuncs(k,j,i) = dSeperateFuncs(k,j,i)/sqrt(abs(Omega))
-                            else
+                            elseif(iFitGFWeighting.eq.2) then
                                 !1/w^2 weighting
                                 dSeperateFuncs(k,j,i) = dSeperateFuncs(k,j,i)/abs(Omega)
+                            else
+                                call stop_all(t_r,'Error here')
                             endif
                         enddo
                     enddo
@@ -603,13 +605,12 @@ module SelfConsistentLR
         real(dp), intent(out) :: FinalErr
         logical, intent(in) :: tMatbrAxis
 
-        real(dp), allocatable :: step(:),vars(:),var(:),FinalVec(:)
+        real(dp), allocatable :: step(:),vars(:),var(:),FinalVec(:),Jac(:,:)
         integer, allocatable :: iwork(:)
         integer :: nop,i,maxf,iprint,nloop,iquad,ierr,iRealCoupNum,nFuncs
         real(dp) :: stopcr,simp,rhobeg,rhoend,InitErr
         logical :: tfirst,tOptEVals_
         character(len=*), parameter :: t_r='FitLatticeCouplings'
-        logical, parameter :: tAnalyticDerivs = .false.
 
         if(tOptGF_EVals) then
             iRealCoupNum = iNumCoups
@@ -658,49 +659,61 @@ module SelfConsistentLR
             rhoend = 1.0e-6_dp  !Convergence criteria
             nFuncs = n*(nImp**2)   !Number of functions
             write(6,"(A,I9)") "Number of functions: ", nFuncs
+                
+            allocate(iwork(iRealCoupNum))
+            allocate(FinalVec(nFuncs))
+                
+            call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr,n,G_Imp,tMatbrAxis)
+            InitErr = enorm(nFuncs,FinalVec)
+            write(6,"(A,G20.10)") "Initial residual before fit: ",InitErr
 
             if(tAnalyticDerivs) then
                 write(6,"(A)") "Optimizing lattice hamiltonian with analytic derivative Levenberg-Marquardt algorithm"
+
+                !Additional memory for Jacobian matrix
+                allocate(Jac(nFuncs,iRealCoupNum))
+
+                call lmder1(MinCoups_LM, nFuncs, iRealCoupNum, vars, FinalVec, Jac, rhoend, ierr, iwork, n, G_Imp, tMatbrAxis)
+
+                deallocate(Jac)
             else
                 !Use Finite-difference jacobians
                 write(6,"(A)") "Optimizing lattice hamiltonian with numerical derivative Levenberg-Marquardt algorithm"
-                allocate(iwork(iRealCoupNum))
-                allocate(FinalVec(nFuncs))
-
-                call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr,n,G_Imp,tMatbrAxis)
-                InitErr = enorm(nFuncs,FinalVec)
-                write(6,"(A,G20.10)") "Initial residual before fit: ",InitErr
 
                 !Call LM algorithm
                 call lmdif1(MinCoups_LM , nFuncs, iRealCoupNum, vars, FinalVec, rhoend, ierr, iwork, n, G_Imp, tMatbrAxis)
-                FinalErr = enorm(nFuncs,FinalVec)
-                write(6,"(A,G20.10)") "Final residual after fit: ",FinalErr
-                if(InitErr.lt.FinalErr) call stop_all(t_r,'Residual actually increased during Lev-Mar optimization...?')
-                deallocate(iwork,FinalVec)
-
-                select case(ierr)
-                    case(0)
-                        call stop_all(t_r,'Improper imput parameters to lmdif1')
-                    case(1)
-                        write(6,"(A)") "Levenberg-Marquardt with approximate gradients successful..."
-                    case(2)
-                        write(6,"(A)") "Levenberg-Marquardt with approximate gradients successful..."
-                    case(3)
-                        write(6,"(A)") "Levenberg-Marquardt with approximate gradients successful..."
-                    case(4)
-                        write(6,"(A)") "Levenberg-Marquardt not successful: Objective function is orthogonal " &
-                            //"to the columns of the jacobian to machine precision."
-                    case(5)
-                        write(6,"(A)") "Levenberg-Marquardt not successful: Number of calls to fcn has reached or exceeded 200*(n+1)."
-                    case(6)
-                        write(6,"(A)") "Levenberg-Marquardt not successful: tol is too small. No further reduction in the sum of squares is possible."
-                    case(7)
-                        write(6,"(A)") "Levenberg-Marquardt not successful: tol is too small. No further improvement in the approximate solution x is possible." 
-                    case default
-                        call stop_all(t_r,'Unknown exit flag')
-                end select
-
             endif
+                
+            FinalErr = enorm(nFuncs,FinalVec)
+            write(6,"(A,G20.10)") "Final residual after fit: ",FinalErr
+            if(InitErr.lt.FinalErr) call stop_all(t_r,'Residual actually increased during Lev-Mar optimization...?')
+
+            select case(ierr)
+                case(0)
+                    call stop_all(t_r,'Improper imput parameters to lmdif1')
+                case(1)
+                    write(6,"(A)") "Levenberg-Marquardt with approximate gradients successful..."
+                case(2)
+                    write(6,"(A)") "Levenberg-Marquardt with approximate gradients successful..."
+                case(3)
+                    write(6,"(A)") "Levenberg-Marquardt with approximate gradients successful..."
+                case(4)
+                    write(6,"(A)") "Levenberg-Marquardt not successful: Objective function is orthogonal " &
+                        //"to the columns of the jacobian to machine precision."
+                case(5)
+                    write(6,"(A)") "Levenberg-Marquardt not successful: Number of calls to fcn has " &
+                        //"reached or exceeded max."
+                case(6)
+                    write(6,"(A)") "Levenberg-Marquardt not successful: tol is too small. No further " &
+                        //"reduction in the sum of squares is possible."
+                case(7)
+                    write(6,"(A)") "Levenberg-Marquardt not successful: tol is too small. No further " &
+                        //"improvement in the approximate solution x is possible." 
+                case default
+                    call stop_all(t_r,'Unknown exit flag')
+            end select
+                
+            deallocate(iwork,FinalVec)
 
         elseif(iFitAlgo.eq.2) then
             !Use modified Powell algorithm for optimization (based on fitting to quadratics)
@@ -808,7 +821,7 @@ module SelfConsistentLR
     end subroutine FitLatticeCouplings
 
     !Wrapper function to evaluate residuals for the Leveberg-Marquardt algorithm
-    subroutine MinCoups_LM(n,iNumOptCoups,vars,dists,iflag,nESteps,G,tMatbrAxis)
+    subroutine MinCoups_LM(n,iNumOptCoups,vars,dists,iflag,nESteps,G,tMatbrAxis,Jacobian)
         implicit none
         integer, intent(in) :: n, iNumOptCoups
         real(dp), intent(in) :: vars(iNumOptCoups)
@@ -817,6 +830,7 @@ module SelfConsistentLR
         integer, intent(in) :: nESteps
         complex(dp), intent(in) :: G(nImp,nImp,nESteps)
         logical, intent(in) :: tMatbraxis
+        real(dp), intent(inout), optional :: Jacobian(n,iNumOptCoups)
 
         real(dp), allocatable :: CoupsTemp(:,:),Sep_Dists(:,:,:)
         real(dp) :: dist,Omega
@@ -858,7 +872,15 @@ module SelfConsistentLR
         endif
 
         allocate(Sep_Dists(nImp,nImp,nESteps))
-        call CalcLatticeFitResidual(G,nESteps,CoupsTemp,RealCoupsNum,dist,tMatbrAxis,dSeperateFuncs=Sep_Dists)
+
+        if(tAnalyticDerivs.and.(iflag.eq.2)) then
+            !Calculate analytic derivatives
+            if(.not.present(Jacobian)) call stop_all(t_r,'Jacobian argument not present')
+            call CalcLatticeFitResidual(G,nESteps,CoupsTemp,RealCoupsNum,dist,tMatbrAxis,dSeperateFuncs=Sep_Dists,  &
+                dJacobian=Jacobian)
+        else
+            call CalcLatticeFitResidual(G,nESteps,CoupsTemp,RealCoupsNum,dist,tMatbrAxis,dSeperateFuncs=Sep_Dists)
+        endif
 
         !Now, put these values of the functions back into the correct array
         !Potentially in the future, we will want to compress the function array so that there are only nImp*(nImp+1)/2 functions. Perhaps this is not a bottleneck though.
@@ -3963,7 +3985,6 @@ module SelfConsistentLR
 
         if(nImp.gt.1) call stop_all(t_r,'Cannot do for more than 1 impurity yet')
         if(.not.tMatbrAxis) call stop_all(t_r,'Cannot do gradients on real axis yet')
-        if(iFitGFWeighting.ne.0) call stop_all(t_r,'Cannot do gradients with omega biasing yet')
         if(iLatticeFitType.ne.1) call stop_all(t_r,'Cannot do gradients with non-linear objective functions yet')
         if(.not.tOptGF_EVals) call stop_all(t_r,'Cannot do gradients when optimizing lattice couplings rather than eigenvalues')
         if(.not.tAnderson) then
@@ -3994,6 +4015,11 @@ module SelfConsistentLR
                 termi = 2.0_dp*Omega*(mu - evals_full(k))*num/denom2
 
                 FullJac(i,k) = (one/DiffMatr(1,1,i))*(real(DiffMat(1,1,i),dp)*termr - aimag(DiffMat(1,1,i))*termi)
+                if(iFitGFWeighting.eq.1) then
+                    FullJac(i,k) = FullJac(i,k)/sqrt(abs(Omega))
+                elseif(iFitGFWeighting.eq.2) then
+                    FullJac(i,k) = FullJac(i,k)/abs(Omega)
+                endif
             enddo
         enddo
 

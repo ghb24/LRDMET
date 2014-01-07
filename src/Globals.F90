@@ -217,6 +217,7 @@ module Globals
     logical :: tEveryOtherCoup      !Ensure that for symmetry reasons every other lattice fit = 0
     logical :: tStaticBathFitLat    !Also include the fit lattice in the static bath space. 
     logical :: tOptGF_EVals         !Optimize the lattice eigenvalues rather than the couplings
+    logical :: tAnalyticDerivs      !Use analytic derivatives when optimizing with Lev-Mar algorithm
 
     !Debugging for Self-consistency
     logical :: tSE_Scan

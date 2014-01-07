@@ -137,6 +137,7 @@ Program RealHub
         tEveryOtherCoup = .false.   !Every other lattice coupling constrained to be zero
         tStaticBathFitLat = .false. !By default no fit hamiltonian in the bath space
         tOptGF_EVals = .false.      !Optimize lattice couplings, or lattice eigenvalues
+        tAnalyticDerivs = .false.   !Whether to use analytic derivatives when optimizing with Lev-Mar algorithm
 
     end subroutine set_defaults
 
@@ -619,6 +620,8 @@ Program RealHub
                 tEveryOtherCoup = .true.    !Every other lattice coupling constrained to be zero
             case("OPT_LATTICE_EVALS")
                 tOptGF_EVals = .true.
+            case("USE_ANALYTIC_DERIVS")
+                tAnalyticDerivs = .true.    !Calculate analytic derivatives in fitting
             case("REUSE_SELFENERGY")
                 call readi(iReuse_SE)
             case("MANYBODY_SELFENERGY")
@@ -660,6 +663,7 @@ Program RealHub
                 write(6,"(A)") "SKIP_LATTICE_FIT"
                 write(6,"(A)") "EXT_HAM_FITLATTICE"
                 write(6,"(A)") "EVERYOTHER_LATTICECOUP_ZERO"
+                write(6,"(A)") "USE_ANALYTIC_DERIVS"
                 write(6,"(A)") "MANYBODY_SELFENERGY"
                 write(6,"(A)") "MATSUBARA_FREQ"
                 write(6,"(A)") "REUSE_SELFENERGY"
