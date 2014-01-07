@@ -341,8 +341,12 @@ module LinearResponse
             if(tStaticBathFitLat) then
                 !Ensure that the impurity part is not from the fit lattice hamiltonian, but rather the plain h 
                 do i = nOcc-nImp+1,nOcc
-                    do j = nOcc-nImp+1,nOcc
+                    !We want the coupling to the impurity to be *just* from the h0v matrix rotated into the schmidt basis.
+                    !However, this wants to be extended to the whole impurity-lattice coupling too
+                    do j = 1,nSites
+                    !do j = nOcc-nImp+1,nOcc
                         FockSchmidt_SE(j,i) = dcmplx(FockSchmidt(j,i),zero)
+                        FockSchmidt_SE(i,j) = FockSchmidt_SE(j,i) 
                     enddo
                 enddo
             else
@@ -353,7 +357,6 @@ module LinearResponse
                     enddo
                 enddo
             endif
-            !We want the coupling to the impurity to be *just* from the h0v matrix rotated into the schmidt basis.
         else
             !If we are doing self-consistent linear response, with a self-energy in the HL part, 
             !then this is calculated later, since it is now omega and iteration dependent

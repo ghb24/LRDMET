@@ -188,6 +188,14 @@ module SelfConsistentLR
                 write(6,"(A,G20.13)") "Impurity greens function changing on imaginary axis by less than: ",dDeltaImpThresh
                 exit
             endif
+            if(tOptGF_EVals) then
+                do i = 1,iLatParams
+                    if(abs(Couplings(i,1)).gt.1000.0_dp) then
+                        write(6,*) Couplings(:,1)
+                        call stop_all(t_r,'Lattice eigenvalues diverging. Convergence failed.')
+                    endif
+                enddo
+            endif
         enddo
 
         !We should write these out to a file so that we can restart from them at a later date (possibly with more variables).
@@ -455,13 +463,16 @@ module SelfConsistentLR
     !NOTE: If LatticeFitType = 2 (i.e. the inverse of the functions), then G_Imp is sent in as the *inverse* of the
     !impurity greens function. Not the greens function itself.
     !Note that this can become expensive - it is a n_sites^2 calculation at best
-    subroutine CalcLatticeFitResidual(G_Imp,nESteps,Couplings,iNumCoups,dist,tMatbrAxis)
+    !If dSeperateFuncs is present, the difference between the values will be stored for each frequency point
+    subroutine CalcLatticeFitResidual(G_Imp,nESteps,Couplings,iNumCoups,dist,tMatbrAxis,dSeperateFuncs,dJacobian)
         implicit none
         integer, intent(in) :: nESteps,iNumCoups
         complex(dp), intent(in) :: G_Imp(nImp,nImp,nESteps)
         real(dp), intent(in) :: Couplings(iNumCoups,nImp)
         real(dp), intent(out) :: dist
         logical, intent(in) :: tMatbrAxis
+        real(dp), intent(out), optional :: dSeperateFuncs(nImp,nImp,nESteps)  
+        real(dp), intent(out), optional :: dJacobian(nESteps,iNumCoups)
         real(dp), allocatable :: h_lat_fit(:,:)
         complex(dp), allocatable :: SE_Dummy(:,:,:),Lattice_GF(:,:,:),DiffMat(:,:,:)
         real(dp), allocatable :: DiffMatr(:,:,:)
@@ -504,6 +515,39 @@ module SelfConsistentLR
 
         !Take abs values 
         DiffMatr(:,:,:) = abs(DiffMat(:,:,:))
+        if(present(dSeperateFuncs)) then
+            !We want to return the individual differences
+            dSeperateFuncs(:,:,:) = DiffMatr(:,:,:)
+            if(iFitGFWeighting.ne.0) then
+                i = 0
+                do while(.true.)
+                    call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis)
+                    if((abs(Omega).lt.1.0e-9_dp).and.(iFitGFWeighting.ne.0)) then
+                        call stop_all(t_r,'Should not be sampling w=0 with a non-flat weighting function')
+                    endif
+                    if(i.lt.0) exit
+                    if(i.gt.nESteps) call stop_all(t_r,'Too many frequency points')
+
+                    !Now, include the appropriate weighting factor
+                    do j = 1,nImp
+                        do k = 1,nImp
+                            if(iFitGFWeighting.eq.1) then
+                                !1/w weighting
+                                !We actually divide by the sqrt of Omega, since the LM optimization will automatically take the squares of the functions
+                                dSeperateFuncs(k,j,i) = dSeperateFuncs(k,j,i)/sqrt(abs(Omega))
+                            else
+                                !1/w^2 weighting
+                                dSeperateFuncs(k,j,i) = dSeperateFuncs(k,j,i)/abs(Omega)
+                            endif
+                        enddo
+                    enddo
+                enddo
+            endif
+            if(present(dJacobian)) then
+                !Calculate the derivatives too
+                call CalcJacobian(nESteps,iNumCoups,DiffMatr,DiffMat,dJacobian,Couplings(:,1),tMatbrAxis)
+            endif
+        endif
 
         dist = zero
         LattWeight = zero
@@ -549,7 +593,8 @@ module SelfConsistentLR
 
     !Use a minimization routine to fit the greens functions by adjusting the lattice coupling
     subroutine FitLatticeCouplings(G_Imp,n,Couplings,iNumCoups,FinalErr,tMatbrAxis)
-        use MinAlgos   
+        use MinAlgos
+        use Levenberg_Marquardt
         implicit none
         integer, intent(in) :: n    !Number of frequency points
         integer, intent(in) :: iNumCoups    !Number of independent coupling parameters
@@ -558,11 +603,13 @@ module SelfConsistentLR
         real(dp), intent(out) :: FinalErr
         logical, intent(in) :: tMatbrAxis
 
-        real(dp), allocatable :: step(:),vars(:),var(:)
-        integer :: nop,i,maxf,iprint,nloop,iquad,ierr,iRealCoupNum
-        real(dp) :: stopcr,simp,rhobeg,rhoend
+        real(dp), allocatable :: step(:),vars(:),var(:),FinalVec(:)
+        integer, allocatable :: iwork(:)
+        integer :: nop,i,maxf,iprint,nloop,iquad,ierr,iRealCoupNum,nFuncs
+        real(dp) :: stopcr,simp,rhobeg,rhoend,InitErr
         logical :: tfirst,tOptEVals_
         character(len=*), parameter :: t_r='FitLatticeCouplings'
+        logical, parameter :: tAnalyticDerivs = .false.
 
         if(tOptGF_EVals) then
             iRealCoupNum = iNumCoups
@@ -581,30 +628,83 @@ module SelfConsistentLR
             endif
             tOptEVals_ = .false.
         endif
-
-        if(iFitAlgo.eq.2) then
-            !Use modified Powell algorithm for optimization (based on fitting to quadratics)
-            allocate(vars(iRealCoupNum))
-            if(tOptEVals_) then
-                write(6,"(A)") "Optimizing lattice eigenvalues with modified Powell algorithm"
-                if(tShift_Mesh.and.(iRealCoupNum.ne.(nSites/2))) call stop_all(t_r,'Error here')
-                if((.not.tShift_Mesh).and.(iRealCoupNum.ne.((nSites/2)+1))) call stop_all(t_r,'Error here')
+            
+        !Initialize parameters
+        allocate(vars(iRealCoupNum))
+        if(tOptEVals_) then
+            if(tShift_Mesh.and.(iRealCoupNum.ne.(nSites/2))) call stop_all(t_r,'Error here')
+            if((.not.tShift_Mesh).and.(iRealCoupNum.ne.((nSites/2)+1))) call stop_all(t_r,'Error here')
+            do i = 1,iRealCoupNum
+                vars(i) = Couplings(i,1)
+            enddo
+        else
+            if(tEveryOtherCoup) then
+                do i = 1,iRealCoupNum
+                    vars(i) = Couplings((2*i)-1,1)
+                enddo
+            else
                 do i = 1,iRealCoupNum
                     vars(i) = Couplings(i,1)
                 enddo
+            endif
+        endif
+
+        if(iFitAlgo.eq.3) then
+            !Use a Levenberg-Marquardt algorithm for non-linear optimization with either finite-difference
+            !or analytic derivatives
+            if(iLatticeFitType.eq.3) then
+                call stop_all(t_r,'Cannot currently do Levenberg-Marquardt optimization when dividing by norm')
+            endif
+            rhoend = 1.0e-6_dp  !Convergence criteria
+            nFuncs = n*(nImp**2)   !Number of functions
+            write(6,"(A,I9)") "Number of functions: ", nFuncs
+
+            if(tAnalyticDerivs) then
+                write(6,"(A)") "Optimizing lattice hamiltonian with analytic derivative Levenberg-Marquardt algorithm"
             else
-                write(6,"(A)") "Optimizing lattice couplings with modified Powell algorithm"
-                if(tEveryOtherCoup) then
-                    do i = 1,iRealCoupNum
-                        vars(i) = Couplings((2*i)-1,1)
-                    enddo
-                else
-                    do i = 1,iRealCoupNum
-                        vars(i) = Couplings(i,1)
-                    enddo
-                endif
+                !Use Finite-difference jacobians
+                write(6,"(A)") "Optimizing lattice hamiltonian with numerical derivative Levenberg-Marquardt algorithm"
+                allocate(iwork(iRealCoupNum))
+                allocate(FinalVec(nFuncs))
+
+                call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr,n,G_Imp,tMatbrAxis)
+                InitErr = enorm(nFuncs,FinalVec)
+                write(6,"(A,G20.10)") "Initial residual before fit: ",InitErr
+
+                !Call LM algorithm
+                call lmdif1(MinCoups_LM , nFuncs, iRealCoupNum, vars, FinalVec, rhoend, ierr, iwork, n, G_Imp, tMatbrAxis)
+                FinalErr = enorm(nFuncs,FinalVec)
+                write(6,"(A,G20.10)") "Final residual after fit: ",FinalErr
+                if(InitErr.lt.FinalErr) call stop_all(t_r,'Residual actually increased during Lev-Mar optimization...?')
+                deallocate(iwork,FinalVec)
+
+                select case(ierr)
+                    case(0)
+                        call stop_all(t_r,'Improper imput parameters to lmdif1')
+                    case(1)
+                        write(6,"(A)") "Levenberg-Marquardt with approximate gradients successful..."
+                    case(2)
+                        write(6,"(A)") "Levenberg-Marquardt with approximate gradients successful..."
+                    case(3)
+                        write(6,"(A)") "Levenberg-Marquardt with approximate gradients successful..."
+                    case(4)
+                        write(6,"(A)") "Levenberg-Marquardt not successful: Objective function is orthogonal " &
+                            //"to the columns of the jacobian to machine precision."
+                    case(5)
+                        write(6,"(A)") "Levenberg-Marquardt not successful: Number of calls to fcn has reached or exceeded 200*(n+1)."
+                    case(6)
+                        write(6,"(A)") "Levenberg-Marquardt not successful: tol is too small. No further reduction in the sum of squares is possible."
+                    case(7)
+                        write(6,"(A)") "Levenberg-Marquardt not successful: tol is too small. No further improvement in the approximate solution x is possible." 
+                    case default
+                        call stop_all(t_r,'Unknown exit flag')
+                end select
+
             endif
 
+        elseif(iFitAlgo.eq.2) then
+            !Use modified Powell algorithm for optimization (based on fitting to quadratics)
+            write(6,"(A)") "Optimizing lattice hamiltonian with modified Powell algorithm"
             rhobeg = 0.05_dp
             rhoend = 1.0e-6_dp
             iprint = 2
@@ -619,26 +719,7 @@ module SelfConsistentLR
 
         elseif(iFitAlgo.eq.1) then
             !Use simplex method for optimization without derivatives
-            allocate(vars(iRealCoupNum))
-            if(tOptEVals_) then
-                write(6,"(A)") "Optimizing lattice eigenvalues with simplex algorithm"
-                if(tShift_Mesh.and.(iRealCoupNum.ne.(nSites/2))) call stop_all(t_r,'Error here')
-                if((.not.tShift_Mesh).and.(iRealCoupNum.ne.((nSites/2)+1))) call stop_all(t_r,'Error here')
-                do i = 1,iRealCoupNum
-                    vars(i) = Couplings(i,1)
-                enddo
-            else
-                write(6,"(A)") "Optimizing lattice couplings with simplex algorithm"
-                if(tEveryOtherCoup) then
-                    do i = 1,iRealCoupNum
-                        vars(i) = Couplings((2*i)-1,1)
-                    enddo
-                else
-                    do i = 1,iRealCoupNum
-                        vars(i) = Couplings(i,1)
-                    enddo
-                endif
-            endif
+            write(6,"(A)") "Optimizing lattice hamiltonian with Simplex algorithm"
 
             !Starting values are assumed to be read in
             allocate(step(iRealCoupNum))
@@ -726,7 +807,81 @@ module SelfConsistentLR
 
     end subroutine FitLatticeCouplings
 
-    !Wrapper function to evaluate residual for the simplex algorithm
+    !Wrapper function to evaluate residuals for the Leveberg-Marquardt algorithm
+    subroutine MinCoups_LM(n,iNumOptCoups,vars,dists,iflag,nESteps,G,tMatbrAxis)
+        implicit none
+        integer, intent(in) :: n, iNumOptCoups
+        real(dp), intent(in) :: vars(iNumOptCoups)
+        real(dp), intent(inout) :: dists(n)
+        integer, intent(inout) :: iflag
+        integer, intent(in) :: nESteps
+        complex(dp), intent(in) :: G(nImp,nImp,nESteps)
+        logical, intent(in) :: tMatbraxis
+
+        real(dp), allocatable :: CoupsTemp(:,:),Sep_Dists(:,:,:)
+        real(dp) :: dist,Omega
+        integer :: i,j,k,ind,RealCoupsNum
+        character(len=*), parameter :: t_r='MinCoups_LM'
+
+        !Expand variables back to full set
+        if(tOptGF_EVals) then
+            RealCoupsNum = iNumOptCoups
+            allocate(CoupsTemp(RealCoupsNum,nImp))
+            CoupsTemp(:,:) = zero
+            do i = 1,nImp
+                CoupsTemp(:,i) = vars(:)
+            enddo
+
+        elseif(tEveryOtherCoup) then
+            !Expand the couplings back into the full couplings (with the zeros)
+            RealCoupsNum = 2*iNumOptCoups
+            allocate(CoupsTemp(RealCoupsNum,nImp))
+            CoupsTemp(:,:) = zero
+            do i = 1,iNumOptCoups
+                CoupsTemp((i*2)-1,1) = vars(i)
+            enddo
+            do j = 2,nImp
+                CoupsTemp(:,j) = CoupsTemp(:,1)
+            enddo
+        else
+            RealCoupsNum = iNumOptCoups
+            allocate(CoupsTemp(RealCoupsNum,nImp))
+            CoupsTemp(:,:) = zero
+            do i = 1,nImp
+                CoupsTemp(:,i) = vars(:)
+            enddo
+        endif
+
+        !n is the number of function points
+        if(n.ne.(nESteps*(nImp**2))) then
+            call stop_all(t_r,'Wrong number of functions')
+        endif
+
+        allocate(Sep_Dists(nImp,nImp,nESteps))
+        call CalcLatticeFitResidual(G,nESteps,CoupsTemp,RealCoupsNum,dist,tMatbrAxis,dSeperateFuncs=Sep_Dists)
+
+        !Now, put these values of the functions back into the correct array
+        !Potentially in the future, we will want to compress the function array so that there are only nImp*(nImp+1)/2 functions. Perhaps this is not a bottleneck though.
+        i = 0
+        ind = 0
+        do while(.true.)
+            call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis)
+            if(i.lt.0) exit
+            if(i.gt.nESteps) call stop_all(t_r,'Too many frequency points')
+            do j = 1,nImp
+                do k = 1,nImp
+                    ind = ind + 1
+                    if(ind.gt.n) call stop_all(t_r,'More functions than there should be?')
+                    dists(ind) = Sep_Dists(k,j,i)
+                enddo
+            enddo
+        enddo
+
+        deallocate(CoupsTemp,Sep_Dists)
+
+    end subroutine MinCoups_LM
+
+    !Wrapper function to evaluate residual for the simplex/Melder-Neal algorithm
     subroutine MinCoups(vars,dist,n,iNumOptCoups,G,tMatbrAxis)
         implicit none
         integer, intent(in) :: n,iNumOptCoups
@@ -3789,5 +3944,77 @@ module SelfConsistentLR
         deallocate(k_Ham,CompHam,ztemp)
 
     end subroutine FindLocalMomGF
+                
+    !Find the jacobian matrix for the optimization (in a few cases)
+    subroutine CalcJacobian(n,CouplingLength,DiffMatr,DiffMat,Jacobian,evals,tMatbrAxis)
+        implicit none
+        integer, intent(in) :: n    !Number of frequency points
+        integer, intent(in) :: CouplingLength   !The number of variables
+        complex(dp), intent(in) :: DiffMat(nImp,nImp,n) !The (complex) difference between the greens functions
+        real(dp), intent(in) :: DiffMatr(nImp,nImp,n)   !The abs difference between the greens functions
+        real(dp), intent(out) :: Jacobian(n,CouplingLength) !The compressed Jacobian
+        real(dp), intent(in) :: evals(CouplingLength)
+        logical, intent(in) :: tMatbrAxis
+
+        real(dp) :: mu,Omega,denom1,denom2,num,termr,termi
+        real(dp), allocatable :: evals_full(:),FullJac(:,:)
+        integer :: i,k
+        character(len=*), parameter :: t_r='CalcJacobian'
+
+        if(nImp.gt.1) call stop_all(t_r,'Cannot do for more than 1 impurity yet')
+        if(.not.tMatbrAxis) call stop_all(t_r,'Cannot do gradients on real axis yet')
+        if(iFitGFWeighting.ne.0) call stop_all(t_r,'Cannot do gradients with omega biasing yet')
+        if(iLatticeFitType.ne.1) call stop_all(t_r,'Cannot do gradients with non-linear objective functions yet')
+        if(.not.tOptGF_EVals) call stop_all(t_r,'Cannot do gradients when optimizing lattice couplings rather than eigenvalues')
+        if(.not.tAnderson) then
+            !In the hubbard model, apply a chemical potential of U/2
+            !This should really be passed in
+            mu = U/2.0_dp
+        else
+            mu = zero 
+        endif
+
+        allocate(evals_full(nSites))
+        call FindFullLatEvals(evals,CouplingLength,evals_full)
+        !Calculate the *full* hamiltonian
+        allocate(FullJac(n,nSites))
+        FullJac(:,:) = zero
+
+        do k = 1,nSites
+            i=0
+            do while(.true.)
+                call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis)
+                if(i.lt.0) exit
+
+                denom1 = Omega**2 + (mu - evals_full(k))**2
+                denom2 = denom1**2
+                num = abs(RtoK_Rot(1,k))**2
+
+                termr = 2.0_dp*num*((mu - evals_full(k))**2)/denom2 - num/denom1
+                termi = 2.0_dp*Omega*(mu - evals_full(k))*num/denom2
+
+                FullJac(i,k) = (one/DiffMatr(1,1,i))*(real(DiffMat(1,1,i),dp)*termr - aimag(DiffMat(1,1,i))*termi)
+            enddo
+        enddo
+
+        !However, we need now to package it up. Since we are only optimizing certain eigenvalue, we need
+        !to add the two gradient contributions together
+        Jacobian(:,:) = zero
+        !Include the negative k terms
+        Jacobian(:,1:nSites/2) = FullJac(:,1:nSites/2)
+        if(tShift_Mesh) then
+            !No gamma point. All k-points symmetric
+            do i = 1,nSites/2
+                Jacobian(:,(nSites/2)-i+1) = Jacobian(:,(nSites/2)-i+1) + FullJac(:,i+(nSites/2))
+            enddo
+        else
+            !The gamma point is unchanged (and therefore the gradient will on average be half the other values)
+            do i = 2,nSites/2
+                Jacobian(:,((nSites/2)-i+2)) = Jacobian(:,((nSites/2)-i+2)) + FullJac(:,i+(nSites/2))
+            enddo
+        endif
+        deallocate(FullJac)
+
+    end subroutine CalcJacobian
 
 end module SelfConsistentLR
