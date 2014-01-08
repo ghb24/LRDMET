@@ -26,7 +26,7 @@ module SelfConsistentLR
         real(dp) :: FinalDist
         integer :: i,iter,iLatParams
         integer, parameter :: iMaxIter_Fit = 1000
-        real(dp), parameter :: dDeltaImpThresh = 1.0e-6_dp 
+        real(dp), parameter :: dDeltaImpThresh = 1.0e-5_dp 
         logical, parameter :: tCalcRealSpectrum = .true.
         character(len=*), parameter :: t_r='SC_FitLatticeGF_Im'
 
@@ -656,7 +656,7 @@ module SelfConsistentLR
             if(iLatticeFitType.eq.3) then
                 call stop_all(t_r,'Cannot currently do Levenberg-Marquardt optimization when dividing by norm')
             endif
-            rhoend = 1.0e-6_dp  !Convergence criteria
+            rhoend = 1.0e-7_dp  !Convergence criteria
             nFuncs = n*(nImp**2)   !Number of functions
             write(6,"(A,I9)") "Number of functions: ", nFuncs
                 

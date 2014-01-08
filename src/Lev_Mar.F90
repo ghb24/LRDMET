@@ -785,7 +785,7 @@ IF ( n <= 0 .OR. m < n .OR. tol < zero ) GO TO 10
 
 !     call lmder.
 
-maxfev = 100*(n + 1)
+maxfev = 200*(n + 1)
 ftol = tol
 xtol = tol
 gtol = zero
