@@ -17,7 +17,7 @@ PUBLIC :: lmdif1, lmdif, lmder1, lmder, enorm
 CONTAINS
 
 
-SUBROUTINE lmdif1(fcn, m, n, x, fvec, tol, info, iwa, nESteps, G, tMat)
+SUBROUTINE lmdif1(fcn, m, n, x, fvec, tol, info, iwa, maxfev, nESteps, G, tMat)
  
 ! Code converted using TO_F90 by Alan Miller
 ! Date: 1999-12-11  Time: 00:51:44
@@ -34,6 +34,7 @@ INTEGER, INTENT(OUT)       :: iwa(:)
 INTEGER, INTENT(IN)        :: nESteps
 COMPLEX(dp), INTENT(IN)    :: G(nImp,nImp,nESteps)
 LOGICAL, INTENT(IN)        :: tMat
+INTEGER, INTENT(INOUT)        :: maxfev
 
 ! EXTERNAL fcn
 
@@ -145,7 +146,7 @@ END INTERFACE
 !  burton s. garbow, kenneth e. hillstrom, jorge j. more
 
 !  **********
-INTEGER   :: maxfev, mode, nfev, nprint
+INTEGER   :: mode, nfev, nprint
 REAL (dp) :: epsfcn, ftol, gtol, xtol, fjac(m,n)
 REAL (dp), PARAMETER :: factor = 100._dp, zero = 0.0_dp
 
@@ -158,13 +159,15 @@ IF (n <= 0 .OR. m < n .OR. tol < zero) GO TO 10
 
 !     call lmdif.
 
-maxfev = 200*(n + 1)
+if(maxfev.eq.0) then
+    maxfev = 200*(n + 1)
+endif
 ftol = tol
 xtol = tol
 gtol = zero
 epsfcn = zero
 mode = 1
-nprint = 0
+nprint = 0 
 CALL lmdif(fcn, m, n, x, fvec, ftol, xtol, gtol, maxfev, epsfcn,   &
            mode, factor, nprint, info, nfev, fjac, iwa, nESteps, G, tMat)
 IF (info == 8) info = 4
@@ -621,7 +624,7 @@ END SUBROUTINE lmdif
 
 
 
-SUBROUTINE lmder1(fcn, m, n, x, fvec, fjac, tol, info, ipvt, nESteps, G, tMat)
+SUBROUTINE lmder1(fcn, m, n, x, fvec, fjac, tol, info, ipvt, maxfev, nESteps, G, tMat)
  
 ! Code converted using TO_F90 by Alan Miller
 ! Date: 1999-12-09  Time: 12:45:54
@@ -639,6 +642,7 @@ INTEGER, INTENT(IN OUT)    :: ipvt(n)
 INTEGER, INTENT(IN)        :: nESteps
 COMPLEX(dp), INTENT(IN)    :: G(nImp,nImp,nESteps)
 LOGICAL, INTENT(IN)        :: tMat
+INTEGER, INTENT(INOUT)     :: Maxfev
 
 ! EXTERNAL fcn
 
@@ -773,7 +777,7 @@ END INTERFACE
 !  burton s. garbow, kenneth e. hillstrom, jorge j. more
 
 !  **********
-INTEGER   :: maxfev, mode, nfev, njev, nprint
+INTEGER   :: mode, nfev, njev, nprint
 REAL (dp) :: ftol, gtol, xtol
 REAL (dp), PARAMETER :: factor = 100._dp, zero = 0.0_dp
 
@@ -785,12 +789,14 @@ IF ( n <= 0 .OR. m < n .OR. tol < zero ) GO TO 10
 
 !     call lmder.
 
-maxfev = 200*(n + 1)
+if(maxfev.eq.0) then
+    maxfev = 200*(n + 1)
+endif
 ftol = tol
 xtol = tol
 gtol = zero
 mode = 1
-nprint = 0
+nprint = 0 
 CALL lmder(fcn, m, n, x, fvec, fjac, ftol, xtol, gtol, maxfev,  &
            mode, factor, nprint, info, nfev, njev, ipvt, nESteps, G, tMat)
 IF (info == 8) info = 4

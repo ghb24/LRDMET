@@ -607,7 +607,7 @@ module SelfConsistentLR
 
         real(dp), allocatable :: step(:),vars(:),var(:),FinalVec(:),Jac(:,:)
         integer, allocatable :: iwork(:)
-        integer :: nop,i,maxf,iprint,nloop,iquad,ierr,iRealCoupNum,nFuncs
+        integer :: nop,i,maxf,iprint,nloop,iquad,ierr,iRealCoupNum,nFuncs,j,ierr_tmp
         real(dp) :: stopcr,simp,rhobeg,rhoend,InitErr
         logical :: tfirst,tOptEVals_
         character(len=*), parameter :: t_r='FitLatticeCouplings'
@@ -657,13 +657,15 @@ module SelfConsistentLR
                 call stop_all(t_r,'Cannot currently do Levenberg-Marquardt optimization when dividing by norm')
             endif
             rhoend = 1.0e-7_dp  !Convergence criteria
+            maxf = 4000 * (nFuncs+1) !Max number of function evaluations
             nFuncs = n*(nImp**2)   !Number of functions
             write(6,"(A,I9)") "Number of functions: ", nFuncs
                 
             allocate(iwork(iRealCoupNum))
             allocate(FinalVec(nFuncs))
                 
-            call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr,n,G_Imp,tMatbrAxis)
+            ierr_tmp = 1
+            call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis)
             InitErr = enorm(nFuncs,FinalVec)
             write(6,"(A,G20.10)") "Initial residual before fit: ",InitErr
 
@@ -673,7 +675,21 @@ module SelfConsistentLR
                 !Additional memory for Jacobian matrix
                 allocate(Jac(nFuncs,iRealCoupNum))
 
-                call lmder1(MinCoups_LM, nFuncs, iRealCoupNum, vars, FinalVec, Jac, rhoend, ierr, iwork, n, G_Imp, tMatbrAxis)
+                call lmder1(MinCoups_LM, nFuncs, iRealCoupNum, vars, FinalVec, Jac, rhoend, ierr, iwork, maxf, n, G_Imp, tMatbrAxis)
+
+                !Final calculation of the residual and jacobian at the end
+                !ierr_tmp = 2
+                !call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis,Jac)
+                ierr_tmp = 1
+                call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis,Jac)
+                !do i = 1,iRealCoupNum
+                !    do j = 1,nFuncs
+                !        if(abs(Jac(j,i)).gt.1e-4_dp) then
+                !            write(6,*) j,i,Jac(j,i)
+                !            call warning(t_r,'Jacobian not zero')
+                !        endif
+                !    enddo
+                !enddo
 
                 deallocate(Jac)
             else
@@ -681,11 +697,13 @@ module SelfConsistentLR
                 write(6,"(A)") "Optimizing lattice hamiltonian with numerical derivative Levenberg-Marquardt algorithm"
 
                 !Call LM algorithm
-                call lmdif1(MinCoups_LM , nFuncs, iRealCoupNum, vars, FinalVec, rhoend, ierr, iwork, n, G_Imp, tMatbrAxis)
+                call lmdif1(MinCoups_LM , nFuncs, iRealCoupNum, vars, FinalVec, rhoend, ierr, iwork, maxf, n, G_Imp, tMatbrAxis)
             endif
                 
             FinalErr = enorm(nFuncs,FinalVec)
             write(6,"(A,G20.10)") "Final residual after fit: ",FinalErr
+            write(6,"(A)") "Lattice parameters: "
+            write(6,*) vars(:)
             if(InitErr.lt.FinalErr) call stop_all(t_r,'Residual actually increased during Lev-Mar optimization...?')
 
             select case(ierr)
@@ -712,7 +730,6 @@ module SelfConsistentLR
                 case default
                     call stop_all(t_r,'Unknown exit flag')
             end select
-                
             deallocate(iwork,FinalVec)
 
         elseif(iFitAlgo.eq.2) then
@@ -882,22 +899,24 @@ module SelfConsistentLR
             call CalcLatticeFitResidual(G,nESteps,CoupsTemp,RealCoupsNum,dist,tMatbrAxis,dSeperateFuncs=Sep_Dists)
         endif
 
-        !Now, put these values of the functions back into the correct array
-        !Potentially in the future, we will want to compress the function array so that there are only nImp*(nImp+1)/2 functions. Perhaps this is not a bottleneck though.
-        i = 0
-        ind = 0
-        do while(.true.)
-            call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis)
-            if(i.lt.0) exit
-            if(i.gt.nESteps) call stop_all(t_r,'Too many frequency points')
-            do j = 1,nImp
-                do k = 1,nImp
-                    ind = ind + 1
-                    if(ind.gt.n) call stop_all(t_r,'More functions than there should be?')
-                    dists(ind) = Sep_Dists(k,j,i)
+        if((tAnalyticDerivs.and.iflag.ne.2).or.(.not.tAnalyticDerivs)) then
+            !Now, put these values of the functions back into the correct array
+            !Potentially in the future, we will want to compress the function array so that there are only nImp*(nImp+1)/2 functions. Perhaps this is not a bottleneck though.
+            i = 0
+            ind = 0
+            do while(.true.)
+                call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis)
+                if(i.lt.0) exit
+                if(i.gt.nESteps) call stop_all(t_r,'Too many frequency points')
+                do j = 1,nImp
+                    do k = 1,nImp
+                        ind = ind + 1
+                        if(ind.gt.n) call stop_all(t_r,'More functions than there should be?')
+                        dists(ind) = Sep_Dists(k,j,i)
+                    enddo
                 enddo
             enddo
-        enddo
+        endif
 
         deallocate(CoupsTemp,Sep_Dists)
 

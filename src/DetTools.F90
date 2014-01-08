@@ -78,7 +78,7 @@ module DetTools
                 call EncodeBitDet(FCIDetList(:,i),NEl,FCIBitList(i))
             enddo
         endif
-        DetListStorage = DetListStorage + ((NEl+1)*nFCIDet)
+        DetListStorage = ((NEl+1)*nFCIDet)
 
         if(.not.tCoupledSpaces) then
             deallocate(NspinDetList)
