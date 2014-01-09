@@ -62,7 +62,7 @@ module SelfConsistentLR
             if(tKPntSymFit) then
                 !We don't actually want to optimize all of these.
                 !e(k) = e(-k), and we are always using a uniform mesh
-                !If gamma-centered mesh, then have nSites/2 + 1 independent parameters (we are sampling k=0)
+                !If gamma-centered mesh, then have nSites/2 + 1 independent parameters (we are sampling k=0 and BZ boundary which dont pair)
                 !If Shifted mesh, then we have nSites/2 independent parameters
                 if(tShift_Mesh) then
                     iLatParams = nSites/2
@@ -138,7 +138,6 @@ module SelfConsistentLR
                 !Take an admixture of the previous two high-level calculations to damp the fit
                 G_Mat_Im(:,:,:) = (Damping_SE*G_Mat_Im(:,:,:)) + ((one-Damping_SE)*G_Mat_Im_Old(:,:,:))
             endif
-
 
             if(iter.eq.1) then
                 !calculate the initial residual
@@ -1151,11 +1150,16 @@ module SelfConsistentLR
             !and ignore the fact that we have already got doubly degenerate sets everywhere.
             !Do this *incredibly* crudely. Search for nearest 'pairs', and symmetrize them
 
+!            write(6,*) "nSpec: ",nSpec
+!            write(6,*) "nCoups: ",nCoups
+!            write(6,*) "tShift_Mesh: ",tShift_Mesh
+!            write(6,*) "vars: ",vars(:)
+
             !Find the energetic ordering of the eigenvalues
             tNotTaken(:) = .true.
             do i = 1,nSpec
                 !Each loop, find the position of the next lowest eigenvalue
-                dCurrentE = 100000.0_dp
+                dCurrentE = huge(0.0_dp)
                 do j = 1,nSpec
                     !Find lowest energy eigenvalue not already taken
                     if((vars(j).lt.dCurrentE).and.(tNotTaken(j))) then
@@ -1166,13 +1170,19 @@ module SelfConsistentLR
                 tNotTaken(EOrder(i)) = .false.
             enddo
             !We now have the energetic ordering. EOrder(i) gives the ith lowest energy eigenvalue
+!            write(6,*) "EOrder: ",EOrder(:)
+!            write(6,*) "tNotTaken: ",tNotTaken(:)
 
             do i = 1,nSpec
-                if(tNotTaken(i)) call stop_all(t_r,'Not all evals accounted for')
+                if(tNotTaken(i)) then
+                    call writevector(vars,'vars')
+                    call stop_all(t_r,'Not all evals accounted for')
+                endif
             enddo
 
             do i = 2,nSpec
                 if(vars(EOrder(i)).lt.vars(EOrder(i-1))) then
+                    call writevector(vars,'vars')
                     call stop_all(t_r,'Energy order not correct')
                 endif
             enddo
@@ -4207,6 +4217,7 @@ module SelfConsistentLR
                 enddo
             else
                 !The gamma point is unchanged (and therefore the gradient will on average be half the other values)
+                Jacobian(:,(nSites/2)+1) = FullJac(:,(nSites/2)+1)
                 do i = 2,nSites/2
                     Jacobian(:,((nSites/2)-i+2)) = Jacobian(:,((nSites/2)-i+2)) + FullJac(:,i+(nSites/2))
                 enddo
