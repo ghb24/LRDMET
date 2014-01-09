@@ -59,14 +59,18 @@ module SelfConsistentLR
         !Initially, just see if we can fit the two different Matsubara spectral functions
         write(6,*) "Number of Matsubara frequency points: ",nESteps_Im
         if(tOptGF_EVals) then
-            !We don't actually want to optimize all of these.
-            !e(k) = e(-k), and we are always using a uniform mesh
-            !If gamma-centered mesh, then have nSites/2 + 1 independent parameters (we are sampling k=0)
-            !If Shifted mesh, then we have nSites/2 independent parameters
-            if(tShift_Mesh) then
-                iLatParams = nSites/2
+            if(tKPntSymFit) then
+                !We don't actually want to optimize all of these.
+                !e(k) = e(-k), and we are always using a uniform mesh
+                !If gamma-centered mesh, then have nSites/2 + 1 independent parameters (we are sampling k=0)
+                !If Shifted mesh, then we have nSites/2 independent parameters
+                if(tShift_Mesh) then
+                    iLatParams = nSites/2
+                else
+                    iLatParams = (nSites/2) + 1
+                endif
             else
-                iLatParams = (nSites/2) + 1
+                iLatParams = nSites !Optimize all kpoints independently
             endif
             if(iLatticeCoups.ne.0) then
                 call stop_all(t_r,'iLatticeCoups set, but expecting to optimize eigenvalues')
@@ -610,6 +614,7 @@ module SelfConsistentLR
         integer :: nop,i,maxf,iprint,nloop,iquad,ierr,iRealCoupNum,nFuncs,j,ierr_tmp
         real(dp) :: stopcr,simp,rhobeg,rhoend,InitErr
         logical :: tfirst,tOptEVals_
+        logical, parameter :: tConstrainSyms = .true.
         character(len=*), parameter :: t_r='FitLatticeCouplings'
 
         if(tOptGF_EVals) then
@@ -633,8 +638,12 @@ module SelfConsistentLR
         !Initialize parameters
         allocate(vars(iRealCoupNum))
         if(tOptEVals_) then
-            if(tShift_Mesh.and.(iRealCoupNum.ne.(nSites/2))) call stop_all(t_r,'Error here')
-            if((.not.tShift_Mesh).and.(iRealCoupNum.ne.((nSites/2)+1))) call stop_all(t_r,'Error here')
+            if(tKPntSymFit) then
+                if(tShift_Mesh.and.(iRealCoupNum.ne.(nSites/2))) call stop_all(t_r,'Error here')
+                if((.not.tShift_Mesh).and.(iRealCoupNum.ne.((nSites/2)+1))) call stop_all(t_r,'Error here')
+            else
+                if(iRealCoupNum.ne.nSites) call stop_all(t_r,'Error Here')
+            endif
             do i = 1,iRealCoupNum
                 vars(i) = Couplings(i,1)
             enddo
@@ -657,8 +666,8 @@ module SelfConsistentLR
                 call stop_all(t_r,'Cannot currently do Levenberg-Marquardt optimization when dividing by norm')
             endif
             rhoend = 1.0e-7_dp  !Convergence criteria
-            maxf = 4000 * (nFuncs+1) !Max number of function evaluations
             nFuncs = n*(nImp**2)   !Number of functions
+            maxf = 4000 * (nFuncs+1) !Max number of function evaluations
             write(6,"(A,I9)") "Number of functions: ", nFuncs
                 
             allocate(iwork(iRealCoupNum))
@@ -808,6 +817,25 @@ module SelfConsistentLR
             endif
 
             deallocate(step,var)
+        endif
+
+        if(tOptGF_EVals.and.tConstrainSyms) then
+            !Impose momentum inversion, and potentially ph symmetry
+            !Symmetrize the resulting eigenvalues
+            call Imposephsym(iRealCoupNum,vars)
+
+            !Calculate the new final residual
+            if(iFitAlgo.le.2) then
+                call MinCoups(vars,FinalErr,n,iRealCoupNum,G_Imp,tMatbrAxis)
+            else
+                !LM algorithm
+                allocate(FinalVec(nFuncs))
+                ierr_tmp = 1
+                call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis)
+                FinalErr = enorm(nFuncs,FinalVec)
+                deallocate(FinalVec)
+            endif
+            write(6,"(A,G20.10)") "Final residual after symmetrization of eigenvalues: ",FinalErr
         endif
             
         !Update couplings
@@ -1011,8 +1039,12 @@ module SelfConsistentLR
                 endif
                 open(unit=iunit,file='LatEVals_Read',status='old')
                 read(iunit,*) iloclatcoups
-                if(tShift_Mesh.and.(iloclatcoups.ne.(nSites/2))) call stop_all(t_r,'Wrong # of params read in')
-                if((.not.tShift_Mesh).and.(iloclatcoups.ne.((nSites/2)+1))) call stop_all(t_r,'Wrong # of params read in')
+                if(tKPntSymFit) then
+                    if(tShift_Mesh.and.(iloclatcoups.ne.(nSites/2))) call stop_all(t_r,'Wrong # of params read in')
+                    if((.not.tShift_Mesh).and.(iloclatcoups.ne.((nSites/2)+1))) call stop_all(t_r,'Wrong # of params read in')
+                else
+                    if(iloclatcoups.ne.nSites) call stop_all(t_r,'Wrong # of params read in')
+                endif
                 do i = 1,iloclatcoups
                     read(iunit,*) Couplings(i,1)
                 enddo
@@ -1047,10 +1079,14 @@ module SelfConsistentLR
             close(iunit)
         else
             if(tOptGF_EVals) then
-                !Here, we are optimizing the eigenvalues (well, half of them for BCs), rather than the lattice couplings
+                !Here, we are optimizing the eigenvalues, rather than the lattice couplings
                 if(nImp.gt.1) call stop_all(t_r,'Not working for multiple impurity sites yet')
-                if(tShift_Mesh.and.(iLatParams.ne.(nSites/2))) call stop_all(t_r,'Wrong # of params')
-                if((.not.tShift_Mesh).and.(iLatParams.ne.((nSites/2)+1))) call stop_all(t_r,'Wrong # of params')
+                if(tkPntSymFit) then
+                    if(tShift_Mesh.and.(iLatParams.ne.(nSites/2))) call stop_all(t_r,'Wrong # of params')
+                    if((.not.tShift_Mesh).and.(iLatParams.ne.((nSites/2)+1))) call stop_all(t_r,'Wrong # of params')
+                else
+                    if(iLatParams.ne.nSites) call stop_all(t_r,'Wrong # of params')
+                endif
                 !The eigenvalues are returned in *increasing* k-point order
                 allocate(lat_evals(nSites))
                 call CouplingsToEVals(h_lat_fit,lat_evals)
@@ -1068,6 +1104,117 @@ module SelfConsistentLR
 
     end subroutine InitLatticeCouplings
 
+    subroutine Imposephsym(nCoups,vars)
+        implicit none
+        integer, intent(in) :: nCoups
+        real(dp), intent(inout) :: vars(nCoups)
+        integer :: i,j,k,EOrder(nCoups),nSpec
+        logical :: tNotTaken(nCoups)
+        real(dp) :: diff,mu,dCurrentE,av
+        character(len=*), parameter :: t_r='Imposephsym'
+
+        if(.not.tKPntSymFit) then
+            !After fitting, add back in momentum inversion symmetry.
+            !This means that e(k) = e(-k)
+            !For shifted meshes, this is easy.
+            !For Gamma-centered meshes, two k-points are only singly degenerate
+            if(nCoups.ne.nSites) call stop_all(t_r,'Wrong number of variables')
+
+            if(tShift_Mesh) then
+                do i = 1,nSites/2
+                    av = (vars(i) + vars(nSites-i+1))/2.0_dp
+                    vars(i) = av
+                    vars(nSites-i+1) = av
+                enddo
+            else
+                !Do not average the gamma point, or the first kpoint (BZ boundary) - these are singly degenerate
+                do i = 2,nSites/2
+                    av = (vars(i) + vars(nSites-i+2))/2.0_dp
+                    vars(i) = av
+                    vars(nSites-i+2) = av
+                enddo
+            endif
+        endif
+
+        if(tphsym) then
+            !Impose ph symmetry on the system
+            mu = U/2.0_dp
+
+            if(tShift_Mesh) then
+                nSpec = nSites/2
+            else
+                nSpec = nSites/2 + 1
+            endif
+            if(nSpec.gt.nCoups) call stop_all(t_r,'Error here')
+            if(mod(nSpec,2).ne.0) call stop_all(t_r,'nSpec should be even?')
+            !Since we have already imposed k-point sym, we can just optimize within the restricted set we already have here,
+            !and ignore the fact that we have already got doubly degenerate sets everywhere.
+            !Do this *incredibly* crudely. Search for nearest 'pairs', and symmetrize them
+
+            !Find the energetic ordering of the eigenvalues
+            tNotTaken(:) = .true.
+            do i = 1,nSpec
+                !Each loop, find the position of the next lowest eigenvalue
+                dCurrentE = 100000.0_dp
+                do j = 1,nSpec
+                    !Find lowest energy eigenvalue not already taken
+                    if((vars(j).lt.dCurrentE).and.(tNotTaken(j))) then
+                        EOrder(i) = j
+                        dCurrentE = vars(j)
+                    endif
+                enddo
+                tNotTaken(EOrder(i)) = .false.
+            enddo
+            !We now have the energetic ordering. EOrder(i) gives the ith lowest energy eigenvalue
+
+            do i = 1,nSpec
+                if(tNotTaken(i)) call stop_all(t_r,'Not all evals accounted for')
+            enddo
+
+            do i = 2,nSpec
+                if(vars(EOrder(i)).lt.vars(EOrder(i-1))) then
+                    call stop_all(t_r,'Energy order not correct')
+                endif
+            enddo
+
+            !Now, symmetrize them
+            do i = 1,nSpec/2
+                !Run through all occupied orbitals by going up in energy
+                do j = 1,nSpec
+                    if(EOrder(j).eq.i) exit
+                enddo
+                !i'th lowest energy eigenvalue is in slot j
+                !Find the corresponding 'virtual'
+                do k = 1,nSpec
+                    if(EOrder(k).eq.(nSpec-i+1)) then
+                        !This is the corresponding 'virtual'
+                        exit
+                    endif
+                enddo
+                !j and k are pairs. Average the differences from the chemical potential
+                diff = 0.5_dp*( (mu - vars(j) ) + (vars(k) - mu))
+                vars(j) = mu - diff
+                vars(k) = mu + diff
+            enddo
+
+            if(.not.tKPntSymFit) then
+                !We might have just broken the momentum symmetry that we just imposed!
+                !Reimpose it - not by averaging, but by simply using the negative k-point values.
+                if(tShift_Mesh) then
+                    do i = 1,nSites/2
+                        vars(nSites-i+1) = vars(i)
+                    enddo
+                else
+                    !Do not average the gamma point, or the first kpoint (BZ boundary) - these are singly degenerate
+                    do i = 2,nSites/2
+                        vars(nSites-i+2) = vars(i)
+                    enddo
+                endif
+
+            endif
+        endif
+
+    end subroutine Imposephsym
 
     !Attempt for self-consistency on the matsubara axis via simple application of dysons equation
     subroutine SC_Imaginary_Dyson()
@@ -3722,25 +3869,30 @@ module SelfConsistentLR
         integer :: i
         character(len=*), parameter :: t_r='FindFullLatEvals'
 
-        if(tShift_Mesh) then
-            if(nInd_evals.ne.(nSites/2)) call stop_all(t_r,'Number of independent evals incorrect?')
-        else
-            if(nInd_evals.ne.((nSites/2)+1)) call stop_all(t_r,'# independent evals incorrect?')
-        endif
+        if(tKPntSymFit) then
+            if(tShift_Mesh) then
+                if(nInd_evals.ne.(nSites/2)) call stop_all(t_r,'Number of independent evals incorrect?')
+            else
+                if(nInd_evals.ne.((nSites/2)+1)) call stop_all(t_r,'# independent evals incorrect?')
+            endif
 
-        !write(6,*) "tShift_Mesh: ",tShift_Mesh,nInd_evals,nSites,size(evals_full),size(evals)
-        evals_full(1:nSites/2) = evals(1:nSites/2)
-        if(tShift_Mesh) then
-            !No gamma point. All k-points symmetric
-            do i = 1,nSites/2
-                evals_full(i+(nSites/2)) = evals((nSites/2)-i+1)
-            enddo
+            !write(6,*) "tShift_Mesh: ",tShift_Mesh,nInd_evals,nSites,size(evals_full),size(evals)
+            evals_full(1:nSites/2) = evals(1:nSites/2)
+            if(tShift_Mesh) then
+                !No gamma point. All k-points symmetric
+                do i = 1,nSites/2
+                    evals_full(i+(nSites/2)) = evals((nSites/2)-i+1)
+                enddo
+            else
+                !Put in the gamma point
+                evals_full((nSites/2)+1) = evals((nSites/2)+1)
+                do i = 2,nSites/2
+                    evals_full(i+(nSites/2)) = evals((nSites/2)-i+2)
+                enddo
+            endif
         else
-            !Put in the gamma point
-            evals_full((nSites/2)+1) = evals((nSites/2)+1)
-            do i = 2,nSites/2
-                evals_full(i+(nSites/2)) = evals((nSites/2)-i+2)
-            enddo
+            if(nInd_evals.ne.nSites) call stop_all(t_r,'Something wrong here')
+            evals_full(:) = evals(:)
         endif
 
     end subroutine FindFullLatEvals
@@ -4042,21 +4194,26 @@ module SelfConsistentLR
             enddo
         enddo
 
-        !However, we need now to package it up. Since we are only optimizing certain eigenvalue, we need
-        !to add the two gradient contributions together
-        Jacobian(:,:) = zero
-        !Include the negative k terms
-        Jacobian(:,1:nSites/2) = FullJac(:,1:nSites/2)
-        if(tShift_Mesh) then
-            !No gamma point. All k-points symmetric
-            do i = 1,nSites/2
-                Jacobian(:,(nSites/2)-i+1) = Jacobian(:,(nSites/2)-i+1) + FullJac(:,i+(nSites/2))
-            enddo
+        if(tKPntSymFit) then
+            !However, we need now to package it up. Since we are only optimizing certain eigenvalue, we need
+            !to add the two gradient contributions together
+            Jacobian(:,:) = zero
+            !Include the negative k terms
+            Jacobian(:,1:nSites/2) = FullJac(:,1:nSites/2)
+            if(tShift_Mesh) then
+                !No gamma point. All k-points symmetric
+                do i = 1,nSites/2
+                    Jacobian(:,(nSites/2)-i+1) = Jacobian(:,(nSites/2)-i+1) + FullJac(:,i+(nSites/2))
+                enddo
+            else
+                !The gamma point is unchanged (and therefore the gradient will on average be half the other values)
+                do i = 2,nSites/2
+                    Jacobian(:,((nSites/2)-i+2)) = Jacobian(:,((nSites/2)-i+2)) + FullJac(:,i+(nSites/2))
+                enddo
+            endif
         else
-            !The gamma point is unchanged (and therefore the gradient will on average be half the other values)
-            do i = 2,nSites/2
-                Jacobian(:,((nSites/2)-i+2)) = Jacobian(:,((nSites/2)-i+2)) + FullJac(:,i+(nSites/2))
-            enddo
+            if(CouplingLength.ne.nSites) call stop_all(t_r,'Error here')
+            Jacobian(:,:) = FullJac(:,:)
         endif
         deallocate(FullJac)
 

@@ -138,6 +138,8 @@ Program RealHub
         tStaticBathFitLat = .false. !By default no fit hamiltonian in the bath space
         tOptGF_EVals = .false.      !Optimize lattice couplings, or lattice eigenvalues
         tAnalyticDerivs = .false.   !Whether to use analytic derivatives when optimizing with Lev-Mar algorithm
+        tKPntSymFit = .false.       !Restrict the fit to conserve momentum
+        tphsym = .false.            !Impose ph symmetry in the fitting
 
     end subroutine set_defaults
 
@@ -622,6 +624,10 @@ Program RealHub
                 tOptGF_EVals = .true.
             case("USE_ANALYTIC_DERIVS")
                 tAnalyticDerivs = .true.    !Calculate analytic derivatives in fitting
+            case("CONSERVE_K_FIT")
+                tKPntSymFit = .true.        !Conserve k-point symmetry = 0 in fitting
+            case("IMPOSE_PH_SYM")
+                tphsym = .true.             !Impose ph sym
             case("REUSE_SELFENERGY")
                 call readi(iReuse_SE)
             case("MANYBODY_SELFENERGY")

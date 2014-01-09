@@ -1802,29 +1802,39 @@ module mat_tools
             if(nImp.gt.1) call stop_all(t_r,'This is not set up for > 1 imp - bug GHB')
             !Here, the eigenvalues are the positive/negatice eigenvalues.
             !Use these to construct the lattice hamtiltonian
-            if(tShift_Mesh) then
-                if(iCoupLength.ne.(nSites/2)) call stop_all(t_r,'Number of variables incorrect?')
+            if(tKPntSymFit) then
+                if(tShift_Mesh) then
+                    if(iCoupLength.ne.(nSites/2)) call stop_all(t_r,'Number of variables incorrect?')
+                else
+                    if(iCoupLength.ne.((nSites/2)+1)) call stop_all(t_r,'Incorrect number of variables?')
+                endif
             else
-                if(iCoupLength.ne.((nSites/2)+1)) call stop_all(t_r,'Incorrect number of variables?')
+                if(iCoupLength.ne.nSites) call stop_all(t_r,'Incorrect number of variables')
             endif
 
             allocate(ctemp(nSites,nSites))
             allocate(cham(nSites,nSites))
             cham(:,:) = zzero
-            do i = 1,nSites/2
-                cham(i,i) = dcmplx(Couplings(i,1),zero)
-            enddo
-            if(tShift_Mesh) then
-                !No gamma point. All k-points symmetric
+            if(tKPntSymFit) then
                 do i = 1,nSites/2
-                    cham(i+(nSites/2),i+(nSites/2)) = dcmplx(Couplings((nSites/2)-i+1,1),zero)
+                    cham(i,i) = dcmplx(Couplings(i,1),zero)
                 enddo
+                if(tShift_Mesh) then
+                    !No gamma point. All k-points symmetric
+                    do i = 1,nSites/2
+                        cham(i+(nSites/2),i+(nSites/2)) = dcmplx(Couplings((nSites/2)-i+1,1),zero)
+                    enddo
+                else
+                    !Put in the gamma point
+                    cham((nSites/2)+1,(nSites/2)+1) = dcmplx(Couplings((nSites/2)+1,1),zero)
+                    !Now, add in the other kpoints (not point on BZ boundary at start)
+                    do i = 2,nSites/2
+                        cham(i+(nSites/2),i+(nSites/2)) = dcmplx(Couplings((nSites/2)-i+2,1),zero)
+                    enddo
+                endif
             else
-                !Put in the gamma point
-                cham((nSites/2)+1,(nSites/2)+1) = dcmplx(Couplings((nSites/2)+1,1),zero)
-                !Now, add in the other kpoints (not point on BZ boundary at start)
-                do i = 2,nSites/2
-                    cham(i+(nSites/2),i+(nSites/2)) = dcmplx(Couplings((nSites/2)-i+2,1),zero)
+                do i = 1,nSites
+                    cham(i,i) = dcmplx(Couplings(i,1),zero)
                 enddo
             endif
             call ZGEMM('N','N',nSites,nSites,nSites,zone,RtoK_Rot,nSites,cham,nSites,zzero,ctemp,nSites)
@@ -1839,7 +1849,7 @@ module mat_tools
                 do j = 1,nSites
                     if(abs(aimag(cham(j,i))).gt.1.0e-7_dp) then
                         write(6,*) cham(j,i)
-                        call stop_all(t_r,'why is this not real?')
+                        call stop_all(t_r,'why is this not real? - Losing k-inversion symmetry')
                     endif
                     ham(j,i) = real(cham(j,i),dp)
                 enddo

@@ -1851,7 +1851,7 @@ END SUBROUTINE qrsolv
 
 
 
-FUNCTION enorm(n,x) RESULT(fn_val)
+PURE FUNCTION enorm(n,x) RESULT(fn_val)
  
 ! Code converted using TO_F90 by Alan Miller
 ! Date: 1999-12-09  Time: 12:45:34

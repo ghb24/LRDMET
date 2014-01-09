@@ -218,6 +218,8 @@ module Globals
     logical :: tStaticBathFitLat    !Also include the fit lattice in the static bath space. 
     logical :: tOptGF_EVals         !Optimize the lattice eigenvalues rather than the couplings
     logical :: tAnalyticDerivs      !Use analytic derivatives when optimizing with Lev-Mar algorithm
+    logical :: tKPntSymFit          !Use kpoint symmetry to ensure we only look at K=0 solutions
+    logical :: tphsym               !Impose ph sym in fit
 
     !Debugging for Self-consistency
     logical :: tSE_Scan
