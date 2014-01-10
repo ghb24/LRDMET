@@ -207,6 +207,13 @@ module SelfConsistentLR
             write(6,"(I6,G20.13)") i,Couplings(i,1)
         enddo
         write(6,"(A)") "" 
+    
+        if(tOptGF_EVals) then
+            !Write out the converged one-electron dispersion / bandstructure
+            call WriteBandstructure(Couplings,iLatParams)
+        else
+            !Should fix this so that we convert to eigenvalues from couplings and write out
+        endif
 
         deallocate(G_Mat_Im,SE_Im,Lattice_GF,Lattice_GF_Real,G_Mat_Im_Old,DiffImpGF,AllDiffs)
         allocate(Lattice_GF(nImp,nImp,nESteps_Re))
@@ -1011,7 +1018,7 @@ module SelfConsistentLR
         endif
         write(iunit,*) iLatParams
         do i = 1,iLatParams
-            write(iunit,*) Couplings(i,1)
+            write(iunit,"(2G25.13)") KPnts(1,i),Couplings(i,1)
         enddo
         close(iunit)
 
@@ -1025,40 +1032,17 @@ module SelfConsistentLR
         real(dp), allocatable :: lat_evals(:)
         integer :: iunit,iloclatcoups,i
         logical :: exists
-        character(len=*), parameter :: t_r='ReadInLatticeCouplings'
+        character(len=*), parameter :: t_r='InitLatticeCouplings'
 
-        Couplings(:,:) = zzero
+        Couplings(:,:) = zero
         !h_lat_fit(:,:) = h0(:,:)
         h_lat_fit(:,:) = h0v(:,:)
 
         if(tReadCouplings) then
-            iunit = get_free_unit()
             if(tOptGF_EVals) then
-                inquire(file='LatEVals_Read',exist=exists)
-                if(.not.exists) then
-                    call stop_all(t_r,'LatEVals_Read file does not exist')
-                endif
-                open(unit=iunit,file='LatEVals_Read',status='old')
-                read(iunit,*) iloclatcoups
-                if(tKPntSymFit) then
-                    if(tShift_Mesh.and.(iloclatcoups.ne.(nSites/2))) call stop_all(t_r,'Wrong # of params read in')
-                    if((.not.tShift_Mesh).and.(iloclatcoups.ne.((nSites/2)+1))) call stop_all(t_r,'Wrong # of params read in')
-                else
-                    if(iloclatcoups.ne.nSites) call stop_all(t_r,'Wrong # of params read in')
-                endif
-                do i = 1,iloclatcoups
-                    read(iunit,*) Couplings(i,1)
-                enddo
-                !Potentially shift the lattice eigenvalues (required if reading in from a previous calculation with a different chemical potential)
-                do i = 1,iloclatcoups
-                    Couplings(i,1) = Couplings(i,1) + dShiftLatticeEvals
-                enddo
-                do i = 2,nImp
-                    !Copy them to the other impurities
-                    Couplings(:,i) = Couplings(:,1)
-                enddo
-                write(6,*) "Lattice eigenvalues read in from disk, and initialised to: ",Couplings(:,1)
+                call ReadLatticeEigenvalues(Couplings,iLatParams)
             else
+                iunit = get_free_unit()
                 inquire(file='LatCouplings_Read',exist=exists)
                 if(.not.exists) then
                     call stop_all(t_r,'LatCouplings_Read file does not exist')
@@ -1080,8 +1064,8 @@ module SelfConsistentLR
                     Couplings(:,i) = Couplings(:,1)
                 enddo
                 write(6,*) "Lattice couplings read in from disk, and initialised to: ",Couplings(:,1)
+                close(iunit)
             endif
-            close(iunit)
         else
             if(tOptGF_EVals) then
                 !Here, we are optimizing the eigenvalues, rather than the lattice couplings
@@ -1108,6 +1092,254 @@ module SelfConsistentLR
         endif
 
     end subroutine InitLatticeCouplings
+                
+    subroutine ReadLatticeEigenvalues(Couplings,iLatParams)
+        implicit none
+        integer, intent(in) :: iLatParams
+        real(dp), intent(out) :: Couplings(iLatParams,nImp)
+        integer :: iunit,iloclatcoups,i,ineghalf
+        real(dp) :: kval,GammaBound,yp1,ypn
+        real(dp), allocatable :: kmesh_read(:),evals_read(:),y2_spline(:),neghalf_evals(:)
+        logical :: exists
+        character(len=*), parameter :: t_r='ReadLatticeEigenvalues'
+
+        Couplings(:,:) = zero
+        if(nImp.gt.1) call stop_all(t_r,'Not working for multiple impurity sites')
+        if(LatticeDim.ne.1) call stop_all(t_r,'Currently only working for 1D systems')
+
+        inquire(file='LatEVals_Read',exist=exists)
+        if(.not.exists) then
+            call stop_all(t_r,'LatEVals_Read file does not exist')
+        endif
+        iunit = get_free_unit()
+        open(unit=iunit,file='LatEVals_Read',status='old')
+        read(iunit,*) iloclatcoups
+
+        if(iloclatcoups.gt.iLatParams) then
+            call stop_all(t_r,'Cannot read in from larger lattice / check inputs compatible')
+        elseif(iloclatcoups.eq.iLatParams) then
+            write(6,"(A)") "In lattice read, number of free parameters the same. Assuming that the "    &
+                //"k-point mesh is commensurate, and just using these values."
+
+            if(tKPntSymFit) then
+                if(tShift_Mesh.and.(iloclatcoups.ne.(nSites/2))) call stop_all(t_r,'Wrong # of params read in')
+                if((.not.tShift_Mesh).and.(iloclatcoups.ne.((nSites/2)+1))) call stop_all(t_r,'Wrong # of params read in')
+            else
+                if(iloclatcoups.ne.nSites) call stop_all(t_r,'Wrong # of params read in')
+            endif
+            do i = 1,iloclatcoups
+                read(iunit,*) kval,Couplings(i,1)
+            enddo
+            !Potentially shift the lattice eigenvalues (required if reading in from a previous calculation with a different chemical potential)
+            do i = 1,iloclatcoups
+                Couplings(i,1) = Couplings(i,1) + dShiftLatticeEvals
+            enddo
+        else
+            !Reading in from a smaller lattice, and fitting to the kpoint mesh of a larger lattice via cubic splines
+            allocate(kmesh_read(iloclatcoups))
+            allocate(evals_read(iloclatcoups))
+
+            do i = 1,iloclatcoups
+                read(iunit,*), kmesh_read(i),evals_read(i)
+                if(i.gt.1) then
+                    !Check that the kpoints are written out in increasing order
+                    if(kmesh_read(i).lt.kmesh_read(i-1)) call stop_all(t_r,'Written out eigenvalues are not in ascending k-point order')
+                endif
+            enddo
+
+            GammaBound = zero+1.0e-8
+            do i = 1,iloclatcoups
+                if(kmesh_read(i).gt.GammaBound) then
+                    !This point is in the positive k half of the BZ. Ignore it for the fitting.
+                    exit
+                endif
+            enddo
+            ineghalf = i-1  !Negative k-values are found in the values 1:ineghalf
+            write(6,"(A,I6)") "Number of kpoints read in from negative half of BZ: ",ineghalf
+
+            !Set the *first* derivative of the spline to be zero at the BZ boundary and gamma point
+            yp1 = zero
+            ypn = zero
+            !Set the *second* derivative of the spline to be zero at the BZ boundary and gamma point
+            !yp1 = 1.0e30
+            !ypn = 1.0e30
+            allocate(y2_spline(ineghalf))
+            call spline(kmesh_read(1:ineghalf),evals_read(1:ineghalf),ineghalf,yp1,ypn,y2_spline)
+
+            !Now, interpolate for the eigenvalues on the new k-point mesh
+            do i = 1,nKPnts
+                if(KPnts(1,i).lt.kmesh_read(1)) then
+                    !We have a point outside the spline. Set it to be the same
+                    Couplings(i,1) = evals_read(1)
+                elseif((KPnts(1,i).gt.kmesh_read(1)).and.(KPnts(1,i).lt.kmesh_read(ineghalf))) then
+                    !Interpolate
+                    call splint(kmesh_read(1:ineghalf),evals_read(1:ineghalf),y2_spline,ineghalf,KPnts(1,i),Couplings(i,1))
+                elseif((KPnts(1,i).gt.kmesh_read(ineghalf)).and.(KPnts(1,i).lt.GammaBound)) then
+                    !Outside point on the spline (but still in the negative k half of the BZ. Set to be same as final point
+                    Couplings(i,1) = evals_read(ineghalf)
+                else
+                    !In positive half of BZ. Ignore - we will make them k-symmetric later on if necessary
+                    exit
+                endif
+            enddo
+
+            !Finally, if necessary, k-symmetrize
+            if(tKPntSymFit.and.(iLatParams.ne.i-1)) then
+                call stop_all(t_r,'Wrong number of kpoints interpolated?')
+            endif
+            if(.not.tKPntSymFit) then
+                !We need to mirror the kpoints to the other half of the plane
+                allocate(neghalf_evals(ineghalf))
+                neghalf_evals(:) = Couplings(1:ineghalf,1)
+                Couplings(:,:) = zero
+                call FindFullLatEvals(neghalf_evals,ineghalf,Couplings(:,1))
+                deallocate(neghalf_evals)
+            endif
+            deallocate(y2_spline)
+        endif
+
+        close(iunit)
+
+        do i = 2,nImp
+            !Copy them to the other impurities
+            Couplings(:,i) = Couplings(:,1)
+        enddo
+        write(6,*) "Lattice eigenvalues read in from disk, and initialised to: ",Couplings(:,1)
+
+    end subroutine ReadLatticeEigenvalues
+
+    !Write out the bandstructure from the fit one-electron hamiltonian
+    subroutine WriteBandstructure(evals,nvals)
+        implicit none
+        integer, intent(in) :: nvals
+        real(dp), intent(in) :: evals(nvals)
+        real(dp), allocatable :: evals_full(:)
+        integer :: iunit
+        real(dp) :: yp1,ypn,kval,band
+        real(dp), allocatable :: y2_spline(:)
+        character(len=*), parameter :: t_r='WriteBandstructure'
+
+        if(nImp.gt.1) call stop_all(t_r,'Cannot currently deal with > 1 impurity')
+
+        write(6,"(A)") "Writing to disk the bandstructure from the fit lattice hamiltonian"
+
+        iunit = get_free_unit()
+        open(unit=iunit,file='Bandstructure',status='unknown')
+
+        allocate(evals_full(nKPnts))
+        call FindFullLatEvals(evals,nvals,evals_full)
+        
+        !Set the *first* derivative of the spline to be zero at the BZ boundarys
+        yp1 = zero
+        ypn = zero
+        !Set the *second* derivative of the spline to be zero at the BZ boundarys
+        !yp1 = 1.0e30
+        !ypn = 1.0e30
+        allocate(y2_spline(nKPnts))
+        call spline(KPnts(1,:),evals_full,nKPnts,yp1,ypn,y2_spline)
+
+        kval = KPnts(1,1)
+        do while(.true.)
+            if(kval.gt.KPnts(1,nKPnts)) exit
+                    
+            call splint(KPnts(1,:),evals_full,y2_spline,nKPnts,kval,band)
+
+            write(iunit,"(2G20.10)") kval,band
+            kval = kval + 0.001
+        enddo
+
+        deallocate(y2_spline)
+        close(iunit)
+
+    end subroutine WriteBandstructure
+
+
+
+    !From num rec
+    subroutine splint(xa,ya,y2a,n,x,y)
+        implicit none
+        integer, intent(in) :: n
+        real(dp), intent(in) :: x, xa(n),y2a(n),ya(n)
+        real(dp), intent(out) :: y
+        !Given the arrays xa(1:n) and ya(1:n) of length n, which tabulate a function (with the xa_i's in order),
+        !and given the array y2a(1:n), which is the output from spline, and given a value of x, this routine
+        !returns a cubic-spline interpolated value y.
+        integer :: k,khi,klo
+        real(dp) :: a, b, h
+        character(len=*), parameter :: t_r='splint'
+
+        klo = 1
+        khi = n
+1       if (khi-klo.gt.1) then
+            !Bisection to find right place in table
+            k = (khi+klo)/2
+            if(xa(k).gt.x) then
+                khi = k
+            else
+                klo = k
+            endif
+            goto 1
+        endif
+        !klo and khi now bracket the value of x
+        h = xa(khi)-xa(klo)
+        if(h.eq.zero) call stop_all(t_r,'bad xa input in splint. kpoints should be distinct')
+        !Evaluate spline
+        a = (xa(khi)-x)/h
+        b = (x-xa(klo))/h
+        y = a*ya(klo)+b*ya(khi) + ((a**3-a)*y2a(klo)+(b**3-b)*y2a(khi))*(h**2)/6.0_dp
+    end subroutine splint
+
+
+    !From numerical recipies
+    subroutine spline(x,y,n,yp1,ypn,y2)
+        implicit none
+        integer, intent(in) :: n
+        real(dp), intent(in) :: yp1,ypn,x(n),y(n)
+        real(dp), intent(out) :: y2(n)
+        !Given arrays x(1:n) and y(1:n) containing a tabulated function, i.e. y_i = f(x_i), with
+        !x_1 < x_2 < x_3 < ... < x_n, and given values yp1 and ypn for the first derivative of the
+        !interpolating function at points 1 and n, respectively, this routine returns an array y2(1:n)
+        !of length n which contains the second derivatives of the interpolating function at the tabulated
+        !points x_i. If yp1 and/or ypn are > 1e30, the routine is signaled to set the corresponding boundary
+        !condition for a natural spline, with zero second derivative on that boundary.
+        integer :: i,k
+        real(dp) :: p,qn,sig,un
+        real(dp), allocatable :: u(:)
+
+        allocate(u(n))
+        if(yp1.gt.0.99e30_dp) then
+            !The lower boundary condition is set to be 'natural'
+            y2(1) = zero
+            u(1) = zero
+        else
+            !A specified first derivative
+            y2(1)=-0.5_dp
+            u(1)=(3.0_dp/(x(2)-x(1)))*((y(2)-y(1))/(x(2)-x(1))-yp1)
+        endif
+        do i=2,n-1
+            !This is the decomposition loop of the tridiagonal algorithm. y2 and u are used for temp storage of the decomposed factors
+            sig=(x(i)-x(i-1))/(x(i+1)-x(i-1))
+            p=sig*y2(i-1)+2.0_dp
+            y2(i)=(sig-one)/p
+            u(i) = (6.0_dp*((y(i+1)-y(i))/(x(i+1)-x(i))-(y(i)-y(i-1))/(x(i)-x(i-1)))/(x(i+1)-x(i-1))-sig*u(i-1))/p
+        enddo
+        if(ypn.gt.0.99e30_dp) then
+            !Upper boundary condition is 'natural'
+            qn = zero
+            un = zero
+        else
+            !Specified first derivative
+            qn = 0.5_dp
+            un = (3.0_dp/(x(n)-x(n-1)))*(ypn-(y(n)-y(n-1))/(x(n)-x(n-1)))
+        endif
+        y2(n) = (un-qn*u(n-1))/(qn*y2(n-1)+1.0_dp)
+        do k=n-1,1,-1
+            !This is the backsubstitution loop of the tridiagonal algorithm
+            y2(k) = y2(k)*y2(k+1)+u(k)
+        enddo
+        deallocate(u)
+    end subroutine spline
+        
 
     subroutine Imposephsym(nCoups,vars)
         implicit none
