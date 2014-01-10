@@ -1001,6 +1001,8 @@ module SelfConsistentLR
         integer :: iunit,i
         character(len=*), parameter :: t_r='WriteLatticeCouplings'
 
+        if(nImp.gt.1) call stop_all(t_r,'Error here')
+
         iunit = get_free_unit()
         if(tOptGF_EVals) then
             open(unit=iunit,file='LatEVals',status='unknown')
@@ -1046,6 +1048,10 @@ module SelfConsistentLR
                 endif
                 do i = 1,iloclatcoups
                     read(iunit,*) Couplings(i,1)
+                enddo
+                !Potentially shift the lattice eigenvalues (required if reading in from a previous calculation with a different chemical potential)
+                do i = 1,iloclatcoups
+                    Couplings(i,1) = Couplings(i,1) + dShiftLatticeEvals
                 enddo
                 do i = 2,nImp
                     !Copy them to the other impurities

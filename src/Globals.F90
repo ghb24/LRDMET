@@ -220,6 +220,7 @@ module Globals
     logical :: tAnalyticDerivs      !Use analytic derivatives when optimizing with Lev-Mar algorithm
     logical :: tKPntSymFit          !Use kpoint symmetry to ensure we only look at K=0 solutions
     logical :: tphsym               !Impose ph sym in fit
+    real(dp) :: dShiftLatticeEvals  !Potentially a shift for the read in lattice eigenvalues
 
     !Debugging for Self-consistency
     logical :: tSE_Scan

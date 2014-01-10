@@ -140,6 +140,7 @@ Program RealHub
         tAnalyticDerivs = .false.   !Whether to use analytic derivatives when optimizing with Lev-Mar algorithm
         tKPntSymFit = .false.       !Restrict the fit to conserve momentum
         tphsym = .false.            !Impose ph symmetry in the fitting
+        dShiftLatticeEvals = zero   !Shift read in lattice eigenvalues?
 
     end subroutine set_defaults
 
@@ -611,6 +612,9 @@ Program RealHub
                 call readi(iMaxFitMicroIter)
             case("READ_LATTICE_COUPLINGS")
                 tReadCouplings = .true.
+                if(item.lt.nitems) then
+                    call readf(dShiftLatticeEVals)
+                endif
             case("SKIP_LATTICE_FIT")
                 tSkip_Lattice_Fit = .true.
             case("EXT_HAM_FITLATTICE")
