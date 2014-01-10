@@ -54,6 +54,7 @@ module Globals
     real(dp) :: CoreEnergy      !The non-interacting core energy of the DMET wavefunction
     integer :: nImpCombs,EmbCombs   !The size of triangular packed arrays (over impurity sites and embedding sites respectively)
     logical :: tHalfFill        !Half filling only
+    logical :: tExactCorrPot    !Use the exact correlation potential (for half filled hubbard models with 1 impurity)
     logical :: tDiagFullSystem  !Diagonalize full system before DMET
     logical :: tMFResponse      !Calculate any mean-field response
     logical :: tNIResponse      !Calculate NI response

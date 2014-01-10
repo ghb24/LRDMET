@@ -67,6 +67,7 @@ Program RealHub
         iHamSize_Np1 = 0
         iHamSize_Nm1 = 0
         tCorrelatedBath = .false.
+        tExactCorrPot = .false.
 
         !General LR options
         Start_Omega = 0.0_dp
@@ -507,6 +508,8 @@ Program RealHub
                 tDiagFullSystem = .true.
             case("HALF_FILL")
                 tHalfFill = .true.
+            case("EXACT_CORRPOT")
+                tExactCorrPot = .true.
             case("FILLING")
                 tMultipleOccs = .true.
                 call readi(nElecFill)
@@ -535,6 +538,7 @@ Program RealHub
                 write(6,"(A)") "U"
                 write(6,"(A)") "U_VALS"
                 write(6,"(A)") "REUSE_CORRPOT"
+                write(6,"(A)") "EXACT_CORRPOT"
                 write(6,"(A)") "FITTING_STEPSIZE"
                 write(6,"(A)") "SCF_HF"
                 write(6,"(A)") "TEMPERATURE"
@@ -855,9 +859,18 @@ Program RealHub
         endif
 
         !Now check for sanity and implementation of specified options
-        if(tReadSystem) then
+        if(tReadSystem.or.tExactCorrPot) then
             !Ensure we don't do fitting
             tContinueConvergence = .false.
+        endif
+        if(tExactCorrPot.and.(.not.tHalfFill)) then
+            call stop_all(t_r,'Cannot use exact correlation potential apart from 1 impurity, half-filled hubbard models')
+        endif
+        if(tExactCorrPot.and.tAnderson) then
+            call stop_all(t_r,'Cannot use exact correlation potential apart from 1 impurity, half-filled hubbard models')
+        endif
+        if(tExactCorrPot.and.(nImp.gt.1)) then
+            call stop_all(t_r,'Cannot use exact correlation potential apart from 1 impurity, half-filled hubbard models')
         endif
         if((mod(nSites,2).ne.0).and.(LatticeDim.eq.1)) then
             call stop_all(t_r,'Can currently only deal with closed shell systems')
@@ -1265,6 +1278,9 @@ Program RealHub
                 if(tReadInCorrPot.or.tReadSystem) then
                     !Read in the correlation potential from another source
                     call read_in_corrpot()
+                elseif(tExactCorrPot) then
+                    !We know the exact correlation potential for the hubbard model: U/2
+                    v_loc(:,:) = U/2.0_dp
                 endif
 
                 !At this point, we have h0, U and a set of system sites (the first nImp indices), as well as a local potential

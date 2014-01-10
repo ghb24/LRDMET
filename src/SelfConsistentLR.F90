@@ -1200,6 +1200,9 @@ module SelfConsistentLR
 
         close(iunit)
 
+        !potentially, impose ph symmetry in the read in eigenvalues (the interpolation may have broken it)
+        call Imposephsym(iLatParams,Couplings(:,1))
+
         do i = 2,nImp
             !Copy them to the other impurities
             Couplings(:,i) = Couplings(:,1)
