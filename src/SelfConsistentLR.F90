@@ -25,7 +25,7 @@ module SelfConsistentLR
         complex(dp), allocatable :: DiffImpGF(:,:,:),G_Mat_Im_Old(:,:,:)
         real(dp) :: FinalDist
         integer :: i,iter,iLatParams
-        integer, parameter :: iMaxIter_Fit = 1000
+        integer, parameter :: iMaxIter_Fit = 100
         real(dp), parameter :: dDeltaImpThresh = 1.0e-5_dp 
         logical, parameter :: tCalcRealSpectrum = .true.
         character(len=*), parameter :: t_r='SC_FitLatticeGF_Im'
@@ -168,10 +168,6 @@ module SelfConsistentLR
             endif
 
             !Calculate & write out stats (all of them)
-            if(iter.gt.iMaxIter_Fit) then
-                write(6,"(A,I9)") "Exiting. Max iters hit of: ",iMaxIter_Fit
-                exit
-            endif
             AllDiffs(1,iter) = FinalDist
             DiffImpGF(:,:,:) = G_Mat_Im_Old(:,:,:) - G_Mat_Im(:,:,:)
             DiffImpGF(:,:,:) = DiffImpGF(:,:,:) * dconjg(DiffImpGF(:,:,:))
@@ -185,6 +181,11 @@ module SelfConsistentLR
             enddo
             write(6,"(A)") ""
             call flush(6)
+            
+            if(iter.gt.iMaxIter_Fit) then
+                write(6,"(A,I9)") "Exiting. Max iters hit of: ",iMaxIter_Fit
+                exit
+            endif
 
             if(AllDiffs(2,iter).lt.dDeltaImpThresh) then
                 write(6,"(A)") "Success! Convergence on imaginary axis successful"
@@ -673,7 +674,11 @@ module SelfConsistentLR
             endif
             rhoend = 1.0e-7_dp  !Convergence criteria
             nFuncs = n*(nImp**2)   !Number of functions
-            maxf = 4000 * (nFuncs+1) !Max number of function evaluations
+            if(iMaxFitMicroIter.eq.0) then
+                maxf = 500 * (nFuncs+1) !Max number of function evaluations
+            else
+                maxf = iMaxFitMicroIter !Max number of function evaluations
+            endif
             write(6,"(A,I9)") "Number of functions: ", nFuncs
                 
             allocate(iwork(iRealCoupNum))
