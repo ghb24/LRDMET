@@ -222,6 +222,7 @@ module Globals
     logical :: tKPntSymFit          !Use kpoint symmetry to ensure we only look at K=0 solutions
     logical :: tphsym               !Impose ph sym in fit
     real(dp) :: dShiftLatticeEvals  !Potentially a shift for the read in lattice eigenvalues
+    logical :: tFitRealFreq         !Which axis to do the fit on?
 
     !Debugging for Self-consistency
     logical :: tSE_Scan

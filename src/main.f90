@@ -142,6 +142,7 @@ Program RealHub
         tKPntSymFit = .false.       !Restrict the fit to conserve momentum
         tphsym = .false.            !Impose ph symmetry in the fitting
         dShiftLatticeEvals = zero   !Shift read in lattice eigenvalues?
+        tFitRealFreq = .false.      !Fit on matsubara axis by default
 
     end subroutine set_defaults
 
@@ -598,6 +599,8 @@ Program RealHub
             if(teof) exit
             call readu(w)
             select case(w)
+            case("FIT_REALFREQ")
+                tFitRealFreq = .true.
             case("FIT_ALGO")
                 !1 = simplex, 2 = powell
                 call readi(iFitAlgo)
@@ -678,6 +681,7 @@ Program RealHub
                 write(6,"(A)") "EXT_HAM_FITLATTICE"
                 write(6,"(A)") "EVERYOTHER_LATTICECOUP_ZERO"
                 write(6,"(A)") "USE_ANALYTIC_DERIVS"
+                write(6,"(A)") "FIT_REALFREQ"
                 write(6,"(A)") "MANYBODY_SELFENERGY"
                 write(6,"(A)") "MATSUBARA_FREQ"
                 write(6,"(A)") "REUSE_SELFENERGY"
