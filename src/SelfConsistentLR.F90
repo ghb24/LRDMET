@@ -244,7 +244,7 @@ module SelfConsistentLR
             call writedynamicfunction(nESteps_Re,G_Mat_Re,'G_Imp_Re_Final',tMatbrAxis=.false.)
             deallocate(Lattice_GF)
         else
-            call writedynamicfunction(nESteps_Re,G_Mat_Fit,'G_Imp_Re_Final',tMatbrAxis=tFitMatAxis)
+            call writedynamicfunction(nESteps_Re,G_Mat_Fit,'G_Imp_Fit_Final',tMatbrAxis=tFitMatAxis)
         endif
 
         deallocate(h_lat_fit,Couplings,SE_Re,G_Mat_Re,G_Mat_Fit)
