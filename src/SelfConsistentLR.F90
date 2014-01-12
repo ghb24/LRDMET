@@ -224,7 +224,7 @@ module SelfConsistentLR
         endif
         call writedynamicfunction(nFitPoints,Lattice_GF,'G_Lat_Fit_Final',tMatbrAxis=tFitMatAxis)
 
-        deallocate(G_Mat_Fit,SE_Fit,Lattice_GF,Lattice_GF_Real,G_Mat_Fit_Old,DiffImpGF,AllDiffs,Lattice_GF_Old)
+        deallocate(SE_Fit,Lattice_GF,Lattice_GF_Real,G_Mat_Fit_Old,DiffImpGF,AllDiffs,Lattice_GF_Old)
 
         if(tFitMatAxis) then
             allocate(Lattice_GF(nImp,nImp,nESteps_Re))
@@ -243,9 +243,11 @@ module SelfConsistentLR
             call SchmidtGF_wSE(G_Mat_Re,GFChemPot,SE_Re,nESteps_Re,tMatbrAxis=.false.,ham=h_lat_fit)
             call writedynamicfunction(nESteps_Re,G_Mat_Re,'G_Imp_Re_Final',tMatbrAxis=.false.)
             deallocate(Lattice_GF)
+        else
+            call writedynamicfunction(nESteps_Re,G_Mat_Fit,'G_Imp_Re_Final',tMatbrAxis=tFitMatAxis)
         endif
 
-        deallocate(h_lat_fit,Couplings,SE_Re,G_Mat_Re)
+        deallocate(h_lat_fit,Couplings,SE_Re,G_Mat_Re,G_Mat_Fit)
 
     end subroutine SC_FitLatticeGF_Im
 
