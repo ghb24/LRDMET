@@ -9512,22 +9512,26 @@ module LinearResponse
             return
         endif
 
-        OmegaVal = OmegaVal + 1
         if(tMatbrAxis) then
-            Omega = Omega + Omega_Step_Im
+            !Omega = Omega + Omega_Step_Im
+            Omega = Start_Omega_Im + OmegaVal*Omega_Step_Im
             if((Omega.gt.(max(Start_Omega_Im,End_Omega_Im)+1.0e-6_dp))  &
                     .or.(Omega.lt.(min(Start_Omega_Im,End_Omega_Im)-1.0e-6_dp))) then
                 !Hit exit criterion
                 OmegaVal = -1
+                return
             endif
         else
-            Omega = Omega + Omega_Step
+            !Omega = Omega + Omega_Step
+            Omega = Start_Omega + OmegaVal*Omega_Step
             if((Omega.gt.(max(Start_Omega,End_Omega)+1.0e-6_dp))  &
                     .or.(Omega.lt.(min(Start_Omega,End_Omega)-1.0e-6_dp))) then
                 !Hit exit criterion
                 OmegaVal = -1
+                return
             endif
         endif
+        OmegaVal = OmegaVal + 1
 !        write(6,*) "Returned Omega: ",Omega
 
     end subroutine GetNextOmega

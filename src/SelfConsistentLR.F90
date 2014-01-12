@@ -969,6 +969,8 @@ module SelfConsistentLR
             enddo
         endif
 
+!        write(6,"(10G20.13)") "***",vars(:)
+!        write(6,*) "Resid: ",dist
         deallocate(CoupsTemp,Sep_Dists)
 
     end subroutine MinCoups_LM
