@@ -21,14 +21,16 @@ module SelfConsistentLR
         complex(dp), allocatable :: SE_Re(:,:,:),G_Mat_Re(:,:,:)
         complex(dp), allocatable :: Lattice_GF(:,:,:),Lattice_GF_Real(:,:,:),Lattice_GF_Old(:,:,:)
         real(dp), allocatable :: h_lat_fit(:,:),Couplings(:,:)
-        real(dp), allocatable :: AllDiffs(:,:)
+        real(dp), allocatable :: AllDiffs(:,:),FreqPoints(:),IntWeights(:)
         complex(dp), allocatable :: DiffImpGF(:,:,:),G_Mat_Fit_Old(:,:,:)
-        real(dp) :: FinalDist
+        real(dp) :: FinalDist,LowFreq,HighFreq
         integer :: i,iter,iLatParams
         logical :: tFitMatAxis,tCalcRealSpectrum
+        integer :: nFreqPoints
         integer, parameter :: iMaxIter_Fit = 100
         real(dp), parameter :: dDeltaImpThresh = 1.0e-4_dp 
         character(len=*), parameter :: t_r='SC_FitLatticeGF_Im'
+        logical :: tFitPoints_Legendre = .true.
 
         !Set chemical potential (This will only be right for half-filling)
         if(.not.tAnderson) then
@@ -55,6 +57,25 @@ module SelfConsistentLR
             if(OmegaVal.lt.0) exit
             nESteps_Re = nESteps_Re + 1
         enddo
+        if(tFitPoints_Legendre) then
+            !Calculate the Legendre polynomials for Legendre integration points and weights
+            allocate(FreqPoints(nFreqPoints))
+            allocate(IntWeights(nFreqPoints))
+            write(6,"(A)") "Calculating frequency points..."
+            LowFreq = -1.0_dp
+            HighFreq = 1.0_dp
+            nFreqPoints = 30 
+            call gauleg(LowFreq,HighFreq,FreqPoints,IntWeights,nFreqPoints)
+            do i = 1,nFreqPoints
+                write(6,"(I9,2G20.13)") i,FreqPoints(i),IntWeights(i)
+            enddo
+            call ScaleFreqPointsWeights(nFreqPoints,FreqPoints,IntWeights)
+            write(6,"(A)") "Frequency integration points: "
+            do i = 1,nFreqPoints
+                write(6,"(I9,2G20.13)") i,FreqPoints(i),IntWeights(i)
+            enddo
+            if(.not.tUseEVals) call stop_all(t_r,'Must use evals for legendre quadrature')
+        endif
 
         !Which axis do we want to do the fitting on?
         if(tFitRealFreq) then
@@ -63,8 +84,12 @@ module SelfConsistentLR
             tCalcRealSpectrum = .false.
         else
             tFitMatAxis = .true.
-            nFitPoints = nESteps_Im
             tCalcRealSpectrum = .true.
+            if(tFitPoints_Legendre) then
+                nFitPoints = nFreqPoints
+            else
+                nFitPoints = nESteps_Im
+            endif
         endif
 
         !Initially, just see if we can fit the two different Matsubara spectral functions
@@ -112,8 +137,13 @@ module SelfConsistentLR
         allocate(Lattice_GF_Real(nImp,nImp,nESteps_Re))
         !Write out the initial lattice greens function
         !call FindLocalMomGF(nESteps_Im,SE_Im,Lattice_GF,tMatbrAxis=.true.,ham=h_lat_fit)
-        call FindLocalMomGF(nFitPoints,SE_Fit,Lattice_GF,tMatbrAxis=tFitMatAxis,ham=h_lat_fit,    &
-            CouplingLength=iLatParams,evals=Couplings(:,1))
+        if(tFitPoints_Legendre) then
+            call FindLocalMomGF(nFitPoints,SE_Fit,Lattice_GF,tMatbrAxis=tFitMatAxis,ham=h_lat_fit,    &
+                CouplingLength=iLatParams,evals=Couplings(:,1),FreqPoints=FreqPoints)
+        else
+            call FindLocalMomGF(nFitPoints,SE_Fit,Lattice_GF,tMatbrAxis=tFitMatAxis,ham=h_lat_fit,    &
+                CouplingLength=iLatParams,evals=Couplings(:,1))
+        endif
 
         allocate(G_Mat_Fit_Old(nImp,nImp,nFitPoints))
         allocate(DiffImpGF(nImp,nImp,nFitPoints))
@@ -128,9 +158,13 @@ module SelfConsistentLR
             
             !High level calculation on matsubara axis, with no self-energy, and just the normal lattice hamiltonian
             G_Mat_Fit_Old(:,:,:) = G_Mat_Fit(:,:,:)
-            call SchmidtGF_wSE(G_Mat_Fit,GFChemPot,SE_Fit,nFitPoints,tMatbrAxis=tFitMatAxis,ham=h_lat_fit)
-            call writedynamicfunction(nFitPoints,G_Mat_Fit,'G_Imp_Fit',tag=iter,tMatbrAxis=tFitMatAxis)
-            call flush(6)
+            if(tFitPoints_Legendre) then
+                call SchmidtGF_wSE(G_Mat_Fit,GFChemPot,SE_Fit,nFitPoints,tMatbrAxis=tFitMatAxis,ham=h_lat_fit,FreqPoints=FreqPoints)
+                call writedynamicfunction(nFitPoints,G_Mat_Fit,'G_Imp_Fit',tag=iter,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
+            else
+                call SchmidtGF_wSE(G_Mat_Fit,GFChemPot,SE_Fit,nFitPoints,tMatbrAxis=tFitMatAxis,ham=h_lat_fit)
+                call writedynamicfunction(nFitPoints,G_Mat_Fit,'G_Imp_Fit',tag=iter,tMatbrAxis=tFitMatAxis)
+            endif
                 
             if(tCalcRealSpectrum) then
                 call SchmidtGF_wSE(G_Mat_Re,GFChemPot,SE_Re,nESteps_Re,tMatbrAxis=.false.,ham=h_lat_fit)
@@ -141,7 +175,11 @@ module SelfConsistentLR
             endif
             
             !Write out lattice greens function
-            call writedynamicfunction(nFitPoints,Lattice_GF,'G_Lat_Fit',tag=iter,tMatbrAxis=tFitMatAxis)
+            if(tFitPoints_Legendre) then
+                call writedynamicfunction(nFitPoints,Lattice_GF,'G_Lat_Fit',tag=iter,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
+            else
+                call writedynamicfunction(nFitPoints,Lattice_GF,'G_Lat_Fit',tag=iter,tMatbrAxis=tFitMatAxis)
+            endif
 
             if(iLatticeFitType.eq.2) then
                 !Invert the high-level greens function, since we are fitting the residual of the inverses
@@ -155,17 +193,32 @@ module SelfConsistentLR
 
             if(iter.eq.1) then
                 !calculate the initial residual
-                call CalcLatticeFitResidual(G_Mat_Fit,nFitPoints,Couplings,iLatParams,AllDiffs(1,0),tFitMatAxis)
+                if(tFitPoints_Legendre) then
+                    call CalcLatticeFitResidual(G_Mat_Fit,nFitPoints,Couplings,iLatParams,AllDiffs(1,0),tFitMatAxis,   & 
+                        FreqPoints=FreqPoints,Weights=IntWeights)
+                else
+                    call CalcLatticeFitResidual(G_Mat_Fit,nFitPoints,Couplings,iLatParams,AllDiffs(1,0),tFitMatAxis)
+                endif
                 write(6,"(A,F20.10)") "Initial spectrum residual: ",AllDiffs(1,0)
                 AllDiffs(2,0) = zero
             endif
-            call FitLatticeCouplings(G_Mat_Fit,nFitPoints,Couplings,iLatParams,FinalDist,tFitMatAxis)
+            if(tFitPoints_Legendre) then
+                call FitLatticeCouplings(G_Mat_Fit,nFitPoints,Couplings,iLatParams,FinalDist,tFitMatAxis,   &
+                    FreqPoints=FreqPoints,Weights=IntWeights)
+            else
+                call FitLatticeCouplings(G_Mat_Fit,nFitPoints,Couplings,iLatParams,FinalDist,tFitMatAxis)
+            endif
             !Add the new lattice couplings to the lattice hamiltonian
             call AddPeriodicImpCoupling_RealSpace(h_lat_fit,nSites,iLatParams,nImp,Couplings)
             !Now, calculate the local lattice greens function
             Lattice_GF_Old(:,:,:) = Lattice_GF(:,:,:)
-            call FindLocalMomGF(nFitPoints,SE_Fit,Lattice_GF,tMatbrAxis=tFitMatAxis,ham=h_lat_fit,    &
-                CouplingLength=iLatParams,evals=Couplings(:,1))
+            if(tFitPoints_Legendre) then
+                call FindLocalMomGF(nFitPoints,SE_Fit,Lattice_GF,tMatbrAxis=tFitMatAxis,ham=h_lat_fit,    &
+                    CouplingLength=iLatParams,evals=Couplings(:,1),FreqPoints=FreqPoints)
+            else
+                call FindLocalMomGF(nFitPoints,SE_Fit,Lattice_GF,tMatbrAxis=tFitMatAxis,ham=h_lat_fit,    &
+                    CouplingLength=iLatParams,evals=Couplings(:,1))
+            endif
 
             !Write out the lattice couplings
             call WriteLatticeCouplings(iLatParams,Couplings)
@@ -222,7 +275,11 @@ module SelfConsistentLR
         else
             !Should fix this so that we convert to eigenvalues from couplings and write out
         endif
-        call writedynamicfunction(nFitPoints,Lattice_GF,'G_Lat_Fit_Final',tMatbrAxis=tFitMatAxis)
+        if(tFitPoints_Legendre) then
+            call writedynamicfunction(nFitPoints,Lattice_GF,'G_Lat_Fit_Final',tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
+        else
+            call writedynamicfunction(nFitPoints,Lattice_GF,'G_Lat_Fit_Final',tMatbrAxis=tFitMatAxis)
+        endif
 
         deallocate(SE_Fit,Lattice_GF,Lattice_GF_Real,G_Mat_Fit_Old,DiffImpGF,AllDiffs,Lattice_GF_Old)
 
@@ -244,10 +301,15 @@ module SelfConsistentLR
             call writedynamicfunction(nESteps_Re,G_Mat_Re,'G_Imp_Re_Final',tMatbrAxis=.false.)
             deallocate(Lattice_GF)
         else
-            call writedynamicfunction(nESteps_Re,G_Mat_Fit,'G_Imp_Fit_Final',tMatbrAxis=tFitMatAxis)
+            if(tFitPoints_Legendre) then
+                call writedynamicfunction(nESteps_Re,G_Mat_Fit,'G_Imp_Fit_Final',tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
+            else
+                call writedynamicfunction(nESteps_Re,G_Mat_Fit,'G_Imp_Fit_Final',tMatbrAxis=tFitMatAxis)
+            endif
         endif
 
         deallocate(h_lat_fit,Couplings,SE_Re,G_Mat_Re,G_Mat_Fit)
+        if(tFitPoints_Legendre) deallocate(FreqPoints,IntWeights)
 
     end subroutine SC_FitLatticeGF_Im
 
@@ -489,7 +551,7 @@ module SelfConsistentLR
     !impurity greens function. Not the greens function itself.
     !Note that this can become expensive - it is a n_sites^2 calculation at best
     !If dSeperateFuncs is present, the difference between the values will be stored for each frequency point
-    subroutine CalcLatticeFitResidual(G_Imp,nESteps,Couplings,iNumCoups,dist,tMatbrAxis,dSeperateFuncs,dJacobian)
+    subroutine CalcLatticeFitResidual(G_Imp,nESteps,Couplings,iNumCoups,dist,tMatbrAxis,dSeperateFuncs,dJacobian,FreqPoints,Weights)
         implicit none
         integer, intent(in) :: nESteps,iNumCoups
         complex(dp), intent(in) :: G_Imp(nImp,nImp,nESteps)
@@ -498,13 +560,22 @@ module SelfConsistentLR
         logical, intent(in) :: tMatbrAxis
         real(dp), intent(out), optional :: dSeperateFuncs(nImp,nImp,nESteps)  
         real(dp), intent(out), optional :: dJacobian(nESteps,iNumCoups)  !TODO: This will be wrong for > 1 imp
+        real(dp), intent(in), optional :: FreqPoints(nESteps)
+        real(dp), intent(in), optional :: Weights(nESteps)
         real(dp), allocatable :: h_lat_fit(:,:)
         complex(dp), allocatable :: SE_Dummy(:,:,:),Lattice_GF(:,:,:),DiffMat(:,:,:)
         real(dp), allocatable :: DiffMatr(:,:,:)
         real(dp) :: Omega,LattWeight
         integer :: i,j,k
+        logical :: tNonStandardGrid
         integer, parameter :: iNormPower = 2    !The power of the matrix norm for the residual
         character(len=*), parameter :: t_r='CalcLatticeFitResidual'
+
+        if(present(FreqPoints)) then
+            tNonStandardGrid = .true.
+        else
+            tNonStandardGrid = .false.
+        endif
         
         !TODO: Fix this, so that the self-energy is an optional argument
         allocate(SE_Dummy(nImp,nImp,nESteps))
@@ -524,7 +595,11 @@ module SelfConsistentLR
             call FindLocalMomGF(nESteps,SE_Dummy,Lattice_GF,tMatbrAxis=tMatbrAxis,ham=h_lat_fit,CouplingLength=iNumCoups)
             deallocate(h_lat_fit)
         else
-            call FindLocalMomGF(nESteps,SE_Dummy,Lattice_GF,tMatbrAxis=tMatbrAxis,CouplingLength=iNumCoups,evals=Couplings(:,1))
+            if(tNonStandardGrid) then
+                call FindLocalMomGF(nESteps,SE_Dummy,Lattice_GF,tMatbrAxis=tMatbrAxis,CouplingLength=iNumCoups,evals=Couplings(:,1),FreqPoints=FreqPoints)
+            else
+                call FindLocalMomGF(nESteps,SE_Dummy,Lattice_GF,tMatbrAxis=tMatbrAxis,CouplingLength=iNumCoups,evals=Couplings(:,1))
+            endif
         endif
 
         if(iLatticeFitType.eq.2) then
@@ -543,10 +618,19 @@ module SelfConsistentLR
         if(present(dSeperateFuncs)) then
             !We want to return the individual differences
             dSeperateFuncs(:,:,:) = DiffMatr(:,:,:)
+            if(tNonStandardGrid) then
+                do i = 1,nESteps
+                    dSeperateFuncs(:,:,i) = dSeperateFuncs(:,:,i)*sqrt(Weights(i))
+                enddo
+            endif
             if(iFitGFWeighting.ne.0) then
                 i = 0
                 do while(.true.)
-                    call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis)
+                    if(tNonStandardGrid) then
+                        call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis,nFreqPoints=nESteps,FreqPoints=FreqPoints)
+                    else
+                        call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis)
+                    endif
                     if((abs(Omega).lt.1.0e-9_dp).and.(iFitGFWeighting.ne.0)) then
                         call stop_all(t_r,'Should not be sampling w=0 with a non-flat weighting function')
                     endif
@@ -572,7 +656,11 @@ module SelfConsistentLR
             endif
             if(present(dJacobian)) then
                 !Calculate the derivatives too
-                call CalcJacobian(nESteps,iNumCoups,DiffMatr,DiffMat,dJacobian,Couplings(:,1),tMatbrAxis)
+                if(present(FreqPoints)) then
+                    call CalcJacobian(nESteps,iNumCoups,DiffMatr,DiffMat,dJacobian,Couplings(:,1),tMatbrAxis,FreqPoints=FreqPoints,Weights=Weights)
+                else
+                    call CalcJacobian(nESteps,iNumCoups,DiffMatr,DiffMat,dJacobian,Couplings(:,1),tMatbrAxis)
+                endif
             endif
         endif
 
@@ -580,7 +668,11 @@ module SelfConsistentLR
         LattWeight = zero
         i = 0
         do while(.true.)
-            call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis)
+            if(tNonStandardGrid) then
+                call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis,nFreqPoints=nESteps,FreqPoints=FreqPoints)
+            else
+                call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis)
+            endif
             if((abs(Omega).lt.1.0e-9_dp).and.(iFitGFWeighting.ne.0)) then
                 call stop_all(t_r,'Should not be sampling w=0 with a non-flat weighting function')
             endif
@@ -592,13 +684,25 @@ module SelfConsistentLR
                 do k = 1,nImp
                     if(iFitGFWeighting.eq.0) then
                         !Flat weighting
-                        dist = dist + (DiffMatr(k,j,i)**iNormPower)
+                        if(tNonStandardGrid) then
+                            dist = dist + (DiffMatr(k,j,i)**iNormPower)*Weights(i)
+                        else
+                            dist = dist + (DiffMatr(k,j,i)**iNormPower)
+                        endif
                     elseif(iFitGFWeighting.eq.1) then
                         !1/w weighting
-                        dist = dist + (DiffMatr(k,j,i)**iNormPower)/abs(Omega)
+                        if(tNonStandardGrid) then
+                            dist = dist + (DiffMatr(k,j,i)**iNormPower)*Weights(i)/abs(Omega)
+                        else
+                            dist = dist + (DiffMatr(k,j,i)**iNormPower)/abs(Omega)
+                        endif
                     else
                         !1/w^2 weighting
-                        dist = dist + (DiffMatr(k,j,i)**iNormPower)/(Omega**2)
+                        if(tNonStandardGrid) then
+                            dist = dist + (DiffMatr(k,j,i)**iNormPower)*Weights(i)/(Omega**2)
+                        else
+                            dist = dist + (DiffMatr(k,j,i)**iNormPower)/(Omega**2)
+                        endif
                     endif
                     if(iLatticeFitType.eq.3) then
                         LattWeight = LattWeight + (abs(Lattice_GF(k,j,i)))**iNormPower
@@ -2765,7 +2869,7 @@ module SelfConsistentLR
     end subroutine CalcLocalCoupling
 
     !Write out the isotropic average of a dynamic function in the impurity space.
-    subroutine writedynamicfunction(n,Func,FileRoot,tag,tCheckCausal,tCheckOffDiagHerm,tWarn,tMatbrAxis,ErrMat)
+    subroutine writedynamicfunction(n,Func,FileRoot,tag,tCheckCausal,tCheckOffDiagHerm,tWarn,tMatbrAxis,ErrMat,FreqPoints)
         implicit none
         integer, intent(in) :: n
         complex(dp), intent(in) :: Func(nImp,nImp,n)
@@ -2776,6 +2880,7 @@ module SelfConsistentLR
         logical, intent(in), optional :: tWarn  !If true, don't die if non-causal
         logical, intent(in), optional :: tMatbrAxis !If true, then this correlation function is defined on the Im Axis
         complex(dp), intent(in), optional :: ErrMat(nImp,nImp,n)    !Optional errors on the function
+        real(dp), intent(in), optional :: FreqPoints(n)
 
         character(64) :: filename
         logical :: tCheckOffDiagHerm_,tCheckCausal_,tWarn_,tMatbrAxis_
@@ -2820,7 +2925,11 @@ module SelfConsistentLR
         Prev_Spec = 0.0_dp
         i=0
         do while(.true.)
-            call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis_)
+            if(present(FreqPoints)) then
+                call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis_,nFitPoints=n,FreqPoints=FreqPoints)
+            else
+                call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis_)
+            endif
             if(i.lt.0) exit
             if(i.gt.n) call stop_all(t_r,'Wrong number of frequency points used')
             !Find isotropic part
@@ -4178,7 +4287,7 @@ module SelfConsistentLR
     !Can optionally be computed in real (default) or matsubara axis
     !Can optionally take a periodic lattice hamiltonian on which to calculate greens function (will then not use self-energy)
     !Can optionally take a coupling length for the non-local terms of the matrix, which should speed up the FT to k-space
-    subroutine FindLocalMomGF(n,SE,LocalMomGF,tMatbrAxis,ham,CouplingLength,evals)
+    subroutine FindLocalMomGF(n,SE,LocalMomGF,tMatbrAxis,ham,CouplingLength,evals,FreqPoints)
         use matrixops, only: mat_inv
         implicit none
         integer, intent(in) :: n
@@ -4188,6 +4297,7 @@ module SelfConsistentLR
         real(dp), intent(in), optional :: ham(nSites,nSites)
         integer, intent(in), optional :: CouplingLength
         real(dp), intent(in), optional :: evals(:)
+        real(dp), intent(in), optional :: FreqPoints(n)
         complex(dp), allocatable :: k_Ham(:,:),CompHam(:,:),cWork(:)
         complex(dp), allocatable :: RVec(:,:),LVec(:,:),W_Vals(:),ztemp(:,:)
         complex(dp) :: InvMat(nImp,nImp),ztemp2(nImp,nImp)
@@ -4246,7 +4356,10 @@ module SelfConsistentLR
             
             i = 0
             do while(.true.)
-                call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis_)
+                if(present(FreqPoints) then
+                    call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis_)
+                else
+                    call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis_,nFreqPoints=n,FreqPoints=FreqPoints)
                 if(i.lt.0) exit
                 if(i.gt.n) call stop_all(t_r,'Too many freq points')
 
@@ -4413,7 +4526,7 @@ module SelfConsistentLR
     end subroutine FindLocalMomGF
                 
     !Find the jacobian matrix for the optimization (in a few cases)
-    subroutine CalcJacobian(n,CouplingLength,DiffMatr,DiffMat,Jacobian,evals,tMatbrAxis)
+    subroutine CalcJacobian(n,CouplingLength,DiffMatr,DiffMat,Jacobian,evals,tMatbrAxis,FreqPoints,Weights)
         implicit none
         integer, intent(in) :: n    !Number of frequency points
         integer, intent(in) :: CouplingLength   !The number of variables
@@ -4422,16 +4535,23 @@ module SelfConsistentLR
         real(dp), intent(out) :: Jacobian(n,CouplingLength) !The compressed Jacobian
         real(dp), intent(in) :: evals(CouplingLength)
         logical, intent(in) :: tMatbrAxis
+        real(dp), intent(in), optional :: FreqPoints(n),Weights(n)
 
         real(dp) :: mu,Omega,denom1,denom2,num,termr,termi
         real(dp), allocatable :: evals_full(:),FullJac(:,:)
         integer :: i,k
+        logical :: tNonStandardGrid
         character(len=*), parameter :: t_r='CalcJacobian'
 
         if(nImp.gt.1) call stop_all(t_r,'Cannot do for more than 1 impurity yet')
         if(.not.tMatbrAxis) call stop_all(t_r,'Cannot do gradients on real axis yet')
         if(iLatticeFitType.ne.1) call stop_all(t_r,'Cannot do gradients with non-linear objective functions yet')
         if(.not.tOptGF_EVals) call stop_all(t_r,'Cannot do gradients when optimizing lattice couplings rather than eigenvalues')
+        if(present(FreqPoints)) then
+            tNonStandardGrid = .true.
+        else
+            tNonStandardGrid = .false.
+        endif
         if(.not.tAnderson) then
             !In the hubbard model, apply a chemical potential of U/2
             !This should really be passed in
@@ -4449,7 +4569,11 @@ module SelfConsistentLR
         do k = 1,nSites
             i=0
             do while(.true.)
-                call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis)
+                if(tNonStandardGrid) then
+                    call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis,nFreqPoints=n,FreqPoints=FreqPoints)
+                else
+                    call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis)
+                endif
                 if(i.lt.0) exit
 
                 denom1 = Omega**2 + (mu - evals_full(k))**2
@@ -4460,6 +4584,7 @@ module SelfConsistentLR
                 termi = 2.0_dp*Omega*(mu - evals_full(k))*num/denom2
 
                 FullJac(i,k) = (one/DiffMatr(1,1,i))*(real(DiffMat(1,1,i),dp)*termr - aimag(DiffMat(1,1,i))*termi)
+                call stop_all(t_r,'Put in the weights here somewhere.')
                 if(iFitGFWeighting.eq.1) then
                     FullJac(i,k) = FullJac(i,k)/sqrt(abs(Omega))
                 elseif(iFitGFWeighting.eq.2) then
@@ -4493,5 +4618,61 @@ module SelfConsistentLR
         deallocate(FullJac)
 
     end subroutine CalcJacobian
+
+    !From numerical recepies - Find Legendre points and weights between interval
+    subroutine gauleg(x1,x2,x,w,n)
+        implicit none
+        integer, intent(in) :: n
+        real(dp), intent(in) :: x1,x2
+        real(dp), intent(out) :: x(n),w(n)
+        real(dp), parameter :: eps=3.0e-14_dp   !Relative precision
+        !Given the lower and upper limits of integration x1 and x2,
+        !and given n, this routine returns arrays x(1:n) and w(1:n) of length
+        !n, containing the abscissas and weights of the Gauss-Legendre n-point quadrature formula
+        integer :: i,j,m
+        real(dp) :: p1,p2,p3,pp,xl,xm,z,z1
+        
+        m = (n+1)/2     !Roots are symmetric in the interval, so we only have to find half of them
+        xm = 0.5_dp*(x2+x1)
+        xl = 0.5_dp*(x2-x1)
+        do i = 1,m      !Loop over desired roots
+            z = cos(pi*(i-0.25_dp)/(n + 0.5_dp))
+            !Starting with the above approximation to the ith root, we enter the
+            !main loop of refinement by Newtons method
+1           continue
+            p1 = one
+            p2 = zero
+            do j = 1,n
+                p3 = p2
+                p2 = p1
+                p1 = ((2.0_dp*j-1.0_dp)*z*p2-(j-one)*p3)/j
+            enddo
+            !p1 is now the desired Legendre polynomial. We next computer pp,
+            !its derivative, by a standard relation involving also p2, the
+            !polynomial of one lower order
+            pp = n*(z*p1-p2)/(z*z-one)
+            z1 = z
+            z = z1-p1/pp                    !Newtons method
+            if(abs(z-z1).gt.eps) goto 1
+            x(i) = xm-xl*z                  !Scale the root by the desired inteval
+            x(n+1-i) = xm+xl*z              !and put in its symmetric counterpart
+            w(i) = 2.0_dp*xl/((one-z*z)*pp*pp)  !Compute weight
+            w(n+1-i) = w(i)                     !and symmetric counterpart
+        enddo
+
+    end subroutine gauleg 
+
+    !Scale the legendre abscissas and weights to the range \pm infty
+    subroutine ScaleFreqPointsWeights(n,f,w)
+        implicit none
+        integer, intent(in) :: n
+        real(dp), intent(inout) :: w(n),f(n)
+        integer :: i
+
+        do i = 1,n
+            w(i) = w(i)*((one + f(i)**2)/(one - f(i)**2)**2)
+            f(i) = -f(i)/(one-f(i)**2)
+        enddo
+    end subroutine ScaleFreqPointsWeights
 
 end module SelfConsistentLR

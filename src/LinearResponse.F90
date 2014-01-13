@@ -13,7 +13,7 @@ module LinearResponse
     
     !Calculate linear response for charged excitations - add the hole creation to particle creation
     !This is a tester routine to calculate the whole GF matrix, and include an optional self-energy in the bath construction
-    subroutine SchmidtGF_wSE(G_Mat,GFChemPot,SE,nESteps,tMatbrAxis,ham)
+    subroutine SchmidtGF_wSE(G_Mat,GFChemPot,SE,nESteps,tMatbrAxis,ham,FreqPoints)
         use mat_tools, only: add_localpot_comp_inplace
         use utils, only: get_free_unit,append_ext_real,append_ext
         use DetBitOps, only: DecodeBitDet,SQOperator,CountBits
@@ -29,6 +29,7 @@ module LinearResponse
         complex(dp), intent(out) :: G_Mat(nImp,nImp,nESteps)
         logical, intent(in), optional :: tMatbrAxis
         real(dp), intent(in), optional :: ham(nSites,nSites)
+        real(dp), intent(in), optional :: FreqPoints(nESteps)
         logical :: tMatbrAxis_,tLatHamProvided_
         complex(dp), allocatable :: NFCIHam(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
         real(dp), allocatable :: dNorm_p(:),dNorm_h(:),W(:),temp(:,:),ham_schmidt(:,:),Emb_h_fit(:,:)
@@ -458,7 +459,11 @@ module LinearResponse
 
         OmegaVal = 0
         do while(.true.)
-            call GetNextOmega(Omega,OmegaVal,tMatbrAxis_)
+            if(present(FreqPoints) then
+                call GetNextOmega(Omega,OmegaVal,tMatbrAxis_,nFreqPoints=nESteps,FreqPoints=FreqPoints)
+            else
+                call GetNextOmega(Omega,OmegaVal,tMatbrAxis_)
+            endif
             if(OmegaVal.lt.0) exit
             if(OmegaVal.gt.nESteps) call stop_all(t_r,'More frequency points than anticipated')
 
@@ -9493,26 +9498,45 @@ module LinearResponse
     !Get next omega value for optionally real/matsubara axis
     !OmegaVal = 0 on input initializes
     !OmegaVal = -1 on exit means we have finished
-    subroutine GetNextOmega(Omega,OmegaVal,tMatbrAxis)
+    subroutine GetNextOmega(Omega,OmegaVal,tMatbrAxis,nFreqPoints,FreqPoints)
         implicit none
         real(dp), intent(inout) :: Omega
         integer, intent(inout) :: OmegaVal
         logical, intent(in) :: tMatbrAxis
+        integer, intent(in), optional :: nFreqPoints
+        real(dp), intent(in), optional :: FreqPoints(:)
 
 !        write(6,*) "In Get Next Omega: ",OmegaVal
+        if(present(FreqPoints)) then
+            tUseFreqArray = .true.
+        else
+            tUseFreqArray = .false.
+        endif
 
         if(OmegaVal.eq.0) then
-            if(tMatbrAxis) then
-                Omega = Start_Omega_Im
+            if(tUseFreqArray) then
+                Omega = FreqPoints(1)
             else
-                Omega = Start_Omega
+                if(tMatbrAxis) then
+                    Omega = Start_Omega_Im
+                else
+                    Omega = Start_Omega
+                endif
             endif
             OmegaVal = OmegaVal + 1
 !            write(6,*) "Returned Omega: ",Omega
             return
         endif
 
-        if(tMatbrAxis) then
+        if(tUseFreqArray) then
+            if(.not.present(nFreqPoints)) call stop_all(t_r,'Error here')
+            if(OmegaVal.eq.nFreqPoints) then
+                OmegaVal = -1
+                return
+            else
+                Omega = FreqPoints(OmegaVal+1)
+            endif
+        elseif(tMatbrAxis) then
             !Omega = Omega + Omega_Step_Im
             Omega = Start_Omega_Im + OmegaVal*Omega_Step_Im
             if((Omega.gt.(max(Start_Omega_Im,End_Omega_Im)+1.0e-6_dp))  &
