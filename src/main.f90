@@ -143,6 +143,8 @@ Program RealHub
         tphsym = .false.            !Impose ph symmetry in the fitting
         dShiftLatticeEvals = zero   !Shift read in lattice eigenvalues?
         tFitRealFreq = .false.      !Fit on matsubara axis by default
+        tFitPoints_Legendre = .false.   !Fit to Legendre points
+        nFreqPoints = 0             !Number of points to fit
 
     end subroutine set_defaults
 
@@ -639,6 +641,9 @@ Program RealHub
                 tKPntSymFit = .true.        !Conserve k-point symmetry = 0 in fitting
             case("IMPOSE_PH_SYM")
                 tphsym = .true.             !Impose ph sym
+            case("LEGENDRE_GRID")           
+                call readi(nFreqPoints)
+                tFitPoints_Legendre = .true.    !Legendre fitting
             case("REUSE_SELFENERGY")
                 call readi(iReuse_SE)
             case("MANYBODY_SELFENERGY")

@@ -223,6 +223,8 @@ module Globals
     logical :: tphsym               !Impose ph sym in fit
     real(dp) :: dShiftLatticeEvals  !Potentially a shift for the read in lattice eigenvalues
     logical :: tFitRealFreq         !Which axis to do the fit on?
+    logical :: tFitPoints_Legendre  !Fit on legendre quadrature points
+    integer :: nFreqPoints          !Number of Legendre quadrature points to fit
 
     !Debugging for Self-consistency
     logical :: tSE_Scan

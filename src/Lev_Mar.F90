@@ -17,7 +17,7 @@ PUBLIC :: lmdif1, lmdif, lmder1, lmder, enorm
 CONTAINS
 
 
-SUBROUTINE lmdif1(fcn, m, n, x, fvec, tol, info, iwa, maxfev, nESteps, G, tMat)
+SUBROUTINE lmdif1(fcn, m, n, x, fvec, tol, info, iwa, maxfev, nESteps, G, tMat, tGrid, Freqs, Weights)
  
 ! Code converted using TO_F90 by Alan Miller
 ! Date: 1999-12-11  Time: 00:51:44
@@ -34,12 +34,15 @@ INTEGER, INTENT(OUT)       :: iwa(:)
 INTEGER, INTENT(IN)        :: nESteps
 COMPLEX(dp), INTENT(IN)    :: G(nImp,nImp,nESteps)
 LOGICAL, INTENT(IN)        :: tMat
-INTEGER, INTENT(INOUT)        :: maxfev
+INTEGER, INTENT(INOUT)     :: maxfev
+LOGICAL, INTENT(IN)        :: tGrid
+REAL(dp), INTENT(IN)       :: Freqs(nESteps)
+REAL(dp), INTENT(IN)       :: Weights(nESteps)
 
 ! EXTERNAL fcn
 
 INTERFACE
-  SUBROUTINE fcn(m, n, x, fvec, iflag, nESteps, G, tMat, fjac_dim)
+  SUBROUTINE fcn(m, n, x, fvec, iflag, nESteps, G, tMat, tGrid, fjac_dim, Freqs, Weights)
     use const, only: dp
     use Globals, only: nImp
     IMPLICIT NONE
@@ -50,7 +53,10 @@ INTERFACE
     INTEGER, INTENT(IN)        :: nESteps
     COMPLEX(dp), INTENT(IN)    :: G(nImp,nImp,nESteps)
     LOGICAL, INTENT(IN)        :: tMat 
+    LOGICAL, INTENT(IN)        :: tGrid
     REAL(dp), INTENT(INOUT), OPTIONAL :: fjac_dim(m,n)
+    REAL(dp), INTENT(IN), OPTIONAL :: Freqs(nESteps)
+    REAL(dp), INTENT(IN), OPTIONAL :: Weights(nESteps)
   END SUBROUTINE fcn
 END INTERFACE
 
@@ -169,7 +175,7 @@ epsfcn = zero
 mode = 1
 nprint = 0 
 CALL lmdif(fcn, m, n, x, fvec, ftol, xtol, gtol, maxfev, epsfcn,   &
-           mode, factor, nprint, info, nfev, fjac, iwa, nESteps, G, tMat)
+           mode, factor, nprint, info, nfev, fjac, iwa, nESteps, G, tMat, tGrid, Freqs, Weights)
 IF (info == 8) info = 4
 
 10 RETURN
@@ -181,7 +187,7 @@ END SUBROUTINE lmdif1
 
 
 SUBROUTINE lmdif(fcn, m, n, x, fvec, ftol, xtol, gtol, maxfev, epsfcn,  &
-                 mode, factor, nprint, info, nfev, fjac, ipvt, nESteps, G, tMat)
+                 mode, factor, nprint, info, nfev, fjac, ipvt, nESteps, G, tMat, tGrid, Freqs, Weights)
  
 ! N.B. Arguments LDFJAC, DIAG, QTF, WA1, WA2, WA3 & WA4 have been removed.
 
@@ -204,11 +210,14 @@ INTEGER, INTENT(OUT)       :: ipvt(:)
 INTEGER, INTENT(IN)        :: nESteps
 COMPLEX(dp), INTENT(IN)    :: G(nImp,nImp,nESteps)
 LOGICAL, INTENT(IN)        :: tMat
+LOGICAL, INTENT(IN)        :: tGrid
+REAL(dp), INTENT(IN)       :: Freqs(nESteps)
+REAL(dp), INTENT(IN)       :: Weights(nESteps)
 
 ! EXTERNAL fcn
 
 INTERFACE
-  SUBROUTINE fcn(m, n, x, fvec, iflag, nESteps, G, tMat, fjac_dum)
+  SUBROUTINE fcn(m, n, x, fvec, iflag, nESteps, G, tMat, tGrid, fjac_dum, Freqs, Weights)
     use const, only: dp
     use Globals, only: nImp
     IMPLICIT NONE
@@ -219,7 +228,10 @@ INTERFACE
     INTEGER, INTENT(IN)        :: nESteps
     COMPLEX(dp), INTENT(IN)    :: G(nImp,nImp,nESteps)
     LOGICAL, INTENT(IN)        :: tMat
+    LOGICAL, INTENT(IN)        :: tGrid
     REAL(dp), INTENT(INOUT), OPTIONAL :: fjac_dum(m,n)
+    REAL(dp), INTENT(IN), OPTIONAL :: Freqs(nESteps)
+    REAL(dp), INTENT(IN), OPTIONAL :: Weights(nESteps)
   END SUBROUTINE fcn
 END INTERFACE
 
@@ -416,7 +428,7 @@ END DO
 !     evaluate the function at the starting point and calculate its norm.
 
 20 iflag = 1
-CALL fcn(m, n, x, fvec, iflag, nESteps, G, tMat)
+CALL fcn(m, n, x, fvec, iflag, nESteps, G, tMat, tGrid, Freqs=Freqs, Weights=Weights)
 nfev = 1
 IF (iflag < 0) GO TO 300
 fnorm = enorm(m, fvec)
@@ -431,7 +443,7 @@ iter = 1
 !        calculate the jacobian matrix.
 
 30 iflag = 2
-CALL fdjac2(fcn, m, n, x, fvec, fjac, iflag, epsfcn, nESteps, G, tMat)
+CALL fdjac2(fcn, m, n, x, fvec, fjac, iflag, epsfcn, nESteps, G, tMat, tGrid, Freqs, Weights)
 nfev = nfev + n
 IF (iflag < 0) GO TO 300
 
@@ -439,7 +451,7 @@ IF (iflag < 0) GO TO 300
 
 IF (nprint <= 0) GO TO 40
 iflag = 0
-IF (MOD(iter-1,nprint) == 0) CALL fcn(m, n, x, fvec, iflag, nESteps, G, tMat)
+IF (MOD(iter-1,nprint) == 0) CALL fcn(m, n, x, fvec, iflag, nESteps, G, tMat, tGrid, Freqs=Freqs, Weights=Weights)
 IF (iflag < 0) GO TO 300
 
 !        Compute the qr factorization of the jacobian.
@@ -526,7 +538,7 @@ IF (iter == 1) delta = MIN(delta, pnorm)
 !           evaluate the function at x + p and calculate its norm.
 
 iflag = 1
-CALL fcn(m, n, wa2, wa4, iflag, nESteps, G, tMat)
+CALL fcn(m, n, wa2, wa4, iflag, nESteps, G, tMat, tGrid, Freqs=Freqs, Weights=Weights)
 nfev = nfev + 1
 IF (iflag < 0) GO TO 300
 fnorm1 = enorm(m, wa4)
@@ -615,7 +627,7 @@ GO TO 30
 
 300 IF (iflag < 0) info = iflag
 iflag = 0
-IF (nprint > 0) CALL fcn(m, n, x, fvec, iflag, nESteps, G, tMat)
+IF (nprint > 0) CALL fcn(m, n, x, fvec, iflag, nESteps, G, tMat, tGrid, Freqs=Freqs, Weights=Weights)
 RETURN
 
 !     last card of subroutine lmdif.
@@ -624,7 +636,7 @@ END SUBROUTINE lmdif
 
 
 
-SUBROUTINE lmder1(fcn, m, n, x, fvec, fjac, tol, info, ipvt, maxfev, nESteps, G, tMat)
+SUBROUTINE lmder1(fcn, m, n, x, fvec, fjac, tol, info, ipvt, maxfev, nESteps, G, tMat, tGrid, Freqs, Weights)
  
 ! Code converted using TO_F90 by Alan Miller
 ! Date: 1999-12-09  Time: 12:45:54
@@ -643,11 +655,14 @@ INTEGER, INTENT(IN)        :: nESteps
 COMPLEX(dp), INTENT(IN)    :: G(nImp,nImp,nESteps)
 LOGICAL, INTENT(IN)        :: tMat
 INTEGER, INTENT(INOUT)     :: Maxfev
+LOGICAL, INTENT(IN)        :: tGrid
+REAL(dp), INTENT(IN)       :: Freqs(nESteps)
+REAL(dp), INTENT(IN)       :: Weights(nESteps)
 
 ! EXTERNAL fcn
 
 INTERFACE
-  SUBROUTINE fcn(m, n, x, fvec, iflag, nESteps, G, tMat, fjac)
+  SUBROUTINE fcn(m, n, x, fvec, iflag, nESteps, G, tMat, tGrid, fjac, Freqs, Weights)
     use const, only: dp
     use Globals, only: nImp
     IMPLICIT NONE
@@ -658,7 +673,10 @@ INTERFACE
     INTEGER, INTENT(IN)        :: nESteps
     COMPLEX(dp), INTENT(IN)    :: G(nImp,nImp,nESteps)
     LOGICAL, INTENT(IN)        :: tMat
+    LOGICAL, INTENT(IN)        :: tGrid
     REAL (dp), INTENT(INOUT), OPTIONAL     :: fjac(m,n)
+    REAL(dp), INTENT(IN), OPTIONAL :: Freqs(nESteps)
+    REAL(dp), INTENT(IN), OPTIONAL :: Weights(nESteps)
   END SUBROUTINE fcn
 END INTERFACE
 
@@ -798,7 +816,7 @@ gtol = zero
 mode = 1
 nprint = 0 
 CALL lmder(fcn, m, n, x, fvec, fjac, ftol, xtol, gtol, maxfev,  &
-           mode, factor, nprint, info, nfev, njev, ipvt, nESteps, G, tMat)
+           mode, factor, nprint, info, nfev, njev, ipvt, nESteps, G, tMat, tGrid, Freqs, Weights)
 IF (info == 8) info = 4
 
 10 RETURN
@@ -810,7 +828,7 @@ END SUBROUTINE lmder1
 
 
 SUBROUTINE lmder(fcn, m, n, x, fvec, fjac, ftol, xtol, gtol, maxfev, &
-                 mode, factor, nprint, info, nfev, njev, ipvt, nESteps, G, tMat)
+                 mode, factor, nprint, info, nfev, njev, ipvt, nESteps, G, tMat, tGrid, Freqs, Weights)
  
 ! Code converted using TO_F90 by Alan Miller
 ! Date: 1999-12-09  Time: 12:45:50
@@ -836,9 +854,12 @@ INTEGER, INTENT(OUT)       :: ipvt(:)
 INTEGER, INTENT(IN)        :: nESteps
 COMPLEX(dp), INTENT(IN)    :: G(nImp,nImp,nESteps)
 LOGICAL, INTENT(IN)        :: tMat
+LOGICAL, INTENT(IN)        :: tGrid
+REAL(dp), INTENT(IN)       :: Freqs(nESteps)
+REAL(dp), INTENT(IN)       :: Weights(nESteps)
 
 INTERFACE
-  SUBROUTINE fcn(m, n, x, fvec, iflag, nESteps, G, tMat, fjac)
+  SUBROUTINE fcn(m, n, x, fvec, iflag, nESteps, G, tMat, tGrid, fjac, Freqs, Weights)
     use const, only: dp
     use Globals, only: nImp
     IMPLICIT NONE
@@ -849,7 +870,10 @@ INTERFACE
     INTEGER, INTENT(IN)        :: nESteps
     COMPLEX(dp), INTENT(IN)    :: G(nImp,nImp,nESteps)
     LOGICAL, INTENT(IN)        :: tMat
+    LOGICAL, INTENT(IN)        :: tGrid
     REAL (dp), INTENT(INOUT), OPTIONAL     :: fjac(m,n)
+    REAL(dp), INTENT(IN), OPTIONAL :: Freqs(nESteps)
+    REAL(dp), INTENT(IN), OPTIONAL :: Weights(nESteps)
   END SUBROUTINE fcn
 END INTERFACE
 
@@ -1051,7 +1075,7 @@ END DO
 !     evaluate the function at the starting point and calculate its norm.
 
 20 iflag = 1
-CALL fcn(m, n, x, fvec, iflag, nESteps, G, tMat, fjac)
+CALL fcn(m, n, x, fvec, iflag, nESteps, G, tMat, tGrid, fjac, Freqs=Freqs, Weights=Weights)
 nfev = 1
 IF (iflag < 0) GO TO 300
 fnorm = enorm(m, fvec)
@@ -1066,7 +1090,7 @@ iter = 1
 !        calculate the jacobian matrix.
 
 30 iflag = 2
-CALL fcn(m, n, x, fvec, iflag, nESteps, G, tMat, fjac)
+CALL fcn(m, n, x, fvec, iflag, nESteps, G, tMat, tGrid, fjac, Freqs=Freqs, Weights=Weights)
 njev = njev + 1
 IF (iflag < 0) GO TO 300
 
@@ -1074,7 +1098,7 @@ IF (iflag < 0) GO TO 300
 
 IF (nprint <= 0) GO TO 40
 iflag = 0
-IF (MOD(iter-1,nprint) == 0) CALL fcn(m, n, x, fvec, iflag, nESteps, G, tMat, fjac)
+IF (MOD(iter-1,nprint) == 0) CALL fcn(m, n, x, fvec, iflag, nESteps, G, tMat, tGrid, fjac, Freqs=Freqs, Weights=Weights)
 IF (iflag < 0) GO TO 300
 
 !        compute the qr factorization of the jacobian.
@@ -1161,7 +1185,7 @@ IF (iter == 1) delta = MIN(delta,pnorm)
 !           evaluate the function at x + p and calculate its norm.
 
 iflag = 1
-CALL fcn(m, n, wa2, wa4, iflag, nESteps, G, tMat, fjac)
+CALL fcn(m, n, wa2, wa4, iflag, nESteps, G, tMat, tGrid, fjac, Freqs=Freqs, Weights=Weights)
 nfev = nfev + 1
 IF (iflag < 0) GO TO 300
 fnorm1 = enorm(m, wa4)
@@ -1248,7 +1272,7 @@ GO TO 30
 
 300 IF (iflag < 0) info = iflag
 iflag = 0
-IF (nprint > 0) CALL fcn(m, n, x, fvec, iflag, nESteps, G, tMat, fjac)
+IF (nprint > 0) CALL fcn(m, n, x, fvec, iflag, nESteps, G, tMat, tGrid, fjac, Freqs=Freqs, Weights=Weights)
 RETURN
 
 !     last card of subroutine lmder.
@@ -1960,7 +1984,7 @@ END FUNCTION enorm
 
 
 
-SUBROUTINE fdjac2(fcn, m, n, x, fvec, fjac, iflag, epsfcn, nESteps, G, tMat)
+SUBROUTINE fdjac2(fcn, m, n, x, fvec, fjac, iflag, epsfcn, nESteps, G, tMat, tGrid, Freqs, Weights)
  
 ! Code converted using TO_F90 by Alan Miller
 ! Date: 1999-12-09  Time: 12:45:44
@@ -1977,9 +2001,12 @@ REAL (dp), INTENT(IN)      :: epsfcn
 INTEGER, INTENT(IN)        :: nESteps
 COMPLEX(dp), INTENT(IN)    :: G(nImp,nImp,nESteps)
 LOGICAL, INTENT(IN)        :: tMat
+LOGICAL, INTENT(IN)        :: tGrid
+REAL(dp), INTENT(IN)       :: Freqs(nESteps)
+REAL(dp), INTENT(IN)       :: Weights(nESteps)
 
 INTERFACE
-  SUBROUTINE fcn(m, n, x, fvec, iflag, nESteps, G, tMat, fjac_dum)
+  SUBROUTINE fcn(m, n, x, fvec, iflag, nESteps, G, tMat, tGrid, fjac_dum, Freqs, Weights)
     use const, only: dp
     use Globals, only: nImp
     IMPLICIT NONE
@@ -1990,7 +2017,10 @@ INTERFACE
     INTEGER, INTENT(IN)        :: nESteps
     COMPLEX(dp), INTENT(IN)    :: G(nImp,nImp,nESteps)
     LOGICAL, INTENT(IN)        :: tMat
+    LOGICAL, INTENT(IN)        :: tGrid
     REAL(dp), INTENT(INOUT), OPTIONAL :: fjac_dum(m,n)
+    REAL(dp), INTENT(IN), OPTIONAL :: Freqs(nESteps)
+    REAL(dp), INTENT(IN), OPTIONAL :: Weights(nESteps)
   END SUBROUTINE fcn
 END INTERFACE
 
@@ -2080,7 +2110,7 @@ DO  j = 1, n
   h = eps*ABS(temp)
   IF (h == zero) h = eps
   x(j) = temp + h
-  CALL fcn(m, n, x, wa, iflag, nESteps, G, tMat)
+  CALL fcn(m, n, x, wa, iflag, nESteps, G, tMat, tGrid, Freqs=Freqs, Weights=Weights)
   IF (iflag < 0) EXIT
   x(j) = temp
   fjac(1:m,j) = (wa(1:m) - fvec(1:m))/h

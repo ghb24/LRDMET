@@ -459,7 +459,7 @@ module LinearResponse
 
         OmegaVal = 0
         do while(.true.)
-            if(present(FreqPoints) then
+            if(present(FreqPoints)) then
                 call GetNextOmega(Omega,OmegaVal,tMatbrAxis_,nFreqPoints=nESteps,FreqPoints=FreqPoints)
             else
                 call GetNextOmega(Omega,OmegaVal,tMatbrAxis_)
@@ -9505,6 +9505,8 @@ module LinearResponse
         logical, intent(in) :: tMatbrAxis
         integer, intent(in), optional :: nFreqPoints
         real(dp), intent(in), optional :: FreqPoints(:)
+        logical :: tUseFreqArray
+        character(len=*), parameter :: t_r='GetNextOmega'
 
 !        write(6,*) "In Get Next Omega: ",OmegaVal
         if(present(FreqPoints)) then

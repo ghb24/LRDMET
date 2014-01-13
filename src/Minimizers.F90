@@ -12,7 +12,7 @@ CONTAINS
 
 !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% uobyqa.f %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
  
-SUBROUTINE uobyqa(n, x, rhobeg, rhoend, iprint, maxfun, f, calfun, n_dum, g_dum, tMataxis_dum)
+SUBROUTINE uobyqa(n, x, rhobeg, rhoend, iprint, maxfun, f, calfun, n_dum, g_dum, tMataxis_dum, tGrid, Freqs, Weights)
 
 INTEGER, INTENT(IN)        :: n
 REAL (dp), INTENT(IN OUT)  :: x(:)
@@ -24,9 +24,12 @@ REAL(dp), INTENT(OUT)      :: f
 INTEGER, INTENT(IN)        :: n_dum
 COMPLEX(dp), INTENT(IN)    :: g_dum(nImp,nImp,n_dum)
 LOGICAL, INTENT(IN)        :: tMataxis_dum
+LOGICAL, INTENT(IN)        :: tGrid
+REAL(dp), INTENT(IN)       :: Freqs(n_dum)
+REAL(dp), INTENT(IN)       :: Weights(n_dum)
 
 INTERFACE
-  SUBROUTINE calfun(x, f, n_dum, n, g_dum, tMataxis_dum)
+  SUBROUTINE calfun(x, f, n_dum, n, g_dum, tMataxis_dum, tGrid, Freqs, Weights)
     use const, only: dp
     use Globals, only: nImp
     IMPLICIT NONE
@@ -35,6 +38,9 @@ INTERFACE
     REAL (dp), INTENT(OUT) :: f
     complex(dp), intent(in) :: g_dum(nImp,nImp,n_dum)
     logical, intent(in) :: tMataxis_dum
+    logical, intent(in) :: tGrid
+    real(dp), intent(in), optional :: Freqs(n_dum)
+    real(dp), intent(in), optional :: Weights(n_dum)
   END SUBROUTINE calfun
 END INTERFACE
 
@@ -73,13 +79,13 @@ INTEGER  :: npt
 !     treated separately by the subroutine that performs the main calculation.
 
 npt = (n*n + 3*n + 2) / 2
-CALL uobyqb(n, x, rhobeg, rhoend, iprint, maxfun, f, npt, calfun, n_dum, g_dum, tMataxis_dum)
+CALL uobyqb(n, x, rhobeg, rhoend, iprint, maxfun, f, npt, calfun, n_dum, g_dum, tMataxis_dum, tGrid, Freqs, Weights)
 RETURN
 END SUBROUTINE uobyqa
 
 !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% uobyqb.f %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-SUBROUTINE uobyqb(n, x, rhobeg, rhoend, iprint, maxfun, f, npt, calfun, n_dum, g_dum, tMataxis_dum)
+SUBROUTINE uobyqb(n, x, rhobeg, rhoend, iprint, maxfun, f, npt, calfun, n_dum, g_dum, tMataxis_dum, tGrid, Freqs, Weights)
 
 INTEGER, INTENT(IN)        :: n
 REAL (dp), INTENT(IN OUT)  :: x(:)
@@ -92,9 +98,12 @@ INTEGER, INTENT(IN)        :: npt
 INTEGER, INTENT(IN)        :: n_dum
 COMPLEX(dp), INTENT(IN)    :: g_dum(nImp,nImp,n_dum)
 LOGICAL, INTENT(IN)        :: tMataxis_dum
+LOGICAL, INTENT(IN)        :: tGrid
+REAL(dp), INTENT(IN) :: Freqs(n_dum)
+REAL(dp), INTENT(IN) :: Weights(n_dum)
 
 INTERFACE
-  SUBROUTINE calfun(x, f, n_dum, n, g_dum, tMataxis_dum)
+  SUBROUTINE calfun(x, f, n_dum, n, g_dum, tMataxis_dum, tGrid, Freqs, Weights)
     use const, only: dp
     use Globals, only: nImp
     IMPLICIT NONE
@@ -103,6 +112,9 @@ INTERFACE
     REAL (dp), INTENT(OUT) :: f
     complex(dp), intent(in) :: g_dum(nImp,nImp,n_dum)
     logical, intent(in) :: tMataxis_dum
+    logical, intent(in) :: tGrid
+    real(dp), intent(in), optional :: Freqs(n_dum)
+    real(dp), intent(in), optional :: Weights(n_dum)
   END SUBROUTINE calfun
 END INTERFACE
 
@@ -311,7 +323,7 @@ END DO
   GO TO 420
 END IF
 nf = nf + 1
-CALL calfun(x, f, n_dum, n, g_dum, tMataxis_dum)
+CALL calfun(x, f, n_dum, n, g_dum, tMataxis_dum, tGrid, Freqs, Weights)
 IF (iprint == 3) THEN
   WRITE(*, 5100) nf, f, x(1:n)
 END IF
@@ -1186,7 +1198,7 @@ END SUBROUTINE lagmax
 
 
 SUBROUTINE minim(p, step, nop, func, maxfn, iprint, stopcr, nloop, iquad,  &
-                 simp, var, functn, ifault, n_dum, g_dum, tMataxis_dum)
+                 simp, var, functn, ifault, n_dum, g_dum, tMataxis_dum, tGrid, Freqs, Weights)
 
 !     A PROGRAM FOR FUNCTION MINIMIZATION USING THE SIMPLEX METHOD.
 
@@ -1268,9 +1280,12 @@ REAL (dp), INTENT(OUT)     :: var(:), func
 integer, intent(in) :: n_dum
 complex(dp), intent(in) :: g_dum(nImp,nImp,n_dum)
 logical, intent(in) :: tMataxis_dum
+logical, intent(in) :: tGrid
+real(dp), intent(in) :: Freqs(n_dum)
+real(dp), intent(in) :: Weights(n_dum)
 
 INTERFACE
-  SUBROUTINE functn(p, func, n_dum, nop, g_dum, tMataxis_dum)
+  SUBROUTINE functn(p, func, n_dum, nop, g_dum, tMataxis_dum, tGrid, Freqs, Weights)
     use const, only: dp
     use Globals, only: nImp
     IMPLICIT NONE
@@ -1280,6 +1295,9 @@ INTERFACE
     REAL (dp), INTENT(OUT) :: func
     complex(dp), intent(in) :: g_dum(nImp,nImp,n_dum)
     logical, intent(in) :: tMataxis_dum
+    logical, intent(in) :: tGrid
+    real(dp), intent(in), optional :: Freqs(n_dum)
+    real(dp), intent(in), optional :: Weights(n_dum)
   END SUBROUTINE functn
 END INTERFACE
 
@@ -1327,7 +1345,7 @@ iflag = 0
 !     IF NAP = 0 EVALUATE FUNCTION AT THE STARTING POINT AND RETURN
 
 IF (nap <= 0) THEN
-  CALL functn(p,func, n_dum, nop, g_dum, tMataxis_dum)
+  CALL functn(p,func, n_dum, nop, g_dum, tMataxis_dum, tGrid, Freqs, Weights)
   RETURN
 END IF
 
@@ -1346,7 +1364,7 @@ END DO
 np1 = nap + 1
 DO i = 1, np1
   p = g(i,:)
-  CALL functn(p,h(i), n_dum,nop,g_dum,tMataxis_dum)
+  CALL functn(p,h(i), n_dum,nop,g_dum,tMataxis_dum, tGrid, Freqs, Weights)
   neval = neval + 1
   IF (iprint > 0) THEN
     WRITE (lout,5100) neval, h(i), p
@@ -1390,7 +1408,7 @@ Main_loop: DO
 !     HSTAR = FUNCTION VALUE AT PSTAR.
 
   pstar = a * (pbar - g(imax,:)) + pbar
-  CALL functn(pstar,hstar,n_dum,nop,g_dum,tmataxis_dum)
+  CALL functn(pstar,hstar,n_dum,nop,g_dum,tmataxis_dum, tGrid, Freqs, Weights)
   neval = neval + 1
   IF (iprint > 0) THEN
     IF (MOD(neval,iprint) == 0) then
@@ -1404,7 +1422,7 @@ Main_loop: DO
 
   IF (hstar < hmin) THEN
     pstst = c * (pstar - pbar) + pbar
-    CALL functn(pstst,hstst, n_dum,nop,g_dum,tMataxis_dum)
+    CALL functn(pstst,hstst, n_dum,nop,g_dum,tMataxis_dum, tGrid, Freqs, Weights)
     neval = neval + 1
     IF (iprint > 0) THEN
       IF (MOD(neval,iprint) == 0) then
@@ -1453,7 +1471,7 @@ Main_loop: DO
 !     HSTST = FUNCTION VALUE AT PSTST.
 
   pstst = b * g(imax,:) + (one-b) * pbar
-  CALL functn(pstst,hstst, n_dum,nop,g_dum,tMataxis_dum)
+  CALL functn(pstst,hstst, n_dum,nop,g_dum,tMataxis_dum, tGrid, Freqs, Weights)
   neval = neval + 1
   IF (iprint > 0) THEN
     IF (MOD(neval,iprint) == 0) then
@@ -1481,7 +1499,7 @@ Main_loop: DO
         IF (step(j) /= zero) g(i,j) = (g(i,j) + g(imin,j)) * half
         p(j) = g(i,j)
       END DO
-      CALL functn(p,h(i), n_dum,nop,g_dum,tMataxis_dum)
+      CALL functn(p,h(i), n_dum,nop,g_dum,tMataxis_dum, tGrid, Freqs, Weights)
       neval = neval + 1
       IF (iprint > 0) THEN
         IF (MOD(neval,iprint) == 0) then
@@ -1519,7 +1537,7 @@ Main_loop: DO
       p(i) = SUM( g(1:np1,i) ) / np1
     END IF
   END DO
-  CALL functn(p,func, n_dum,nop,g_dum,tMataxis_dum)
+  CALL functn(p,func, n_dum,nop,g_dum,tMataxis_dum, tGrid, Freqs, Weights)
   neval = neval + 1
   IF (iprint > 0) THEN
     IF (MOD(neval,iprint) == 0) then
@@ -1590,7 +1608,7 @@ DO i = 1, np1
         IF (step(j) /= zero) g(i,j) = (g(i,j)-p(j)) + g(i,j)
         pstst(j) = g(i,j)
       END DO
-      CALL functn(pstst,h(i), n_dum,nop,g_dum,tMataxis_dum)
+      CALL functn(pstst,h(i), n_dum,nop,g_dum,tMataxis_dum, tGrid, Freqs, Weights)
       nmore = nmore + 1
       neval = neval + 1
       IF (h(i) >= hmin) CYCLE
@@ -1607,7 +1625,7 @@ END DO
 DO i = 1, nap
   i1 = i + 1
   pstar = (g(1,:) + g(i1,:)) * half
-  CALL functn(pstar,aval(i), n_dum, nop,g_dum,tMataxis_dum)
+  CALL functn(pstar,aval(i), n_dum, nop,g_dum,tMataxis_dum, tGrid, Freqs, Weights)
   nmore = nmore + 1
   neval = neval + 1
 END DO
@@ -1622,7 +1640,7 @@ DO i = 1, nap
   DO j = 1, i1
     j1 = j + 1
     pstst = (g(i2,:) + g(j1,:)) * half
-    CALL functn(pstst,hstst, n_dum,nop,g_dum,tMataxis_dum)
+    CALL functn(pstst,hstst, n_dum,nop,g_dum,tMataxis_dum, tGrid, Freqs, Weights)
     nmore = nmore + 1
     neval = neval + 1
     l = i * (i-1) / 2 + j

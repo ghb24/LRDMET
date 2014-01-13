@@ -26,11 +26,9 @@ module SelfConsistentLR
         real(dp) :: FinalDist,LowFreq,HighFreq
         integer :: i,iter,iLatParams
         logical :: tFitMatAxis,tCalcRealSpectrum
-        integer :: nFreqPoints
         integer, parameter :: iMaxIter_Fit = 100
         real(dp), parameter :: dDeltaImpThresh = 1.0e-4_dp 
         character(len=*), parameter :: t_r='SC_FitLatticeGF_Im'
-        logical :: tFitPoints_Legendre = .true.
 
         !Set chemical potential (This will only be right for half-filling)
         if(.not.tAnderson) then
@@ -64,17 +62,13 @@ module SelfConsistentLR
             write(6,"(A)") "Calculating frequency points..."
             LowFreq = -1.0_dp
             HighFreq = 1.0_dp
-            nFreqPoints = 30 
             call gauleg(LowFreq,HighFreq,FreqPoints,IntWeights,nFreqPoints)
-            do i = 1,nFreqPoints
-                write(6,"(I9,2G20.13)") i,FreqPoints(i),IntWeights(i)
-            enddo
             call ScaleFreqPointsWeights(nFreqPoints,FreqPoints,IntWeights)
             write(6,"(A)") "Frequency integration points: "
             do i = 1,nFreqPoints
                 write(6,"(I9,2G20.13)") i,FreqPoints(i),IntWeights(i)
             enddo
-            if(.not.tUseEVals) call stop_all(t_r,'Must use evals for legendre quadrature')
+            if(.not.tOptGF_EVals) call stop_all(t_r,'Must use evals for legendre quadrature')
         endif
 
         !Which axis do we want to do the fitting on?
@@ -723,7 +717,7 @@ module SelfConsistentLR
     end subroutine CalcLatticeFitResidual
 
     !Use a minimization routine to fit the greens functions by adjusting the lattice coupling
-    subroutine FitLatticeCouplings(G_Imp,n,Couplings,iNumCoups,FinalErr,tMatbrAxis)
+    subroutine FitLatticeCouplings(G_Imp,n,Couplings,iNumCoups,FinalErr,tMatbrAxis,FreqPoints,Weights)
         use MinAlgos
         use Levenberg_Marquardt
         implicit none
@@ -733,12 +727,14 @@ module SelfConsistentLR
         real(dp), intent(inout) :: Couplings(iNumCoups,nImp)    !The lattice couplings
         real(dp), intent(out) :: FinalErr
         logical, intent(in) :: tMatbrAxis
+        real(dp), intent(in), optional :: FreqPoints(n),Weights(n)
 
         real(dp), allocatable :: step(:),vars(:),var(:),FinalVec(:),Jac(:,:)
+        real(dp), allocatable :: Freqs_dum(:),Weights_dum(:)
         integer, allocatable :: iwork(:)
         integer :: nop,i,maxf,iprint,nloop,iquad,ierr,iRealCoupNum,nFuncs,j,ierr_tmp
         real(dp) :: stopcr,simp,rhobeg,rhoend,InitErr
-        logical :: tfirst,tOptEVals_
+        logical :: tfirst,tOptEVals_,tNonStandardGrid
         logical, parameter :: tConstrainSyms = .true.
         character(len=*), parameter :: t_r='FitLatticeCouplings'
 
@@ -761,6 +757,7 @@ module SelfConsistentLR
         endif
             
         !Initialize parameters
+        tNonStandardGrid = .false.
         allocate(vars(iRealCoupNum))
         if(tOptEVals_) then
             if(tKPntSymFit) then
@@ -772,6 +769,9 @@ module SelfConsistentLR
             do i = 1,iRealCoupNum
                 vars(i) = Couplings(i,1)
             enddo
+            if(present(FreqPoints).and.present(Weights)) then
+                tNonStandardGrid = .true.
+            endif
         else
             if(tEveryOtherCoup) then
                 do i = 1,iRealCoupNum
@@ -782,6 +782,14 @@ module SelfConsistentLR
                     vars(i) = Couplings(i,1)
                 enddo
             endif
+        endif
+
+        if(present(FreqPoints)) then
+            tNonStandardGrid = .true.
+        else
+            tNonStandardGrid = .false.
+            allocate(Weights_dum(n))
+            allocate(Freqs_dum(n))
         endif
 
         if(iFitAlgo.eq.3) then
@@ -803,7 +811,11 @@ module SelfConsistentLR
             allocate(FinalVec(nFuncs))
                 
             ierr_tmp = 1
-            call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis)
+            if(tNonStandardGrid) then
+                call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis,tNonStandardGrid,FreqPoints=FreqPoints,Weights=Weights)
+            else
+                call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis,tNonStandardGrid,FreqPoints=Freqs_dum,Weights=Weights_dum)
+            endif
             InitErr = enorm(nFuncs,FinalVec)
             write(6,"(A,G20.10)") "Initial residual before fit: ",InitErr
 
@@ -813,13 +825,21 @@ module SelfConsistentLR
                 !Additional memory for Jacobian matrix
                 allocate(Jac(nFuncs,iRealCoupNum))
 
-                call lmder1(MinCoups_LM, nFuncs, iRealCoupNum, vars, FinalVec, Jac, rhoend, ierr, iwork, maxf, n, G_Imp, tMatbrAxis)
+                if(.not.tNonStandardGrid) then
+                    call lmder1(MinCoups_LM, nFuncs, iRealCoupNum, vars, FinalVec, Jac, rhoend, ierr, iwork, maxf, n, G_Imp, tMatbrAxis, tNonStandardGrid, Freqs_dum, Weights_dum)
+                else
+                    call lmder1(MinCoups_LM, nFuncs, iRealCoupNum, vars, FinalVec, Jac, rhoend, ierr, iwork, maxf, n, G_Imp, tMatbrAxis, tNonStandardGrid,FreqPoints,Weights)
+                endif
 
                 !Final calculation of the residual and jacobian at the end
                 !ierr_tmp = 2
                 !call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis,Jac)
                 ierr_tmp = 1
-                call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis,Jac)
+                if(.not.tNonStandardGrid) then
+                    call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis,tNonStandardGrid,Jac,FreqPoints=Freqs_dum,Weights=Weights_dum)
+                else
+                    call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis,tNonStandardGrid,Jac,FreqPoints=FreqPoints,Weights=Weights)
+                endif
                 !do i = 1,iRealCoupNum
                 !    do j = 1,nFuncs
                 !        if(abs(Jac(j,i)).gt.1e-4_dp) then
@@ -835,7 +855,11 @@ module SelfConsistentLR
                 write(6,"(A)") "Optimizing lattice hamiltonian with numerical derivative Levenberg-Marquardt algorithm"
 
                 !Call LM algorithm
-                call lmdif1(MinCoups_LM , nFuncs, iRealCoupNum, vars, FinalVec, rhoend, ierr, iwork, maxf, n, G_Imp, tMatbrAxis)
+                if(.not.tNonStandardGrid) then
+                    call lmdif1(MinCoups_LM , nFuncs, iRealCoupNum, vars, FinalVec, rhoend, ierr, iwork, maxf, n, G_Imp, tMatbrAxis, tNonStandardGrid,Freqs_dum,Weights_dum)
+                else
+                    call lmdif1(MinCoups_LM , nFuncs, iRealCoupNum, vars, FinalVec, rhoend, ierr, iwork, maxf, n, G_Imp, tMatbrAxis, tNonStandardGrid,FreqPoints,Weights)
+                endif
             endif
                 
             FinalErr = enorm(nFuncs,FinalVec)
@@ -883,7 +907,11 @@ module SelfConsistentLR
             endif
 
             !Vars is updated to be the best value to minimize the residual
-            call uobyqa(iRealCoupNum,vars,rhobeg,rhoend,iprint,maxf,FinalErr,MinCoups, n, G_Imp, tMatbrAxis)
+            if(tNonStandardGrid) then
+                call uobyqa(iRealCoupNum,vars,rhobeg,rhoend,iprint,maxf,FinalErr,MinCoups, n, G_Imp, tMatbrAxis, tNonStandardGrid, FreqPoints, Weights)
+            else
+                call uobyqa(iRealCoupNum,vars,rhobeg,rhoend,iprint,maxf,FinalErr,MinCoups, n, G_Imp, tMatbrAxis, tNonStandardGrid, Freqs_dum, Weights_dum)
+            endif
 
         elseif(iFitAlgo.eq.1) then
             !Use simplex method for optimization without derivatives
@@ -920,8 +948,13 @@ module SelfConsistentLR
             !Now call minim to do the work
             tfirst = .true.
             do while(.true.)
-                call minim(vars, step, iRealCoupNum, FinalErr, maxf, iprint, stopcr, nloop, &
-                    iquad, simp, var, MinCoups, ierr, n, G_Imp, tMatbrAxis)
+                if(tNonStandardGrid) then
+                    call minim(vars, step, iRealCoupNum, FinalErr, maxf, iprint, stopcr, nloop, &
+                        iquad, simp, var, MinCoups, ierr, n, G_Imp, tMatbrAxis, tNonStandardGrid, FreqPoints,Weights)
+                else
+                    call minim(vars, step, iRealCoupNum, FinalErr, maxf, iprint, stopcr, nloop, &
+                        iquad, simp, var, MinCoups, ierr, n, G_Imp, tMatbrAxis, tNonStandardGrid, Freqs_dum, Weights_dum)
+                endif
 
                 if(ierr.eq.0) exit
                 if(.not.tFirst) exit
@@ -947,7 +980,7 @@ module SelfConsistentLR
 
             deallocate(step,var)
         endif
-
+            
         if(tOptGF_EVals.and.tConstrainSyms) then
             !Impose momentum inversion, and potentially ph symmetry
             !Symmetrize the resulting eigenvalues
@@ -955,12 +988,20 @@ module SelfConsistentLR
 
             !Calculate the new final residual
             if(iFitAlgo.le.2) then
-                call MinCoups(vars,FinalErr,n,iRealCoupNum,G_Imp,tMatbrAxis)
+                if(tNonStandardGrid) then
+                    call MinCoups(vars,FinalErr,n,iRealCoupNum,G_Imp,tMatbrAxis, tNonStandardGrid, FreqPoints, Weights)
+                else
+                    call MinCoups(vars,FinalErr,n,iRealCoupNum,G_Imp,tMatbrAxis, tNonStandardGrid, Freqs_dum, Weights_dum)
+                endif
             else
                 !LM algorithm
                 allocate(FinalVec(nFuncs))
                 ierr_tmp = 1
-                call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis)
+                if(tNonStandardGrid) then
+                    call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis, tNonStandardGrid, FreqPoints=FreqPoints, Weights=Weights)
+                else
+                    call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis, tNonStandardGrid, FreqPoints=Freqs_dum, Weights=Weights_dum)
+                endif
                 FinalErr = enorm(nFuncs,FinalVec)
                 deallocate(FinalVec)
             endif
@@ -991,11 +1032,12 @@ module SelfConsistentLR
         endif
 
         deallocate(vars)
+        if(.not.tNonStandardGrid) deallocate(Weights_dum,Freqs_dum)
 
     end subroutine FitLatticeCouplings
 
     !Wrapper function to evaluate residuals for the Leveberg-Marquardt algorithm
-    subroutine MinCoups_LM(n,iNumOptCoups,vars,dists,iflag,nESteps,G,tMatbrAxis,Jacobian)
+    subroutine MinCoups_LM(n,iNumOptCoups,vars,dists,iflag,nESteps,G,tMatbrAxis,tNonStandardGrid,Jacobian,FreqPoints,Weights)
         implicit none
         integer, intent(in) :: n, iNumOptCoups
         real(dp), intent(in) :: vars(iNumOptCoups)
@@ -1005,6 +1047,9 @@ module SelfConsistentLR
         complex(dp), intent(in) :: G(nImp,nImp,nESteps)
         logical, intent(in) :: tMatbraxis
         real(dp), intent(inout), optional :: Jacobian(n,iNumOptCoups)
+        logical, intent(in) :: tNonStandardGrid
+        real(dp), intent(in), optional :: FreqPoints(n)
+        real(dp), intent(in), optional :: Weights(n)
 
         real(dp), allocatable :: CoupsTemp(:,:),Sep_Dists(:,:,:)
         real(dp) :: dist,Omega
@@ -1047,13 +1092,25 @@ module SelfConsistentLR
 
         allocate(Sep_Dists(nImp,nImp,nESteps))
 
-        if(tAnalyticDerivs.and.(iflag.eq.2)) then
-            !Calculate analytic derivatives
-            if(.not.present(Jacobian)) call stop_all(t_r,'Jacobian argument not present')
-            call CalcLatticeFitResidual(G,nESteps,CoupsTemp,RealCoupsNum,dist,tMatbrAxis,dSeperateFuncs=Sep_Dists,  &
-                dJacobian=Jacobian)
+        if(tNonStandardGrid) then
+            if(tAnalyticDerivs.and.(iflag.eq.2)) then
+                !Calculate analytic derivatives
+                if(.not.present(Jacobian)) call stop_all(t_r,'Jacobian argument not present')
+                call CalcLatticeFitResidual(G,nESteps,CoupsTemp,RealCoupsNum,dist,tMatbrAxis,dSeperateFuncs=Sep_Dists,  &
+                    dJacobian=Jacobian,FreqPoints=FreqPoints,Weights=Weights)
+            else
+                call CalcLatticeFitResidual(G,nESteps,CoupsTemp,RealCoupsNum,dist,tMatbrAxis,dSeperateFuncs=Sep_Dists,  &
+                    FreqPoints=FreqPoints,Weights=Weights)
+            endif
         else
-            call CalcLatticeFitResidual(G,nESteps,CoupsTemp,RealCoupsNum,dist,tMatbrAxis,dSeperateFuncs=Sep_Dists)
+            if(tAnalyticDerivs.and.(iflag.eq.2)) then
+                !Calculate analytic derivatives
+                if(.not.present(Jacobian)) call stop_all(t_r,'Jacobian argument not present')
+                call CalcLatticeFitResidual(G,nESteps,CoupsTemp,RealCoupsNum,dist,tMatbrAxis,dSeperateFuncs=Sep_Dists,  &
+                    dJacobian=Jacobian)
+            else
+                call CalcLatticeFitResidual(G,nESteps,CoupsTemp,RealCoupsNum,dist,tMatbrAxis,dSeperateFuncs=Sep_Dists)
+            endif
         endif
 
         if((tAnalyticDerivs.and.iflag.ne.2).or.(.not.tAnalyticDerivs)) then
@@ -1062,7 +1119,11 @@ module SelfConsistentLR
             i = 0
             ind = 0
             do while(.true.)
-                call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis)
+                if(tNonStandardGrid) then
+                    call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis,nFreqPoints=nESteps,FreqPoints=FreqPoints)
+                else
+                    call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis)
+                endif
                 if(i.lt.0) exit
                 if(i.gt.nESteps) call stop_all(t_r,'Too many frequency points')
                 do j = 1,nImp
@@ -1082,16 +1143,20 @@ module SelfConsistentLR
     end subroutine MinCoups_LM
 
     !Wrapper function to evaluate residual for the simplex/Melder-Neal algorithm
-    subroutine MinCoups(vars,dist,n,iNumOptCoups,G,tMatbrAxis)
+    subroutine MinCoups(vars,dist,n,iNumOptCoups,G,tMatbrAxis,tNonStandardGrid,FreqPoints,Weights)
         implicit none
         integer, intent(in) :: n,iNumOptCoups
         real(dp), intent(in) :: vars(iNumOptCoups)
         real(dp), intent(out) :: dist
         complex(dp), intent(in) :: G(nImp,nImp,n)
         logical, intent(in) :: tMatbrAxis
+        logical, intent(in) :: tNonStandardGrid
+        real(dp), intent(in), optional :: FreqPoints(n)
+        real(dp), intent(in), optional :: Weights(n)
 
         real(dp), allocatable :: CoupsTemp(:,:)
         integer :: i,j,RealCoupsNum
+        character(len=*), parameter :: t_r='MinCoups'
 
         if(tOptGF_EVals) then
             RealCoupsNum = iNumOptCoups
@@ -1121,7 +1186,12 @@ module SelfConsistentLR
             enddo
         endif
             
-        call CalcLatticeFitResidual(G,n,CoupsTemp,RealCoupsNum,dist,tMatbrAxis)
+        if(tNonStandardGrid) then
+            if(.not.present(FreqPoints)) call stop_all(t_r,'Error here')
+            call CalcLatticeFitResidual(G,n,CoupsTemp,RealCoupsNum,dist,tMatbrAxis,FreqPoints=FreqPoints,Weights=Weights)
+        else
+            call CalcLatticeFitResidual(G,n,CoupsTemp,RealCoupsNum,dist,tMatbrAxis)
+        endif
 
         deallocate(CoupsTemp)
     end subroutine MinCoups
@@ -2926,7 +2996,7 @@ module SelfConsistentLR
         i=0
         do while(.true.)
             if(present(FreqPoints)) then
-                call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis_,nFitPoints=n,FreqPoints=FreqPoints)
+                call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis_,nFreqPoints=n,FreqPoints=FreqPoints)
             else
                 call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis_)
             endif
@@ -4356,12 +4426,17 @@ module SelfConsistentLR
             
             i = 0
             do while(.true.)
-                if(present(FreqPoints) then
-                    call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis_)
-                else
+                if(present(FreqPoints)) then
                     call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis_,nFreqPoints=n,FreqPoints=FreqPoints)
+                else
+                    call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis_)
+                endif
                 if(i.lt.0) exit
-                if(i.gt.n) call stop_all(t_r,'Too many freq points')
+                if(i.gt.n) then
+                    write(6,*) "i: ",i
+                    write(6,*) "n: ",n
+                    call stop_all(t_r,'Too many freq points')
+                endif
 
                 if(tMatbrAxis_) then
                     do k = 1,nSites
@@ -4454,7 +4529,11 @@ module SelfConsistentLR
 
             i = 0
             do while(.true.)
-                call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis_)
+                if(present(FreqPoints)) then
+                    call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis_,nFreqPoints=n,FreqPoints=FreqPoints)
+                else
+                    call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis_)
+                endif
                 if(i.lt.0) exit
                 if(i.gt.n) call stop_all(t_r,'Too many freq points')
 
@@ -4549,6 +4628,9 @@ module SelfConsistentLR
         if(.not.tOptGF_EVals) call stop_all(t_r,'Cannot do gradients when optimizing lattice couplings rather than eigenvalues')
         if(present(FreqPoints)) then
             tNonStandardGrid = .true.
+            if(.not.(present(Weights))) then
+                call stop_all(t_r,"No Weights present")
+            endif
         else
             tNonStandardGrid = .false.
         endif
@@ -4584,7 +4666,10 @@ module SelfConsistentLR
                 termi = 2.0_dp*Omega*(mu - evals_full(k))*num/denom2
 
                 FullJac(i,k) = (one/DiffMatr(1,1,i))*(real(DiffMat(1,1,i),dp)*termr - aimag(DiffMat(1,1,i))*termi)
-                call stop_all(t_r,'Put in the weights here somewhere.')
+                if(tNonStandardGrid) then
+                    !Add the weighting factor
+                    FullJac(i,k) = FullJac(i,k) * sqrt(Weights(i))
+                endif
                 if(iFitGFWeighting.eq.1) then
                     FullJac(i,k) = FullJac(i,k)/sqrt(abs(Omega))
                 elseif(iFitGFWeighting.eq.2) then
