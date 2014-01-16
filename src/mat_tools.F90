@@ -1787,12 +1787,14 @@ module mat_tools
     !Add coupling from the impurity sites to the other sites in the lattice
     !This is done to maintain the translational symmetry of the original impurity unit cell
     !If a cluster calculation, then the lattice coupling is seperate for each impurity of the unit cell
+    !If optimizing the eigenvalues, then this just returns the hamiltonian from the eigenvalues, while
+    !maintaining the same eigenvectors of the original lattice hamiltonian
     subroutine AddPeriodicImpCoupling_RealSpace(Ham,nLat,iCoupLength,SS_Period,Couplings)
         implicit none
         integer, intent(in) :: nLat,iCoupLength,SS_Period
         real(dp), intent(inout) :: Ham(nLat,nLat)
         real(dp), intent(in) :: Couplings(iCoupLength,SS_Period)
-        real(dp), allocatable :: temp(:)
+        real(dp), allocatable :: temp(:),temp2(:,:)
         complex(dp), allocatable :: ctemp(:,:),cham(:,:)
         integer :: CoupInd,i,j,k,offset,ImpCoup
         logical, parameter :: tOneCouplingSet=.true.
@@ -1800,62 +1802,73 @@ module mat_tools
 
         if(tOptGF_EVals) then
             if(nImp.gt.1) call stop_all(t_r,'This is not set up for > 1 imp - bug GHB')
-            !Here, the eigenvalues are the positive/negatice eigenvalues.
-            !Use these to construct the lattice hamtiltonian
-            if(tKPntSymFit) then
-                if(tShift_Mesh) then
-                    if(iCoupLength.ne.(nSites/2)) call stop_all(t_r,'Number of variables incorrect?')
-                else
-                    if(iCoupLength.ne.((nSites/2)+1)) call stop_all(t_r,'Incorrect number of variables?')
-                endif
-            else
-                if(iCoupLength.ne.nSites) call stop_all(t_r,'Incorrect number of variables')
-            endif
-
-            allocate(ctemp(nSites,nSites))
-            allocate(cham(nSites,nSites))
-            cham(:,:) = zzero
-            if(tKPntSymFit) then
-                do i = 1,nSites/2
-                    cham(i,i) = dcmplx(Couplings(i,1),zero)
-                enddo
-                if(tShift_Mesh) then
-                    !No gamma point. All k-points symmetric
-                    do i = 1,nSites/2
-                        cham(i+(nSites/2),i+(nSites/2)) = dcmplx(Couplings((nSites/2)-i+1,1),zero)
-                    enddo
-                else
-                    !Put in the gamma point
-                    cham((nSites/2)+1,(nSites/2)+1) = dcmplx(Couplings((nSites/2)+1,1),zero)
-                    !Now, add in the other kpoints (not point on BZ boundary at start)
-                    do i = 2,nSites/2
-                        cham(i+(nSites/2),i+(nSites/2)) = dcmplx(Couplings((nSites/2)-i+2,1),zero)
-                    enddo
-                endif
-            else
-                do i = 1,nSites
-                    cham(i,i) = dcmplx(Couplings(i,1),zero)
-                enddo
-            endif
-            call ZGEMM('N','N',nSites,nSites,nSites,zone,RtoK_Rot,nSites,cham,nSites,zzero,ctemp,nSites)
-            call ZGEMM('N','C',nSites,nSites,nSites,zone,ctemp,nSites,RtoK_Rot,nSites,zzero,cham,nSites)
-            deallocate(ctemp)
-
-            !What about the phase factor? This will be needed when we go to > 1 impurity
-            if(nImp.gt.1) call stop_all(t_r,'Cannot deal with > 1 impurty, as we will have to deal with the phase factor')
-            !write(6,*) cham(1,:)
-
-            do i = 1,nSites
-                do j = 1,nSites
-                    if(abs(aimag(cham(j,i))).gt.1.0e-7_dp) then
-                        write(6,*) cham(j,i)
-                        call stop_all(t_r,'why is this not real? - Losing k-inversion symmetry')
+            if(tDiag_KSpace) then
+                !Here, the eigenvalues are the positive/negatice eigenvalues.
+                !Use these to construct the lattice hamtiltonian
+                if(tKPntSymFit) then
+                    if(tShift_Mesh) then
+                        if(iCoupLength.ne.(nSites/2)) call stop_all(t_r,'Number of variables incorrect?')
+                    else
+                        if(iCoupLength.ne.((nSites/2)+1)) call stop_all(t_r,'Incorrect number of variables?')
                     endif
-                    ham(j,i) = real(cham(j,i),dp)
-                enddo
-            enddo
-            deallocate(cham)
+                else
+                    if(iCoupLength.ne.nSites) call stop_all(t_r,'Incorrect number of variables')
+                endif
 
+                allocate(ctemp(nSites,nSites))
+                allocate(cham(nSites,nSites))
+                cham(:,:) = zzero
+                if(tKPntSymFit) then
+                    do i = 1,nSites/2
+                        cham(i,i) = dcmplx(Couplings(i,1),zero)
+                    enddo
+                    if(tShift_Mesh) then
+                        !No gamma point. All k-points symmetric
+                        do i = 1,nSites/2
+                            cham(i+(nSites/2),i+(nSites/2)) = dcmplx(Couplings((nSites/2)-i+1,1),zero)
+                        enddo
+                    else
+                        !Put in the gamma point
+                        cham((nSites/2)+1,(nSites/2)+1) = dcmplx(Couplings((nSites/2)+1,1),zero)
+                        !Now, add in the other kpoints (not point on BZ boundary at start)
+                        do i = 2,nSites/2
+                            cham(i+(nSites/2),i+(nSites/2)) = dcmplx(Couplings((nSites/2)-i+2,1),zero)
+                        enddo
+                    endif
+                else
+                    do i = 1,nSites
+                        cham(i,i) = dcmplx(Couplings(i,1),zero)
+                    enddo
+                endif
+                call ZGEMM('N','N',nSites,nSites,nSites,zone,RtoK_Rot,nSites,cham,nSites,zzero,ctemp,nSites)
+                call ZGEMM('N','C',nSites,nSites,nSites,zone,ctemp,nSites,RtoK_Rot,nSites,zzero,cham,nSites)
+                deallocate(ctemp)
+
+                !What about the phase factor? This will be needed when we go to > 1 impurity
+                if(nImp.gt.1) call stop_all(t_r,'Cannot deal with > 1 impurty, as we will have to deal with the phase factor')
+                !write(6,*) cham(1,:)
+
+                do i = 1,nSites
+                    do j = 1,nSites
+                        if(abs(aimag(cham(j,i))).gt.1.0e-7_dp) then
+                            write(6,*) cham(j,i)
+                            call stop_all(t_r,'why is this not real? - Losing k-inversion symmetry')
+                        endif
+                        ham(j,i) = real(cham(j,i),dp)
+                    enddo
+                enddo
+                deallocate(cham)
+            else
+                !Keep things real
+                ham(:,:) = zero
+                do i = 1,nSites
+                    ham(i,i) = Couplings(i,1)
+                enddo
+                allocate(temp2(nSites,nSites))
+                call DGEMM('N','N',nSites,nSites,nSites,one,HFOrbs,nSites,ham,nSites,zero,temp2,nSites)
+                call DGEMM('N','T',nSites,nSites,nSites,one,temp2,nSites,HFOrbs,nSites,zero,ham,nSites)
+                deallocate(temp2)
+            endif
         else
 
             if(LatticeDim.eq.2) call stop_all(t_r,'Lattice coupling not set up for 2D lattices yet')

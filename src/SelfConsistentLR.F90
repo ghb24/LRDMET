@@ -30,6 +30,16 @@ module SelfConsistentLR
         real(dp), parameter :: dDeltaImpThresh = 1.0e-4_dp 
         character(len=*), parameter :: t_r='SC_FitLatticeGF_Im'
 
+        if(tDiag_kSpace) then
+            do i = 1,nSites
+                write(6,*) i,abs(RtoK_Rot(1,i))**2
+            enddo
+        else
+            do i = 1,nSites
+                write(6,*) i,HFOrbs(1,i),HFOrbs(1,i)**2 
+            enddo
+        endif
+
         !Set chemical potential (This will only be right for half-filling)
         if(.not.tAnderson) then
             !Hubbard chemical potential
@@ -123,6 +133,12 @@ module SelfConsistentLR
         !write(6,*) h_lat_fit(1,:)
         !call writematrix(h_lat_fit,'h_lat_fit_init',.true.)
         call AddPeriodicImpCoupling_RealSpace(h_lat_fit,nSites,iLatParams,nImp,Couplings)
+        
+        write(6,"(A)") "Starting *frequency independent* lattice parameters: "
+        do i = 1,iLatParams
+            write(6,"(I6,G20.13)") i,Couplings(i,1)
+        enddo
+        write(6,"(A)") "" 
 
         allocate(G_Mat_Fit(nImp,nImp,nFitPoints))
         allocate(G_Mat_Re(nImp,nImp,nESteps_Re))
@@ -265,7 +281,7 @@ module SelfConsistentLR
         enddo
         write(6,"(A)") "" 
     
-        if(tOptGF_EVals) then
+        if(tOptGF_EVals.and.tDiag_kSpace) then
             !Write out the converged one-electron dispersion / bandstructure
             call WriteBandstructure(Couplings,iLatParams)
         else
@@ -1023,6 +1039,8 @@ module SelfConsistentLR
                 deallocate(FinalVec)
             endif
             write(6,"(A,G20.10)") "Final residual after symmetrization of eigenvalues: ",FinalErr
+            write(6,"(A)") "Lattice after symmetrization of parameters: "
+            write(6,*) vars(:)
         endif
             
         !Update couplings
@@ -1267,9 +1285,15 @@ module SelfConsistentLR
             open(unit=iunit,file='LatCouplings',status='unknown')
         endif
         write(iunit,*) iLatParams
-        do i = 1,iLatParams
-            write(iunit,"(2G25.13)") KPnts(1,i),Couplings(i,1)
-        enddo
+        if(tDiag_kSpace) then
+            do i = 1,iLatParams
+                write(iunit,"(2G25.13)") KPnts(1,i),Couplings(i,1)
+            enddo
+        else
+            do i = 1,iLatParams
+                write(iunit,"(G25.13)") Couplings(i,1)
+            enddo
+        endif
         close(iunit)
 
     end subroutine WriteLatticeCouplings
@@ -1377,9 +1401,15 @@ module SelfConsistentLR
             else
                 if(iloclatcoups.ne.nSites) call stop_all(t_r,'Wrong # of params read in')
             endif
-            do i = 1,iloclatcoups
-                read(iunit,*) kval,Couplings(i,1)
-            enddo
+            if(tDiag_kSpace) then
+                do i = 1,iloclatcoups
+                    read(iunit,*) kval,Couplings(i,1)
+                enddo
+            else
+                do i = 1,iloclatcoups
+                    read(iunit,*) Couplings(i,1)
+                enddo
+            endif
             !Potentially shift the lattice eigenvalues (required if reading in from a previous calculation with a different chemical potential)
             do i = 1,iloclatcoups
                 Couplings(i,1) = Couplings(i,1) + dShiftLatticeEvals
@@ -1597,6 +1627,7 @@ module SelfConsistentLR
         
 
     subroutine Imposephsym(nCoups,vars)
+        use sort_mod, only: sort_real
         implicit none
         integer, intent(in) :: nCoups
         real(dp), intent(inout) :: vars(nCoups)
@@ -1605,8 +1636,8 @@ module SelfConsistentLR
         real(dp) :: diff,mu,dCurrentE,av
         character(len=*), parameter :: t_r='Imposephsym'
 
-        if(.not.tKPntSymFit) then
-            !After fitting, add back in momentum inversion symmetry.
+        if((.not.tKPntSymFit).and.tDiag_kSpace) then
+            !After fitting, add back in momentum inversion symmetry (if we are working in k-space)
             !This means that e(k) = e(-k)
             !For shifted meshes, this is easy.
             !For Gamma-centered meshes, two k-points are only singly degenerate
@@ -1629,91 +1660,107 @@ module SelfConsistentLR
         endif
 
         if(tphsym) then
-            !Impose ph symmetry on the system
-            mu = U/2.0_dp
 
-            if(tShift_Mesh) then
-                nSpec = nSites/2
+            if(.not.tDiag_kSpace) then
+                !Impose ph symmetry on the system
+                !In this way, we only consider the lowest n/2 eigenvalues, and we reflect them around the chemical potential
+                !We cannot do this if we are doing k-space diagonalizations, since the vectors are ordered by k-label, rather than energetically
+                mu = U/2.0_dp
+                call sort_real(vars,nSites)
+                j = 1
+                do i = nSites/2+1,nSites
+                    vars(i) = 2*mu - vars(i-j)
+                    j = j + 2
+                enddo
+
             else
-                nSpec = nSites/2 + 1
-            endif
-            if(nSpec.gt.nCoups) call stop_all(t_r,'Error here')
-            if(mod(nSpec,2).ne.0) call stop_all(t_r,'nSpec should be even?')
-            !Since we have already imposed k-point sym, we can just optimize within the restricted set we already have here,
-            !and ignore the fact that we have already got doubly degenerate sets everywhere.
-            !Do this *incredibly* crudely. Search for nearest 'pairs', and symmetrize them
+                !Impose ph symmetry on the system
+                !In this way of doing it, we pick pairs which are closest, and average them
+                mu = U/2.0_dp
 
-!            write(6,*) "nSpec: ",nSpec
-!            write(6,*) "nCoups: ",nCoups
-!            write(6,*) "tShift_Mesh: ",tShift_Mesh
-!            write(6,*) "vars: ",vars(:)
-
-            !Find the energetic ordering of the eigenvalues
-            tNotTaken(:) = .true.
-            do i = 1,nSpec
-                !Each loop, find the position of the next lowest eigenvalue
-                dCurrentE = huge(0.0_dp)
-                do j = 1,nSpec
-                    !Find lowest energy eigenvalue not already taken
-                    if((vars(j).lt.dCurrentE).and.(tNotTaken(j))) then
-                        EOrder(i) = j
-                        dCurrentE = vars(j)
-                    endif
-                enddo
-                tNotTaken(EOrder(i)) = .false.
-            enddo
-            !We now have the energetic ordering. EOrder(i) gives the ith lowest energy eigenvalue
-!            write(6,*) "EOrder: ",EOrder(:)
-!            write(6,*) "tNotTaken: ",tNotTaken(:)
-
-            do i = 1,nSpec
-                if(tNotTaken(i)) then
-                    call writevector(vars,'vars')
-                    call stop_all(t_r,'Not all evals accounted for')
-                endif
-            enddo
-
-            do i = 2,nSpec
-                if(vars(EOrder(i)).lt.vars(EOrder(i-1))) then
-                    call writevector(vars,'vars')
-                    call stop_all(t_r,'Energy order not correct')
-                endif
-            enddo
-
-            !Now, symmetrize them
-            do i = 1,nSpec/2
-                !Run through all occupied orbitals by going up in energy
-                do j = 1,nSpec
-                    if(EOrder(j).eq.i) exit
-                enddo
-                !i'th lowest energy eigenvalue is in slot j
-                !Find the corresponding 'virtual'
-                do k = 1,nSpec
-                    if(EOrder(k).eq.(nSpec-i+1)) then
-                        !This is the corresponding 'virtual'
-                        exit
-                    endif
-                enddo
-                !j and k are pairs. Average the differences from the chemical potential
-                diff = 0.5_dp*( (mu - vars(j) ) + (vars(k) - mu))
-                vars(j) = mu - diff
-                vars(k) = mu + diff
-            enddo
-
-            if(.not.tKPntSymFit) then
-                !We might have just broken the momentum symmetry that we just imposed!
-                !Reimpose it - not by averaging, but by simply using the negative k-point values.
                 if(tShift_Mesh) then
-                    do i = 1,nSites/2
-                        vars(nSites-i+1) = vars(i)
-                    enddo
+                    nSpec = nSites/2
                 else
-                    !Do not average the gamma point, or the first kpoint (BZ boundary) - these are singly degenerate
-                    do i = 2,nSites/2
-                        vars(nSites-i+2) = vars(i)
-                    enddo
+                    nSpec = nSites/2 + 1
                 endif
+                if(nSpec.gt.nCoups) call stop_all(t_r,'Error here')
+                if(mod(nSpec,2).ne.0) call stop_all(t_r,'nSpec should be even?')
+                !Since we have already imposed k-point sym, we can just optimize within the restricted set we already have here,
+                !and ignore the fact that we have already got doubly degenerate sets everywhere.
+                !Do this *incredibly* crudely. Search for nearest 'pairs', and symmetrize them
 
+    !            write(6,*) "nSpec: ",nSpec
+    !            write(6,*) "nCoups: ",nCoups
+    !            write(6,*) "tShift_Mesh: ",tShift_Mesh
+    !            write(6,*) "vars: ",vars(:)
+
+                !Find the energetic ordering of the eigenvalues
+                tNotTaken(:) = .true.
+                do i = 1,nSpec
+                    !Each loop, find the position of the next lowest eigenvalue
+                    dCurrentE = huge(0.0_dp)
+                    do j = 1,nSpec
+                        !Find lowest energy eigenvalue not already taken
+                        if((vars(j).lt.dCurrentE).and.(tNotTaken(j))) then
+                            EOrder(i) = j
+                            dCurrentE = vars(j)
+                        endif
+                    enddo
+                    tNotTaken(EOrder(i)) = .false.
+                enddo
+                !We now have the energetic ordering. EOrder(i) gives the ith lowest energy eigenvalue
+    !            write(6,*) "EOrder: ",EOrder(:)
+    !            write(6,*) "tNotTaken: ",tNotTaken(:)
+
+                do i = 1,nSpec
+                    if(tNotTaken(i)) then
+                        call writevector(vars,'vars')
+                        call stop_all(t_r,'Not all evals accounted for')
+                    endif
+                enddo
+
+                do i = 2,nSpec
+                    if(vars(EOrder(i)).lt.vars(EOrder(i-1))) then
+                        call writevector(vars,'vars')
+                        call stop_all(t_r,'Energy order not correct')
+                    endif
+                enddo
+
+                !Now, symmetrize them
+                do i = 1,nSpec/2
+                    !Run through all occupied orbitals by going up in energy
+                    do j = 1,nSpec
+                        if(EOrder(j).eq.i) exit
+                    enddo
+                    !i'th lowest energy eigenvalue is in slot j
+                    !Find the corresponding 'virtual'
+                    do k = 1,nSpec
+                        if(EOrder(k).eq.(nSpec-i+1)) then
+                            !This is the corresponding 'virtual'
+                            exit
+                        endif
+                    enddo
+                    !j and k are pairs. Average the differences from the chemical potential
+                    diff = 0.5_dp*( (mu - vars(j) ) + (vars(k) - mu))
+                    vars(j) = mu - diff
+                    vars(k) = mu + diff
+                enddo
+
+                if((.not.tKPntSymFit).and.tDiag_kSpace) then
+                    !We might have just broken the momentum symmetry that we just imposed!
+                    !Reimpose it - not by averaging, but by simply using the negative k-point values.
+                    if(tShift_Mesh) then
+                        do i = 1,nSites/2
+                            vars(nSites-i+1) = vars(i)
+                        enddo
+                    else
+                        !Do not average the gamma point, or the first kpoint (BZ boundary) - these are singly degenerate
+                        do i = 2,nSites/2
+                            vars(nSites-i+2) = vars(i)
+                        enddo
+                    endif
+
+                endif
             endif
         endif
 
@@ -4305,14 +4352,24 @@ module SelfConsistentLR
 
     end subroutine FindRealSpaceLocalMomGF
         
+    !Get the eigenvalues from the hamiltonian
     subroutine CouplingsToEVals(hLat,EVals)
+        use mat_tools, only: DiagOneEOp
         implicit none
         real(dp), intent(in) :: hLat(nSites,nSites)
         real(dp), intent(out) :: EVals(nSites)
         integer :: SS_Period,kPnt,ind_1,ind_2,info,lWork,i,j
         complex(dp), allocatable :: zTemp(:,:),k_Ham(:,:),cWork(:),CompHam(:,:)
-        real(dp), allocatable :: rWork(:)
+        real(dp), allocatable :: rWork(:),ham_temp(:,:)
         character(len=*), parameter :: t_r='CouplingsToEVals'
+
+        if(.not.tDiag_KSpace) then
+            allocate(ham_temp(nSites,nSites))
+            ham_temp(:,:) = hLat(:,:)
+            call DiagOneEOp(ham_temp,EVals,nImp,nSites,.false.)
+            deallocate(ham_temp)    !ham_temp contains the real space eigenvectors
+            return
+        endif
 
         SS_Period = nImp
 
@@ -4456,11 +4513,11 @@ module SelfConsistentLR
             tUseEVals = .false.
         endif
 
-        if(.not.tDiag_kspace) then
-            if(tMatbrAxis_.or.tCoupledHam_) call stop_all(t_r,'Fixme')
-            call FindRealSpaceLocalMomGF(n,SE,LocalMomGF)
-            return
-        endif
+!        if(.not.tDiag_kspace) then
+!            if(tMatbrAxis_.or.tCoupledHam_) call stop_all(t_r,'Fixme')
+!            call FindRealSpaceLocalMomGF(n,SE,LocalMomGF)
+!            return
+!        endif
 
         LocalMomGF(:,:,:) = zzero
         SS_Period = nImp
@@ -4493,16 +4550,30 @@ module SelfConsistentLR
                     call stop_all(t_r,'Too many freq points')
                 endif
 
-                if(tMatbrAxis_) then
-                    do k = 1,nSites
-                        LocalMomGF(:,:,i) = LocalMomGF(:,:,i) + dconjg(RtoK_Rot(1,k))*RtoK_Rot(1,k) /   &
-                            dcmplx(mu - evals_full(k),Omega)
-                    enddo
+                if(tDiag_kspace) then
+                    if(tMatbrAxis_) then
+                        do k = 1,nSites
+                            LocalMomGF(:,:,i) = LocalMomGF(:,:,i) + dconjg(RtoK_Rot(1,k))*RtoK_Rot(1,k) /   &
+                                dcmplx(mu - evals_full(k),Omega)
+                        enddo
+                    else
+                        do k = 1,nSites
+                            LocalMomGF(:,:,i) = LocalMomGF(:,:,i) + dconjg(RtoK_Rot(1,k))*RtoK_Rot(1,k) /   &
+                                dcmplx(Omega + mu - evals_full(k),dDelta)
+                        enddo
+                    endif
                 else
-                    do k = 1,nSites
-                        LocalMomGF(:,:,i) = LocalMomGF(:,:,i) + dconjg(RtoK_Rot(1,k))*RtoK_Rot(1,k) /   &
-                            dcmplx(Omega + mu - evals_full(k),dDelta)
-                    enddo
+                    if(tMatbrAxis_) then
+                        do k = 1,nSites
+                            LocalMomGF(:,:,i) = LocalMomGF(:,:,i) + dcmplx(HFOrbs(1,k)**2,zero) /   &
+                                dcmplx(mu - evals_full(k),Omega)
+                        enddo
+                    else
+                        do k = 1,nSites
+                            LocalMomGF(:,:,i) = LocalMomGF(:,:,i) + dcmplx(HFOrbs(1,k)**2,zero) /   &
+                                dcmplx(Omega + mu - evals_full(k),dDelta)
+                        enddo
+                    endif
                 endif
             enddo
 
@@ -4715,7 +4786,11 @@ module SelfConsistentLR
 
                 denom1 = Omega**2 + (mu - evals_full(k))**2
                 denom2 = denom1**2
-                num = abs(RtoK_Rot(1,k))**2
+                if(tDiag_kSpace) then
+                    num = abs(RtoK_Rot(1,k))**2
+                else
+                    num = HFOrbs(1,k)**2
+                endif
 
                 termr = 2.0_dp*num*((mu - evals_full(k))**2)/denom2 - num/denom1
                 termi = 2.0_dp*Omega*(mu - evals_full(k))*num/denom2
