@@ -60,6 +60,7 @@ module SelfConsistentLR
             allocate(FreqPoints(nFreqPoints))
             allocate(IntWeights(nFreqPoints))
             write(6,"(A)") "Calculating frequency points..."
+            call flush(6)
             LowFreq = -1.0_dp
             HighFreq = 1.0_dp
             call gauleg(LowFreq,HighFreq,FreqPoints,IntWeights,nFreqPoints)
@@ -70,6 +71,7 @@ module SelfConsistentLR
             enddo
             if(.not.tOptGF_EVals) call stop_all(t_r,'Must use evals for legendre quadrature')
         endif
+        call flush(6)
 
         !Which axis do we want to do the fitting on?
         if(tFitRealFreq) then
@@ -590,9 +592,11 @@ module SelfConsistentLR
             deallocate(h_lat_fit)
         else
             if(tNonStandardGrid) then
-                call FindLocalMomGF(nESteps,SE_Dummy,Lattice_GF,tMatbrAxis=tMatbrAxis,CouplingLength=iNumCoups,evals=Couplings(:,1),FreqPoints=FreqPoints)
+                call FindLocalMomGF(nESteps,SE_Dummy,Lattice_GF,tMatbrAxis=tMatbrAxis,CouplingLength=iNumCoups, &
+                    evals=Couplings(:,1),FreqPoints=FreqPoints)
             else
-                call FindLocalMomGF(nESteps,SE_Dummy,Lattice_GF,tMatbrAxis=tMatbrAxis,CouplingLength=iNumCoups,evals=Couplings(:,1))
+                call FindLocalMomGF(nESteps,SE_Dummy,Lattice_GF,tMatbrAxis=tMatbrAxis,CouplingLength=iNumCoups, &
+                    evals=Couplings(:,1))
             endif
         endif
 
@@ -651,7 +655,8 @@ module SelfConsistentLR
             if(present(dJacobian)) then
                 !Calculate the derivatives too
                 if(present(FreqPoints)) then
-                    call CalcJacobian(nESteps,iNumCoups,DiffMatr,DiffMat,dJacobian,Couplings(:,1),tMatbrAxis,FreqPoints=FreqPoints,Weights=Weights)
+                    call CalcJacobian(nESteps,iNumCoups,DiffMatr,DiffMat,dJacobian,Couplings(:,1),tMatbrAxis,   &
+                        FreqPoints=FreqPoints,Weights=Weights)
                 else
                     call CalcJacobian(nESteps,iNumCoups,DiffMatr,DiffMat,dJacobian,Couplings(:,1),tMatbrAxis)
                 endif
@@ -812,9 +817,11 @@ module SelfConsistentLR
                 
             ierr_tmp = 1
             if(tNonStandardGrid) then
-                call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis,tNonStandardGrid,FreqPoints=FreqPoints,Weights=Weights)
+                call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis,tNonStandardGrid,    &
+                    FreqPoints=FreqPoints,Weights=Weights)
             else
-                call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis,tNonStandardGrid,FreqPoints=Freqs_dum,Weights=Weights_dum)
+                call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis,tNonStandardGrid,    &
+                    FreqPoints=Freqs_dum,Weights=Weights_dum)
             endif
             InitErr = enorm(nFuncs,FinalVec)
             write(6,"(A,G20.10)") "Initial residual before fit: ",InitErr
@@ -826,9 +833,11 @@ module SelfConsistentLR
                 allocate(Jac(nFuncs,iRealCoupNum))
 
                 if(.not.tNonStandardGrid) then
-                    call lmder1(MinCoups_LM, nFuncs, iRealCoupNum, vars, FinalVec, Jac, rhoend, ierr, iwork, maxf, n, G_Imp, tMatbrAxis, tNonStandardGrid, Freqs_dum, Weights_dum)
+                    call lmder1(MinCoups_LM, nFuncs, iRealCoupNum, vars, FinalVec, Jac, rhoend, ierr, iwork, maxf, n,   &
+                        G_Imp, tMatbrAxis, tNonStandardGrid, Freqs_dum, Weights_dum)
                 else
-                    call lmder1(MinCoups_LM, nFuncs, iRealCoupNum, vars, FinalVec, Jac, rhoend, ierr, iwork, maxf, n, G_Imp, tMatbrAxis, tNonStandardGrid,FreqPoints,Weights)
+                    call lmder1(MinCoups_LM, nFuncs, iRealCoupNum, vars, FinalVec, Jac, rhoend, ierr, iwork, maxf, n,   &
+                        G_Imp, tMatbrAxis, tNonStandardGrid,FreqPoints,Weights)
                 endif
 
                 !Final calculation of the residual and jacobian at the end
@@ -836,9 +845,11 @@ module SelfConsistentLR
                 !call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis,Jac)
                 ierr_tmp = 1
                 if(.not.tNonStandardGrid) then
-                    call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis,tNonStandardGrid,Jac,FreqPoints=Freqs_dum,Weights=Weights_dum)
+                    call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis,tNonStandardGrid,    &
+                        Jac,FreqPoints=Freqs_dum,Weights=Weights_dum)
                 else
-                    call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis,tNonStandardGrid,Jac,FreqPoints=FreqPoints,Weights=Weights)
+                    call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis,tNonStandardGrid,    &
+                        Jac,FreqPoints=FreqPoints,Weights=Weights)
                 endif
                 !do i = 1,iRealCoupNum
                 !    do j = 1,nFuncs
@@ -856,9 +867,11 @@ module SelfConsistentLR
 
                 !Call LM algorithm
                 if(.not.tNonStandardGrid) then
-                    call lmdif1(MinCoups_LM , nFuncs, iRealCoupNum, vars, FinalVec, rhoend, ierr, iwork, maxf, n, G_Imp, tMatbrAxis, tNonStandardGrid,Freqs_dum,Weights_dum)
+                    call lmdif1(MinCoups_LM , nFuncs, iRealCoupNum, vars, FinalVec, rhoend, ierr, iwork, maxf, n,   &
+                        G_Imp, tMatbrAxis, tNonStandardGrid,Freqs_dum,Weights_dum)
                 else
-                    call lmdif1(MinCoups_LM , nFuncs, iRealCoupNum, vars, FinalVec, rhoend, ierr, iwork, maxf, n, G_Imp, tMatbrAxis, tNonStandardGrid,FreqPoints,Weights)
+                    call lmdif1(MinCoups_LM , nFuncs, iRealCoupNum, vars, FinalVec, rhoend, ierr, iwork, maxf, n,   &
+                        G_Imp, tMatbrAxis, tNonStandardGrid,FreqPoints,Weights)
                 endif
             endif
                 
@@ -908,9 +921,11 @@ module SelfConsistentLR
 
             !Vars is updated to be the best value to minimize the residual
             if(tNonStandardGrid) then
-                call uobyqa(iRealCoupNum,vars,rhobeg,rhoend,iprint,maxf,FinalErr,MinCoups, n, G_Imp, tMatbrAxis, tNonStandardGrid, FreqPoints, Weights)
+                call uobyqa(iRealCoupNum,vars,rhobeg,rhoend,iprint,maxf,FinalErr,MinCoups, n, G_Imp,    &
+                    tMatbrAxis, tNonStandardGrid, FreqPoints, Weights)
             else
-                call uobyqa(iRealCoupNum,vars,rhobeg,rhoend,iprint,maxf,FinalErr,MinCoups, n, G_Imp, tMatbrAxis, tNonStandardGrid, Freqs_dum, Weights_dum)
+                call uobyqa(iRealCoupNum,vars,rhobeg,rhoend,iprint,maxf,FinalErr,MinCoups, n, G_Imp,    &
+                    tMatbrAxis, tNonStandardGrid, Freqs_dum, Weights_dum)
             endif
 
         elseif(iFitAlgo.eq.1) then
@@ -998,9 +1013,11 @@ module SelfConsistentLR
                 allocate(FinalVec(nFuncs))
                 ierr_tmp = 1
                 if(tNonStandardGrid) then
-                    call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis, tNonStandardGrid, FreqPoints=FreqPoints, Weights=Weights)
+                    call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis, tNonStandardGrid,   &
+                        FreqPoints=FreqPoints, Weights=Weights)
                 else
-                    call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis, tNonStandardGrid, FreqPoints=Freqs_dum, Weights=Weights_dum)
+                    call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis, tNonStandardGrid,   &
+                        FreqPoints=Freqs_dum, Weights=Weights_dum)
                 endif
                 FinalErr = enorm(nFuncs,FinalVec)
                 deallocate(FinalVec)
@@ -1052,8 +1069,10 @@ module SelfConsistentLR
         real(dp), intent(in), optional :: Weights(n)
 
         real(dp), allocatable :: CoupsTemp(:,:),Sep_Dists(:,:,:)
-        real(dp) :: dist,Omega
-        integer :: i,j,k,ind,RealCoupsNum
+        real(dp) :: dist,Omega,diff,dist2,NumDiff
+        real(dp), allocatable :: CoupsTemp2(:,:),Sep_Dists2(:,:,:)
+        logical, parameter :: tTest=.false.
+        integer :: i,j,k,ind,RealCoupsNum,ivar,ifreq,iunit2
         character(len=*), parameter :: t_r='MinCoups_LM'
 
         !Expand variables back to full set
@@ -1134,6 +1153,42 @@ module SelfConsistentLR
                     enddo
                 enddo
             enddo
+        endif
+
+        if(tTest.and.(tAnalyticDerivs).and.(iflag.eq.2)) then
+            !Test analytic derivatives
+
+            allocate(Sep_Dists2(nImp,nImp,nESteps))
+            allocate(CoupsTemp2(iNumOptCoups,nImp))
+            !ivar = 1    !Variable to differentiate wrt
+            !ifreq = 20   !Frequency number that is being differentiated
+            iunit2 = 66
+
+            do ifreq = 1,400,25
+                do ivar = 1,iNumOptCoups
+
+                    diff = 0.0001_dp
+                    do while(diff.gt.1.0e-8_dp)
+
+                        CoupsTemp2(:,:) = CoupsTemp(:,:)
+                        CoupsTemp2(ivar,:) = CoupsTemp2(ivar,:) + diff
+                        call CalcLatticeFitResidual(G,nESteps,CoupsTemp2,RealCoupsNum,dist2,tMatbrAxis, &
+                            dSeperateFuncs=Sep_Dists2,FreqPoints=FreqPoints,Weights=Weights)
+                        NumDiff = ( Sep_Dists2(1,1,ifreq) - Sep_Dists(1,1,ifreq) )/diff
+                        write(iunit2,"(2I8,5G25.14)") ivar,ifreq,diff,NumDiff,Jacobian(ifreq,ivar), &
+                            abs((NumDiff-Jacobian(ifreq,ivar))/NumDiff),abs(NumDiff-Jacobian(ifreq,ivar))
+                        if(abs((NumDiff-Jacobian(ifreq,ivar))/NumDiff).gt.one) then
+                            write(6,"(A,2I8,5G25.14)") "***",ivar,ifreq,diff,NumDiff,Jacobian(ifreq,ivar), &
+                                abs((NumDiff-Jacobian(ifreq,ivar))/NumDiff),abs(NumDiff-Jacobian(ifreq,ivar))
+                        endif
+                        diff = diff/2.0_dp
+
+                    enddo
+                    write(iunit2,"(A)") ""
+                enddo
+            enddo
+            deallocate(Sep_Dists2,CoupsTemp2)
+            call stop_all(t_r,'end')
         endif
 
 !        write(6,"(10G20.13)") "***",vars(:)

@@ -145,6 +145,9 @@ Program RealHub
         tFitRealFreq = .false.      !Fit on matsubara axis by default
         tFitPoints_Legendre = .false.   !Fit to Legendre points
         nFreqPoints = 0             !Number of points to fit
+        Start_Omega_Im = zero                
+        End_Omega_Im = zero
+        Omega_Step_Im = one
 
     end subroutine set_defaults
 

@@ -160,7 +160,6 @@ REAL (dp), PARAMETER :: factor = 100._dp, zero = 0.0_dp
 info = 0
 
 !     check the input parameters for errors.
-
 IF (n <= 0 .OR. m < n .OR. tol < zero) GO TO 10
 
 !     call lmdif.
