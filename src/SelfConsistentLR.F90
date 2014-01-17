@@ -629,13 +629,21 @@ module SelfConsistentLR
 
         !Take abs values 
         DiffMatr(:,:,:) = abs(DiffMat(:,:,:))
+!        write(6,*) "Sep_Dists from CalcLatticeFitResidual: "
+!        write(6,*) DiffMatr(:,:,:)
+!        write(6,*) "enorm of sep_dists: ",enorm(nESteps,DiffMatr(1,1,:))
         if(present(dSeperateFuncs)) then
             !We want to return the individual differences
             dSeperateFuncs(:,:,:) = DiffMatr(:,:,:)
             if(tNonStandardGrid) then
                 do i = 1,nESteps
+                    !dSeperateFuncs(:,:,i) = Weights(i)*(dSeperateFuncs(:,:,i)**2)
                     dSeperateFuncs(:,:,i) = dSeperateFuncs(:,:,i)*sqrt(Weights(i))
                 enddo
+            !else
+            !    do i = 1,nESteps
+            !        dSeperateFuncs(:,:,i) = dSeperateFuncs(:,:,i)**2
+            !    enddo
             endif
             if(iFitGFWeighting.ne.0) then
                 i = 0
@@ -658,9 +666,11 @@ module SelfConsistentLR
                                 !1/w weighting
                                 !We actually divide by the sqrt of Omega, since the LM optimization will automatically take the squares of the functions
                                 dSeperateFuncs(k,j,i) = dSeperateFuncs(k,j,i)/sqrt(abs(Omega))
+                                !dSeperateFuncs(k,j,i) = dSeperateFuncs(k,j,i)/(abs(Omega))
                             elseif(iFitGFWeighting.eq.2) then
                                 !1/w^2 weighting
                                 dSeperateFuncs(k,j,i) = dSeperateFuncs(k,j,i)/abs(Omega)
+                                !dSeperateFuncs(k,j,i) = dSeperateFuncs(k,j,i)/(Omega**2)
                             else
                                 call stop_all(t_r,'Error here')
                             endif
@@ -839,7 +849,10 @@ module SelfConsistentLR
                 call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis,tNonStandardGrid,    &
                     FreqPoints=Freqs_dum,Weights=Weights_dum)
             endif
-            InitErr = enorm(nFuncs,FinalVec)
+!            write(6,*) "Sep_Dists from MinCoups_LM: "
+!            write(6,*) FinalVec(:)
+            !InitErr = (enorm(nFuncs,FinalVec))   !Because enorm also takes the sqrt
+            InitErr = (enorm(nFuncs,FinalVec))**2   !Because enorm also takes the sqrt
             write(6,"(A,G20.10)") "Initial residual before fit: ",InitErr
 
             if(tAnalyticDerivs) then
@@ -891,7 +904,8 @@ module SelfConsistentLR
                 endif
             endif
                 
-            FinalErr = enorm(nFuncs,FinalVec)
+            !FinalErr = (enorm(nFuncs,FinalVec))
+            FinalErr = (enorm(nFuncs,FinalVec))**2
             write(6,"(A,G20.10)") "Final residual after fit: ",FinalErr
             write(6,"(A)") "Lattice parameters: "
             write(6,*) vars(:)
@@ -1035,7 +1049,8 @@ module SelfConsistentLR
                     call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis, tNonStandardGrid,   &
                         FreqPoints=Freqs_dum, Weights=Weights_dum)
                 endif
-                FinalErr = enorm(nFuncs,FinalVec)
+                FinalErr = (enorm(nFuncs,FinalVec))**2
+                !FinalErr = (enorm(nFuncs,FinalVec))
                 deallocate(FinalVec)
             endif
             write(6,"(A,G20.10)") "Final residual after symmetrization of eigenvalues: ",FinalErr
@@ -1089,7 +1104,7 @@ module SelfConsistentLR
         real(dp), allocatable :: CoupsTemp(:,:),Sep_Dists(:,:,:)
         real(dp) :: dist,Omega,diff,dist2,NumDiff
         real(dp), allocatable :: CoupsTemp2(:,:),Sep_Dists2(:,:,:)
-        logical, parameter :: tTest=.false.
+        logical, parameter :: tTest=.false. 
         integer :: i,j,k,ind,RealCoupsNum,ivar,ifreq,iunit2
         character(len=*), parameter :: t_r='MinCoups_LM'
 
@@ -1182,22 +1197,29 @@ module SelfConsistentLR
             !ifreq = 20   !Frequency number that is being differentiated
             iunit2 = 66
 
-            do ifreq = 1,400,25
+            do ifreq = 1,n  !,4
                 do ivar = 1,iNumOptCoups
 
                     diff = 0.0001_dp
-                    do while(diff.gt.1.0e-8_dp)
+                    do while(diff.gt.1.0e-16_dp)
 
                         CoupsTemp2(:,:) = CoupsTemp(:,:)
                         CoupsTemp2(ivar,:) = CoupsTemp2(ivar,:) + diff
-                        call CalcLatticeFitResidual(G,nESteps,CoupsTemp2,RealCoupsNum,dist2,tMatbrAxis, &
-                            dSeperateFuncs=Sep_Dists2,FreqPoints=FreqPoints,Weights=Weights)
-                        NumDiff = ( Sep_Dists2(1,1,ifreq) - Sep_Dists(1,1,ifreq) )/diff
-                        write(iunit2,"(2I8,5G25.14)") ivar,ifreq,diff,NumDiff,Jacobian(ifreq,ivar), &
-                            abs((NumDiff-Jacobian(ifreq,ivar))/NumDiff),abs(NumDiff-Jacobian(ifreq,ivar))
+                        if(tNonStandardGrid) then
+                            call CalcLatticeFitResidual(G,nESteps,CoupsTemp2,RealCoupsNum,dist2,tMatbrAxis, &
+                                dSeperateFuncs=Sep_Dists2,FreqPoints=FreqPoints,Weights=Weights)
+                        else
+                            call CalcLatticeFitResidual(G,nESteps,CoupsTemp2,RealCoupsNum,dist2,tMatbrAxis, &
+                                dSeperateFuncs=Sep_Dists2)
+                        endif
+                        NumDiff = ( Sep_Dists2(1,1,ifreq) - Sep_Dists(1,1,ifreq) ) / diff
+                        !write(6,*) "***",Sep_Dists2(1,1,ifreq),Sep_Dists(1,1,ifreq)
+                        !if(Sep_Dists2(1,1,ifreq).lt.Sep_Dists(1,1,ifreq)) write(6,*) "Negative gradient?"
+                        write(iunit2,"(2I8,6G25.14)") ivar,ifreq,diff,NumDiff,Jacobian(ifreq,ivar), &
+                            abs((NumDiff-Jacobian(ifreq,ivar))/NumDiff),abs(NumDiff-Jacobian(ifreq,ivar)),Sep_Dists(1,1,ifreq)
                         if(abs((NumDiff-Jacobian(ifreq,ivar))/NumDiff).gt.one) then
-                            write(6,"(A,2I8,5G25.14)") "***",ivar,ifreq,diff,NumDiff,Jacobian(ifreq,ivar), &
-                                abs((NumDiff-Jacobian(ifreq,ivar))/NumDiff),abs(NumDiff-Jacobian(ifreq,ivar))
+                            write(6,"(A,2I8,6G25.14)") "***",ivar,ifreq,diff,NumDiff,Jacobian(ifreq,ivar), &
+                                abs((NumDiff-Jacobian(ifreq,ivar))/NumDiff),abs(NumDiff-Jacobian(ifreq,ivar)),Sep_Dists(1,1,ifreq)
                         endif
                         diff = diff/2.0_dp
 
@@ -4796,13 +4818,24 @@ module SelfConsistentLR
                 termi = 2.0_dp*Omega*(mu - evals_full(k))*num/denom2
 
                 FullJac(i,k) = (one/DiffMatr(1,1,i))*(real(DiffMat(1,1,i),dp)*termr - aimag(DiffMat(1,1,i))*termi)
+                !FullJac(i,k) = 2.0_dp*(real(DiffMat(1,1,i),dp)*termr - aimag(DiffMat(1,1,i))*termi)
+
+                !if(abs(Omega).lt.1.0e-9_dp) then
+                !    write(6,*) "mod: ",DiffMatr(1,1,i)
+                !    write(6,*) "Real: ",real(DiffMat(1,1,i),dp)
+                !    write(6,*) "termr: ",termr
+                !endif
+
                 if(tNonStandardGrid) then
                     !Add the weighting factor
                     FullJac(i,k) = FullJac(i,k) * sqrt(Weights(i))
+                    !FullJac(i,k) = FullJac(i,k) * Weights(i)
                 endif
                 if(iFitGFWeighting.eq.1) then
+                    !FullJac(i,k) = FullJac(i,k)/abs(Omega)
                     FullJac(i,k) = FullJac(i,k)/sqrt(abs(Omega))
                 elseif(iFitGFWeighting.eq.2) then
+                    !FullJac(i,k) = FullJac(i,k)/(Omega**2)
                     FullJac(i,k) = FullJac(i,k)/abs(Omega)
                 endif
             enddo
