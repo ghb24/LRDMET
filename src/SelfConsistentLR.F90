@@ -1337,7 +1337,7 @@ module SelfConsistentLR
         real(dp) :: dist2,diff,NumDiff
         real(dp), allocatable :: CoupsTemp(:,:),CoupsTemp2(:,:)
         integer :: i,j,ivar,iunit2,RealCoupsNum
-        logical, parameter :: tTest=.true.  
+        logical, parameter :: tTest=.false. 
         character(len=*), parameter :: t_r='MinCoups'
 
         if(nImp.ne.1) call stop_all(t_r,'n != nfreq')
@@ -4939,32 +4939,38 @@ module SelfConsistentLR
                     call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis)
                 endif
                 if(i.lt.0) exit
-                denom1 = Omega**2 + (mu - evals_full(k))**2
-                denom2 = denom1**2
+                
                 if(tDiag_kSpace) then
                     num = abs(RtoK_Rot(1,k))**2
                 else
                     num = HFOrbs(1,k)**2
                 endif
 
-                termr = 2.0_dp*num*((mu - evals_full(k))**2)/denom2 - num/denom1
-                termi = -2.0_dp*Omega*(mu - evals_full(k))*num/denom2
-                compval = cmplx(termr,termi,dp)*dconjg(DiffMat(1,1,i))
+                compval = num*dconjg(DiffMat(1,1,i)) / (cmplx((mu - evals_full(k)),Omega,dp)**2) 
+
+                !denom1 = Omega**2 + (mu - evals_full(k))**2
+                !denom2 = denom1**2
+
+                !termr = 2.0_dp*num*((mu - evals_full(k))**2)/denom2 - num/denom1
+                !termi = -2.0_dp*Omega*(mu - evals_full(k))*num/denom2
+                !compval = cmplx(termr,termi,dp)*dconjg(DiffMat(1,1,i))
                 
                 if(tNonStandardGrid) then
                     !Add the weighting factor
-                    if(iFitGFWeighting.eq.1) then
-                        FullJac(k) = FullJac(k) + real(compval*dconjg(compval),dp) * Weights(i) / Omega
+                    if(iFitGFWeighting.eq.0) then
+                        FullJac(k) = FullJac(k) + real(compval + dconjg(compval),dp) * Weights(i)
+                    elseif(iFitGFWeighting.eq.1) then
+                        FullJac(k) = FullJac(k) + real(compval + dconjg(compval),dp) * Weights(i) / Omega
                     elseif(iFitGFWeighting.eq.2) then
-                        FullJac(k) = FullJac(k) + real(compval*dconjg(compval),dp) * Weights(i) / (Omega**2)
-                    else
-                        FullJac(k) = FullJac(k) + real(compval*dconjg(compval),dp) * Weights(i)
+                        FullJac(k) = FullJac(k) + real(compval + dconjg(compval),dp) * Weights(i) / (Omega**2)
                     endif
                 else
-                    if(iFitGFWeighting.eq.1) then
-                        FullJac(k) = FullJac(k) + real(compval*dconjg(compval),dp) / Omega
+                    if(iFitGFWeighting.eq.0) then
+                        FullJac(k) = FullJac(k) + real(compval + dconjg(compval),dp)
+                    elseif(iFitGFWeighting.eq.1) then
+                        FullJac(k) = FullJac(k) + real(compval + dconjg(compval),dp) / Omega
                     elseif(iFitGFWeighting.eq.2) then
-                        FullJac(k) = FullJac(k) + real(compval*dconjg(compval),dp) / (Omega**2)
+                        FullJac(k) = FullJac(k) + real(compval + dconjg(compval),dp) / (Omega**2)
                     endif
                 endif
             enddo
@@ -4992,9 +4998,9 @@ module SelfConsistentLR
         else
             if(CouplingLength.ne.nSites) call stop_all(t_r,'Error here')
             Jacobian(:) = FullJac(:)
+            !write(6,*) "Jacobian: ",Jacobian(:)
         endif
         deallocate(FullJac)
-
 
     end subroutine CalcJacobian2
                 
