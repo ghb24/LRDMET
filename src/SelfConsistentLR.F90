@@ -563,7 +563,8 @@ module SelfConsistentLR
     !impurity greens function. Not the greens function itself.
     !Note that this can become expensive - it is a n_sites^2 calculation at best
     !If dSeperateFuncs is present, the difference between the values will be stored for each frequency point
-    subroutine CalcLatticeFitResidual(G_Imp,nESteps,Couplings,iNumCoups,dist,tMatbrAxis,dSeperateFuncs,dJacobian,FreqPoints,Weights)
+    subroutine CalcLatticeFitResidual(G_Imp,nESteps,Couplings,iNumCoups,dist,tMatbrAxis,dSeperateFuncs, &
+        dJacobian,FreqPoints,Weights,dJacobian2)
         implicit none
         integer, intent(in) :: nESteps,iNumCoups
         complex(dp), intent(in) :: G_Imp(nImp,nImp,nESteps)
@@ -574,6 +575,7 @@ module SelfConsistentLR
         real(dp), intent(out), optional :: dJacobian(nESteps,iNumCoups)  !TODO: This will be wrong for > 1 imp
         real(dp), intent(in), optional :: FreqPoints(nESteps)
         real(dp), intent(in), optional :: Weights(nESteps)
+        real(dp), intent(out), optional :: dJacobian2(iNumCoups)
         real(dp), allocatable :: h_lat_fit(:,:)
         complex(dp), allocatable :: SE_Dummy(:,:,:),Lattice_GF(:,:,:),DiffMat(:,:,:)
         real(dp), allocatable :: DiffMatr(:,:,:)
@@ -686,6 +688,16 @@ module SelfConsistentLR
                 else
                     call CalcJacobian(nESteps,iNumCoups,DiffMatr,DiffMat,dJacobian,Couplings(:,1),tMatbrAxis)
                 endif
+            endif
+        endif
+
+        if(present(dJacobian2)) then
+            !Calculate the derivative of dist wrt each eigenvalue
+            if(present(FreqPoints)) then
+                call CalcJacobian2(nESteps,iNumCoups,DiffMat,dJacobian2,Couplings(:,1),tMatbrAxis,     &
+                    FreqPoints=FreqPoints,Weights=Weights)
+            else
+                call CalcJacobian2(nESteps,iNumCoups,DiffMat,dJacobian2,Couplings(:,1),tMatbrAxis)
             endif
         endif
 
@@ -1324,6 +1336,7 @@ module SelfConsistentLR
 
         real(dp), allocatable :: CoupsTemp(:,:)
         integer :: i,j,RealCoupsNum
+        logical, parameter :: tTest=.true.  
         character(len=*), parameter :: t_r='MinCoups'
 
         if(tOptGF_EVals) then
@@ -1356,14 +1369,24 @@ module SelfConsistentLR
 
         if(present(dJac)) then
             !Compute the gradient
-            call stop_all(t_r,'Plumb this in')
-        endif
-
-        if(tNonStandardGrid) then
-            if(.not.present(FreqPoints)) call stop_all(t_r,'Error here')
-            call CalcLatticeFitResidual(G,n,CoupsTemp,RealCoupsNum,dist,tMatbrAxis,FreqPoints=FreqPoints,Weights=Weights)
+            if(tNonStandardGrid) then
+                if(.not.present(FreqPoints)) call stop_all(t_r,'Error here')
+                call CalcLatticeFitResidual(G,n,CoupsTemp,RealCoupsNum,dist,tMatbrAxis, &
+                    FreqPoints=FreqPoints,Weights=Weights,dJacobian2=dJac)
+            else
+                call CalcLatticeFitResidual(G,n,CoupsTemp,RealCoupsNum,dist,tMatbrAxis,dJacobian2=dJac)
+            endif
+            if(tTest) then
+                call stop_all(t_r,'Check gradients')
+            endif
         else
-            call CalcLatticeFitResidual(G,n,CoupsTemp,RealCoupsNum,dist,tMatbrAxis)
+            if(tNonStandardGrid) then
+                if(.not.present(FreqPoints)) call stop_all(t_r,'Error here')
+                call CalcLatticeFitResidual(G,n,CoupsTemp,RealCoupsNum,dist,tMatbrAxis, &
+                    FreqPoints=FreqPoints,Weights=Weights)
+            else
+                call CalcLatticeFitResidual(G,n,CoupsTemp,RealCoupsNum,dist,tMatbrAxis)
+            endif
         endif
 
         deallocate(CoupsTemp)
@@ -4829,6 +4852,118 @@ module SelfConsistentLR
         deallocate(k_Ham,CompHam,ztemp)
 
     end subroutine FindLocalMomGF
+    
+    !Find the jacobian matrix for the optimization (in a few cases)
+    subroutine CalcJacobian2(n,CouplingLength,DiffMat,Jacobian,evals,tMatbrAxis,FreqPoints,Weights)
+        implicit none
+        integer, intent(in) :: n    !Number of frequency points
+        integer, intent(in) :: CouplingLength   !The number of variables
+        complex(dp), intent(in) :: DiffMat(nImp,nImp,n) !The (complex) difference between the greens functions
+        real(dp), intent(out) :: Jacobian(CouplingLength) !The Jacobian
+        real(dp), intent(in) :: evals(CouplingLength)
+        logical, intent(in) :: tMatbrAxis
+        real(dp), intent(in), optional :: FreqPoints(n),Weights(n)
+        
+        real(dp) :: mu,Omega,denom1,denom2,num,termr,termi
+        complex(dp) :: compval
+        real(dp), allocatable :: evals_full(:),FullJac(:)
+        integer :: i,k
+        logical :: tNonStandardGrid
+        character(len=*), parameter :: t_r='CalcJacobian2'
+
+        if(nImp.gt.1) call stop_all(t_r,'Cannot do for more than 1 impurity yet')
+        if(.not.tMatbrAxis) call stop_all(t_r,'Cannot do gradients on real axis yet')
+        if(iLatticeFitType.ne.1) call stop_all(t_r,'Cannot do gradients with non-linear objective functions yet')
+        if(.not.tOptGF_EVals) call stop_all(t_r,'Cannot do gradients when optimizing lattice couplings rather than eigenvalues')
+        if(present(FreqPoints)) then
+            tNonStandardGrid = .true.
+            if(.not.(present(Weights))) then
+                call stop_all(t_r,"No Weights present")
+            endif
+        else
+            tNonStandardGrid = .false.
+        endif
+        if(.not.tAnderson) then
+            !In the hubbard model, apply a chemical potential of U/2
+            !This should really be passed in
+            mu = U/2.0_dp
+        else
+            mu = zero 
+        endif
+
+        allocate(evals_full(nSites))
+        call FindFullLatEvals(evals,CouplingLength,evals_full)
+        !Calculate the *full* hamiltonian
+        allocate(FullJac(nSites))
+        FullJac(:) = zero
+
+        do k = 1,nSites
+            i=0
+            do while(.true.)
+                if(tNonStandardGrid) then
+                    call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis,nFreqPoints=n,FreqPoints=FreqPoints)
+                else
+                    call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis)
+                endif
+                if(i.lt.0) exit
+                denom1 = Omega**2 + (mu - evals_full(k))**2
+                denom2 = denom1**2
+                if(tDiag_kSpace) then
+                    num = abs(RtoK_Rot(1,k))**2
+                else
+                    num = HFOrbs(1,k)**2
+                endif
+
+                termr = 2.0_dp*num*((mu - evals_full(k))**2)/denom2 - num/denom1
+                termi = -2.0_dp*Omega*(mu - evals_full(k))*num/denom2
+                compval = cmplx(termr,termi,dp)*dconjg(DiffMat(1,1,i))
+                
+                if(tNonStandardGrid) then
+                    !Add the weighting factor
+                    if(iFitGFWeighting.eq.1) then
+                        FullJac(k) = FullJac(k) + real(compval*dconjg(compval),dp) * Weights(i) / Omega
+                    elseif(iFitGFWeighting.eq.2) then
+                        FullJac(k) = FullJac(k) + real(compval*dconjg(compval),dp) * Weights(i) / (Omega**2)
+                    else
+                        FullJac(k) = FullJac(k) + real(compval*dconjg(compval),dp) * Weights(i)
+                    endif
+                else
+                    if(iFitGFWeighting.eq.1) then
+                        FullJac(k) = FullJac(k) + real(compval*dconjg(compval),dp) / Omega
+                    elseif(iFitGFWeighting.eq.2) then
+                        FullJac(k) = FullJac(k) + real(compval*dconjg(compval),dp) / (Omega**2)
+                    endif
+                endif
+            enddo
+        enddo
+
+        !Now, compress the jacobian if necessary
+        if(tKPntSymFit) then
+            !However, we need now to package it up. Since we are only optimizing certain eigenvalue, we need
+            !to add the two gradient contributions together
+            Jacobian(:) = zero
+            !Include the negative k terms
+            Jacobian(1:nSites/2) = FullJac(1:nSites/2)
+            if(tShift_Mesh) then
+                !No gamma point. All k-points symmetric
+                do i = 1,nSites/2
+                    Jacobian((nSites/2)-i+1) = Jacobian((nSites/2)-i+1) + FullJac(i+(nSites/2))
+                enddo
+            else
+                !The gamma point is unchanged (and therefore the gradient will on average be half the other values)
+                Jacobian((nSites/2)+1) = FullJac((nSites/2)+1)
+                do i = 2,nSites/2
+                    Jacobian(((nSites/2)-i+2)) = Jacobian(((nSites/2)-i+2)) + FullJac(i+(nSites/2))
+                enddo
+            endif
+        else
+            if(CouplingLength.ne.nSites) call stop_all(t_r,'Error here')
+            Jacobian(:) = FullJac(:)
+        endif
+        deallocate(FullJac)
+
+
+    end subroutine CalcJacobian2
                 
     !Find the jacobian matrix for the optimization (in a few cases)
     subroutine CalcJacobian(n,CouplingLength,DiffMatr,DiffMat,Jacobian,evals,tMatbrAxis,FreqPoints,Weights)
