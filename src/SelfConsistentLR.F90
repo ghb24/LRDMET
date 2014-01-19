@@ -751,6 +751,7 @@ module SelfConsistentLR
     subroutine FitLatticeCouplings(G_Imp,n,Couplings,iNumCoups,FinalErr,tMatbrAxis,FreqPoints,Weights)
         use MinAlgos
         use Levenberg_Marquardt
+        use lbfgs
         implicit none
         integer, intent(in) :: n    !Number of frequency points
         integer, intent(in) :: iNumCoups    !Number of independent coupling parameters
@@ -761,11 +762,14 @@ module SelfConsistentLR
         real(dp), intent(in), optional :: FreqPoints(n),Weights(n)
 
         real(dp), allocatable :: step(:),vars(:),var(:),FinalVec(:),Jac(:,:)
-        real(dp), allocatable :: Freqs_dum(:),Weights_dum(:)
-        integer, allocatable :: iwork(:)
-        integer :: nop,i,maxf,iprint,nloop,iquad,ierr,iRealCoupNum,nFuncs,j,ierr_tmp
-        real(dp) :: stopcr,simp,rhobeg,rhoend,InitErr
+        real(dp), allocatable :: Freqs_dum(:),Weights_dum(:),l(:),u(:),grad(:),wa(:)
+        integer, allocatable :: iwork(:),nbd(:),iwa(:)
+        integer :: nop,i,maxf,iprint,nloop,iquad,ierr,iRealCoupNum,nFuncs,j,ierr_tmp,corrs
+        real(dp) :: stopcr,simp,rhobeg,rhoend,InitErr,dsave(29),pgtol
         logical :: tfirst,tOptEVals_,tNonStandardGrid
+        character(len=60) :: task,csave
+        integer :: isave(44)
+        logical :: lsave(4)
         logical, parameter :: tConstrainSyms = .true.
         character(len=*), parameter :: t_r='FitLatticeCouplings'
 
@@ -823,7 +827,74 @@ module SelfConsistentLR
             allocate(Freqs_dum(n))
         endif
 
-        if(iFitAlgo.eq.3) then
+        if(iFitAlgo.eq.4) then
+            !Use L-BFGS(-constrained) to fit
+            if(.not.tAnalyticDerivs) call stop_all(t_r,'Need analytic derivatives if optimizing with BFGS')
+
+            !We can specify upper and lower bounds on the solutions. Set these to be /pm1000 
+            allocate(l(iRealCoupNum))   !Lower limits
+            allocate(u(iRealCoupNum))   !Upper limits
+            allocate(nbd(iRealCoupNum)) !Type of limit on each variable: 0 - unbounded, 1 - lower only, 2 - both bounds, 3 - upper only
+            nbd(:) = 0
+            l(:) = -1000.0_dp
+            u(:) = 1000.0_dp
+
+            rhoend = 1.0e12_dp  !Low accuracy
+            rhoend = 1.0e7_dp   !Mid accuracy
+            rhoend = 10.0_dp    !High accuracy
+            pgtol = 1.0e-5_dp   !Maximum gradient exit criterion
+
+            allocate(grad(iRealCoupNum))
+            
+            !corrs is the maximum number of variable metric corrections
+            !used to define the limited memory matrix.
+            corrs = 6
+
+            !Working arrays
+            allocate(wa(2*iRealCoupNum*corrs + 5*iRealCoupNum + 11*corrs*corrs + 8*corrs))
+            allocate(iwa(3*iRealCoupNum))
+
+            iprint = 10
+
+            task='START'
+
+            do while(task(1:2).eq.'FG'.or.task.eq.'NEW_X'.or.task.eq.'START')
+
+                call setulb(iRealCoupNum,corrs,vars,l,u,nbd,FinalErr,grad,rhoend,   &
+                    pgtol,wa,iwa,task,iprint,csave,lsave,isave,dsave)
+
+                if(task(1:2).eq.'FG') then
+                    !Request the function (FinalErr), and the gradient (grad) at the current parameters (vars)
+
+                    !Compute function and gradient
+                    if(tNonStandardGrid) then
+                        call MinCoups(vars,FinalErr,n,iRealCoupNum,G_Imp,tMatbrAxis,tNonStandardGrid,   &
+                            FreqPoints=FreqPoints,Weights=Weights,dJac=grad)
+                    else
+                        call MinCoups(vars,FinalErr,n,iRealCoupNum,G_Imp,tMatbrAxis,tNonStandardGrid,dJac=grad)
+                    endif
+
+                elseif(task(1:5).eq.'NEW_X') then
+                    !Returned with a new iterate
+                    !Have we already been through more iterations than we want?
+                    if(isave(34).ge.iMaxFitMicroIter) then
+                        task='STOP: TOTAL NO. of f AND g EVALUATIONS EXCEEDS LIMIT'
+                    endif
+                else
+                    exit
+                endif
+            enddo
+                
+            write(6,"(A,A)") "Final task: ",task
+            write(6,"(A,I8)") "Final number of bfgs iterations: ",isave(30)
+            write(6,"(A,I8)") "Total number of f and g evaluations: ",isave(34)
+            write(6,"(A,G20.10)") "Final norm of projected gradient: ",dsave(13)
+            write(6,"(A,G20.10)") "Final residual after fit: ",FinalErr
+            write(6,"(A)") "Lattice parameters: "
+            write(6,*) vars(:)
+            deallocate(l,u,nbd,grad,wa,iwa) 
+                
+        elseif(iFitAlgo.eq.3) then
             !Use a Levenberg-Marquardt algorithm for non-linear optimization with either finite-difference
             !or analytic derivatives
             if(iLatticeFitType.eq.3) then
@@ -1032,13 +1103,13 @@ module SelfConsistentLR
             call Imposephsym(iRealCoupNum,vars)
 
             !Calculate the new final residual
-            if(iFitAlgo.le.2) then
+            if((iFitAlgo.le.2).or.(iFitAlgo.eq.4)) then
                 if(tNonStandardGrid) then
                     call MinCoups(vars,FinalErr,n,iRealCoupNum,G_Imp,tMatbrAxis, tNonStandardGrid, FreqPoints, Weights)
                 else
-                    call MinCoups(vars,FinalErr,n,iRealCoupNum,G_Imp,tMatbrAxis, tNonStandardGrid, Freqs_dum, Weights_dum)
+                    call MinCoups(vars,FinalErr,n,iRealCoupNum,G_Imp,tMatbrAxis, tNonStandardGrid)
                 endif
-            else
+            elseif(iFitAlgo.eq.3) then
                 !LM algorithm
                 allocate(FinalVec(nFuncs))
                 ierr_tmp = 1
@@ -1082,7 +1153,8 @@ module SelfConsistentLR
         endif
 
         deallocate(vars)
-        if(.not.tNonStandardGrid) deallocate(Weights_dum,Freqs_dum)
+        if(allocated(Weights_dum)) deallocate(Weights_dum)
+        if(allocated(Freqs_dum)) deallocate(Freqs_dum)
 
     end subroutine FitLatticeCouplings
 
@@ -1238,7 +1310,7 @@ module SelfConsistentLR
     end subroutine MinCoups_LM
 
     !Wrapper function to evaluate residual for the simplex/Melder-Neal algorithm
-    subroutine MinCoups(vars,dist,n,iNumOptCoups,G,tMatbrAxis,tNonStandardGrid,FreqPoints,Weights)
+    subroutine MinCoups(vars,dist,n,iNumOptCoups,G,tMatbrAxis,tNonStandardGrid,FreqPoints,Weights,dJac)
         implicit none
         integer, intent(in) :: n,iNumOptCoups
         real(dp), intent(in) :: vars(iNumOptCoups)
@@ -1248,6 +1320,7 @@ module SelfConsistentLR
         logical, intent(in) :: tNonStandardGrid
         real(dp), intent(in), optional :: FreqPoints(n)
         real(dp), intent(in), optional :: Weights(n)
+        real(dp), intent(out), optional :: dJac(iNumOptCoups)
 
         real(dp), allocatable :: CoupsTemp(:,:)
         integer :: i,j,RealCoupsNum
@@ -1280,7 +1353,12 @@ module SelfConsistentLR
                 CoupsTemp(:,i) = vars(:)
             enddo
         endif
-            
+
+        if(present(dJac)) then
+            !Compute the gradient
+            call stop_all(t_r,'Plumb this in')
+        endif
+
         if(tNonStandardGrid) then
             if(.not.present(FreqPoints)) call stop_all(t_r,'Error here')
             call CalcLatticeFitResidual(G,n,CoupsTemp,RealCoupsNum,dist,tMatbrAxis,FreqPoints=FreqPoints,Weights=Weights)

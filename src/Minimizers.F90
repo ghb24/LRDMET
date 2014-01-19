@@ -29,7 +29,7 @@ REAL(dp), INTENT(IN)       :: Freqs(n_dum)
 REAL(dp), INTENT(IN)       :: Weights(n_dum)
 
 INTERFACE
-  SUBROUTINE calfun(x, f, n_dum, n, g_dum, tMataxis_dum, tGrid, Freqs, Weights)
+  SUBROUTINE calfun(x, f, n_dum, n, g_dum, tMataxis_dum, tGrid, Freqs, Weights, dJac)
     use const, only: dp
     use Globals, only: nImp
     IMPLICIT NONE
@@ -41,6 +41,7 @@ INTERFACE
     logical, intent(in) :: tGrid
     real(dp), intent(in), optional :: Freqs(n_dum)
     real(dp), intent(in), optional :: Weights(n_dum)
+    real(dp), intent(out), optional :: dJac(n)
   END SUBROUTINE calfun
 END INTERFACE
 
@@ -103,7 +104,7 @@ REAL(dp), INTENT(IN) :: Freqs(n_dum)
 REAL(dp), INTENT(IN) :: Weights(n_dum)
 
 INTERFACE
-  SUBROUTINE calfun(x, f, n_dum, n, g_dum, tMataxis_dum, tGrid, Freqs, Weights)
+  SUBROUTINE calfun(x, f, n_dum, n, g_dum, tMataxis_dum, tGrid, Freqs, Weights, dJac)
     use const, only: dp
     use Globals, only: nImp
     IMPLICIT NONE
@@ -115,6 +116,7 @@ INTERFACE
     logical, intent(in) :: tGrid
     real(dp), intent(in), optional :: Freqs(n_dum)
     real(dp), intent(in), optional :: Weights(n_dum)
+    real(dp), intent(out), optional :: dJac(n)
   END SUBROUTINE calfun
 END INTERFACE
 
@@ -1285,7 +1287,7 @@ real(dp), intent(in) :: Freqs(n_dum)
 real(dp), intent(in) :: Weights(n_dum)
 
 INTERFACE
-  SUBROUTINE functn(p, func, n_dum, nop, g_dum, tMataxis_dum, tGrid, Freqs, Weights)
+  SUBROUTINE functn(p, func, n_dum, nop, g_dum, tMataxis_dum, tGrid, Freqs, Weights, dJac)
     use const, only: dp
     use Globals, only: nImp
     IMPLICIT NONE
@@ -1298,6 +1300,7 @@ INTERFACE
     logical, intent(in) :: tGrid
     real(dp), intent(in), optional :: Freqs(n_dum)
     real(dp), intent(in), optional :: Weights(n_dum)
+    real(dp), intent(out), optional :: dJac(nop)
   END SUBROUTINE functn
 END INTERFACE
 
