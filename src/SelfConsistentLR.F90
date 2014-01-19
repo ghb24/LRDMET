@@ -1334,10 +1334,13 @@ module SelfConsistentLR
         real(dp), intent(in), optional :: Weights(n)
         real(dp), intent(out), optional :: dJac(iNumOptCoups)
 
-        real(dp), allocatable :: CoupsTemp(:,:)
-        integer :: i,j,RealCoupsNum
+        real(dp) :: dist2,diff,NumDiff
+        real(dp), allocatable :: CoupsTemp(:,:),CoupsTemp2(:,:)
+        integer :: i,j,ivar,iunit2,RealCoupsNum
         logical, parameter :: tTest=.true.  
         character(len=*), parameter :: t_r='MinCoups'
+
+        if(nImp.ne.1) call stop_all(t_r,'n != nfreq')
 
         if(tOptGF_EVals) then
             RealCoupsNum = iNumOptCoups
@@ -1377,7 +1380,37 @@ module SelfConsistentLR
                 call CalcLatticeFitResidual(G,n,CoupsTemp,RealCoupsNum,dist,tMatbrAxis,dJacobian2=dJac)
             endif
             if(tTest) then
-                call stop_all(t_r,'Check gradients')
+                !Test analytic derivatives
+                allocate(CoupsTemp2(iNumOptCoups,nImp))
+                iunit2 = 66
+
+                do ivar = 1,iNumOptCoups
+
+                    diff = 0.0001_dp
+                    do while(diff.gt.1.0e-16_dp)
+
+                        CoupsTemp2(:,:) = CoupsTemp(:,:)
+                        CoupsTemp2(ivar,:) = CoupsTemp2(ivar,:) + diff
+                        if(tNonStandardGrid) then
+                            call CalcLatticeFitResidual(G,n,CoupsTemp2,RealCoupsNum,dist2,tMatbrAxis, &
+                                FreqPoints=FreqPoints,Weights=Weights)
+                        else
+                            call CalcLatticeFitResidual(G,n,CoupsTemp2,RealCoupsNum,dist2,tMatbrAxis)
+                        endif
+                        NumDiff = ( dist2 - dist ) / diff
+                        write(iunit2,"(I8,6G25.14)") ivar,diff,NumDiff,dJac(ivar), &
+                            abs((NumDiff-dJac(ivar))/NumDiff),abs(NumDiff-dJac(ivar)),dist2
+                        if(abs((NumDiff-dJac(ivar))/NumDiff).gt.one) then
+                            write(6,"(A,I8,6G25.14)") "***",ivar,diff,NumDiff,dJac(ivar), &
+                                abs((NumDiff-dJac(ivar))/NumDiff),abs(NumDiff-dJac(ivar)),dist2
+                        endif
+                        diff = diff/2.0_dp
+
+                    enddo
+                    write(iunit2,"(A)") ""
+                enddo
+                deallocate(CoupsTemp2)
+                call stop_all(t_r,'end')
             endif
         else
             if(tNonStandardGrid) then
