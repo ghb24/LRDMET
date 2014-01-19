@@ -282,7 +282,7 @@ contains
 
       return
 
-      end
+      end subroutine
 
 !======================= The end of setulb =============================
  
@@ -990,7 +990,7 @@ contains
 
       return   
 
-      end
+      end subroutine
  
 !======================= The end of mainlb =============================
 
@@ -1088,7 +1088,7 @@ contains
 
       return
 
-      end
+      end subroutine
 
 !======================= The end of active =============================
  
@@ -1204,7 +1204,7 @@ contains
 
       return
 
-      end
+      end subroutine
 
 !======================== The end of bmv ===============================
 
@@ -1698,7 +1698,7 @@ contains
  
       return
  
-      end
+      end subroutine
 
 !====================== The end of cauchy ==============================
 
@@ -1766,7 +1766,7 @@ contains
 
       return
 
-      end
+      end subroutine
 
 !======================= The end of cmprlb =============================
 
@@ -1824,7 +1824,7 @@ contains
 
       return
 
-      end
+      end subroutine
 
 !======================= The end of errclb =============================
  
@@ -2147,7 +2147,7 @@ contains
 
       return
 
-      end
+      end subroutine
 
 !======================= The end of formk ==============================
 
@@ -2213,7 +2213,7 @@ contains
 
       return
 
-      end
+      end subroutine
 
 !======================= The end of formt ==============================
  
@@ -2313,7 +2313,7 @@ contains
 
       return
 
-      end
+      end subroutine
 
 !======================= The end of freev ==============================
 
@@ -2425,7 +2425,7 @@ contains
 
       return
 
-      end
+      end subroutine
 
 !====================== The end of hpsolb ==============================
 
@@ -2556,7 +2556,7 @@ contains
 
       return
 
-      end
+      end subroutine
 
 !======================= The end of lnsrlb =============================
 
@@ -2641,7 +2641,7 @@ contains
  
       return
 
-      end
+      end subroutine
 
 !======================= The end of matupd =============================
 
@@ -2712,7 +2712,7 @@ contains
 
       return
 
-      end
+      end subroutine
 
 !======================= The end of prn1lb =============================
 
@@ -2779,7 +2779,7 @@ contains
 
       return
 
-      end
+      end subroutine
 
 !======================= The end of prn2lb =============================
 
@@ -2907,7 +2907,7 @@ contains
 
       return
 
-      end
+      end subroutine
 
 !======================= The end of prn3lb =============================
 
@@ -2954,7 +2954,7 @@ contains
 
       return
 
-      end
+      end subroutine
 
 !======================= The end of projgr =============================
 
@@ -3308,7 +3308,8 @@ contains
 
       return
 
-      end
+      end subroutine
+
 !====================== The end of subsm ===============================
 
       subroutine dcsrch(f,g,stp,ftol,gtol,xtol,stpmin,stpmax,   &
@@ -3654,7 +3655,7 @@ contains
       dsave(13) = width1
 
       return
-      end
+      end subroutine
       
 !====================== The end of dcsrch ==============================
 
@@ -3913,6 +3914,6 @@ contains
       stp = stpf
 
       return
-      end
+      end subroutine
       
 end module lbfgs
