@@ -139,8 +139,6 @@ Program RealHub
         tStaticBathFitLat = .false. !By default no fit hamiltonian in the bath space
         tOptGF_EVals = .false.      !Optimize lattice couplings, or lattice eigenvalues
         tAnalyticDerivs = .false.   !Whether to use analytic derivatives when optimizing with Lev-Mar algorithm
-        tKPntSymFit = .false.       !Restrict the fit to conserve momentum
-        tphsym = .false.            !Impose ph symmetry in the fitting
         dShiftLatticeEvals = zero   !Shift read in lattice eigenvalues?
         tFitRealFreq = .false.      !Fit on matsubara axis by default
         tFitPoints_Legendre = .false.   !Fit to Legendre points
@@ -149,6 +147,10 @@ Program RealHub
         End_Omega_Im = zero
         Omega_Step_Im = one
         iMaxIter_MacroFit = 100
+        tConstrainKSym = .false.    !Restrict the fit to conserve momentum
+        tConstrainphSym = .false.   !Restrict the fit to conserve ph symmetry
+        tImposeKSym = .false.       !Impose momentum symmetry on the fit values
+        tImposephSym = .false.      !Impose ph symmetry on the fit values
 
     end subroutine set_defaults
 
@@ -643,10 +645,14 @@ Program RealHub
                 tOptGF_EVals = .true.
             case("USE_ANALYTIC_DERIVS")
                 tAnalyticDerivs = .true.    !Calculate analytic derivatives in fitting
-            case("CONSERVE_K_FIT")
-                tKPntSymFit = .true.        !Conserve k-point symmetry = 0 in fitting
+            case("CONSTRAIN_K_SYM")
+                tConstrainKSym = .true.        !Conserve k-point symmetry = 0 in fitting
+            case("IMPOSE_K_SYM")
+                tImposeKSym = .true.
+            case("CONSTRAIN_PH_SYM")
+                tConstrainphsym = .true.
             case("IMPOSE_PH_SYM")
-                tphsym = .true.             !Impose ph sym
+                tImposephsym = .true.             !Impose ph sym
             case("LEGENDRE_GRID")           
                 call readi(nFreqPoints)
                 tFitPoints_Legendre = .true.    !Legendre fitting
@@ -693,6 +699,10 @@ Program RealHub
                 write(6,"(A)") "EXT_HAM_FITLATTICE"
                 write(6,"(A)") "EVERYOTHER_LATTICECOUP_ZERO"
                 write(6,"(A)") "USE_ANALYTIC_DERIVS"
+                write(6,"(A)") "IMPOSE_K_SYM"
+                write(6,"(A)") "IMPOSE_PH_SYM"
+                write(6,"(A)") "CONSTRAIN_K_SYM"
+                write(6,"(A)") "CONSTRAIN_PH_SYM"
                 write(6,"(A)") "FIT_REALFREQ"
                 write(6,"(A)") "MANYBODY_SELFENERGY"
                 write(6,"(A)") "MATSUBARA_FREQ"
@@ -1013,6 +1023,27 @@ Program RealHub
         endif
         if(tSC_LR.and.tOptGF_EVals.and.(iLatticeCoups.ne.0)) then
             call stop_all(t_r,'Lattice eigenvalues self-consistency cannot do a smaller number of lattice sites')
+        endif
+        if(tImposephsym.and.(.not.tHalfFill)) then
+            call stop_all(t_r,'Can only impose ph sym if we are at half-filling')
+        endif
+        if(tConstrainphsym.and.(.not.tHalfFill)) then
+            call stop_all(t_r,'Can only impose ph sym if we are at half-filling')
+        endif
+        if((tImposeksym.or.tConstrainksym).and.(.not.tDiag_kSpace)) then
+            call stop_all(t_r,'Cannot constrain/impose k-sym without setting up k-sym')
+        endif
+        if(tImposeksym.and.tConstrainksym) then
+            call stop_all(t_r,'No need to impose ksym if we are constraining it in the fit')
+        endif
+        if(tImposephsym.and.tConstrainphsym) then
+            call stop_all(t_r,'No need to impose ph sym if we are constraining it in the fit')
+        endif
+        if((tImposephsym.or.tConstrainphsym.or.tImposeksym.or.tConstrainksym).and.(.not.tOptGF_EVals)) then
+            call stop_all(t_r,'Cannot impose symmetries unless optimizing eigenvalues')
+        endif
+        if(tConstrainphsym.and.(.not.tConstrainksym)) then
+            call stop_all(t_r,'Sorry - you cant constrain ph sym without also constraining ksym')
         endif
 
     end subroutine check_input

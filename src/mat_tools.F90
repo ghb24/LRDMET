@@ -1797,28 +1797,31 @@ module mat_tools
         real(dp), allocatable :: temp(:),temp2(:,:)
         complex(dp), allocatable :: ctemp(:,:),cham(:,:)
         integer :: CoupInd,i,j,k,offset,ImpCoup
+        real(dp) :: mu
         logical, parameter :: tOneCouplingSet=.true.
         character(len=*), parameter :: t_r='AddPeriodicImpCoupling_RealSpace'
 
         if(tOptGF_EVals) then
             if(nImp.gt.1) call stop_all(t_r,'This is not set up for > 1 imp - bug GHB')
             if(tDiag_KSpace) then
-                !Here, the eigenvalues are the positive/negatice eigenvalues.
+                !Here, the eigenvalues are the positive/negative eigenvalues.
                 !Use these to construct the lattice hamtiltonian
-                if(tKPntSymFit) then
-                    if(tShift_Mesh) then
-                        if(iCoupLength.ne.(nSites/2)) call stop_all(t_r,'Number of variables incorrect?')
-                    else
-                        if(iCoupLength.ne.((nSites/2)+1)) call stop_all(t_r,'Incorrect number of variables?')
-                    endif
+                if(tConstrainKSym.and.(.not.tConstrainphsym)) then
+                    if(tShift_Mesh.and.(iCoupLength.ne.(nSites/2))) call stop_all(t_r,'Wrong # of params')
+                    if((.not.tShift_Mesh).and.(iCoupLength.ne.((nSites/2)+1))) call stop_all(t_r,'Wrong # of params')
+                elseif(tConstrainKSym.and.tConstrainphsym) then
+                    if(tShift_Mesh.and.(iCoupLength.ne.(nSites/4))) call stop_all(t_r,'Wrong # of params')
+                    if((.not.tShift_Mesh).and.(iCoupLength.ne.(((nSites/2)+1)/2))) call stop_all(t_r,'Wrong # of params')
+                elseif(tConstrainphsym.and.(.not.tConstrainksym)) then
+                    if(iCoupLength.ne.(nSites/2)) call stop_all(t_r,'Wrong # of params')
                 else
-                    if(iCoupLength.ne.nSites) call stop_all(t_r,'Incorrect number of variables')
+                    if(iCoupLength.ne.nSites) call stop_all(t_r,'Wrong # of params')
                 endif
 
                 allocate(ctemp(nSites,nSites))
                 allocate(cham(nSites,nSites))
                 cham(:,:) = zzero
-                if(tKPntSymFit) then
+                if(tConstrainKSym.and.(.not.tConstrainphsym)) then
                     do i = 1,nSites/2
                         cham(i,i) = dcmplx(Couplings(i,1),zero)
                     enddo
@@ -1833,6 +1836,30 @@ module mat_tools
                         !Now, add in the other kpoints (not point on BZ boundary at start)
                         do i = 2,nSites/2
                             cham(i+(nSites/2),i+(nSites/2)) = dcmplx(Couplings((nSites/2)-i+2,1),zero)
+                        enddo
+                    endif
+                elseif(tConstrainKSym.and.tConstrainphsym) then
+                    mu = U/2.0_dp
+                    !First, copy the eigenvalues to the particle states
+                    do i = 1,iCoupLength
+                        cham(i,i) = dcmplx(Couplings(i,1),zero)
+                    enddo
+                    !Now for the hole states
+                    do i = 1,iCoupLength
+                        cham(iCoupLength+i,iCoupLength+i) = dcmplx(2.0_dp*mu-Couplings(iCoupLength-i+1,1),zero)
+                    enddo
+                    !Now for ksym
+                    if(tShift_Mesh) then
+                        !No gamma point. All k-points symmetric
+                        do i = 1,nSites/2
+                            cham(i+(nSites/2),i+(nSites/2)) = cham((nSites/2)-i+1,(nSites/2)-i+1)
+                        enddo
+                    else
+                        !Put in the gamma point (actually, this has already been put in)
+                        cham((nSites/2)+1,(nSites/2)+1) = cham((nSites/2)+1,(nSites/2)+1)
+                        !Now, add in the other kpoints (not point on BZ boundary at start)
+                        do i = 2,nSites/2
+                            cham(i+(nSites/2),i+(nSites/2)) = cham((nSites/2)-i+2,(nSites/2)-i+2)
                         enddo
                     endif
                 else

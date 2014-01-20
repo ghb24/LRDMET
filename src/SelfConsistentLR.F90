@@ -35,7 +35,6 @@ module SelfConsistentLR
                 write(6,*) i,abs(RtoK_Rot(1,i))**2
             enddo
         else
-            if(tKPntSymFit) call stop_all(t_r,'Should not be trying to conserve k-point symmetry without any!') 
             do i = 1,nSites
                 write(6,*) i,HFOrbs(1,i),HFOrbs(1,i)**2 
             enddo
@@ -128,7 +127,7 @@ module SelfConsistentLR
         !Initially, just see if we can fit the two different Matsubara spectral functions
         write(6,*) "Number of frequency points to fit across: ",nFitPoints
         if(tOptGF_EVals) then
-            if(tKPntSymFit) then
+            if(tConstrainKSym) then
                 !We don't actually want to optimize all of these.
                 !e(k) = e(-k), and we are always using a uniform mesh
                 !If gamma-centered mesh, then have nSites/2 + 1 independent parameters (we are sampling k=0 and BZ boundary which dont pair)
@@ -140,6 +139,10 @@ module SelfConsistentLR
                 endif
             else
                 iLatParams = nSites !Optimize all kpoints independently
+            endif
+            if(tConstrainphsym) then
+                !We can optimize only the virtual states
+                iLatParams = iLatParams / 2
             endif
             if(iLatticeCoups.ne.0) then
                 call stop_all(t_r,'iLatticeCoups set, but expecting to optimize eigenvalues')
@@ -808,7 +811,6 @@ module SelfConsistentLR
         character(len=60) :: task,csave
         integer :: isave(44)
         logical :: lsave(4)
-        logical, parameter :: tConstrainSyms = .false.
         character(len=*), parameter :: t_r='FitLatticeCouplings'
 
         if(tOptGF_EVals) then
@@ -833,9 +835,12 @@ module SelfConsistentLR
         tNonStandardGrid = .false.
         allocate(vars(iRealCoupNum))
         if(tOptEVals_) then
-            if(tKPntSymFit) then
+            if(tConstrainKSym.and.(.not.tConstrainphsym)) then
                 if(tShift_Mesh.and.(iRealCoupNum.ne.(nSites/2))) call stop_all(t_r,'Error here')
                 if((.not.tShift_Mesh).and.(iRealCoupNum.ne.((nSites/2)+1))) call stop_all(t_r,'Error here')
+            elseif(tConstrainKSym.and.tConstrainphsym) then
+                if(tShift_Mesh.and.(iRealCoupNum.ne.(nSites/4))) call stop_all(t_r,'Wrong # of params')
+                if((.not.tShift_Mesh).and.(iRealCoupNum.ne.(((nSites/2)+1)/2))) call stop_all(t_r,'Wrong # of params')
             else
                 if(iRealCoupNum.ne.nSites) call stop_all(t_r,'Error Here')
             endif
@@ -1135,10 +1140,10 @@ module SelfConsistentLR
             deallocate(step,var)
         endif
             
-        if(tOptGF_EVals.and.tConstrainSyms) then
+        if(tImposephsym.or.tImposeksym) then
             !Impose momentum inversion, and potentially ph symmetry
             !Symmetrize the resulting eigenvalues
-            call Imposephsym(iRealCoupNum,vars)
+            call Imposesym(iRealCoupNum,vars)
 
             !Calculate the new final residual
             if((iFitAlgo.le.2).or.(iFitAlgo.eq.4)) then
@@ -1526,9 +1531,14 @@ module SelfConsistentLR
             if(tOptGF_EVals) then
                 !Here, we are optimizing the eigenvalues, rather than the lattice couplings
                 if(nImp.gt.1) call stop_all(t_r,'Not working for multiple impurity sites yet')
-                if(tkPntSymFit) then
+                if(tConstrainKSym.and.(.not.tConstrainphsym)) then
                     if(tShift_Mesh.and.(iLatParams.ne.(nSites/2))) call stop_all(t_r,'Wrong # of params')
                     if((.not.tShift_Mesh).and.(iLatParams.ne.((nSites/2)+1))) call stop_all(t_r,'Wrong # of params')
+                elseif(tConstrainKSym.and.tConstrainphsym) then
+                    if(tShift_Mesh.and.(iLatParams.ne.(nSites/4))) call stop_all(t_r,'Wrong # of params')
+                    if((.not.tShift_Mesh).and.(iLatParams.ne.(((nSites/2)+1)/2))) call stop_all(t_r,'Wrong # of params')
+                elseif(tConstrainphsym.and.(.not.tConstrainksym)) then
+                    if(iLatParams.ne.(nSites/2)) call stop_all(t_r,'Wrong # of params')
                 else
                     if(iLatParams.ne.nSites) call stop_all(t_r,'Wrong # of params')
                 endif
@@ -1577,9 +1587,14 @@ module SelfConsistentLR
             write(6,"(A)") "In lattice read, number of free parameters the same. Assuming that the "    &
                 //"k-point mesh is commensurate, and just using these values."
 
-            if(tKPntSymFit) then
+            if(tConstrainKSym.and.(.not.tConstrainphsym)) then
                 if(tShift_Mesh.and.(iloclatcoups.ne.(nSites/2))) call stop_all(t_r,'Wrong # of params read in')
                 if((.not.tShift_Mesh).and.(iloclatcoups.ne.((nSites/2)+1))) call stop_all(t_r,'Wrong # of params read in')
+            elseif(tConstrainKSym.and.tConstrainphsym) then
+                if(tShift_Mesh.and.(iloclatcoups.ne.(nSites/4))) call stop_all(t_r,'Wrong # of params read in')
+                if((.not.tShift_Mesh).and.(iloclatcoups.ne.(((nSites/2)+1)/2))) call stop_all(t_r,'Wrong # of params read in')
+            elseif(tConstrainphsym.and.(.not.tConstrainksym)) then
+                if(iloclatcoups.ne.(nSites/2)) call stop_all(t_r,'Wrong # of params read in')
             else
                 if(iloclatcoups.ne.nSites) call stop_all(t_r,'Wrong # of params read in')
             endif
@@ -1598,6 +1613,8 @@ module SelfConsistentLR
             enddo
         else
             !Reading in from a smaller lattice, and fitting to the kpoint mesh of a larger lattice via cubic splines
+            if(.not.tDiag_kSpace) call stop_all(t_r,'Can only read in from a smaller lattice if using k-sym')
+            call stop_all(t_r,'This is broken if projecting to larger lattice. Need ph sym')
             allocate(kmesh_read(iloclatcoups))
             allocate(evals_read(iloclatcoups))
 
@@ -1618,7 +1635,7 @@ module SelfConsistentLR
                     exit
                 endif
             enddo
-            ineghalf = i-1  !Negative k-values are found in the values 1:ineghalf
+            ineghalf = i-1  !Negative + virtual k-values are found in the values 1:ineghalf
             write(6,"(A,I6)") "Number of kpoints read in from negative half of BZ: ",ineghalf
 
             !Set the *first* derivative of the spline to be zero at the BZ boundary and gamma point
@@ -1648,10 +1665,10 @@ module SelfConsistentLR
             enddo
 
             !Finally, if necessary, k-symmetrize
-            if(tKPntSymFit.and.(iLatParams.ne.i-1)) then
+            if(tConstrainKSym.and.(iLatParams.ne.i-1)) then
                 call stop_all(t_r,'Wrong number of kpoints interpolated?')
             endif
-            if(.not.tKPntSymFit) then
+            if(.not.tConstrainKSym) then
                 !We need to mirror the kpoints to the other half of the plane
                 allocate(neghalf_evals(ineghalf))
                 neghalf_evals(:) = Couplings(1:ineghalf,1)
@@ -1664,8 +1681,10 @@ module SelfConsistentLR
 
         close(iunit)
 
-        !potentially, impose ph symmetry in the read in eigenvalues (the interpolation may have broken it)
-        call Imposephsym(iLatParams,Couplings(:,1))
+        if(tImposephsym.or.tImposeksym) then
+            !potentially, impose ph symmetry in the read in eigenvalues (the interpolation may have broken it)
+            call Imposesym(iLatParams,Couplings(:,1))
+        endif
 
         do i = 2,nImp
             !Copy them to the other impurities
@@ -1808,23 +1827,23 @@ module SelfConsistentLR
     end subroutine spline
         
 
-    subroutine Imposephsym(nCoups,vars)
+    subroutine Imposesym(nCoups,vars)
         use sort_mod, only: sort_real
         implicit none
         integer, intent(in) :: nCoups
         real(dp), intent(inout) :: vars(nCoups)
         integer :: i,j,k,EOrder(nCoups),nSpec
         logical :: tNotTaken(nCoups)
-        real(dp) :: diff,mu,dCurrentE,av
-        character(len=*), parameter :: t_r='Imposephsym'
+        real(dp) :: diff,mu,dCurrentE,av,AvE
+        character(len=*), parameter :: t_r='Imposesym'
 
-        if((.not.tKPntSymFit).and.tDiag_kSpace) then
+        if(tImposeKSym) then
             !After fitting, add back in momentum inversion symmetry (if we are working in k-space)
             !This means that e(k) = e(-k)
             !For shifted meshes, this is easy.
             !For Gamma-centered meshes, two k-points are only singly degenerate
+            !We should not be able to be constraining any syms
             if(nCoups.ne.nSites) call stop_all(t_r,'Wrong number of variables')
-
             if(tShift_Mesh) then
                 do i = 1,nSites/2
                     av = (vars(i) + vars(nSites-i+1))/2.0_dp
@@ -1841,7 +1860,18 @@ module SelfConsistentLR
             endif
         endif
 
-        if(tphsym) then
+        if(tImposephsym) then
+            mu = U/2.0_dp
+
+            !First, ensure that the average is correct
+            AvE = zero
+            do i = 1,nCoups
+                AvE = AvE + vars(i)
+            enddo
+            write(6,*) "Average eigenvalue energy is: ",AvE,mu
+            do i = 1,nCoups
+                vars(i) = vars(i) - (AvE-mu)
+            enddo
 
             if(.not.tDiag_kSpace) then
                 !Impose ph symmetry on the system
@@ -1858,6 +1888,7 @@ module SelfConsistentLR
             else
                 !Impose ph symmetry on the system
                 !In this way of doing it, we pick pairs which are closest, and average them
+                !We might be constraining k-sym though
                 mu = U/2.0_dp
 
                 if(tShift_Mesh) then
@@ -1876,59 +1907,65 @@ module SelfConsistentLR
     !            write(6,*) "tShift_Mesh: ",tShift_Mesh
     !            write(6,*) "vars: ",vars(:)
 
-                !Find the energetic ordering of the eigenvalues
-                tNotTaken(:) = .true.
-                do i = 1,nSpec
-                    !Each loop, find the position of the next lowest eigenvalue
-                    dCurrentE = huge(0.0_dp)
-                    do j = 1,nSpec
-                        !Find lowest energy eigenvalue not already taken
-                        if((vars(j).lt.dCurrentE).and.(tNotTaken(j))) then
-                            EOrder(i) = j
-                            dCurrentE = vars(j)
-                        endif
-                    enddo
-                    tNotTaken(EOrder(i)) = .false.
-                enddo
-                !We now have the energetic ordering. EOrder(i) gives the ith lowest energy eigenvalue
-    !            write(6,*) "EOrder: ",EOrder(:)
-    !            write(6,*) "tNotTaken: ",tNotTaken(:)
+!                !Find the energetic ordering of the eigenvalues
+!                tNotTaken(:) = .true.
+!                do i = 1,nSpec
+!                    !Each loop, find the position of the next lowest eigenvalue
+!                    dCurrentE = huge(0.0_dp)
+!                    do j = 1,nSpec
+!                        !Find lowest energy eigenvalue not already taken
+!                        if((vars(j).lt.dCurrentE).and.(tNotTaken(j))) then
+!                            EOrder(i) = j
+!                            dCurrentE = vars(j)
+!                        endif
+!                    enddo
+!                    tNotTaken(EOrder(i)) = .false.
+!                enddo
+!                !We now have the energetic ordering. EOrder(i) gives the ith lowest energy eigenvalue
+!    !            write(6,*) "EOrder: ",EOrder(:)
+!    !            write(6,*) "tNotTaken: ",tNotTaken(:)
+!
+!                do i = 1,nSpec
+!                    if(tNotTaken(i)) then
+!                        call writevector(vars,'vars')
+!                        call stop_all(t_r,'Not all evals accounted for')
+!                    endif
+!                enddo
+!
+!                do i = 2,nSpec
+!                    if(vars(EOrder(i)).lt.vars(EOrder(i-1))) then
+!                        call writevector(vars,'vars')
+!                        call stop_all(t_r,'Energy order not correct')
+!                    endif
+!                enddo
 
-                do i = 1,nSpec
-                    if(tNotTaken(i)) then
-                        call writevector(vars,'vars')
-                        call stop_all(t_r,'Not all evals accounted for')
-                    endif
-                enddo
+!                !Now, symmetrize them
+!                do i = 1,nSpec/2
+!                    !Run through all occupied orbitals by going up in energy
+!                    do j = 1,nSpec
+!                        if(EOrder(j).eq.i) exit
+!                    enddo
+!                    !i'th lowest energy eigenvalue is in slot j
+!                    !Find the corresponding 'virtual'
+!                    do k = 1,nSpec
+!                        if(EOrder(k).eq.(nSpec-i+1)) then
+!                            !This is the corresponding 'virtual'
+!                            exit
+!                        endif
+!                    enddo
+!                    !j and k are pairs. Average the differences from the chemical potential
+!                    diff = 0.5_dp*( (mu - vars(j) ) + (vars(k) - mu))
+!                    vars(j) = mu - diff
+!                    vars(k) = mu + diff
+!                enddo
 
-                do i = 2,nSpec
-                    if(vars(EOrder(i)).lt.vars(EOrder(i-1))) then
-                        call writevector(vars,'vars')
-                        call stop_all(t_r,'Energy order not correct')
-                    endif
-                enddo
-
-                !Now, symmetrize them
                 do i = 1,nSpec/2
-                    !Run through all occupied orbitals by going up in energy
-                    do j = 1,nSpec
-                        if(EOrder(j).eq.i) exit
-                    enddo
-                    !i'th lowest energy eigenvalue is in slot j
-                    !Find the corresponding 'virtual'
-                    do k = 1,nSpec
-                        if(EOrder(k).eq.(nSpec-i+1)) then
-                            !This is the corresponding 'virtual'
-                            exit
-                        endif
-                    enddo
-                    !j and k are pairs. Average the differences from the chemical potential
-                    diff = 0.5_dp*( (mu - vars(j) ) + (vars(k) - mu))
-                    vars(j) = mu - diff
-                    vars(k) = mu + diff
+                    diff = 0.5_dp*( (mu - vars(nSpec-i+1) ) + (vars(i) - mu))
+                    vars(nSpec-i+1) = mu - diff
+                    vars(i) = mu + diff
                 enddo
 
-                if((.not.tKPntSymFit).and.tDiag_kSpace) then
+                if(tImposeKSym) then
                     !We might have just broken the momentum symmetry that we just imposed!
                     !Reimpose it - not by averaging, but by simply using the negative k-point values.
                     if(tShift_Mesh) then
@@ -1946,7 +1983,7 @@ module SelfConsistentLR
             endif
         endif
 
-    end subroutine Imposephsym
+    end subroutine Imposesym
 
     !Attempt for self-consistency on the matsubara axis via simple application of dysons equation
     subroutine SC_Imaginary_Dyson()
@@ -4614,9 +4651,10 @@ module SelfConsistentLR
         real(dp), intent(in) :: evals(nInd_evals)
         real(dp), intent(out) :: evals_full(nSites)
         integer :: i
+        real(dp) :: mu
         character(len=*), parameter :: t_r='FindFullLatEvals'
 
-        if(tKPntSymFit) then
+        if(tConstrainKSym.and.(.not.tConstrainphSym)) then
             if(tShift_Mesh) then
                 if(nInd_evals.ne.(nSites/2)) call stop_all(t_r,'Number of independent evals incorrect?')
             else
@@ -4635,6 +4673,24 @@ module SelfConsistentLR
                 evals_full((nSites/2)+1) = evals((nSites/2)+1)
                 do i = 2,nSites/2
                     evals_full(i+(nSites/2)) = evals((nSites/2)-i+2)
+                enddo
+            endif
+        elseif(tConstrainKSym.and.tConstrainphSym) then
+            mu = U/2.0_dp
+            evals_full(1:nInd_evals) = evals(:)
+            do i = 1,nInd_evals
+                evals_full(nInd_evals+i) = 2.0_dp*mu-evals(nInd_evals-i+1)
+            enddo
+            !Now for ksym
+            if(tShift_Mesh) then
+                do i = 1,nSites/2
+                    evals_full(i+(nSites/2)) = evals_full((nSites/2)-i+1)
+                enddo
+            else
+                !Put in the gamma point (actually, this has already been put in)
+                evals_full((nSites/2)+1) = evals_full((nSites/2)+1)
+                do i = 2,nSites/2
+                    evals_full(i+(nSites/2)) = evals_full((nSites/2)-i+2)
                 enddo
             endif
         else
@@ -5003,7 +5059,7 @@ module SelfConsistentLR
         enddo
 
         !Now, compress the jacobian if necessary
-        if(tKPntSymFit) then
+        if(tConstrainKSym.and.(.not.tConstrainphsym)) then
             !However, we need now to package it up. Since we are only optimizing certain eigenvalue, we need
             !to add the two gradient contributions together
             Jacobian(:) = zero
@@ -5019,6 +5075,30 @@ module SelfConsistentLR
                 Jacobian((nSites/2)+1) = FullJac((nSites/2)+1)
                 do i = 2,nSites/2
                     Jacobian(((nSites/2)-i+2)) = Jacobian(((nSites/2)-i+2)) + FullJac(i+(nSites/2))
+                enddo
+            endif
+        elseif(tConstrainKSym.and.tConstrainphsym) then
+            Jacobian(:) = zero
+            !Include the -ve k particle states
+            Jacobian(:) = FullJac(1:CouplingLength)
+            !The hole states will be pushed the *opposite directions*
+            do i = 1,CouplingLength
+                Jacobian(i) = Jacobian(i) - FullJac(2*CouplingLength-i+1)
+            enddo
+            !Now expand out the k-sym
+            if(tShift_Mesh) then
+                do i = 1,CouplingLength
+                    Jacobian(i) = Jacobian(i) - FullJac((nSites/2)+i)
+                enddo
+                do i = 1,CouplingLength
+                    Jacobian(i) = Jacobian(i) + FullJac(nSites-i+1)
+                enddo
+            else
+                do i = 2,CouplingLength
+                    Jacobian(i) = Jacobian(i) - FullJac((nSites/2)+i)
+                enddo
+                do i = 2,CouplingLength
+                    Jacobian(i) = Jacobian(i) + FullJac(nSites-i+2)
                 enddo
             endif
         else
@@ -5153,7 +5233,7 @@ module SelfConsistentLR
             enddo
         enddo
 
-        if(tKPntSymFit) then
+        if(tConstrainKSym.and.(.not.tConstrainphsym)) then
             !However, we need now to package it up. Since we are only optimizing certain eigenvalue, we need
             !to add the two gradient contributions together
             Jacobian(:,:) = zero
@@ -5169,6 +5249,30 @@ module SelfConsistentLR
                 Jacobian(:,(nSites/2)+1) = FullJac(:,(nSites/2)+1)
                 do i = 2,nSites/2
                     Jacobian(:,((nSites/2)-i+2)) = Jacobian(:,((nSites/2)-i+2)) + FullJac(:,i+(nSites/2))
+                enddo
+            endif
+        elseif(tConstrainKSym.and.tConstrainphsym) then
+            Jacobian(:,:) = zero
+            !Include the -ve k particle states
+            Jacobian(:,:) = FullJac(:,1:CouplingLength)
+            !The hole states will be pushed the *opposite directions*
+            do i = 1,CouplingLength
+                Jacobian(:,i) = Jacobian(:,i) - FullJac(:,2*CouplingLength-i+1)
+            enddo
+            !Now expand out the k-sym
+            if(tShift_Mesh) then
+                do i = 1,CouplingLength
+                    Jacobian(:,i) = Jacobian(:,i) - FullJac(:,(nSites/2)+i)
+                enddo
+                do i = 1,CouplingLength
+                    Jacobian(:,i) = Jacobian(:,i) + FullJac(:,nSites-i+1)
+                enddo
+            else
+                do i = 2,CouplingLength
+                    Jacobian(:,i) = Jacobian(:,i) - FullJac(:,(nSites/2)+i)
+                enddo
+                do i = 2,CouplingLength
+                    Jacobian(:,i) = Jacobian(:,i) + FullJac(:,nSites-i+2)
                 enddo
             endif
         else
