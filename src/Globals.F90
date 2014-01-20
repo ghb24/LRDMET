@@ -225,6 +225,7 @@ module Globals
     logical :: tFitRealFreq         !Which axis to do the fit on?
     logical :: tFitPoints_Legendre  !Fit on legendre quadrature points
     integer :: nFreqPoints          !Number of Legendre quadrature points to fit
+    integer :: iMaxIter_MacroFit    !Number of macroiterations in the self-consistency
 
     !Debugging for Self-consistency
     logical :: tSE_Scan

@@ -148,6 +148,7 @@ Program RealHub
         Start_Omega_Im = zero                
         End_Omega_Im = zero
         Omega_Step_Im = one
+        iMaxIter_MacroFit = 100
 
     end subroutine set_defaults
 
@@ -622,6 +623,8 @@ Program RealHub
                 call readi(iLatticeCoups)
             case("MAXITER_LATTICEFIT")
                 call readi(iMaxFitMicroIter)
+            case("MAXITER_MACROFIT")
+                call readi(iMaxIter_MacroFit)
             case("READ_LATTICE_COUPLINGS")
                 tReadCouplings = .true.
                 if(item.lt.nitems) then
@@ -684,6 +687,7 @@ Program RealHub
                 write(6,"(A)") "LATTICE_FIT_WEIGHTING"
                 write(6,"(A)") "LATTICE_COUPLINGS"
                 write(6,"(A)") "MAXITER_LATTICEFIT"
+                write(6,"(A)") "MAXITER_MACROFIT"
                 write(6,"(A)") "READ_LATTICE_COUPLINGS"
                 write(6,"(A)") "SKIP_LATTICE_FIT"
                 write(6,"(A)") "EXT_HAM_FITLATTICE"

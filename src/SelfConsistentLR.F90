@@ -20,14 +20,14 @@ module SelfConsistentLR
         complex(dp), allocatable :: SE_Fit(:,:,:),G_Mat_Fit(:,:,:)
         complex(dp), allocatable :: SE_Re(:,:,:),G_Mat_Re(:,:,:)
         complex(dp), allocatable :: Lattice_GF(:,:,:),Lattice_GF_Real(:,:,:),Lattice_GF_Old(:,:,:)
-        real(dp), allocatable :: h_lat_fit(:,:),Couplings(:,:)
+        real(dp), allocatable :: h_lat_fit(:,:),Couplings(:,:),FreqPoints_temp(:),Weights_temp(:)
         real(dp), allocatable :: AllDiffs(:,:),FreqPoints(:),IntWeights(:)
         complex(dp), allocatable :: DiffImpGF(:,:,:),G_Mat_Fit_Old(:,:,:)
         real(dp) :: FinalDist,LowFreq,HighFreq
-        integer :: i,iter,iLatParams
+        integer :: i,iter,iLatParams,j
         logical :: tFitMatAxis,tCalcRealSpectrum
-        integer, parameter :: iMaxIter_Fit = 100
         real(dp), parameter :: dDeltaImpThresh = 1.0e-4_dp 
+        logical, parameter :: tUsePoswFreqPoints = .true. !For ph symmetric systems, this seems to make no difference
         character(len=*), parameter :: t_r='SC_FitLatticeGF_Im'
 
         if(tDiag_kSpace) then
@@ -35,6 +35,7 @@ module SelfConsistentLR
                 write(6,*) i,abs(RtoK_Rot(1,i))**2
             enddo
         else
+            if(tKPntSymFit) call stop_all(t_r,'Should not be trying to conserve k-point symmetry without any!') 
             do i = 1,nSites
                 write(6,*) i,HFOrbs(1,i),HFOrbs(1,i)**2 
             enddo
@@ -80,6 +81,32 @@ module SelfConsistentLR
                 write(6,"(I9,2G20.13)") i,FreqPoints(i),IntWeights(i)
             enddo
             if(.not.tOptGF_EVals) call stop_all(t_r,'Must use evals for legendre quadrature')
+            if(tUsePoswFreqPoints) then
+                !Count the positive values of w
+                write(6,"(A)") "Just using the positive values of omega"
+                j = 0
+                do i = 1,nFreqPoints
+                    if(FreqPoints(i).ge.zero) j = j+1
+                enddo
+                allocate(FreqPoints_temp(j))
+                allocate(Weights_temp(j))
+                j = 0
+                do i = 1,nFreqPoints
+                    if(FreqPoints(i).ge.zero) then
+                        j = j+1
+                        FreqPoints_temp(j) = FreqPoints(i)
+                        Weights_temp(j) = IntWeights(i)
+                    endif
+                enddo
+                deallocate(FreqPoints,IntWeights)
+                nFreqPoints = j
+                allocate(FreqPoints(nFreqPoints))
+                allocate(IntWeights(nFreqPoints))
+                FreqPoints(:) = FreqPoints_temp(:)
+                IntWeights(:) = Weights_temp(:)
+                deallocate(FreqPoints_temp,Weights_temp)
+                write(6,"(A,I7)") "New number of frequency points: ",nFreqPoints
+            endif
         endif
         call flush(6)
 
@@ -161,7 +188,7 @@ module SelfConsistentLR
         allocate(DiffImpGF(nImp,nImp,nFitPoints))
         G_Mat_Fit(:,:,:) = zzero
 
-        allocate(AllDiffs(3,0:iMaxIter_Fit))
+        allocate(AllDiffs(3,0:iMaxIter_MacroFit))
         AllDiffs(:,:) = zero
 
         iter = 0
@@ -254,8 +281,8 @@ module SelfConsistentLR
             write(6,"(A)") ""
             call flush(6)
             
-            if(iter.ge.iMaxIter_Fit) then
-                write(6,"(A,I9)") "Exiting. Max iters hit of: ",iMaxIter_Fit
+            if(iter.ge.iMaxIter_MacroFit) then
+                write(6,"(A,I9)") "Exiting. Max iters hit of: ",iMaxIter_MacroFit
                 exit
             endif
 
@@ -342,7 +369,6 @@ module SelfConsistentLR
         complex(dp), allocatable :: DeltaSE(:,:,:),DiffImpGF(:,:,:),G_Mat_Re(:,:,:)
         complex(dp), allocatable :: G_Mat_Im_Old(:,:,:)
         real(dp), allocatable :: h_lat_fit(:,:),Couplings(:,:),AllDiffs(:,:)
-        integer, parameter :: iMaxIter_Fit = 500
         real(dp), parameter :: dDeltaThresh = 1.0e-6_dp
         logical, parameter :: tCreateBathGF = .true.
         character(len=*), parameter :: t_r='SC_FitLat_and_SE_Im'
@@ -388,7 +414,7 @@ module SelfConsistentLR
         !Misc/convergences
         allocate(zero_GF(nImp,nImp,nESteps_Im))
         allocate(DiffImpGF(nImp,nImp,nESteps_Im))
-        allocate(AllDiffs(3,1:iMaxIter_Fit))
+        allocate(AllDiffs(3,1:iMaxIter_MacroFit))
 
         !Initialize values
         !   fit lattice & couplings
@@ -510,8 +536,8 @@ module SelfConsistentLR
             write(6,"(A)") ""
             call flush(6)
 
-            if(iter.gt.iMaxIter_Fit) then
-                write(6,"(A,I9)") "Exiting. Max macroiters hit of: ",iMaxIter_Fit
+            if(iter.gt.iMaxIter_MacroFit) then
+                write(6,"(A,I9)") "Exiting. Max macroiters hit of: ",iMaxIter_MacroFit
                 exit
             endif
 
@@ -851,8 +877,8 @@ module SelfConsistentLR
             l(:) = -1000.0_dp
             u(:) = 1000.0_dp
 
-            rhoend = 1.0e12_dp  !Low accuracy
-            rhoend = 1.0e7_dp   !Mid accuracy
+            !rhoend = 1.0e12_dp  !Low accuracy
+            !rhoend = 1.0e7_dp   !Mid accuracy
             rhoend = 10.0_dp    !High accuracy
             pgtol = 1.0e-5_dp   !Maximum gradient exit criterion
 
@@ -866,7 +892,7 @@ module SelfConsistentLR
             allocate(wa(2*iRealCoupNum*corrs + 5*iRealCoupNum + 11*corrs*corrs + 8*corrs))
             allocate(iwa(3*iRealCoupNum))
 
-            iprint = 10
+            iprint = 25
 
             task='START'
 
