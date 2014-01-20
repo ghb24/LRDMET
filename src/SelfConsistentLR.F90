@@ -1863,16 +1863,6 @@ module SelfConsistentLR
         if(tImposephsym) then
             mu = U/2.0_dp
 
-            !First, ensure that the average is correct
-            AvE = zero
-            do i = 1,nCoups
-                AvE = AvE + vars(i)
-            enddo
-            write(6,*) "Average eigenvalue energy is: ",AvE,mu
-            do i = 1,nCoups
-                vars(i) = vars(i) - (AvE-mu)
-            enddo
-
             if(.not.tDiag_kSpace) then
                 !Impose ph symmetry on the system
                 !In this way, we only consider the lowest n/2 eigenvalues, and we reflect them around the chemical potential
@@ -1886,6 +1876,16 @@ module SelfConsistentLR
                 enddo
 
             else
+                !First, ensure that the average is correct
+                AvE = zero
+                do i = 1,nCoups
+                    AvE = AvE + vars(i)
+                enddo
+                write(6,*) "Average eigenvalue energy is: ",AvE,mu
+                do i = 1,nCoups
+                    vars(i) = vars(i) - (AvE-mu)
+                enddo
+
                 !Impose ph symmetry on the system
                 !In this way of doing it, we pick pairs which are closest, and average them
                 !We might be constraining k-sym though
