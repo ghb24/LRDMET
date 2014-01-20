@@ -27,7 +27,7 @@ module SelfConsistentLR
         integer :: i,iter,iLatParams,j
         logical :: tFitMatAxis,tCalcRealSpectrum
         real(dp), parameter :: dDeltaImpThresh = 1.0e-4_dp 
-        logical, parameter :: tUsePoswFreqPoints = .true. !For ph symmetric systems, this seems to make no difference
+        logical, parameter :: tUsePoswFreqPoints = .true. !For ph symmetric systems, this seems to make no difference (but is faster!)
         character(len=*), parameter :: t_r='SC_FitLatticeGF_Im'
 
         if(tDiag_kSpace) then
@@ -665,13 +665,13 @@ module SelfConsistentLR
             dSeperateFuncs(:,:,:) = DiffMatr(:,:,:)
             if(tNonStandardGrid) then
                 do i = 1,nESteps
-                    !dSeperateFuncs(:,:,i) = Weights(i)*(dSeperateFuncs(:,:,i)**2)
-                    dSeperateFuncs(:,:,i) = dSeperateFuncs(:,:,i)*sqrt(Weights(i))
+                    dSeperateFuncs(:,:,i) = Weights(i)*(dSeperateFuncs(:,:,i)**2)
+                    !dSeperateFuncs(:,:,i) = dSeperateFuncs(:,:,i)*sqrt(Weights(i))
                 enddo
-            !else
-            !    do i = 1,nESteps
-            !        dSeperateFuncs(:,:,i) = dSeperateFuncs(:,:,i)**2
-            !    enddo
+            else
+                do i = 1,nESteps
+                    dSeperateFuncs(:,:,i) = dSeperateFuncs(:,:,i)**2
+                enddo
             endif
             if(iFitGFWeighting.ne.0) then
                 i = 0
@@ -693,12 +693,12 @@ module SelfConsistentLR
                             if(iFitGFWeighting.eq.1) then
                                 !1/w weighting
                                 !We actually divide by the sqrt of Omega, since the LM optimization will automatically take the squares of the functions
-                                dSeperateFuncs(k,j,i) = dSeperateFuncs(k,j,i)/sqrt(abs(Omega))
-                                !dSeperateFuncs(k,j,i) = dSeperateFuncs(k,j,i)/(abs(Omega))
+                                !dSeperateFuncs(k,j,i) = dSeperateFuncs(k,j,i)/sqrt(abs(Omega))
+                                dSeperateFuncs(k,j,i) = dSeperateFuncs(k,j,i)/(abs(Omega))
                             elseif(iFitGFWeighting.eq.2) then
                                 !1/w^2 weighting
-                                dSeperateFuncs(k,j,i) = dSeperateFuncs(k,j,i)/abs(Omega)
-                                !dSeperateFuncs(k,j,i) = dSeperateFuncs(k,j,i)/(Omega**2)
+                                !dSeperateFuncs(k,j,i) = dSeperateFuncs(k,j,i)/abs(Omega)
+                                dSeperateFuncs(k,j,i) = dSeperateFuncs(k,j,i)/(Omega**2)
                             else
                                 call stop_all(t_r,'Error here')
                             endif
@@ -808,7 +808,7 @@ module SelfConsistentLR
         character(len=60) :: task,csave
         integer :: isave(44)
         logical :: lsave(4)
-        logical, parameter :: tConstrainSyms = .true.
+        logical, parameter :: tConstrainSyms = .false.
         character(len=*), parameter :: t_r='FitLatticeCouplings'
 
         if(tOptGF_EVals) then
@@ -960,8 +960,8 @@ module SelfConsistentLR
             endif
 !            write(6,*) "Sep_Dists from MinCoups_LM: "
 !            write(6,*) FinalVec(:)
-            !InitErr = (enorm(nFuncs,FinalVec))   !Because enorm also takes the sqrt
-            InitErr = (enorm(nFuncs,FinalVec))**2   !Because enorm also takes the sqrt
+            InitErr = (enorm(nFuncs,FinalVec))   !Because enorm also takes the sqrt
+            !InitErr = (enorm(nFuncs,FinalVec))**2   !Because enorm also takes the sqrt
             write(6,"(A,G20.10)") "Initial residual before fit: ",InitErr
 
             if(tAnalyticDerivs) then
@@ -1013,8 +1013,8 @@ module SelfConsistentLR
                 endif
             endif
                 
-            !FinalErr = (enorm(nFuncs,FinalVec))
-            FinalErr = (enorm(nFuncs,FinalVec))**2
+            FinalErr = (enorm(nFuncs,FinalVec))
+            !FinalErr = (enorm(nFuncs,FinalVec))**2
             write(6,"(A,G20.10)") "Final residual after fit: ",FinalErr
             write(6,"(A)") "Lattice parameters: "
             write(6,*) vars(:)
@@ -1158,8 +1158,8 @@ module SelfConsistentLR
                     call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis, tNonStandardGrid,   &
                         FreqPoints=Freqs_dum, Weights=Weights_dum)
                 endif
-                FinalErr = (enorm(nFuncs,FinalVec))**2
-                !FinalErr = (enorm(nFuncs,FinalVec))
+                !FinalErr = (enorm(nFuncs,FinalVec))**2
+                FinalErr = (enorm(nFuncs,FinalVec))
                 deallocate(FinalVec)
             endif
             write(6,"(A,G20.10)") "Final residual after symmetrization of eigenvalues: ",FinalErr
@@ -1214,7 +1214,7 @@ module SelfConsistentLR
         real(dp), allocatable :: CoupsTemp(:,:),Sep_Dists(:,:,:)
         real(dp) :: dist,Omega,diff,dist2,NumDiff
         real(dp), allocatable :: CoupsTemp2(:,:),Sep_Dists2(:,:,:)
-        logical, parameter :: tTest=.false. 
+        logical, parameter :: tTest=.true.  
         integer :: i,j,k,ind,RealCoupsNum,ivar,ifreq,iunit2
         character(len=*), parameter :: t_r='MinCoups_LM'
 
@@ -5044,6 +5044,7 @@ module SelfConsistentLR
 
         real(dp) :: mu,Omega,denom1,denom2,num,termr,termi
         real(dp), allocatable :: evals_full(:),FullJac(:,:)
+        complex(dp) :: compval
         integer :: i,k
         logical :: tNonStandardGrid
         character(len=*), parameter :: t_r='CalcJacobian'
@@ -5084,37 +5085,70 @@ module SelfConsistentLR
                 endif
                 if(i.lt.0) exit
 
-                denom1 = Omega**2 + (mu - evals_full(k))**2
-                denom2 = denom1**2
-                if(tDiag_kSpace) then
-                    num = abs(RtoK_Rot(1,k))**2
+                if(.true.) then
+                    !This is assuming we want the jacobian of | G_0 - G |^2
+                    if(tDiag_kSpace) then
+                        num = abs(RtoK_Rot(1,k))**2
+                    else
+                        num = HFOrbs(1,k)**2
+                    endif
+
+                    compval = num*dconjg(DiffMat(1,1,i)) / (cmplx((mu - evals_full(k)),Omega,dp)**2) 
+
+                    if(tNonStandardGrid) then
+                        !Add the weighting factor
+                        if(iFitGFWeighting.eq.0) then
+                            FullJac(i,k) = real(compval + dconjg(compval),dp) * Weights(i)
+                        elseif(iFitGFWeighting.eq.1) then
+                            FullJac(i,k) = real(compval + dconjg(compval),dp) * Weights(i) / Omega
+                        elseif(iFitGFWeighting.eq.2) then
+                            FullJac(i,k) = real(compval + dconjg(compval),dp) * Weights(i) / (Omega**2)
+                        endif
+                    else
+                        if(iFitGFWeighting.eq.0) then
+                            FullJac(i,k) = real(compval + dconjg(compval),dp)
+                        elseif(iFitGFWeighting.eq.1) then
+                            FullJac(i,k) = real(compval + dconjg(compval),dp) / Omega
+                        elseif(iFitGFWeighting.eq.2) then
+                            FullJac(i,k) = real(compval + dconjg(compval),dp) / (Omega**2)
+                        endif
+                    endif
+
                 else
-                    num = HFOrbs(1,k)**2
-                endif
+                    !This is assuming we want the jacobian of | G_0 - G |
 
-                termr = 2.0_dp*num*((mu - evals_full(k))**2)/denom2 - num/denom1
-                termi = 2.0_dp*Omega*(mu - evals_full(k))*num/denom2
+                    denom1 = Omega**2 + (mu - evals_full(k))**2
+                    denom2 = denom1**2
+                    if(tDiag_kSpace) then
+                        num = abs(RtoK_Rot(1,k))**2
+                    else
+                        num = HFOrbs(1,k)**2
+                    endif
 
-                FullJac(i,k) = (one/DiffMatr(1,1,i))*(real(DiffMat(1,1,i),dp)*termr - aimag(DiffMat(1,1,i))*termi)
-                !FullJac(i,k) = 2.0_dp*(real(DiffMat(1,1,i),dp)*termr - aimag(DiffMat(1,1,i))*termi)
+                    termr = 2.0_dp*num*((mu - evals_full(k))**2)/denom2 - num/denom1
+                    termi = 2.0_dp*Omega*(mu - evals_full(k))*num/denom2
 
-                !if(abs(Omega).lt.1.0e-9_dp) then
-                !    write(6,*) "mod: ",DiffMatr(1,1,i)
-                !    write(6,*) "Real: ",real(DiffMat(1,1,i),dp)
-                !    write(6,*) "termr: ",termr
-                !endif
+                    FullJac(i,k) = (one/DiffMatr(1,1,i))*(real(DiffMat(1,1,i),dp)*termr - aimag(DiffMat(1,1,i))*termi)
+                    !FullJac(i,k) = 2.0_dp*(real(DiffMat(1,1,i),dp)*termr - aimag(DiffMat(1,1,i))*termi)
 
-                if(tNonStandardGrid) then
-                    !Add the weighting factor
-                    FullJac(i,k) = FullJac(i,k) * sqrt(Weights(i))
-                    !FullJac(i,k) = FullJac(i,k) * Weights(i)
-                endif
-                if(iFitGFWeighting.eq.1) then
-                    !FullJac(i,k) = FullJac(i,k)/abs(Omega)
-                    FullJac(i,k) = FullJac(i,k)/sqrt(abs(Omega))
-                elseif(iFitGFWeighting.eq.2) then
-                    !FullJac(i,k) = FullJac(i,k)/(Omega**2)
-                    FullJac(i,k) = FullJac(i,k)/abs(Omega)
+                    !if(abs(Omega).lt.1.0e-9_dp) then
+                    !    write(6,*) "mod: ",DiffMatr(1,1,i)
+                    !    write(6,*) "Real: ",real(DiffMat(1,1,i),dp)
+                    !    write(6,*) "termr: ",termr
+                    !endif
+
+                    if(tNonStandardGrid) then
+                        !Add the weighting factor
+                        FullJac(i,k) = FullJac(i,k) * sqrt(Weights(i))
+                        !FullJac(i,k) = FullJac(i,k) * Weights(i)
+                    endif
+                    if(iFitGFWeighting.eq.1) then
+                        !FullJac(i,k) = FullJac(i,k)/abs(Omega)
+                        FullJac(i,k) = FullJac(i,k)/sqrt(abs(Omega))
+                    elseif(iFitGFWeighting.eq.2) then
+                        !FullJac(i,k) = FullJac(i,k)/(Omega**2)
+                        FullJac(i,k) = FullJac(i,k)/abs(Omega)
+                    endif
                 endif
             enddo
         enddo
