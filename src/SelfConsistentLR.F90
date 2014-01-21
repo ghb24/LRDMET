@@ -114,6 +114,7 @@ module SelfConsistentLR
             tFitMatAxis = .false.
             nFitPoints = nESteps_Re
             tCalcRealSpectrum = .false.
+            if(tFitPoints_Legendre) call stop_all(t_r,'Cannot fit real frequency spectrum to legendre polynomials')
         else
             tFitMatAxis = .true.
             tCalcRealSpectrum = .true.
@@ -1246,7 +1247,7 @@ module SelfConsistentLR
         real(dp), allocatable :: CoupsTemp(:,:),Sep_Dists(:,:,:)
         real(dp) :: dist,Omega,diff,dist2,NumDiff
         real(dp), allocatable :: CoupsTemp2(:,:),Sep_Dists2(:,:,:)
-        logical, parameter :: tTest=.true.  
+        logical, parameter :: tTest=.false. 
         integer :: i,j,k,ind,RealCoupsNum,ivar,ifreq,iunit2
         character(len=*), parameter :: t_r='MinCoups_LM'
 
@@ -5016,7 +5017,6 @@ module SelfConsistentLR
         character(len=*), parameter :: t_r='CalcJacobian2'
 
         if(nImp.gt.1) call stop_all(t_r,'Cannot do for more than 1 impurity yet')
-        if(.not.tMatbrAxis) call stop_all(t_r,'Cannot do gradients on real axis yet')
         if(iLatticeFitType.ne.1) call stop_all(t_r,'Cannot do gradients with non-linear objective functions yet')
         if(.not.tOptGF_EVals) call stop_all(t_r,'Cannot do gradients when optimizing lattice couplings rather than eigenvalues')
         if(present(FreqPoints)) then
@@ -5057,7 +5057,11 @@ module SelfConsistentLR
                     num = HFOrbs(1,k)**2
                 endif
 
-                compval = num*dconjg(DiffMat(1,1,i)) / (cmplx((mu - evals_full(k)),Omega,dp)**2) 
+                if(tMatbrAxis) then
+                    compval = num*dconjg(DiffMat(1,1,i)) / (cmplx((mu - evals_full(k)),Omega,dp)**2) 
+                else
+                    compval = num*dconjg(DiffMat(1,1,i)) / (cmplx(Omega + mu - evals_full(k),dDelta,dp)**2) 
+                endif
 
                 !denom1 = Omega**2 + (mu - evals_full(k))**2
                 !denom2 = denom1**2
@@ -5202,7 +5206,11 @@ module SelfConsistentLR
                         num = HFOrbs(1,k)**2
                     endif
 
-                    compval = num*dconjg(DiffMat(1,1,i)) / (cmplx((mu - evals_full(k)),Omega,dp)**2) 
+                    if(tMatbrAxis) then
+                        compval = num*dconjg(DiffMat(1,1,i)) / (cmplx((mu - evals_full(k)),Omega,dp)**2) 
+                    else
+                        compval = num*dconjg(DiffMat(1,1,i)) / (cmplx(Omega + mu - evals_full(k),dDelta,dp)**2) 
+                    endif
 
                     if(tNonStandardGrid) then
                         !Add the weighting factor
@@ -5225,6 +5233,8 @@ module SelfConsistentLR
 
                 else
                     !This is assuming we want the jacobian of | G_0 - G |
+
+                    if(.not.tMatbrAxis) call stop_all(t_r,'Error here')
 
                     denom1 = Omega**2 + (mu - evals_full(k))**2
                     denom2 = denom1**2
