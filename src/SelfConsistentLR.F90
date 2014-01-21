@@ -30,16 +30,16 @@ module SelfConsistentLR
         logical, parameter :: tUsePoswFreqPoints = .true. !For ph symmetric systems, this seems to make no difference (but is faster!)
         character(len=*), parameter :: t_r='SC_FitLatticeGF_Im'
 
-        if(tDiag_kSpace) then
-            do i = 1,nSites
-                write(6,*) i,abs(RtoK_Rot(1,i))**2
-            enddo
-        else
-            do i = 1,nSites
-                write(6,*) i,HFOrbs(1,i),HFOrbs(1,i)**2 
-            enddo
-        endif
-
+!        if(tDiag_kSpace) then
+!            do i = 1,nSites
+!                write(6,*) i,abs(RtoK_Rot(1,i))**2
+!            enddo
+!        else
+!            do i = 1,nSites
+!                write(6,*) i,HFOrbs(1,i),HFOrbs(1,i)**2 
+!            enddo
+!        endif
+!
         !Set chemical potential (This will only be right for half-filling)
         if(.not.tAnderson) then
             !Hubbard chemical potential
@@ -200,6 +200,7 @@ module SelfConsistentLR
             
             !High level calculation on matsubara axis, with no self-energy, and just the normal lattice hamiltonian
             G_Mat_Fit_Old(:,:,:) = G_Mat_Fit(:,:,:)
+            !call writematrix(h_lat_fit,'latham',.true.)
             if(tFitPoints_Legendre) then
                 call SchmidtGF_wSE(G_Mat_Fit,GFChemPot,SE_Fit,nFitPoints,tMatbrAxis=tFitMatAxis,ham=h_lat_fit,FreqPoints=FreqPoints)
                 call writedynamicfunction(nFitPoints,G_Mat_Fit,'G_Imp_Fit',tag=iter,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
@@ -793,6 +794,7 @@ module SelfConsistentLR
         use MinAlgos
         use Levenberg_Marquardt
         use lbfgs
+        use sort_mod, only: sort_real
         implicit none
         integer, intent(in) :: n    !Number of frequency points
         integer, intent(in) :: iNumCoups    !Number of independent coupling parameters
@@ -802,11 +804,11 @@ module SelfConsistentLR
         logical, intent(in) :: tMatbrAxis
         real(dp), intent(in), optional :: FreqPoints(n),Weights(n)
 
-        real(dp), allocatable :: step(:),vars(:),var(:),FinalVec(:),Jac(:,:)
-        real(dp), allocatable :: Freqs_dum(:),Weights_dum(:),l(:),u(:),grad(:),wa(:)
+        real(dp), allocatable :: step(:),vars(:),var(:),FinalVec(:),Jac(:,:),vars_temp(:)
+        real(dp), allocatable :: Freqs_dum(:),Weights_dum(:),low(:),upp(:),grad(:),wa(:)
         integer, allocatable :: iwork(:),nbd(:),iwa(:)
         integer :: nop,i,maxf,iprint,nloop,iquad,ierr,iRealCoupNum,nFuncs,j,ierr_tmp,corrs
-        real(dp) :: stopcr,simp,rhobeg,rhoend,InitErr,dsave(29),pgtol
+        real(dp) :: stopcr,simp,rhobeg,rhoend,InitErr,dsave(29),pgtol,mu
         logical :: tfirst,tOptEVals_,tNonStandardGrid
         character(len=60) :: task,csave
         integer :: isave(44)
@@ -875,12 +877,12 @@ module SelfConsistentLR
             if(.not.tAnalyticDerivs) call stop_all(t_r,'Need analytic derivatives if optimizing with BFGS')
 
             !We can specify upper and lower bounds on the solutions. Set these to be /pm1000 
-            allocate(l(iRealCoupNum))   !Lower limits
-            allocate(u(iRealCoupNum))   !Upper limits
+            allocate(low(iRealCoupNum))   !Lower limits
+            allocate(upp(iRealCoupNum))   !Upper limits
             allocate(nbd(iRealCoupNum)) !Type of limit on each variable: 0 - unbounded, 1 - lower only, 2 - both bounds, 3 - upper only
             nbd(:) = 0
-            l(:) = -1000.0_dp
-            u(:) = 1000.0_dp
+            low(:) = -1000.0_dp
+            upp(:) = 1000.0_dp
 
             !rhoend = 1.0e12_dp  !Low accuracy
             !rhoend = 1.0e7_dp   !Mid accuracy
@@ -903,7 +905,7 @@ module SelfConsistentLR
 
             do while(task(1:2).eq.'FG'.or.task.eq.'NEW_X'.or.task.eq.'START')
 
-                call setulb(iRealCoupNum,corrs,vars,l,u,nbd,FinalErr,grad,rhoend,   &
+                call setulb(iRealCoupNum,corrs,vars,low,upp,nbd,FinalErr,grad,rhoend,   &
                     pgtol,wa,iwa,task,iprint,csave,lsave,isave,dsave)
 
                 if(task(1:2).eq.'FG') then
@@ -935,7 +937,7 @@ module SelfConsistentLR
             write(6,"(A,G20.10)") "Final residual after fit: ",FinalErr
             write(6,"(A)") "Lattice parameters: "
             write(6,*) vars(:)
-            deallocate(l,u,nbd,grad,wa,iwa) 
+            deallocate(low,upp,nbd,grad,wa,iwa) 
                 
         elseif(iFitAlgo.eq.3) then
             !Use a Levenberg-Marquardt algorithm for non-linear optimization with either finite-difference
@@ -1140,10 +1142,35 @@ module SelfConsistentLR
             deallocate(step,var)
         endif
             
-        if(tImposephsym.or.tImposeksym) then
-            !Impose momentum inversion, and potentially ph symmetry
-            !Symmetrize the resulting eigenvalues
-            call Imposesym(iRealCoupNum,vars)
+        if(tImposephsym.or.tImposeksym.or.tConstrainphsym) then
+            if(tImposephsym.or.tImposeksym) then
+                !Impose momentum inversion, and potentially ph symmetry
+                !Symmetrize the resulting eigenvalues
+                call Imposesym(iRealCoupNum,vars)
+            elseif(tConstrainphsym) then
+                !Eigenvalues may have drifted to be occupied orbitals. 
+                !Flip them. This should not change the *local* lattice greens function at all, but will change the bandstructure
+                !and the coupling to the impurity site. However, since this is not what we are fitting, we should not worry if we
+                !change this?
+                mu = U/2.0_dp
+                do i=1,iRealCoupNum
+                    if(vars(i).lt.mu) then
+                        !It is below the chemical potential. Flip it to get it to become a virtual again
+                        !This should not change anything, since a corresponding virtual will also be flipped
+                        !write(6,*) "old e: ",vars(i)
+                        vars(i) = 2.0_dp*mu - vars(i)
+                        !write(6,*) "new e: ",vars(i)
+                    endif
+                enddo
+                call sort_real(vars,iRealCoupNum)
+                !Actually, this has sorted things the wrong way around. Swap them
+                allocate(vars_temp(iRealCoupNum))
+                vars_temp(:) = vars(:)
+                do i = 1,iRealCoupNum
+                    vars(i) = vars_temp(iRealCoupNum-i+1)
+                enddo
+                deallocate(vars_temp)
+            endif
 
             !Calculate the new final residual
             if((iFitAlgo.le.2).or.(iFitAlgo.eq.4)) then
@@ -1701,7 +1728,7 @@ module SelfConsistentLR
         real(dp), intent(in) :: evals(nvals)
         real(dp), allocatable :: evals_full(:)
         integer :: iunit
-        real(dp) :: yp1,ypn,kval,band
+        real(dp) :: yp1,ypn,kval,band,mu
         real(dp), allocatable :: y2_spline(:)
         character(len=*), parameter :: t_r='WriteBandstructure'
 
@@ -1714,6 +1741,8 @@ module SelfConsistentLR
 
         allocate(evals_full(nKPnts))
         call FindFullLatEvals(evals,nvals,evals_full)
+
+        mu = U/2.0_dp
 
         !Set the *first* derivative of the spline to be zero at the BZ boundarys
         yp1 = zero
@@ -1730,7 +1759,7 @@ module SelfConsistentLR
                     
             call splint(KPnts(1,:),evals_full,y2_spline,nKPnts,kval,band)
 
-            write(iunit,"(2G20.10)") kval,band
+            write(iunit,"(2G20.10)") kval,band-mu
             kval = kval + 0.001
         enddo
 
