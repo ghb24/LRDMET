@@ -1783,6 +1783,21 @@ module mat_tools
         if(tWriteOut) call writematrixcomp(k_HFtoSchmidtTransform,'k_HFtoSchmidtTransform',.false.)
 
     end subroutine GetKSpaceOrbs
+                
+    !Given the lower triangle, make this matrix hermitian
+    subroutine MakeBlockHermitian(Block,length)
+        implicit none
+        integer, intent(in) :: length
+        complex(dp), intent(inout) :: Block(length,length)
+        integer :: i,j
+
+        do i = 1,nImp
+            do j = i+1,nImp
+                Block(i,j) = conjg(Block(j,i),dp)
+            enddo
+        enddo
+
+    end subroutine MakeBlockHermitian
 
     !Add coupling from the impurity sites to the other sites in the lattice
     !This is done to maintain the translational symmetry of the original impurity unit cell
