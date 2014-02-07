@@ -465,9 +465,10 @@ module SelfConsistentUtils
         if(tFitRealFreq) then
             nFitPoints = nFreq_Re   
             tCalcRealSpectrum = .false.
+            tFitMatAxis = .false.
         else
             nFitPoints = nFreq_Im
-            tCalcRealSpectrum = .true.
+            tFitMatAxis = .true.
         endif
         
         !Initially, just see if we can fit the two different Matsubara spectral functions

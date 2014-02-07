@@ -7,12 +7,8 @@ module SelfConsistentLR2
     use Continuation
     use utils, only: get_free_unit,append_ext_real,append_ext
     use mat_tools, only: AddPeriodicImpCoupling_RealSpace 
-    use SelfConsistentLR, onlY: 
+    use SC_Data                  
     implicit none
-
-    save
-    real(dp), allocatable :: FreqPoints(:),Weights(:)
-    logical :: tCalcRealSpectrum    !Whether to calculate the real spectrum in addition to the fit spectrum
 
     contains
 
@@ -31,7 +27,7 @@ module SelfConsistentLR2
         real(dp), parameter :: dDeltaImpThresh = 1.0e-4_dp 
         character(len=*), parameter :: t_r='SC_Spectrum_Opt'
 
-        tSpectrumOpt = 1    !1 for greens function optimization
+        iCorrFnTag = 1    !1 for greens function optimization
 
         !This will set FreqPoints and Weights. nFitPoints is the size of FreqPoints/Weights, 
         !and may refer to real or im axis based on the tFitRealFreq flag.
@@ -55,10 +51,20 @@ module SelfConsistentLR2
         enddo
         write(6,"(A)") "" 
 
-        call CalcLatticeSpectrum()
+        call CalcLatticeSpectrum(iCorrFnTag,nFitPoints,Lattice_GF,tMatbrAxis=tFitMatAxis,iLatParams=iLatParams,LatParams=LatParams,FreqPoints=FreqPoints)
 
-        subroutine CalcLatticeSpectrum()
+        subroutine CalcLatticeSpectrum(iCorrFn,n,LattGF,tMatbrAxis,iLatParams,LatParams,FreqPoints,ham,SE)
             implicit none
+            integer, intent(in) :: iCorrFn,n
+            complex(dp), intent(out) :: LattGF(nImp,nImp,n)
+            logical, intent(in), optional :: tMatbrAxis
+            integer, intent(in), optional :: iLatParams
+            real(dp), intent(in), optional :: LatParams(:)
+            real(dp), intent(in), optional :: FreqPoints(n)
+            real(dp), intent(in), optional :: ham(nSites,nSites)
+            complex(dp), intent(in), optional :: SE(nImp,nImp,n)
+            character(len=*), parameter :: t_r='CalcLatticeSpectrum'
+            
 
         end subroutine CalcLatticeSpectrum
 
