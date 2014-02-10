@@ -51,12 +51,13 @@ module SelfConsistentLR2
         enddo
         write(6,"(A)") "" 
 
-        call CalcLatticeSpectrum(iCorrFnTag,nFitPoints,Lattice_GF,tMatbrAxis=tFitMatAxis,iLatParams=iLatParams,LatParams=LatParams,FreqPoints=FreqPoints)
+        call CalcLatticeSpectrum(iCorrFnTag,nFitPoints,Lattice_GF,GFChemPot,tMatbrAxis=tFitMatAxis,iLatParams=iLatParams,LatParams=LatParams,FreqPoints=FreqPoints)
 
-        subroutine CalcLatticeSpectrum(iCorrFn,n,LattGF,tMatbrAxis,iLatParams,LatParams,FreqPoints,ham,SE)
+        subroutine CalcLatticeSpectrum(iCorrFn,n,LattGF,mu,tMatbrAxis,iLatParams,LatParams,FreqPoints,ham,SE)
             implicit none
             integer, intent(in) :: iCorrFn,n
             complex(dp), intent(out) :: LattGF(nImp,nImp,n)
+            real(dp), intent(in) :: mu
             logical, intent(in), optional :: tMatbrAxis
             integer, intent(in), optional :: iLatParams
             real(dp), intent(in), optional :: LatParams(:)
@@ -64,6 +65,21 @@ module SelfConsistentLR2
             real(dp), intent(in), optional :: ham(nSites,nSites)
             complex(dp), intent(in), optional :: SE(nImp,nImp,n)
             character(len=*), parameter :: t_r='CalcLatticeSpectrum'
+
+            if((.not.present(LatParams)).and.(.not.present(ham))) then
+                call stop_all(t_r,'No hamiltonian in real or lattice parameters passed in')
+            endif
+            if(present(LatParams).and.(present(ham))) then
+                call stop_all(t_r,'Lattice parameters and hamiltonian present - which one to use?!')
+            endif
+            if(present(LatParams).and.(.not.present(iLatParams))) then
+                call stop_all(t_r,'Lattice parameters sent in, but not suze')
+            endif
+            if(present(tMatbrAxis)) then
+                tMatbrAxis_=tMatbrAxis
+            else
+                tMatbrAxis_=.false.
+            endif
             
 
         end subroutine CalcLatticeSpectrum
