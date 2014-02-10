@@ -113,6 +113,22 @@ module SelfConsistentUtils
 
     end subroutine SetLatticeParams
 
+    subroutine WriteLatticeParams(iLatParams,LatParams)
+        implicit none
+        integer, intent(in) :: iLatParams
+        real(dp), intent(in) :: LatParams
+            
+        write(6,"(A)") "Writing lattice k-space hamiltonian..."
+        iunit = get_free_unit()
+        open(unit=iunit,file='LatkBlocks',status='unknown')
+        write(iunit,*) iLatParams
+        do i = 1,iLatParams
+            write(iunit,*) LatParams(i)
+        enddo
+        close(iunit)
+
+    end subroutine WriteLatticeParams
+
     subroutine InitLatticeParams(iLatParams,LatParams,mu,ham)
         integer, intent(in) :: iLatParams
         real(dp), intent(out) :: LatParams(iLatParams)
@@ -139,7 +155,7 @@ module SelfConsistentUtils
                 write(6,"(A)") "In lattice read, number of free parameters the same. Assuming that the "    &
                     //"k-point mesh is commensurate, and just using these values."
                 do i = 1,iloclatcoups
-                    read(iunit,*), kval,LatParams(i)
+                    read(iunit,*) kval,LatParams(i)
                 enddo
                 if(abs(dShiftLatticeEvals).gt.1.0e-8_dp) then
                     call ShiftLatParams(iLatParams,LatParams,dShiftLatticeEvals)
@@ -172,15 +188,12 @@ module SelfConsistentUtils
 
     end subroutine ShiftLatParams
 
-    subroutine ham_to_LatParams(iLatParams,LatParams,mu,ham)
-        integer, intent(in) :: iLatParams
-        real(dp), intent(out) :: LatParams(iLatParams)
-        real(dp), intent(in) :: mu
-        complex(dp), intent(in) :: ham(nSites,nSites)
+    subroutine ham_to_KBlocks(ham,KBlocks)
+        complex(dp), intent(in) :: ham(nSites,nSites) 
+        complex(dp), intent(out) :: KBlocks(nImp,nImp,nKPnts)
         complex(dp), allocatable :: ctemp(:,:)
-
-        !First, ham to k_blocks
-        allocate(KBlocks(nImp,nImp,nKPnts))
+        integer :: k,ind_1,ind_2
+        
         KBlocks(:,:,:) = zzero
 
         allocate(ctemp(nSites,nImp))
@@ -191,6 +204,18 @@ module SelfConsistentUtils
             call ZGEMM('C','N',nImp,nImp,nSites,zone,RtoK_Rot(:,ind_1:ind_2),nSites,ctemp,nSites,zzero,KBlocks(:,:,k),nImp)
         enddo
         deallocate(ctemp)
+
+    end subroutine ham_to_KBlocks
+
+    subroutine ham_to_LatParams(iLatParams,LatParams,ham)
+        integer, intent(in) :: iLatParams
+        real(dp), intent(out) :: LatParams(iLatParams)
+        complex(dp), intent(in) :: ham(nSites,nSites)
+        complex(dp), allocatable :: KBlocks(:,:,:)
+
+        !First, ham to k_blocks
+        allocate(KBlocks(nImp,nImp,nKPnts))
+        call ham_to_KBlocks(ham,KBlocks)
 
         call KBlocks_to_LatParams(iLatParams,LatParams,KBlocks)
         deallocate(KBlocks)

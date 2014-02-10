@@ -51,66 +51,19 @@ module SelfConsistentLR2
         enddo
         write(6,"(A)") "" 
 
-        call CalcLatticeSpectrum(iCorrFnTag,nFitPoints,Lattice_GF,GFChemPot,tMatbrAxis=tFitMatAxis,iLatParams=iLatParams,LatParams=LatParams,FreqPoints=FreqPoints)
-
-        subroutine CalcLatticeSpectrum(iCorrFn,n,LattGF,mu,tMatbrAxis,iLatParams,LatParams,FreqPoints,ham,SE)
-            implicit none
-            integer, intent(in) :: iCorrFn,n
-            complex(dp), intent(out) :: LattGF(nImp,nImp,n)
-            real(dp), intent(in) :: mu
-            logical, intent(in), optional :: tMatbrAxis
-            integer, intent(in), optional :: iLatParams
-            real(dp), intent(in), optional :: LatParams(:)
-            real(dp), intent(in), optional :: FreqPoints(n)
-            real(dp), intent(in), optional :: ham(nSites,nSites)
-            complex(dp), intent(in), optional :: SE(nImp,nImp,n)
-            character(len=*), parameter :: t_r='CalcLatticeSpectrum'
-
-            if((.not.present(LatParams)).and.(.not.present(ham))) then
-                call stop_all(t_r,'No hamiltonian in real or lattice parameters passed in')
-            endif
-            if(present(LatParams).and.(present(ham))) then
-                call stop_all(t_r,'Lattice parameters and hamiltonian present - which one to use?!')
-            endif
-            if(present(LatParams).and.(.not.present(iLatParams))) then
-                call stop_all(t_r,'Lattice parameters sent in, but not suze')
-            endif
-            if(present(tMatbrAxis)) then
-                tMatbrAxis_=tMatbrAxis
-            else
-                tMatbrAxis_=.false.
-            endif
-            
-
-        end subroutine CalcLatticeSpectrum
-
-
-
-
-
-
-
-
-        allocate(G_Mat_Fit(nImp,nImp,nFitPoints))
-        allocate(G_Mat_Re(nImp,nImp,nESteps_Re))
-        allocate(SE_Re(nImp,nImp,nESteps_Re))
-        SE_Re(:,:,:) = zzero
-        allocate(Lattice_GF(nImp,nImp,nFitPoints))
-        allocate(Lattice_GF_Old(nImp,nImp,nFitPoints))
-        allocate(Lattice_GF_Real(nImp,nImp,nESteps_Re))
-        !Write out the initial lattice greens function
-        !call FindLocalMomGF(nESteps_Im,SE_Im,Lattice_GF,tMatbrAxis=.true.,ham=h_lat_fit)
-        if(tFitPoints_Legendre) then
-            call FindLocalMomGF(nFitPoints,SE_Fit,Lattice_GF,tMatbrAxis=tFitMatAxis,ham=h_lat_fit,    &
-                CouplingLength=iLatParams,evals=Couplings(:,1),FreqPoints=FreqPoints)
-        else
-            call FindLocalMomGF(nFitPoints,SE_Fit,Lattice_GF,tMatbrAxis=tFitMatAxis,ham=h_lat_fit,    &
-                CouplingLength=iLatParams,evals=Couplings(:,1))
+        allocate(CorrFn_Fit(nImp,nImp,nFitPoints))
+        allocate(CorrFn_HL(nImp,nImp,nFitPoints))
+        allocate(CorrFn_HL_Old(nImp,nImp,nFitPoints))
+        allocate(dummy_Im(nImp,nImp,nFitPoints))
+        dummy_Im(:,:,:) = zzero
+        if(tCalcRealSpectrum) then
+            allocate(dummy_Re(nImp,nImp,nFreq_Re))
+            allocate(CorrFn_HL_Re(nImp,nImp,nFreq_Re))
+            allocate(CorrFn_Re(nImp,nImp,nFreq_Re))
+            dummy_Re(:,:,:) = zzero
         endif
 
-        allocate(G_Mat_Fit_Old(nImp,nImp,nFitPoints))
-        allocate(DiffImpGF(nImp,nImp,nFitPoints))
-        G_Mat_Fit(:,:,:) = zzero
+        call CalcLatticeSpectrum(iCorrFnTag,nFitPoints,CorrFn_Fit,GFChemPot,tMatbrAxis=tFitMatAxis,iLatParams=iLatParams,LatParams=LatParams,FreqPoints=FreqPoints)
 
         allocate(AllDiffs(3,0:iMaxIter_MacroFit))
         AllDiffs(:,:) = zero
@@ -118,84 +71,62 @@ module SelfConsistentLR2
         iter = 0
         do while(.not.tSkip_Lattice_Fit)
             iter = iter + 1
-            
-            !High level calculation on matsubara axis, with no self-energy, and just the normal lattice hamiltonian
-            G_Mat_Fit_Old(:,:,:) = G_Mat_Fit(:,:,:)
-            !call writematrix(h_lat_fit,'latham',.true.)
-            if(tFitPoints_Legendre) then
-                call SchmidtGF_wSE(G_Mat_Fit,GFChemPot,SE_Fit,nFitPoints,tMatbrAxis=tFitMatAxis,ham=h_lat_fit,FreqPoints=FreqPoints)
-                call writedynamicfunction(nFitPoints,G_Mat_Fit,'G_Imp_Fit',tag=iter,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
+
+            call writedynamicfunction(nFitPoints,CorrFn_Fit,'G_Lat_Fit',tag=iter,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
+
+            CorrFn_HL_Old(:,:,:) = CorrFn_HL(:,:,:)
+            if(iCorrFn.eq.1) then
+                call SchmidtGF_wSE(CorrFn_HL,GFChemPot,dummy_Im,nFitPoints,tMatbrAxis=tFitMatAxis,ham=h_lat_fit,FreqPoints=FreqPoints)
+                call writedynamicfunction(nFitPoints,CorrFn_HL,'G_Imp_Fit',tag=iter,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
             else
-                call SchmidtGF_wSE(G_Mat_Fit,GFChemPot,SE_Fit,nFitPoints,tMatbrAxis=tFitMatAxis,ham=h_lat_fit)
-                call writedynamicfunction(nFitPoints,G_Mat_Fit,'G_Imp_Fit',tag=iter,tMatbrAxis=tFitMatAxis)
+                call stop_all(t_r,'Non GF correlation functions not yet coded up')
             endif
-                
+
             if(tCalcRealSpectrum) then
-                call SchmidtGF_wSE(G_Mat_Re,GFChemPot,SE_Re,nESteps_Re,tMatbrAxis=.false.,ham=h_lat_fit)
-                call writedynamicfunction(nESteps_Re,G_Mat_Re,'G_Imp_Re',tag=iter,tMatbrAxis=.false.)
-                call FindLocalMomGF(nESteps_Re,SE_Re,Lattice_GF_Real,tMatbrAxis=.false.,ham=h_lat_fit,  &
-                    CouplingLength=iLatParams,evals=Couplings(:,1))
-                call writedynamicfunction(nESteps_Re,Lattice_GF_Real,'G_Lat_Re',tag=iter,tMatbrAxis=.false.)
-            endif
-            
-            !Write out lattice greens function
-            if(tFitPoints_Legendre) then
-                call writedynamicfunction(nFitPoints,Lattice_GF,'G_Lat_Fit',tag=iter,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
-            else
-                call writedynamicfunction(nFitPoints,Lattice_GF,'G_Lat_Fit',tag=iter,tMatbrAxis=tFitMatAxis)
+                call SchmidtGF_wSE(CorrFn_HL_Re,GFChemPot,dummy_Re,nFreq_Re,tMatbrAxis=.false.,ham=h_lat_fit)
+                call writedynamicfunction(nFreq_Re,CorrFn_HL_Re,'G_Imp_Re',tag=iter,tMatbrAxis=.false.)
+                call CalcLatticeSpectrum(iCorrFnTag,nFreq_Re,CorrFn_Re,GFChemPot,tMatbrAxis=.false.,iLatParams=iLatParams,LatParams=LatParams)
+                call writedynamicfunction(nFreq_Re,CorrFn_Re,'G_Lat_Re',tag=iter,tMatbrAxis=.false.)
             endif
 
             if(iLatticeFitType.eq.2) then
-                !Invert the high-level greens function, since we are fitting the residual of the inverses
-                call InvertLocalNonHermGF(nFitPoints,G_Mat_Fit)
+                !Invert HL Corr Fn, since we are fitting the residual of the inverses
+                call InvertLocalNonHermGF(nFitPoints,CorrFn_HL)
             endif
 
             if((abs(Damping_SE-one).gt.1.0e-8_dp).and.(iter.gt.1)) then
                 !Take an admixture of the previous two high-level calculations to damp the fit
-                G_Mat_Fit(:,:,:) = (Damping_SE*G_Mat_Fit(:,:,:)) + ((one-Damping_SE)*G_Mat_Fit_Old(:,:,:))
+                CorrFn_HL(:,:,:) = (Damping_SE*CorrFn_HL(:,:,:)) + ((one-Damping_SE)*CorrFn_HL_Old(:,:,:))
             endif
 
             if(iter.eq.1) then
                 !calculate the initial residual
-                if(tFitPoints_Legendre) then
-                    call CalcLatticeFitResidual(G_Mat_Fit,nFitPoints,Couplings,iLatParams,AllDiffs(1,0),tFitMatAxis,   & 
-                        FreqPoints=FreqPoints,Weights=IntWeights)
-                else
-                    call CalcLatticeFitResidual(G_Mat_Fit,nFitPoints,Couplings,iLatParams,AllDiffs(1,0),tFitMatAxis)
-                endif
+                call CalcLatticeFitResidual_2(iCorrFnTag,CorrFn_HL,nFitPoints,GFChemPot,LatParams,iLatParams,AllDiffs(1,0),tFitMatAxis,FreqPoints=FreqPoints,Weights=Weights)
                 write(6,"(A,F20.10)") "Initial spectrum residual: ",AllDiffs(1,0)
                 AllDiffs(2,0) = zero
             endif
-            if(tFitPoints_Legendre) then
-                call FitLatticeCouplings(G_Mat_Fit,nFitPoints,Couplings,iLatParams,FinalDist,tFitMatAxis,   &
-                    FreqPoints=FreqPoints,Weights=IntWeights)
-            else
-                call FitLatticeCouplings(G_Mat_Fit,nFitPoints,Couplings,iLatParams,FinalDist,tFitMatAxis)
-            endif
-            !Add the new lattice couplings to the lattice hamiltonian
-            call AddPeriodicImpCoupling_RealSpace(h_lat_fit,nSites,iLatParams,nImp,Couplings)
+
+            call FitLatParams(iCorrFnTag,CorrFn_HL,nFitPoints,GFChemPot,iLatParams,LatParams,FinalDist,tFitMatAxis,FreqPoints,Weights)
+
+            !What is the lattice hamiltonian
+            call LatParams_to_ham(iLatParams,LatParams,GFChemPot,h_lat_fit)
+
             !Now, calculate the local lattice greens function
-            Lattice_GF_Old(:,:,:) = Lattice_GF(:,:,:)
-            if(tFitPoints_Legendre) then
-                call FindLocalMomGF(nFitPoints,SE_Fit,Lattice_GF,tMatbrAxis=tFitMatAxis,ham=h_lat_fit,    &
-                    CouplingLength=iLatParams,evals=Couplings(:,1),FreqPoints=FreqPoints)
-            else
-                call FindLocalMomGF(nFitPoints,SE_Fit,Lattice_GF,tMatbrAxis=tFitMatAxis,ham=h_lat_fit,    &
-                    CouplingLength=iLatParams,evals=Couplings(:,1))
-            endif
+            CorrFn_Fit_Old(:,:,:) = CorrFn_Fit(:,:,:)
+            call CalcLatticeSpectrum(iCorrFnTag,nFitPoints,CorrFn_Fit,GFChemPot,tMatbrAxis=tFitMatAxis,iLatParams=iLatParams,LatParams=LatParams,FreqPoints=FreqPoints)
 
             !Write out the lattice couplings
-            call WriteLatticeCouplings(iLatParams,Couplings)
-        
+            call WriteLatticeParams(iLatParams,LatParams)
+
             !Calculate & write out stats (all of them)
             AllDiffs(1,iter) = FinalDist
-            DiffImpGF(:,:,:) = G_Mat_Fit_Old(:,:,:) - G_Mat_Fit(:,:,:)
-            DiffImpGF(:,:,:) = DiffImpGF(:,:,:) * dconjg(DiffImpGF(:,:,:))
-            AllDiffs(2,iter) = sum(real(DiffImpGF(:,:,:),dp))
+            DiffImpCorrFn(:,:,:) = CorrFn_HL_Old(:,:,:) - CorrFn_HL(:,:,:)
+            DiffImpCorrFn(:,:,:) = DiffImpCorrFn(:,:,:) * dconjg(DiffImpCorrFn(:,:,:))
+            AllDiffs(2,iter) = sum(real(DiffImpCorrFn(:,:,:),dp))
             !And diff for LatticeGF
-            DiffImpGF(:,:,:) = Lattice_GF_Old(:,:,:) - Lattice_GF(:,:,:)
-            DiffImpGF(:,:,:) = DiffImpGF(:,:,:) * dconjg(DiffImpGF(:,:,:))
-            AllDiffs(3,iter) = sum(real(DiffImpGF(:,:,:),dp))
+            DiffImpCorrFn(:,:,:) = CorrFn_Fit_Old(:,:,:) - CorrFn_Fit(:,:,:)
+            DiffImpCorrFn(:,:,:) = DiffImpCorrFn(:,:,:) * dconjg(DiffImpCorrFn(:,:,:))
+            AllDiffs(3,iter) = sum(real(DiffImpCorrFn(:,:,:),dp))
 
             write(6,"(A)") ""
             write(6,"(A,I7,A)") "***   COMPLETED MACROITERATION ",iter," ***"
@@ -216,36 +147,31 @@ module SelfConsistentLR2
                 write(6,"(A,G20.13)") "Impurity greens function changing on imaginary axis by less than: ",dDeltaImpThresh
                 exit
             endif
-            if(tOptGF_EVals) then
-                do i = 1,iLatParams
-                    if(abs(Couplings(i,1)).gt.1000.0_dp) then
-                        write(6,*) Couplings(:,1)
-                        call stop_all(t_r,'Lattice eigenvalues diverging. Convergence failed.')
-                    endif
-                enddo
-            endif
+            do i = 1,iLatParams
+                if(abs(LatParams(i)).gt.1000.0_dp) then
+                    write(6,*) LatParams(:)
+                    call stop_all(t_r,'Lattice eigenvalues diverging. Convergence failed.')
+                endif
+            enddo
         enddo
 
         !We should write these out to a file so that we can restart from them at a later date (possibly with more variables).
+        !TODO: Actually write out k-blocks
         write(6,"(A)") "Final *frequency independent* lattice parameters: "
         do i = 1,iLatParams
-            write(6,"(I6,G20.13)") i,Couplings(i,1)
+            write(6,"(I6,G20.13)") i,iLatParams(i)
         enddo
         write(6,"(A)") "" 
-    
-        if(tOptGF_EVals.and.tDiag_kSpace) then
-            !Write out the converged one-electron dispersion / bandstructure
-            call WriteBandstructure(Couplings,iLatParams)
-        else
-            !Should fix this so that we convert to eigenvalues from couplings and write out
-        endif
-        if(tFitPoints_Legendre) then
-            call writedynamicfunction(nFitPoints,Lattice_GF,'G_Lat_Fit_Final',tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
-        else
-            call writedynamicfunction(nFitPoints,Lattice_GF,'G_Lat_Fit_Final',tMatbrAxis=tFitMatAxis)
-        endif
 
-        deallocate(SE_Fit,Lattice_GF,Lattice_GF_Real,G_Mat_Fit_Old,DiffImpGF,AllDiffs,Lattice_GF_Old)
+        !TODO
+        !if(tOptGF_EVals.and.tDiag_kSpace) then
+        !    !Write out the converged one-electron dispersion / bandstructure
+        !    call WriteBandstructure(Couplings,iLatParams)
+        !endif
+
+        call writedynamicfunction(nFitPoints,CorrFn_Fit,'G_Lat_Fit_Final',tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
+
+        deallocate(xxx , DiffImpCorrFn,AllDiffs,CorrFn_Fit_Old,CorrFn_Fit)
 
         if(tFitMatAxis) then
             allocate(Lattice_GF(nImp,nImp,nESteps_Re))
@@ -275,7 +201,89 @@ module SelfConsistentLR2
         deallocate(h_lat_fit,Couplings,SE_Re,G_Mat_Re,G_Mat_Fit)
         if(tFitPoints_Legendre) deallocate(FreqPoints,IntWeights)
 
-    end subroutine SC_FitLatticeGF_Im
+    end subroutine SC_Spectrum_Opt
+        
+    subroutine CalcLatticeSpectrum(iCorrFn,n,CorrFn,mu,tMatbrAxis,iLatParams,LatParams,FreqPoints,ham,SE)
+        implicit none
+        integer, intent(in) :: iCorrFn,n
+        complex(dp), intent(out) :: CorrFn(nImp,nImp,n)
+        real(dp), intent(in) :: mu
+        logical, intent(in), optional :: tMatbrAxis
+        integer, intent(in), optional :: iLatParams
+        real(dp), intent(in), optional :: LatParams(:)
+        real(dp), intent(in), optional :: FreqPoints(n)
+        complex(dp), intent(in), optional :: ham(nSites,nSites)
+        complex(dp), intent(in), optional :: SE(nImp,nImp,n)
+        character(len=*), parameter :: t_r='CalcLatticeSpectrum'
+
+        if((.not.present(LatParams)).and.(.not.present(ham))) then
+            call stop_all(t_r,'No hamiltonian in real or lattice parameters passed in')
+        endif
+        if(present(LatParams).and.(present(ham))) then
+            call stop_all(t_r,'Lattice parameters and hamiltonian present - which one to use?!')
+        endif
+        if(present(LatParams).and.(.not.present(iLatParams))) then
+            call stop_all(t_r,'Lattice parameters sent in, but not suze')
+        endif
+        if(present(SE)) then
+            call stop_all(t_r,'Sorry - cannot currently deal with self-energy')
+        endif
+        if(present(tMatbrAxis)) then
+            tMatbrAxis_=tMatbrAxis
+        else
+            tMatbrAxis_=.false.
+        endif
+
+        
+        allocate(KBlocks(nImp,nImp,nKPnts))
+
+        CorrFn = zzero
+        KBlocks = zzero
+
+        if(present(LatParams)) then
+            call LatParams_to_KBlocks(iLatParams,LatParams,mu,KBlocks)
+        elseif(present(ham)) then
+            call ham_to_KBlocks(ham,KBlocks)
+        else
+            call stop_all(t_r,'No hamiltonian (r or k space) read in')
+        endif
+
+        i = 0
+        do while(.true.)
+            if(present(FreqPoints)) then
+                call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis_,nFreqPoints=n,FreqPoints=FreqPoints)
+            else
+                call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis_)
+            endif
+            if(i.lt.0) exit
+            if(i.gt.n) call stop_all(t_r,'Too many freq points')
+
+            do k = 1,nKPnts 
+
+                InvMat(:,:) = - KBlocks(:,:,k)
+
+                if(iCorrFn.eq.1) then
+                    !Greens function
+                    do j = 1,nImp
+                        if(tMatbrAxis_) then
+                            InvMat(j,j) = InvMat(j,j) + cmplx(mu,Omega,dp)
+                        else
+                            InvMat(j,j) = InvMat(j,j) + cmplx(Omega + mu,dDelta,dp)
+                        endif
+                    enddo
+                    call mat_inv(InvMat,InvMat2)
+                    CorrFn(:,:,i) = CorrFn(i) + InvMat2(:,:)
+                else
+                    call stop_all(t_r,'Cannot deal with non-greens functions right now')
+                endif
+            enddo
+        enddo
+
+        if(iCorrFn.eq.1) then
+            CorrFn(:,:,:) = CorrFn(:,:,:) / real(nKPnts,dp)
+        endif
+
+    end subroutine CalcLatticeSpectrum
         
     !Self-consistency in the style of DMFT, converging both an imaginary frequency self-energy and a frequency independent hamiltonian
     !The aim is to find a self-energy that accurately represents the lattice self-energy.
@@ -514,141 +522,60 @@ module SelfConsistentLR2
     !impurity greens function. Not the greens function itself.
     !Note that this can become expensive - it is a n_sites^2 calculation at best
     !If dSeperateFuncs is present, the difference between the values will be stored for each frequency point
-    subroutine CalcLatticeFitResidual(G_Imp,nESteps,Couplings,iNumCoups,dist,tMatbrAxis,dSeperateFuncs, &
-        dJacobian,FreqPoints,Weights,dJacobian2)
+    subroutine CalcLatticeFitResidual_2(iCorrFnTag,G_Imp,nESteps,mu,iLatParams,LatParams,dist,tMatbrAxis,     &
+            FreqPoints,Weights,dJacobian)
         implicit none
-        integer, intent(in) :: nESteps,iNumCoups
+        integer, intent(in) :: nESteps,iLatParams,iCorrFnTag
+        real(dp), intent(in) :: mu
         complex(dp), intent(in) :: G_Imp(nImp,nImp,nESteps)
-        real(dp), intent(in) :: Couplings(iNumCoups,nImp)
+        real(dp), intent(in) :: LatParams(iLatParams)
         real(dp), intent(out) :: dist
         logical, intent(in) :: tMatbrAxis
-        real(dp), intent(out), optional :: dSeperateFuncs(nImp,nImp,nESteps)  
-        real(dp), intent(out), optional :: dJacobian(nESteps,iNumCoups)  !TODO: This will be wrong for > 1 imp
         real(dp), intent(in), optional :: FreqPoints(nESteps)
         real(dp), intent(in), optional :: Weights(nESteps)
-        real(dp), intent(out), optional :: dJacobian2(iNumCoups)
-        real(dp), allocatable :: h_lat_fit(:,:)
-        complex(dp), allocatable :: SE_Dummy(:,:,:),Lattice_GF(:,:,:),DiffMat(:,:,:)
+        real(dp), intent(out), optional :: dJacobian(iLatParams)
+        complex(dp), allocatable :: Lattice_Func(:,:,:),DiffMat(:,:,:)
         real(dp), allocatable :: DiffMatr(:,:,:)
         real(dp) :: Omega,LattWeight
-        integer :: i,j,k
         logical :: tNonStandardGrid
+        integer :: i,j,k
         integer, parameter :: iNormPower = 2    !The power of the matrix norm for the residual
-        character(len=*), parameter :: t_r='CalcLatticeFitResidual'
+        character(len=*), parameter :: t_r='CalcLatticeFitResidual_2'
+
+        !TODO: Fix this, so that the self-energy is an optional argument
+        allocate(Lattice_Func(nImp,nImp,nESteps))
 
         if(present(FreqPoints)) then
             tNonStandardGrid = .true.
+            call CalcLatticeSpectrum(iCorrFnTag,nESteps,Lattice_Func,mu,tMatbrAxis=tMatbrAxis,iLatParams=iLatParams, &
+                LatParams=LatParams,FreqPoints=FreqPoints)
         else
             tNonStandardGrid = .false.
-        endif
-        
-        !TODO: Fix this, so that the self-energy is an optional argument
-        allocate(SE_Dummy(nImp,nImp,nESteps))
-        allocate(Lattice_GF(nImp,nImp,nESteps))
-
-        if(.not.tOptGF_Evals) then
-            !We need to calculate the lattice greens function with the attached coupling
-            allocate(h_lat_fit(nSites,nSites))
-            h_lat_fit(:,:) = h0v(:,:)
-            !Add the extended, periodized, non-local couplings to the rest of the lattice
-            call AddPeriodicImpCoupling_RealSpace(h_lat_fit,nSites,iNumCoups,nImp,Couplings)
-
-            !Now, calculate the local lattice greens function
-            !call writematrix(Couplings,'Couplings',.false.)
-            !call writematrix(h_lat_fit,'h_lat_fit',.true.)
-            !call FindLocalMomGF(nESteps,SE_Dummy,Lattice_GF,tMatbrAxis=tMatbrAxis,ham=h_lat_fit)
-            call FindLocalMomGF(nESteps,SE_Dummy,Lattice_GF,tMatbrAxis=tMatbrAxis,ham=h_lat_fit,CouplingLength=iNumCoups)
-            deallocate(h_lat_fit)
-        else
-            if(tNonStandardGrid) then
-                call FindLocalMomGF(nESteps,SE_Dummy,Lattice_GF,tMatbrAxis=tMatbrAxis,CouplingLength=iNumCoups, &
-                    evals=Couplings(:,1),FreqPoints=FreqPoints)
-            else
-                call FindLocalMomGF(nESteps,SE_Dummy,Lattice_GF,tMatbrAxis=tMatbrAxis,CouplingLength=iNumCoups, &
-                    evals=Couplings(:,1))
-            endif
+            call CalcLatticeSpectrum(iCorrFnTag,nESteps,Lattice_Func,mu,tMatbrAxis=tMatbrAxis,iLatParams=iLatParams, &
+                LatParams=LatParams,FreqPoints=FreqPoints)
         endif
 
         if(iLatticeFitType.eq.2) then
             !If required (i.e. we are fitting the inverses of the functions), invert the lattice greens function
-            call InvertLocalNonHermGF(nESteps,Lattice_GF)
+            call InvertLocalNonHermGF(nESteps,Lattice_Func)
         endif
         
         allocate(DiffMat(nImp,nImp,nESteps))
         allocate(DiffMatr(nImp,nImp,nESteps))
 
         !Now, take the difference between the functions
-        DiffMat(:,:,:) = Lattice_GF(:,:,:) - G_Imp(:,:,:)
+        DiffMat(:,:,:) = Lattice_Func(:,:,:) - G_Imp(:,:,:)
 
         !Take abs values 
         DiffMatr(:,:,:) = abs(DiffMat(:,:,:))
-!        write(6,*) "Sep_Dists from CalcLatticeFitResidual: "
-!        write(6,*) DiffMatr(:,:,:)
-!        write(6,*) "enorm of sep_dists: ",enorm(nESteps,DiffMatr(1,1,:))
-        if(present(dSeperateFuncs)) then
-            !We want to return the individual differences
-            dSeperateFuncs(:,:,:) = DiffMatr(:,:,:)
-            if(tNonStandardGrid) then
-                do i = 1,nESteps
-                    dSeperateFuncs(:,:,i) = Weights(i)*(dSeperateFuncs(:,:,i)**2)
-                    !dSeperateFuncs(:,:,i) = dSeperateFuncs(:,:,i)*sqrt(Weights(i))
-                enddo
-            else
-                do i = 1,nESteps
-                    dSeperateFuncs(:,:,i) = dSeperateFuncs(:,:,i)**2
-                enddo
-            endif
-            if(iFitGFWeighting.ne.0) then
-                i = 0
-                do while(.true.)
-                    if(tNonStandardGrid) then
-                        call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis,nFreqPoints=nESteps,FreqPoints=FreqPoints)
-                    else
-                        call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis)
-                    endif
-                    if((abs(Omega).lt.1.0e-9_dp).and.(iFitGFWeighting.ne.0)) then
-                        call stop_all(t_r,'Should not be sampling w=0 with a non-flat weighting function')
-                    endif
-                    if(i.lt.0) exit
-                    if(i.gt.nESteps) call stop_all(t_r,'Too many frequency points')
-
-                    !Now, include the appropriate weighting factor
-                    do j = 1,nImp
-                        do k = 1,nImp
-                            if(iFitGFWeighting.eq.1) then
-                                !1/w weighting
-                                !We actually divide by the sqrt of Omega, since the LM optimization will automatically take the squares of the functions
-                                !dSeperateFuncs(k,j,i) = dSeperateFuncs(k,j,i)/sqrt(abs(Omega))
-                                dSeperateFuncs(k,j,i) = dSeperateFuncs(k,j,i)/(abs(Omega))
-                            elseif(iFitGFWeighting.eq.2) then
-                                !1/w^2 weighting
-                                !dSeperateFuncs(k,j,i) = dSeperateFuncs(k,j,i)/abs(Omega)
-                                dSeperateFuncs(k,j,i) = dSeperateFuncs(k,j,i)/(Omega**2)
-                            else
-                                call stop_all(t_r,'Error here')
-                            endif
-                        enddo
-                    enddo
-                enddo
-            endif
-            if(present(dJacobian)) then
-                !Calculate the derivatives too
-                if(present(FreqPoints)) then
-                    call CalcJacobian(nESteps,iNumCoups,DiffMatr,DiffMat,dJacobian,Couplings(:,1),tMatbrAxis,   &
-                        FreqPoints=FreqPoints,Weights=Weights)
-                else
-                    call CalcJacobian(nESteps,iNumCoups,DiffMatr,DiffMat,dJacobian,Couplings(:,1),tMatbrAxis)
-                endif
-            endif
-        endif
 
         if(present(dJacobian2)) then
             !Calculate the derivative of dist wrt each eigenvalue
-            if(present(FreqPoints)) then
-                call CalcJacobian2(nESteps,iNumCoups,DiffMat,dJacobian2,Couplings(:,1),tMatbrAxis,     &
+            if(tNonStandardGrid) then
+                call CalcJacobian_3(iCorrFnTag,nESteps,iLatParams,DiffMat,dJacobian,LatParams,mu,tMatbrAxis,     &
                     FreqPoints=FreqPoints,Weights=Weights)
             else
-                call CalcJacobian2(nESteps,iNumCoups,DiffMat,dJacobian2,Couplings(:,1),tMatbrAxis)
+                call CalcJacobian_3(iCorrFnTag,nESteps,iLatParams,DiffMat,dJacobian,LatParams,mu,tMatbrAxis)
             endif
         endif
 
@@ -706,24 +633,26 @@ module SelfConsistentLR2
             dist = dist/LattWeight
         endif
 
-        deallocate(SE_Dummy,DiffMat,Lattice_GF,DiffMatr)
+        deallocate(DiffMat,Lattice_Func,DiffMatr)
 
-    end subroutine CalcLatticeFitResidual
+    end subroutine CalcLatticeFitResidual_2
 
     !Use a minimization routine to fit the greens functions by adjusting the lattice coupling
-    subroutine FitLatticeCouplings(G_Imp,n,Couplings,iNumCoups,FinalErr,tMatbrAxis,FreqPoints,Weights)
+    subroutine FitLatParams(iCorrFnTag,CorrFn_HL,n,mu,iLatParams,LatParams,FinalErr,tMatbrAxis,FreqPoints,Weights)
         use MinAlgos
         use Levenberg_Marquardt
         use lbfgs
         use sort_mod, only: sort_real
         implicit none
+        integer, intent(in) :: iCorrFnTag
         integer, intent(in) :: n    !Number of frequency points
-        integer, intent(in) :: iNumCoups    !Number of independent coupling parameters
-        complex(dp), intent(in) :: G_Imp(nImp,nImp,n)   !This may be the inverse
-        real(dp), intent(inout) :: Couplings(iNumCoups,nImp)    !The lattice couplings
+        integer, intent(in) :: iLatParams    !Number of independent coupling parameters
+        complex(dp), intent(in) :: CorrFn_HL(nImp,nImp,n)   !This may be the inverse
+        real(dp), intent(inout) :: LatParams(iLatParams)    !The lattice couplings
         real(dp), intent(out) :: FinalErr
+        real(dp), intent(in) :: mu
         logical, intent(in) :: tMatbrAxis
-        real(dp), intent(in), optional :: FreqPoints(n),Weights(n)
+        real(dp), intent(in) :: FreqPoints(n),Weights(n)
 
         real(dp), allocatable :: step(:),vars(:),var(:),FinalVec(:),Jac(:,:),vars_temp(:)
         real(dp), allocatable :: Freqs_dum(:),Weights_dum(:),low(:),upp(:),grad(:),wa(:)
@@ -734,73 +663,19 @@ module SelfConsistentLR2
         character(len=60) :: task,csave
         integer :: isave(44)
         logical :: lsave(4)
-        character(len=*), parameter :: t_r='FitLatticeCouplings'
+        character(len=*), parameter :: t_r='FitLatParams'
 
-        if(tOptGF_EVals) then
-            iRealCoupNum = iNumCoups
-            tOptEVals_ = .true.
-        else
-            if(tEveryOtherCoup) then
-                !We actually only have half the number of couplings, since we are not optimizing every other coupling, and
-                !just setting it to zero
-                if(mod(iNumCoups,2).eq.2) then
-                    iRealCoupNum = iNumCoups/2
-                else
-                    iRealCoupNum = (iNumCoups+1)/2
-                endif
-            else
-                iRealCoupNum = iNumCoups
-            endif
-            tOptEVals_ = .false.
-        endif
-            
         !Initialize parameters
-        tNonStandardGrid = .false.
-        allocate(vars(iRealCoupNum))
-        if(tOptEVals_) then
-            if(tConstrainKSym.and.(.not.tConstrainphsym)) then
-                if(tShift_Mesh.and.(iRealCoupNum.ne.(nSites/2))) call stop_all(t_r,'Error here')
-                if((.not.tShift_Mesh).and.(iRealCoupNum.ne.((nSites/2)+1))) call stop_all(t_r,'Error here')
-            elseif(tConstrainKSym.and.tConstrainphsym) then
-                if(tShift_Mesh.and.(iRealCoupNum.ne.(nSites/4))) call stop_all(t_r,'Wrong # of params')
-                if((.not.tShift_Mesh).and.(iRealCoupNum.ne.(((nSites/2)+1)/2))) call stop_all(t_r,'Wrong # of params')
-            else
-                if(iRealCoupNum.ne.nSites) call stop_all(t_r,'Error Here')
-            endif
-            do i = 1,iRealCoupNum
-                vars(i) = Couplings(i,1)
-            enddo
-            if(present(FreqPoints).and.present(Weights)) then
-                tNonStandardGrid = .true.
-            endif
-        else
-            if(tEveryOtherCoup) then
-                do i = 1,iRealCoupNum
-                    vars(i) = Couplings((2*i)-1,1)
-                enddo
-            else
-                do i = 1,iRealCoupNum
-                    vars(i) = Couplings(i,1)
-                enddo
-            endif
-        endif
-
-        if(present(FreqPoints)) then
-            tNonStandardGrid = .true.
-        else
-            tNonStandardGrid = .false.
-            allocate(Weights_dum(n))
-            allocate(Freqs_dum(n))
-        endif
+        allocate(vars(iLatParams))
 
         if(iFitAlgo.eq.4) then
             !Use L-BFGS(-constrained) to fit
             if(.not.tAnalyticDerivs) call stop_all(t_r,'Need analytic derivatives if optimizing with BFGS')
 
             !We can specify upper and lower bounds on the solutions. Set these to be /pm1000 
-            allocate(low(iRealCoupNum))   !Lower limits
-            allocate(upp(iRealCoupNum))   !Upper limits
-            allocate(nbd(iRealCoupNum)) !Type of limit on each variable: 0 - unbounded, 1 - lower only, 2 - both bounds, 3 - upper only
+            allocate(low(iLatParams))   !Lower limits
+            allocate(upp(iLatParams))   !Upper limits
+            allocate(nbd(iLatParams))   !Type of limit on each variable: 0 - unbounded, 1 - lower only, 2 - both bounds, 3 - upper only
             nbd(:) = 0
             low(:) = -1000.0_dp
             upp(:) = 1000.0_dp
@@ -810,36 +685,30 @@ module SelfConsistentLR2
             rhoend = 10.0_dp    !High accuracy
             pgtol = 1.0e-5_dp   !Maximum gradient exit criterion
 
-            allocate(grad(iRealCoupNum))
+            allocate(grad(iLatParams))
             
             !corrs is the maximum number of variable metric corrections
             !used to define the limited memory matrix.
             corrs = 6
 
             !Working arrays
-            allocate(wa(2*iRealCoupNum*corrs + 5*iRealCoupNum + 11*corrs*corrs + 8*corrs))
-            allocate(iwa(3*iRealCoupNum))
+            allocate(wa(2*iLatParams*corrs + 5*iLatParams + 11*corrs*corrs + 8*corrs))
+            allocate(iwa(3*iLatParams))
 
             iprint = 25
 
             task='START'
-
             do while(task(1:2).eq.'FG'.or.task.eq.'NEW_X'.or.task.eq.'START')
 
-                call setulb(iRealCoupNum,corrs,vars,low,upp,nbd,FinalErr,grad,rhoend,   &
+                call setulb(iLatParams,corrs,vars,low,upp,nbd,FinalErr,grad,rhoend,   &
                     pgtol,wa,iwa,task,iprint,csave,lsave,isave,dsave)
 
                 if(task(1:2).eq.'FG') then
                     !Request the function (FinalErr), and the gradient (grad) at the current parameters (vars)
 
                     !Compute function and gradient
-                    if(tNonStandardGrid) then
-                        call MinCoups(vars,FinalErr,n,iRealCoupNum,G_Imp,tMatbrAxis,tNonStandardGrid,   &
-                            FreqPoints=FreqPoints,Weights=Weights,dJac=grad)
-                    else
-                        call MinCoups(vars,FinalErr,n,iRealCoupNum,G_Imp,tMatbrAxis,tNonStandardGrid,dJac=grad)
-                    endif
-
+                    call CalcLatticeFitResidual_2(iCorrFnTag,CorrFn_HL,n,mu,iLatParams,vars,FinalErr,  &
+                        tMatbrAxis,FreqPoints=FreqPoints,Weights=Weights,dJacobian=grad)
                 elseif(task(1:5).eq.'NEW_X') then
                     !Returned with a new iterate
                     !Have we already been through more iterations than we want?
@@ -863,117 +732,7 @@ module SelfConsistentLR2
         elseif(iFitAlgo.eq.3) then
             !Use a Levenberg-Marquardt algorithm for non-linear optimization with either finite-difference
             !or analytic derivatives
-            if(iLatticeFitType.eq.3) then
-                call stop_all(t_r,'Cannot currently do Levenberg-Marquardt optimization when dividing by norm')
-            endif
-            rhoend = 1.0e-7_dp  !Convergence criteria
-            nFuncs = n*(nImp**2)   !Number of functions
-            if(iMaxFitMicroIter.eq.0) then
-                maxf = 500 * (nFuncs+1) !Max number of function evaluations
-            else
-                maxf = iMaxFitMicroIter !Max number of function evaluations
-            endif
-            write(6,"(A,I9)") "Number of functions: ", nFuncs
-                
-            allocate(iwork(iRealCoupNum))
-            allocate(FinalVec(nFuncs))
-                
-            ierr_tmp = 1
-            if(tNonStandardGrid) then
-                call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis,tNonStandardGrid,    &
-                    FreqPoints=FreqPoints,Weights=Weights)
-            else
-                call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis,tNonStandardGrid,    &
-                    FreqPoints=Freqs_dum,Weights=Weights_dum)
-            endif
-!            write(6,*) "Sep_Dists from MinCoups_LM: "
-!            write(6,*) FinalVec(:)
-            InitErr = (enorm(nFuncs,FinalVec))   !Because enorm also takes the sqrt
-            !InitErr = (enorm(nFuncs,FinalVec))**2   !Because enorm also takes the sqrt
-            write(6,"(A,G20.10)") "Initial residual before fit: ",InitErr
-
-            if(tAnalyticDerivs) then
-                write(6,"(A)") "Optimizing lattice hamiltonian with analytic derivative Levenberg-Marquardt algorithm"
-
-                !Additional memory for Jacobian matrix
-                allocate(Jac(nFuncs,iRealCoupNum))
-
-                if(.not.tNonStandardGrid) then
-                    call lmder1(MinCoups_LM, nFuncs, iRealCoupNum, vars, FinalVec, Jac, rhoend, ierr, iwork, maxf, n,   &
-                        G_Imp, tMatbrAxis, tNonStandardGrid, Freqs_dum, Weights_dum)
-                else
-                    call lmder1(MinCoups_LM, nFuncs, iRealCoupNum, vars, FinalVec, Jac, rhoend, ierr, iwork, maxf, n,   &
-                        G_Imp, tMatbrAxis, tNonStandardGrid,FreqPoints,Weights)
-                endif
-
-                !Final calculation of the residual and jacobian at the end
-                !ierr_tmp = 2
-                !call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis,Jac)
-                ierr_tmp = 1
-                if(.not.tNonStandardGrid) then
-                    call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis,tNonStandardGrid,    &
-                        Jac,FreqPoints=Freqs_dum,Weights=Weights_dum)
-                else
-                    call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis,tNonStandardGrid,    &
-                        Jac,FreqPoints=FreqPoints,Weights=Weights)
-                endif
-                !do i = 1,iRealCoupNum
-                !    do j = 1,nFuncs
-                !        if(abs(Jac(j,i)).gt.1e-4_dp) then
-                !            write(6,*) j,i,Jac(j,i)
-                !            call warning(t_r,'Jacobian not zero')
-                !        endif
-                !    enddo
-                !enddo
-
-                deallocate(Jac)
-            else
-                !Use Finite-difference jacobians
-                write(6,"(A)") "Optimizing lattice hamiltonian with numerical derivative Levenberg-Marquardt algorithm"
-
-                !Call LM algorithm
-                if(.not.tNonStandardGrid) then
-                    call lmdif1(MinCoups_LM , nFuncs, iRealCoupNum, vars, FinalVec, rhoend, ierr, iwork, maxf, n,   &
-                        G_Imp, tMatbrAxis, tNonStandardGrid,Freqs_dum,Weights_dum)
-                else
-                    call lmdif1(MinCoups_LM , nFuncs, iRealCoupNum, vars, FinalVec, rhoend, ierr, iwork, maxf, n,   &
-                        G_Imp, tMatbrAxis, tNonStandardGrid,FreqPoints,Weights)
-                endif
-            endif
-                
-            FinalErr = (enorm(nFuncs,FinalVec))
-            !FinalErr = (enorm(nFuncs,FinalVec))**2
-            write(6,"(A,G20.10)") "Final residual after fit: ",FinalErr
-            write(6,"(A)") "Lattice parameters: "
-            write(6,*) vars(:)
-            if(InitErr.lt.FinalErr) call stop_all(t_r,'Residual actually increased during Lev-Mar optimization...?')
-
-            select case(ierr)
-                case(0)
-                    call stop_all(t_r,'Improper imput parameters to lmdif1')
-                case(1)
-                    write(6,"(A)") "Levenberg-Marquardt with approximate gradients successful..."
-                case(2)
-                    write(6,"(A)") "Levenberg-Marquardt with approximate gradients successful..."
-                case(3)
-                    write(6,"(A)") "Levenberg-Marquardt with approximate gradients successful..."
-                case(4)
-                    write(6,"(A)") "Levenberg-Marquardt not successful: Objective function is orthogonal " &
-                        //"to the columns of the jacobian to machine precision."
-                case(5)
-                    write(6,"(A)") "Levenberg-Marquardt not successful: Number of calls to fcn has " &
-                        //"reached or exceeded max."
-                case(6)
-                    write(6,"(A)") "Levenberg-Marquardt not successful: tol is too small. No further " &
-                        //"reduction in the sum of squares is possible."
-                case(7)
-                    write(6,"(A)") "Levenberg-Marquardt not successful: tol is too small. No further " &
-                        //"improvement in the approximate solution x is possible." 
-                case default
-                    call stop_all(t_r,'Unknown exit flag')
-            end select
-            deallocate(iwork,FinalVec)
-
+            call stop_all(t_r,'Levenberg-Marquardt not working. Not coded up for nImp > 1')
         elseif(iFitAlgo.eq.2) then
             !Use modified Powell algorithm for optimization (based on fitting to quadratics)
             write(6,"(A)") "Optimizing lattice hamiltonian with modified Powell algorithm"
@@ -981,33 +740,32 @@ module SelfConsistentLR2
             rhoend = 1.0e-6_dp
             iprint = 2
             if(iMaxFitMicroIter.eq.0) then
-                maxf = 20*iRealCoupNum
+                maxf = 20*iLatParams
             else
                 maxf = iMaxFitMicroIter
             endif
 
+            !Set some globals, so we don't need to transfer them through
+            SCF_mu = mu
+            SCF_iCorrFn = iCorrFnTag
+
             !Vars is updated to be the best value to minimize the residual
-            if(tNonStandardGrid) then
-                call uobyqa(iRealCoupNum,vars,rhobeg,rhoend,iprint,maxf,FinalErr,MinCoups, n, G_Imp,    &
-                    tMatbrAxis, tNonStandardGrid, FreqPoints, Weights)
-            else
-                call uobyqa(iRealCoupNum,vars,rhobeg,rhoend,iprint,maxf,FinalErr,MinCoups, n, G_Imp,    &
-                    tMatbrAxis, tNonStandardGrid, Freqs_dum, Weights_dum)
-            endif
+            call uobyqa(iLatParams,vars,rhobeg,rhoend,iprint,maxf,FinalErr,Min_Interface,n,CorrFn_HL,   &
+                tMatbrAxis,.true., FreqPoints, Weights)
 
         elseif(iFitAlgo.eq.1) then
             !Use simplex method for optimization without derivatives
             write(6,"(A)") "Optimizing lattice hamiltonian with Simplex algorithm"
 
             !Starting values are assumed to be read in
-            allocate(step(iRealCoupNum))
-            allocate(var(iRealCoupNum))
+            allocate(step(iLatParams))
+            allocate(var(iLatParams))
             step(:) = 0.05_dp
-            nop = iRealCoupNum
+            nop = iLatParams
 
             !Set max no of function evaluations. Default = 20*variables, print every 25
             if(iMaxFitMicroIter.eq.0) then
-                maxf = 20*iRealCoupNum
+                maxf = 20*iLatParams
             else
                 maxf = iMaxFitMicroIter
             endif
@@ -1017,7 +775,7 @@ module SelfConsistentLR2
             !standard deviation of the values of the objective function at
             !the points of the current simplex < stopcr
             stopcr = 1.0e-4_dp
-            nloop = 2*iRealCoupNum !This is how often the stopping criterion is checked
+            nloop = 2*iLatParams !This is how often the stopping criterion is checked
 
             !Fit a quadratic surface to be sure a minimum has been found
             iquad = 1
@@ -1026,22 +784,21 @@ module SelfConsistentLR2
             !be accurate to about 15 dp. If we set simp = 1.d-6, we should
             !get about 9dp accuracy in fitting the surface
             simp = 1.0e-6_dp
+            
+            !Set some globals, so we don't need to transfer them through
+            SCF_mu = mu
+            SCF_iCorrFn = iCorrFnTag
 
             !Now call minim to do the work
             tfirst = .true.
             do while(.true.)
-                if(tNonStandardGrid) then
-                    call minim(vars, step, iRealCoupNum, FinalErr, maxf, iprint, stopcr, nloop, &
-                        iquad, simp, var, MinCoups, ierr, n, G_Imp, tMatbrAxis, tNonStandardGrid, FreqPoints,Weights)
-                else
-                    call minim(vars, step, iRealCoupNum, FinalErr, maxf, iprint, stopcr, nloop, &
-                        iquad, simp, var, MinCoups, ierr, n, G_Imp, tMatbrAxis, tNonStandardGrid, Freqs_dum, Weights_dum)
-                endif
+                call minim(vars, step, iLatParams, FinalErr, maxf, iprint, stopcr, nloop, &
+                    iquad, simp, var, Min_Interface, ierr, n, CorrFn_HL, tMatbrAxis, .true., FreqPoints,Weights)
 
                 if(ierr.eq.0) exit
                 if(.not.tFirst) exit
                 tFirst = .false.    !We have found a minimum, but run again with a small number of iterations to check it is stable
-                maxf = 3*iRealCoupNum
+                maxf = 3*iLatParams
             enddo
 
             !On output, Err is the minimized objective function, var contains the diagonal of the inverse of the information matrix, whatever that is
@@ -1064,6 +821,7 @@ module SelfConsistentLR2
         endif
             
         if(tImposephsym.or.tImposeksym.or.tConstrainphsym) then
+            call stop_all(t_r,'Sort this')
             if(tImposephsym.or.tImposeksym) then
                 !Impose momentum inversion, and potentially ph symmetry
                 !Symmetrize the resulting eigenvalues
@@ -1073,7 +831,6 @@ module SelfConsistentLR2
                 !Flip them. This should not change the *local* lattice greens function at all, but will change the bandstructure
                 !and the coupling to the impurity site. However, since this is not what we are fitting, we should not worry if we
                 !change this?
-                mu = U/2.0_dp
                 do i=1,iRealCoupNum
                     if(vars(i).lt.mu) then
                         !It is below the chemical potential. Flip it to get it to become a virtual again
@@ -1094,60 +851,39 @@ module SelfConsistentLR2
             endif
 
             !Calculate the new final residual
-            if((iFitAlgo.le.2).or.(iFitAlgo.eq.4)) then
-                if(tNonStandardGrid) then
-                    call MinCoups(vars,FinalErr,n,iRealCoupNum,G_Imp,tMatbrAxis, tNonStandardGrid, FreqPoints, Weights)
-                else
-                    call MinCoups(vars,FinalErr,n,iRealCoupNum,G_Imp,tMatbrAxis, tNonStandardGrid)
-                endif
-            elseif(iFitAlgo.eq.3) then
-                !LM algorithm
-                allocate(FinalVec(nFuncs))
-                ierr_tmp = 1
-                if(tNonStandardGrid) then
-                    call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis, tNonStandardGrid,   &
-                        FreqPoints=FreqPoints, Weights=Weights)
-                else
-                    call MinCoups_LM(nFuncs,iRealCoupNum,vars,FinalVec,ierr_tmp,n,G_Imp,tMatbrAxis, tNonStandardGrid,   &
-                        FreqPoints=Freqs_dum, Weights=Weights_dum)
-                endif
-                !FinalErr = (enorm(nFuncs,FinalVec))**2
-                FinalErr = (enorm(nFuncs,FinalVec))
-                deallocate(FinalVec)
-            endif
+            call CalcLatticeFitResidual_2(iCorrFnTag,CorrFn_HL,n,mu,iLatParams,vars,FinalErrvars,FinalErr,n,    &
+                iRealCoupNum,G_Imp,tMatbrAxis, .true., FreqPoints, Weights)
             write(6,"(A,G20.10)") "Final residual after symmetrization of eigenvalues: ",FinalErr
             write(6,"(A)") "Lattice after symmetrization of parameters: "
             write(6,*) vars(:)
         endif
             
         !Update couplings
-        if(tOptEVals_) then
-            !We need to translate these eigenvalues back into couplings?
-            do i = 1,nImp
-                Couplings(:,i) = vars(:)
-            enddo
-        else
-            if(tEveryOtherCoup) then
-                !Put back into the couplings array is every other slot
-                Couplings(:,1) = zero
-                do i = 1,iRealCoupNum
-                    Couplings((2*i)-1,1) = vars(i)
-                enddo
-                do i = 2,nImp
-                    Couplings(:,i) = Couplings(:,1)
-                enddo
-            else
-                do i = 1,nImp
-                    Couplings(:,i) = vars(:)
-                enddo
-            endif
-        endif
-
+        LatParams(:) = vars(:)
         deallocate(vars)
-        if(allocated(Weights_dum)) deallocate(Weights_dum)
-        if(allocated(Freqs_dum)) deallocate(Freqs_dum)
 
-    end subroutine FitLatticeCouplings
+    end subroutine FitLatParams
+
+    !A wrapper for the simplex & powell routines
+    !Two variables are taken from globals
+    subroutine Min_Interface(LatParams,dist,nFreq,iLatParams,CorrFn_HL,tMatAxis,tGrid,Freqs,Weights,dJac)
+        implicit none
+        integer, intent(in) :: nFreq,iLatParams
+        real(dp), intent(in) :: LatParams(iLatParams)
+        real(dp), intent(out) :: dist
+        complex(dp), intent(in) :: CorrFn_HL(nImp,nImp,nFreq)
+        logical, intent(in) :: tMatAxis,tGrid
+        real(dp), intent(in), optional :: Freqs(nFreq),Weights(nFreq)
+        real(dp), intent(out), optional :: dJac(iLatParams)
+
+        character(len=*), parameter :: t_r='Min_Interface'
+
+        if(present(dJac)) call stop_all(t_r,'Should not be here')
+        if((.not.present(Freqs)).or.(.not.present(Weights))) call stop_all(t_r,'Should pass in freqs and weights')
+        call CalcLatticeFitResidual_2(SCF_iCorrFn,CorrFn_HL,nFreq,SCF_mu,iLatParams,LatParams,dist,  &
+            tMatAxis,FreqPoints=FreqPoints,Weights=Weights)
+
+    end subroutine Min_Interface
 
     !Wrapper function to evaluate residuals for the Leveberg-Marquardt algorithm
     subroutine MinCoups_LM(n,iNumOptCoups,vars,dists,iflag,nESteps,G,tMatbrAxis,tNonStandardGrid,Jacobian,FreqPoints,Weights)
@@ -4919,26 +4655,28 @@ module SelfConsistentLR2
     end subroutine FindLocalMomGF
     
     !Find the jacobian matrix for the optimization (in a few cases)
-    subroutine CalcJacobian2(n,CouplingLength,DiffMat,Jacobian,evals,tMatbrAxis,FreqPoints,Weights)
+    subroutine CalcJacobian_3(iCorrFnTag,n,iLatParams,DiffMat,Jacobian,LatParams,mu,tMatbrAxis,FreqPoints,Weights)
         implicit none
+        integer, intent(in) :: iCorrFnTag   !What spectrum are we considering
         integer, intent(in) :: n    !Number of frequency points
-        integer, intent(in) :: CouplingLength   !The number of variables
+        integer, intent(in) :: iLatParams   !The number of variables
         complex(dp), intent(in) :: DiffMat(nImp,nImp,n) !The (complex) difference between the greens functions
-        real(dp), intent(out) :: Jacobian(CouplingLength) !The Jacobian
-        real(dp), intent(in) :: evals(CouplingLength)
+        real(dp), intent(out) :: Jacobian(iLatParams) !The Jacobian
+        real(dp), intent(in) :: LatParams(iLatParams)
         logical, intent(in) :: tMatbrAxis
+        real(dp), intent(in) :: mu
         real(dp), intent(in), optional :: FreqPoints(n),Weights(n)
         
-        real(dp) :: mu,Omega,denom1,denom2,num,termr,termi
-        complex(dp) :: compval
-        real(dp), allocatable :: evals_full(:),FullJac(:)
-        integer :: i,k
+        complex(dp), allocatable :: KBlocks(:,:,:),FullJac_Re(:,:,:),FullJac_Im(:,:,:)
+        complex(dp) :: ExtractMat(nImp,nImp),Mat(nImp,nImp),InvMat(nImp,nImp),ztmp(nImp,nImp),ztmp2(nImp,nImp)
+        complex(dp) :: compval,realval
+        real(dp) :: Omega
+        integer :: i,j,jj,k,w,ind
         logical :: tNonStandardGrid
-        character(len=*), parameter :: t_r='CalcJacobian2'
+        character(len=*), parameter :: t_r='CalcJacobian_3'
 
-        if(nImp.gt.1) call stop_all(t_r,'Cannot do for more than 1 impurity yet')
         if(iLatticeFitType.ne.1) call stop_all(t_r,'Cannot do gradients with non-linear objective functions yet')
-        if(.not.tOptGF_EVals) call stop_all(t_r,'Cannot do gradients when optimizing lattice couplings rather than eigenvalues')
+        if(iCorrFnTag.ne.1) call stop_all(t_r,'Can currently only do greens functions')
         if(present(FreqPoints)) then
             tNonStandardGrid = .true.
             if(.not.(present(Weights))) then
@@ -4947,121 +4685,187 @@ module SelfConsistentLR2
         else
             tNonStandardGrid = .false.
         endif
-        if(.not.tAnderson) then
-            !In the hubbard model, apply a chemical potential of U/2
-            !This should really be passed in
-            mu = U/2.0_dp
-        else
-            mu = zero 
-        endif
 
-        allocate(evals_full(nSites))
-        call FindFullLatEvals(evals,CouplingLength,evals_full)
-        !Calculate the *full* hamiltonian
-        allocate(FullJac(nSites))
-        FullJac(:) = zero
+        !Expand the k-space hamiltonians
+        allocate(KBlocks(nImp,nImp,nKPnts))
+        call LatParams_to_KBlocks(iLatParams,LatParams,mu,KBlocks)
 
-        do k = 1,nSites
-            i=0
-            do while(.true.)
-                if(tNonStandardGrid) then
-                    call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis,nFreqPoints=n,FreqPoints=FreqPoints)
-                else
-                    call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis)
-                endif
-                if(i.lt.0) exit
-                
-                if(tDiag_kSpace) then
-                    num = abs(RtoK_Rot(1,k))**2
-                else
-                    num = HFOrbs(1,k)**2
-                endif
+        allocate(FullJac_Re(nImp,nImp,nKPnts)) !Derivative of the cost function wrt. real parts of h
+        FullJac_Re(:,:,:) = zzero  !Complex?
+        allocate(FullJac_Im(nImp,nImp,nKPnts)) !Derivative of the cost function wrt. imag parts of h
+        FullJac_Im(:,:,:) = zzero  !Complex?
 
-                if(tMatbrAxis) then
-                    compval = num*dconjg(DiffMat(1,1,i)) / (cmplx((mu - evals_full(k)),Omega,dp)**2) 
-                else
-                    compval = num*dconjg(DiffMat(1,1,i)) / (cmplx(Omega + mu - evals_full(k),dDelta,dp)**2) 
-                endif
+        do k = 1,nKPnts
+            do i = 1,nImp
+                do j = 1,nImp
 
-                !denom1 = Omega**2 + (mu - evals_full(k))**2
-                !denom2 = denom1**2
+                    !Pick real part
+                    ExtractMat(:,:) = zzero
+                    ExtractMat(j,i) = cmplx(one,zero,dp)
 
-                !termr = 2.0_dp*num*((mu - evals_full(k))**2)/denom2 - num/denom1
-                !termi = -2.0_dp*Omega*(mu - evals_full(k))*num/denom2
-                !compval = cmplx(termr,termi,dp)*dconjg(DiffMat(1,1,i))
-                
-                if(tNonStandardGrid) then
-                    !Add the weighting factor
-                    if(iFitGFWeighting.eq.0) then
-                        FullJac(k) = FullJac(k) + real(compval + dconjg(compval),dp) * Weights(i)
-                    elseif(iFitGFWeighting.eq.1) then
-                        FullJac(k) = FullJac(k) + real(compval + dconjg(compval),dp) * Weights(i) / Omega
-                    elseif(iFitGFWeighting.eq.2) then
-                        FullJac(k) = FullJac(k) + real(compval + dconjg(compval),dp) * Weights(i) / (Omega**2)
-                    endif
-                else
-                    if(iFitGFWeighting.eq.0) then
-                        FullJac(k) = FullJac(k) + real(compval + dconjg(compval),dp)
-                    elseif(iFitGFWeighting.eq.1) then
-                        FullJac(k) = FullJac(k) + real(compval + dconjg(compval),dp) / Omega
-                    elseif(iFitGFWeighting.eq.2) then
-                        FullJac(k) = FullJac(k) + real(compval + dconjg(compval),dp) / (Omega**2)
-                    endif
-                endif
+                    w = 0
+                    do while(.true.)
+                        if(tNonStandardGrid) then
+                            call GetNextOmega(Omega,w,tMatbrAxis=tMatbrAxis,nFreqPoints=n,FreqPoints=FreqPoints)
+                        else
+                            call GetNextOmega(Omega,w,tMatbrAxis=tMatbrAxis)
+                        endif
+                        if(w.lt.0) exit
+
+                        Mat(:,:) = - KBlocks(:,:,k)
+                        do jj = 1,nImp
+                            if(tMatbrAxis) then
+                                Mat(jj,jj) = Mat(jj,jj) + cmplx(mu,Omega,dp)
+                            else
+                                Mat(jj,jj) = Mat(jj,jj) + cmplx(Omega + mu,dDelta,dp)
+                            endif
+                        enddo
+                        call mat_inv(Mat,InvMat)
+
+                        call ZGEMM('N','N',nImp,nImp,nImp,zone,ExtractMat,nImp,InvMat,nImp,zzero,ztmp,nImp)
+                        call ZGEMM('N','N',nImp,nImp,nImp,zone,InvMat,nImp,ztmp,nImp,zzero,ztmp2,nImp)
+
+                        ztmp2(:,:) = ztmp2(:,:) / real(nKPnts,dp)
+
+                        call ZGEMM('N','C',nImp,nImp,nImp,zone,ztmp2,nImp,DiffMat,nImp,zzero,ztmp,nImp)
+
+                        ztmp2(:,:) = ztmp(:,:) + dconjg(ztmp(:,:))
+
+                        compval = zzero
+                        do jj = 1,nImp
+                            compval = compval + ztmp2(jj,jj)
+                        enddo
+                        FullJac_Re(j,i,k) = FullJac_Re(j,i,k) + compval
+                    enddo
+
+                    !Pick imaginary part
+                    ExtractMat(:,:) = zzero
+                    ExtractMat(j,i) = cmplx(zero,one,dp)
+
+                    w = 0
+                    do while(.true.)
+                        if(tNonStandardGrid) then
+                            call GetNextOmega(Omega,w,tMatbrAxis=tMatbrAxis,nFreqPoints=n,FreqPoints=FreqPoints)
+                        else
+                            call GetNextOmega(Omega,w,tMatbrAxis=tMatbrAxis)
+                        endif
+                        if(w.lt.0) exit
+
+                        Mat(:,:) = - KBlocks(:,:,k)
+                        do jj = 1,nImp
+                            if(tMatbrAxis) then
+                                Mat(jj,jj) = Mat(jj,jj) + cmplx(mu,Omega,dp)
+                            else
+                                Mat(jj,jj) = Mat(jj,jj) + cmplx(Omega + mu,dDelta,dp)
+                            endif
+                        enddo
+                        call mat_inv(Mat,InvMat)
+
+                        call ZGEMM('N','N',nImp,nImp,nImp,zone,ExtractMat,nImp,InvMat,nImp,zzero,ztmp,nImp)
+                        call ZGEMM('N','N',nImp,nImp,nImp,zone,InvMat,nImp,ztmp,nImp,zzero,ztmp2,nImp)
+
+                        ztmp2(:,:) = ztmp2(:,:) / real(nKPnts,dp)
+
+                        call ZGEMM('N','C',nImp,nImp,nImp,zone,ztmp2,nImp,DiffMat,nImp,zzero,ztmp,nImp)
+
+                        ztmp2(:,:) = ztmp(:,:) + dconjg(ztmp(:,:))
+
+                        compval = zzero
+                        do jj = 1,nImp
+                            compval = compval + ztmp2(jj,jj)
+                        enddo
+                        FullJac_Im(j,i,k) = FullJac_Im(j,i,k) + compval
+                    enddo
+
+                enddo
             enddo
         enddo
 
-        !Now, compress the jacobian if necessary
-        if(tConstrainKSym.and.(.not.tConstrainphsym)) then
-            !However, we need now to package it up. Since we are only optimizing certain eigenvalue, we need
-            !to add the two gradient contributions together
-            Jacobian(:) = zero
-            !Include the negative k terms
-            Jacobian(1:nSites/2) = FullJac(1:nSites/2)
+        deallocate(KBlocks)
+
+        !Now, package up the jacobian back into the individual lattice parameters
+        Jacobian(:) = zero  !This should be strictly real
+
+        if(tConstrainKSym) then
+            !e(k) = e(-k), and we are always using a uniform mesh
+            !If gamma-centered mesh, then have nSites/2 + 1 independent parameters (we are sampling k=0 and BZ boundary which dont pair)
+            !If Shifted mesh, then we have nSites/2 independent parameters
             if(tShift_Mesh) then
-                !No gamma point. All k-points symmetric
-                do i = 1,nSites/2
-                    Jacobian((nSites/2)-i+1) = Jacobian((nSites/2)-i+1) + FullJac(i+(nSites/2))
-                enddo
+                ks = nKPnts/2
             else
-                !The gamma point is unchanged (and therefore the gradient will on average be half the other values)
-                Jacobian((nSites/2)+1) = FullJac((nSites/2)+1)
-                do i = 2,nSites/2
-                    Jacobian(((nSites/2)-i+2)) = Jacobian(((nSites/2)-i+2)) + FullJac(i+(nSites/2))
-                enddo
-            endif
-        elseif(tConstrainKSym.and.tConstrainphsym) then
-            Jacobian(:) = zero
-            !Include the -ve k particle states
-            Jacobian(:) = FullJac(1:CouplingLength)
-            !The hole states will be pushed the *opposite directions*
-            do i = 1,CouplingLength
-                Jacobian(i) = Jacobian(i) - FullJac(2*CouplingLength-i+1)
-            enddo
-            !Now expand out the k-sym
-            if(tShift_Mesh) then
-                do i = 1,CouplingLength
-                    Jacobian(i) = Jacobian(i) - FullJac((nSites/2)+i)
-                enddo
-                do i = 1,CouplingLength
-                    Jacobian(i) = Jacobian(i) + FullJac(nSites-i+1)
-                enddo
-            else
-                do i = 2,CouplingLength
-                    Jacobian(i) = Jacobian(i) - FullJac((nSites/2)+i)
-                enddo
-                do i = 2,CouplingLength
-                    Jacobian(i) = Jacobian(i) + FullJac(nSites-i+2)
-                enddo
+                ks = (nKPnts/2) + 1
             endif
         else
-            if(CouplingLength.ne.nSites) call stop_all(t_r,'Error here')
-            Jacobian(:) = FullJac(:)
-            !write(6,*) "Jacobian: ",Jacobian(:)
+            ks = nKPnts
         endif
+
+        ind = 1
+        do k = 1,ks
+            if(tConstrainphsym) then
+                do i = 1,nImp
+                    do j = i,nImp-i+1
+                        call stop_all(t_r,'Constraining ph sym not yet available for gradients')
+                        if(i.eq.j) then
+                        else
+                        endif
+                    enddo
+                enddo
+            else
+                do i = 1,nImp
+                    do j = i,nImp
+                        if(i.eq.j) then
+                            if(ind.gt.iLatParams) call stop_all(t_r,'Incorrect indexing')
+                            realval = FullJac_Re(j,i,k)     !No transpose element to add
+                            if(tConstrainKSym) then
+                                if(tShift_Mesh) then
+                                    realval = realval + FullJac_Re(j,i,nKPnts-k+1)
+                                else
+                                    if((k.ne.1).and.(k.ne.ks)) then
+                                        realval = realval + FullJac_Re(j,i,nKPnts-k+2)
+                                    endif
+                                endif
+                            endif
+                            if(abs(aimag(realval)).gt.1.0e-7_dp) call stop_all(t_r,'This should be real')
+                            Jacobian(ind) = real(realval,dp)
+                            ind = ind + 1
+                            !Completely ignore derivate wrt imaginary component of diagonal ham matrix element
+                        else
+                            if((ind+1).gt.iLatParams) call stop_all(t_r,'Incorrect indexing')
+                            realval = FullJac_Re(j,i,k) + FullJac_Re(i,j,k) !Add the transpose element
+                            if(tConstrainKSym) then
+                                !Add the other kpoint which matches
+                                if(tShift_Mesh) then
+                                    realval = realval + FullJac_Re(j,i,nKPnts-k+1) + FullJac_Re(i,j,nKPnts-k+1)
+                                else
+                                    if((k.ne.1).and.(k.ne.ks)) then
+                                        realval = realval + FullJac_Re(j,i,nKPnts-k+2) + FullJac_Re(i,j,nKPnts-k+2)
+                                    endif
+                                endif
+                            endif
+                            if(abs(aimag(realval)).gt.1.0e-7_dp) call stop_all(t_r,'This should be real')
+                            Jacobian(ind) = real(realval,dp)
+                            realval = FullJac_Im(j,i,k) + FullJac_Im(j,i,k)
+                            if(tConstrainKSym) then
+                                !Add the other kpoint which matches
+                                if(tShift_Mesh) then
+                                    realval = realval + FullJac_Im(j,i,nKPnts-k+1) + FullJac_Im(i,j,nKPnts-k+1)
+                                else
+                                    if((k.ne.1).and.(k.ne.ks)) then
+                                        realval = realval + FullJac_Im(j,i,nKPnts-k+2) + FullJac_Im(i,j,nKPnts-k+2)
+                                    endif
+                                endif
+                            endif
+                            if(abs(aimag(realval)).gt.1.0e-7_dp) call stop_all(t_r,'This should be real')
+                            Jacobian(ind+1) = real(realval,dp)
+                            ind = ind + 2
+                        endif
+                    enddo
+                enddo
+            endif
+        enddo
         deallocate(FullJac)
 
-    end subroutine CalcJacobian2
+    end subroutine CalcJacobian_3
                 
     !Find the jacobian matrix for the optimization (in a few cases)
     subroutine CalcJacobian(n,CouplingLength,DiffMatr,DiffMat,Jacobian,evals,tMatbrAxis,FreqPoints,Weights)
