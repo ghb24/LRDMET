@@ -171,35 +171,35 @@ module SelfConsistentLR2
 
         call writedynamicfunction(nFitPoints,CorrFn_Fit,'G_Lat_Fit_Final',tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
 
-        deallocate(xxx , DiffImpCorrFn,AllDiffs,CorrFn_Fit_Old,CorrFn_Fit)
+        deallocate(DiffImpCorrFn,AllDiffs,CorrFn_Fit_Old,CorrFn_Fit,CorrFn_HL_Old,dummy_Im)
+        if(tCalcRealSpectrum) deallocate(dummy_Re,CorrFn_HL_Re,CorrFn_Re)
 
         if(tFitMatAxis) then
-            allocate(Lattice_GF(nImp,nImp,nESteps_Re))
+            allocate(CorrFn_Fit(nImp,nImp,nESteps_Re))
+            allocate(dummy_Re(nImp,nImp,nESteps_Re))
+            allocate(CorrFn_HL_Re(nImp,nImp,nESteps_Re))
                 
             write(6,"(A)") "Now calculating spectral functions on the REAL axis"
             call flush(6)
             !What does the final lattice greens function look like on the real axis?
-            call FindLocalMomGF(nESteps_Re,SE_Re,Lattice_GF,tMatbrAxis=.false.,ham=h_lat_fit,   &
-                CouplingLength=iLatParams,evals=Couplings(:,1))
-            !call FindLocalMomGF(nESteps_Re,SE_Re,Lattice_GF,tMatbrAxis=.false.,ham=h_lat_fit)
+            call CalcLatticeSpectrum(iCorrFnTag,nFreq_Re,CorrFn_Fit,GFChemPot,tMatbrAxis=.false.,iLatParams=iLatParams, &
+                LatParams=LatParams)
             !Write out lattice greens function
             !Is it the same as the impurity greens function on the real axis. This would be nice.
-            call writedynamicfunction(nESteps_Re,Lattice_GF,'G_Lat_Re_Final',tMatbrAxis=.false.)
+            call writedynamicfunction(nFreq_Re,CorrFn_Fit,'G_Lat_Re_Final',tMatbrAxis=.false.)
 
             !Finally, calculate the greens function in real-frequency space.
-            call SchmidtGF_wSE(G_Mat_Re,GFChemPot,SE_Re,nESteps_Re,tMatbrAxis=.false.,ham=h_lat_fit)
-            call writedynamicfunction(nESteps_Re,G_Mat_Re,'G_Imp_Re_Final',tMatbrAxis=.false.)
-            deallocate(Lattice_GF)
+            call SchmidtGF_wSE(CorrFn_HL_Re,GFChemPot,dummy_Re,nFreq_Re,tMatbrAxis=.false.,ham=h_lat_fit)
+            call writedynamicfunction(nFreq_Re,CorrFn_HL_Re,'G_Imp_Re_Final',tMatbrAxis=.false.)
+            deallocate(CorrFn_HL_Re,CorrFn_Fit,dummy_Re)
         else
-            if(tFitPoints_Legendre) then
-                call writedynamicfunction(nESteps_Re,G_Mat_Fit,'G_Imp_Fit_Final',tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
-            else
-                call writedynamicfunction(nESteps_Re,G_Mat_Fit,'G_Imp_Fit_Final',tMatbrAxis=tFitMatAxis)
-            endif
+            call writedynamicfunction(nFreq_Re,CorrFn_HL,'G_Imp_Fit_Final',tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
         endif
 
-        deallocate(h_lat_fit,Couplings,SE_Re,G_Mat_Re,G_Mat_Fit)
-        if(tFitPoints_Legendre) deallocate(FreqPoints,IntWeights)
+        deallocate(CorrFn_HL)
+
+        deallocate(h_lat_fit)
+        deallocate(FreqPoints,IntWeights)
 
     end subroutine SC_Spectrum_Opt
         
@@ -821,12 +821,12 @@ module SelfConsistentLR2
         endif
             
         if(tImposephsym.or.tImposeksym.or.tConstrainphsym) then
-            call stop_all(t_r,'Sort this')
             if(tImposephsym.or.tImposeksym) then
                 !Impose momentum inversion, and potentially ph symmetry
                 !Symmetrize the resulting eigenvalues
                 call Imposesym(iRealCoupNum,vars)
             elseif(tConstrainphsym) then
+                call stop_all(t_r,'Sort this')
                 !Eigenvalues may have drifted to be occupied orbitals. 
                 !Flip them. This should not change the *local* lattice greens function at all, but will change the bandstructure
                 !and the coupling to the impurity site. However, since this is not what we are fitting, we should not worry if we
@@ -1512,42 +1512,50 @@ module SelfConsistentLR2
         deallocate(u)
     end subroutine spline
         
-
-    subroutine Imposesym(nCoups,vars)
+    subroutine Imposesym_2(iLatParams,vars,mu)
         use sort_mod, only: sort_real
         implicit none
-        integer, intent(in) :: nCoups
-        real(dp), intent(inout) :: vars(nCoups)
-        integer :: i,j,k,EOrder(nCoups),nSpec
-        logical :: tNotTaken(nCoups)
-        real(dp) :: diff,mu,dCurrentE,av,AvE
-        character(len=*), parameter :: t_r='Imposesym'
+        integer, intent(in) :: iLatParams
+        real(dp), intent(inout) :: vars(iLatParams)
+        real(dp), intent(out) :: mu
+        integer :: i,j,k,EOrder(iLatParams),nSpec
+        logical :: tNotTaken(iLatParams)
+        real(dp) :: diff,mu,dCurrentE,av,AvE,KBlock(nImp,nImp)
+        character(len=*), parameter :: t_r='Imposesym_2'
 
         if(tImposeKSym) then
+            allocate(KBlocks(nImp,nImp,nKPnts))
+            call LatParams_to_KBlocks(iLatParams,vars,mu,KBlocks)
             !After fitting, add back in momentum inversion symmetry (if we are working in k-space)
             !This means that e(k) = e(-k)
             !For shifted meshes, this is easy.
             !For Gamma-centered meshes, two k-points are only singly degenerate
             !We should not be able to be constraining any syms
-            if(nCoups.ne.nSites) call stop_all(t_r,'Wrong number of variables')
             if(tShift_Mesh) then
-                do i = 1,nSites/2
-                    av = (vars(i) + vars(nSites-i+1))/2.0_dp
-                    vars(i) = av
-                    vars(nSites-i+1) = av
+                ks = nKPnts/2
+            else
+                ks = (nKPnts/2) + 1
+            endif
+
+            if(tShift_Mesh) then
+                do i = 1,nKPnts/2
+                    KBlock(:,:) = (KBlocks(:,:,i) + KBlocks(:,:,nKPnts-i+1)) / 2.0_dp
+                    KBlocks(:,:,i) = KBlock(:,:)
+                    KBlocks(:,:,nKPnts-i+1) = KBlock(:,:)
                 enddo
             else
-                !Do not average the gamma point, or the first kpoint (BZ boundary) - these are singly degenerate
-                do i = 2,nSites/2
-                    av = (vars(i) + vars(nSites-i+2))/2.0_dp
-                    vars(i) = av
-                    vars(nSites-i+2) = av
+                do i = 2,nKPnts/2
+                    KBlock(:,:) = (KBlocks(:,:,i) + KBlocks(nKPnts-i+2)) / 2.0_dp
+                    KBlocks(:,:,i) = KBlock(:,:)
+                    KBlocks(:,:,nKPnts-i+2) = KBlock(:,:)
                 enddo
             endif
+            call KBlocks_to_LatParams(iLatParams,vars,KBlocks)
+            deallocate(KBlocks)
         endif
 
         if(tImposephsym) then
-            mu = U/2.0_dp
+            call stop_all(t_r,'Impose ph sym not yet working')
 
             if(.not.tDiag_kSpace) then
                 !Impose ph symmetry on the system
@@ -1669,7 +1677,7 @@ module SelfConsistentLR2
             endif
         endif
 
-    end subroutine Imposesym
+    end subroutine Imposesym_2
 
     !Attempt for self-consistency on the matsubara axis via simple application of dysons equation
     subroutine SC_Imaginary_Dyson()
