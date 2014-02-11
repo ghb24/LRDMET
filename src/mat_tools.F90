@@ -1793,7 +1793,7 @@ module mat_tools
 
         do i = 1,nImp
             do j = i+1,nImp
-                Block(i,j) = conjg(Block(j,i),dp)
+                Block(i,j) = dconjg(Block(j,i))
             enddo
         enddo
 

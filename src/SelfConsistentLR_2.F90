@@ -658,7 +658,7 @@ module SelfConsistentLR2
         real(dp), allocatable :: Freqs_dum(:),Weights_dum(:),low(:),upp(:),grad(:),wa(:)
         integer, allocatable :: iwork(:),nbd(:),iwa(:)
         integer :: nop,i,maxf,iprint,nloop,iquad,ierr,iRealCoupNum,nFuncs,j,ierr_tmp,corrs
-        real(dp) :: stopcr,simp,rhobeg,rhoend,InitErr,dsave(29),pgtol,mu
+        real(dp) :: stopcr,simp,rhobeg,rhoend,InitErr,dsave(29),pgtol
         logical :: tfirst,tOptEVals_,tNonStandardGrid
         character(len=60) :: task,csave
         integer :: isave(44)
