@@ -1,6 +1,10 @@
 module SelfConsistentUtils
     use const
     use errors
+    use Globals
+    use utils, only: get_free_unit,append_ext
+    use SC_Data
+    use mat_tools, only: MakeBlockHermitian
     implicit none
 
     contains
@@ -82,6 +86,7 @@ module SelfConsistentUtils
     subroutine SetLatticeParams(iLatParams)
         implicit none
         integer, intent(out) :: iLatParams
+        integer :: ks,params_per_k,i
             
         if(tConstrainKSym) then
             !e(k) = e(-k), and we are always using a uniform mesh
@@ -116,7 +121,8 @@ module SelfConsistentUtils
     subroutine WriteLatticeParams(iLatParams,LatParams)
         implicit none
         integer, intent(in) :: iLatParams
-        real(dp), intent(in) :: LatParams
+        real(dp), intent(in) :: LatParams(iLatParams)
+        integer :: iunit,i
             
         write(6,"(A)") "Writing lattice k-space hamiltonian..."
         iunit = get_free_unit()
@@ -131,9 +137,11 @@ module SelfConsistentUtils
 
     subroutine InitLatticeParams(iLatParams,LatParams,mu,ham)
         integer, intent(in) :: iLatParams
+        real(dp), intent(in) :: mu
         real(dp), intent(out) :: LatParams(iLatParams)
         complex(dp), intent(out) :: ham(nSites,nSites)  !Return the lattice hamiltonian too
-        integer :: i,j
+        integer :: i,j,iloclatcoups,iunit
+        logical :: exists
         character(len=*), parameter :: t_r='InitLatticeParams'
 
         if(tReadCouplings) then
@@ -155,7 +163,7 @@ module SelfConsistentUtils
                 write(6,"(A)") "In lattice read, number of free parameters the same. Assuming that the "    &
                     //"k-point mesh is commensurate, and just using these values."
                 do i = 1,iloclatcoups
-                    read(iunit,*) kval,LatParams(i)
+                    read(iunit,*) LatParams(i)
                 enddo
                 if(abs(dShiftLatticeEvals).gt.1.0e-8_dp) then
                     call ShiftLatParams(iLatParams,LatParams,dShiftLatticeEvals)
@@ -165,7 +173,7 @@ module SelfConsistentUtils
             endif
 
             if(tImposephsym.or.tImposeKSym) then
-                call ImposeSym(iLatParams,LatParams)
+                call ImposeSym_2(iLatParams,LatParams,mu)
             endif
         else
             !Just set to h0v
@@ -175,7 +183,7 @@ module SelfConsistentUtils
                 enddo
             enddo
 
-            call ham_to_LatParams(iLatParams,LatParams,mu,ham) 
+            call ham_to_LatParams(iLatParams,LatParams,ham) 
         endif
 
     end subroutine InitLatticeParams
@@ -230,6 +238,7 @@ module SelfConsistentUtils
         complex(dp), intent(out) :: ham(nSites,nSites)
         complex(dp), allocatable :: KBlocks(:,:,:)
         complex(dp), allocatable :: ctemp(:,:),cham(:,:)
+        integer :: k,ind_1,ind_2
         character(len=*), parameter :: t_r='LatParams_to_ham'
 
         allocate(KBlocks(nImp,nImp,nKPnts))
@@ -264,7 +273,7 @@ module SelfConsistentUtils
         integer, intent(in) :: iLatParams
         real(dp), intent(out) :: LatParams(iLatParams)
         complex(dp), intent(in) :: KBlocks(nImp,nImp,nKPnts)
-        integer :: i,j,k,ind
+        integer :: i,j,k,ind,ks
         character(len=*), parameter :: t_r='KBlocks_to_LatParams'
 
         LatParams(:) = zero
@@ -326,6 +335,8 @@ module SelfConsistentUtils
         real(dp), intent(in) :: mu
         real(dp), intent(in) :: LatParams(iLatParams)
         complex(dp), intent(out) :: KBlocks(nImp,nImp,nKPnts)
+        integer :: ind,i,j,ks,k
+        character(len=*), parameter :: t_r='LatParams_to_KBlocks'
 
         if((nImp.ne.1).and.(mod(nImp,2).ne.0)) then
             call stop_all(t_r,'Cannot deal with non-1 odd numbers of impurity sites')
@@ -356,14 +367,14 @@ module SelfConsistentUtils
                             KBlocks(j,i,k) = cmplx(LatParams(ind),zero,dp)
                             ind = ind + 1
                             !For the diagonals, we want to flip the energy about the chemical potential
-                            KBlocks((nImp-i)+1,(nImp-j)+1) = cmplx(2.0_dp*mu,zero,dp) - KBlocks(j,i,k)
+                            KBlocks((nImp-i)+1,(nImp-j)+1,k) = cmplx(2.0_dp*mu,zero,dp) - KBlocks(j,i,k)
                         else
                             if((ind+1).gt.iLatParams) call stop_all(t_r,'Incorrect indexing')
                             KBlocks(j,i,k) = cmplx(LatParams(ind),LatParams(ind+1),dp)
                             ind = ind + 2
                             !Put in the same coupling
                             !Swap indices & reverse order
-                            KBlocks((nImp-i)+1,(nImp-j)+1) = KBlocks(j,i,k)
+                            KBlocks((nImp-i)+1,(nImp-j)+1,k) = KBlocks(j,i,k)
                         endif
                     enddo
                 enddo
@@ -385,7 +396,7 @@ module SelfConsistentUtils
                     enddo
                 enddo
             endif
-            call MakeBlockHermitian(Block,nImp)
+            call MakeBlockHermitian(KBlocks(:,:,k),nImp)
         enddo
 
         if(tConstrainKSym) then
@@ -413,9 +424,13 @@ module SelfConsistentUtils
     !and may refer to real or im axis based on the tFitRealFreq flag.
     subroutine SetFreqPoints(nFreq_Re,nFreq_Im,nFitPoints)
         implicit none
-        real(dp), intent(out) :: nFreq_Re,nFreq_Im
+        integer, intent(out) :: nFreq_Re,nFreq_Im
         integer, intent(out) :: nFitPoints
         logical :: tUsePoswFreqPoints
+        integer :: OmegaVal,i,j
+        real(dp) :: Omega,LowFreq,HighFreq
+        real(dp), allocatable :: FreqPoints_temp(:),Weights_temp(:)
+        character(len=*), parameter :: t_r='SetFreqPoints'
 
         if(tFitRealFreq.and.tFitPoints_Legendre) then
             call stop_all(t_r,'Trying to fit the real frequency spectrum to Legendre points?')
@@ -430,7 +445,7 @@ module SelfConsistentUtils
         nFreq_Re = 0
         OmegaVal = 0
         do while(.true.)
-            call GetNextOmega(Omega,OmegaVal,tMatbrAxis=.false.)
+            call GetNextOmega(Omega,OmegaVal,.false.)
             if(OmegaVal.lt.0) exit
             nFreq_Re = nFreq_Re + 1
         enddo
@@ -438,12 +453,12 @@ module SelfConsistentUtils
         if(tFitPoints_Legendre) then
             !Calculate the Legendre polynomials for Legendre integration points and weights
             allocate(FreqPoints(nFreqPoints))
-            allocate(IntWeights(nFreqPoints))
+            allocate(Weights(nFreqPoints))
             write(6,"(A)") "Calculating Legendre frequency points..."
             LowFreq = -1.0_dp
             HighFreq = 1.0_dp
-            call gauleg(LowFreq,HighFreq,FreqPoints,IntWeights,nFreqPoints)
-            call ScaleFreqPointsWeights(nFreqPoints,FreqPoints,IntWeights)
+            call gauleg(LowFreq,HighFreq,FreqPoints,Weights,nFreqPoints)
+            call ScaleFreqPointsWeights(nFreqPoints,FreqPoints,Weights)
             if(tUsePoswFreqPoints) then
                 !Count the positive values of w
                 write(6,"(A)") "Just using the positive values of omega"
@@ -458,28 +473,28 @@ module SelfConsistentUtils
                     if(FreqPoints(i).ge.zero) then
                         j = j+1
                         FreqPoints_temp(j) = FreqPoints(i)
-                        Weights_temp(j) = IntWeights(i)
+                        Weights_temp(j) = Weights(i)
                     endif
                 enddo
-                deallocate(FreqPoints,IntWeights)
+                deallocate(FreqPoints,Weights)
                 nFreqPoints = j
                 allocate(FreqPoints(nFreqPoints))
-                allocate(IntWeights(nFreqPoints))
+                allocate(Weights(nFreqPoints))
                 FreqPoints(:) = FreqPoints_temp(:)
-                IntWeights(:) = Weights_temp(:)
+                Weights(:) = Weights_temp(:)
                 deallocate(FreqPoints_temp,Weights_temp)
                 write(6,"(A,I7)") "New number of frequency points: ",nFreqPoints
             endif
             nFreq_Im = nFreqPoints
             write(6,"(A)") "Frequency integration points and weights: "
             do i = 1,nFreqPoints
-                write(6,"(I9,2G20.13)") i,FreqPoints(i),IntWeights(i)
+                write(6,"(I9,2G20.13)") i,FreqPoints(i),Weights(i)
             enddo
         else
             nFreq_Im = 0
             OmegaVal = 0
             do while(.true.)
-                call GetNextOmega(Omega,OmegaVal,tMatbrAxis=.true.)
+                call GetNextOmega(Omega,OmegaVal,.true.)
                 if(OmegaVal.lt.0) exit
                 nFreq_Im = nFreq_Im + 1
             enddo
@@ -501,5 +516,403 @@ module SelfConsistentUtils
 
     end subroutine SetFreqPoints
 
+    !Write out the isotropic average of a dynamic function in the impurity space.
+    subroutine writedynamicfunction(n,Func,FileRoot,tag,tCheckCausal,tCheckOffDiagHerm,tWarn,tMatbrAxis,ErrMat,FreqPoints)
+        implicit none
+        integer, intent(in) :: n
+        complex(dp), intent(in) :: Func(nImp,nImp,n)
+        character(len=*), intent(in) :: FileRoot
+        integer, intent(in), optional :: tag
+        logical, intent(in), optional :: tCheckCausal
+        logical, intent(in), optional :: tCheckOffDiagHerm
+        logical, intent(in), optional :: tWarn  !If true, don't die if non-causal
+        logical, intent(in), optional :: tMatbrAxis !If true, then this correlation function is defined on the Im Axis
+        complex(dp), intent(in), optional :: ErrMat(nImp,nImp,n)    !Optional errors on the function
+        real(dp), intent(in), optional :: FreqPoints(n)
+
+        character(64) :: filename
+        logical :: tCheckOffDiagHerm_,tCheckCausal_,tWarn_,tMatbrAxis_
+        integer :: iunit,i,j,k
+        real(dp) :: Omega,Prev_Spec,SpectralWeight
+        complex(dp) :: IsoAv,IsoErr
+        character(len=*), parameter :: t_r='writedynamicfunction'
+
+        if(present(tCheckCausal)) then
+            tCheckCausal_ = tCheckCausal
+        else
+            tCheckCausal_ = .false.
+        endif
+
+        if(present(tCheckOffDiagHerm)) then
+            tCheckOffDiagHerm_ = tCheckOffDiagHerm
+        else
+            tCheckOffDiagHerm_ = .false.
+        endif
+
+        if(present(tWarn)) then
+            tWarn_ = tWarn
+        else
+            tWarn_ = .false.    !i.e. die by default
+        endif
+
+        if(present(tMatbrAxis)) then
+            tMatbrAxis_ = tMatbrAxis
+        else
+            tMatbrAxis_ = .false.
+        endif
+
+        if(present(tag)) then
+            call append_ext(FileRoot,tag,filename)
+        else
+            filename = FileRoot
+        endif
+        iunit = get_free_unit()
+        open(unit=iunit,file=filename,status='unknown')
+
+        SpectralWeight = 0.0_dp
+        Prev_Spec = 0.0_dp
+        i=0
+        do while(.true.)
+            if(present(FreqPoints)) then
+                call GetNextOmega(Omega,i,tMatbrAxis_,nFreqPoints=n,FreqPoints=FreqPoints)
+            else
+                call GetNextOmega(Omega,i,tMatbrAxis_)
+            endif
+            if(i.lt.0) exit
+            if(i.gt.n) call stop_all(t_r,'Wrong number of frequency points used')
+            !Find isotropic part
+            IsoAv = zzero
+            IsoErr = zzero
+            do j = 1,nImp
+                IsoAv = IsoAv + Func(j,j,i)
+                if(present(ErrMat)) IsoErr = IsoErr + ErrMat(j,j,i)
+                if(tCheckOffDiagHerm_) then
+                    do k = 1,nImp
+                        if(k.ne.j) then
+                            if(abs(Func(k,j,i)-dconjg(Func(j,k,i))).gt.1.0e-8) then
+                                write(6,*) "While writing file: ",filename
+                                if(present(tag)) write(6,*) "Filename extension: ",tag
+                                write(6,*) "Element of function: ",k,j
+                                write(6,*) "Frequency point: ",Omega
+                                write(6,*) "Values: ",Func(k,j,i),Func(j,k,i)
+                                if(tWarn) then
+                                    call warning(t_r,'Function no longer off-diagonal hermitian')
+                                else
+                                    call stop_all(t_r,'Function no longer off-diagonal hermitian')
+                                endif
+                            endif
+                        endif
+                    enddo
+                endif
+            enddo
+            IsoAv = IsoAv / real(nImp,dp)
+            IsoErr = IsoErr / real(nImp,dp)
+            if(tCheckCausal_.and.(aimag(IsoAv).gt.1.0e-8_dp)) then
+                write(6,*) "While writing file: ",filename
+                if(present(tag)) write(6,*) "Filename extension: ",tag
+                write(6,*) "Frequency point: ",Omega
+                write(6,*) "Isotropic value: ",IsoAv,Func(1,1,i)
+                if(tWarn_) then
+                    call warning(t_r,'Function not causal')
+                else
+                    call stop_all(t_r,'Function not causal')
+                endif
+            endif
+
+            if(present(ErrMat)) then
+                write(iunit,"(5G25.10)") Omega,real(IsoAv,dp),aimag(IsoAv),real(IsoErr,dp),aimag(IsoErr)
+            else
+                if(i.ne.1) then
+                    if(tMatbrAxis_) then
+                        SpectralWeight = SpectralWeight + Omega_Step_Im*(Prev_Spec-aimag(IsoAv))/(2.0_dp*pi)
+                    else
+                        SpectralWeight = SpectralWeight + Omega_Step*(Prev_Spec-aimag(IsoAv))/(2.0_dp*pi)
+                    endif
+                    Prev_Spec = -aimag(IsoAv)
+                endif
+                write(iunit,"(3G25.10)") Omega,real(IsoAv,dp),aimag(IsoAv)
+            endif
+        enddo
+        if(tMatbrAxis_) then
+            write(6,"(A,F17.10)") "Total approximate spectral weight on Matsubara axis: ",SpectralWeight
+        else
+            write(6,"(A,F17.10)") "Total approximate spectral weight on real axis: ",SpectralWeight
+        endif
+        close(iunit)
+
+    end subroutine writedynamicfunction
+    
+    !This function inverts a local greens function matrix, allowing it to be non-hermitian
+    !Function is sent in as the normal greens function, n, nImp x nImp matrices, and the inverse
+    !for each frequency is returned
+    subroutine InvertLocalNonHermFunc(n,InvGF)
+        use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
+        use sort_mod, only: Orthonorm_zgeev_vecs
+        use matrixops, only: mat_inv
+        implicit none
+        integer, intent(in) :: n
+        complex(dp), intent(inout) :: InvGF(nImp,nImp,n)
+        real(dp), allocatable :: Work(:)
+        complex(dp), allocatable :: LVec(:,:),RVec(:,:),W_Vals(:),cWork(:)
+        complex(dp) :: ztemp2(nImp,nImp),IGF(nImp,nImp)
+        integer :: i,lwork,info,j
+        character(len=*), parameter :: t_r='InvertLocalNonHermFunc'
+
+        if(.true.) then
+            do i = 1,n
+                call mat_inv(InvGF(:,:,i),IGF)
+                InvGF(:,:,i) = IGF(:,:)
+            enddo
+        else
+            !Invert via diagonalization
+            allocate(LVec(nImp,nImp))
+            allocate(RVec(nImp,nImp))
+            allocate(W_Vals(nImp))
+            allocate(Work(max(1,2*nImp)))
+
+            do i = 1,n
+
+                !Diagonalize
+                LVec(:,:) = zzero
+                RVec(:,:) = zzero
+                W_Vals(:) = zzero
+                IGF(:,:) = InvGF(:,:,i)
+
+                allocate(cWork(1))
+                lwork = -1
+                info = 0
+                call zgeev('V','V',nImp,IGF,nImp,W_Vals,LVec,nImp,RVec,nImp,cWork,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'Workspace query failed')
+                lwork = int(abs(cWork(1)))+1
+                deallocate(cWork)
+                allocate(cWork(lWork))
+                call zgeev('V','V',nImp,IGF,nImp,W_Vals,LVec,nImp,RVec,nImp,cWork,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'Diagonalization of 1-electron GF failed')
+                deallocate(cWork)
+
+                !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
+                !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
+                call Order_zgeev_vecs(W_Vals,LVec,RVec)
+                !call writevectorcomp(W_Vals,'Eigenvalues ordered')
+                !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
+                call Orthonorm_zgeev_vecs(nImp,W_Vals,LVec,RVec)
+                !Calculate greens function for this k-vector
+                IGF = zzero
+                do j = 1,nImp
+                    IGF(j,j) = zone / W_Vals(j)
+                enddo
+                !Now rotate this back into the original basis
+                call zGEMM('N','N',nImp,nImp,nImp,zone,RVec,nImp,IGF,nImp,zzero,ztemp2,nImp)
+                call zGEMM('N','C',nImp,nImp,nImp,zone,ztemp2,nImp,LVec,nImp,zzero,IGF,nImp)
+
+                InvGF(:,:,i) = IGF(:,:)
+            enddo
+
+            deallocate(LVec,RVec,W_Vals,Work)
+        endif
+
+    end subroutine InvertLocalNonHermFunc
+    
+    !From num rec
+    subroutine splint(xa,ya,y2a,n,x,y)
+        implicit none
+        integer, intent(in) :: n
+        real(dp), intent(in) :: x, xa(n),y2a(n),ya(n)
+        real(dp), intent(out) :: y
+        !Given the arrays xa(1:n) and ya(1:n) of length n, which tabulate a function (with the xa_i's in order),
+        !and given the array y2a(1:n), which is the output from spline, and given a value of x, this routine
+        !returns a cubic-spline interpolated value y.
+        integer :: k,khi,klo
+        real(dp) :: a, b, h
+        character(len=*), parameter :: t_r='splint'
+
+        klo = 1
+        khi = n
+1       if (khi-klo.gt.1) then
+            !Bisection to find right place in table
+            k = (khi+klo)/2
+            if(xa(k).gt.x) then
+                khi = k
+            else
+                klo = k
+            endif
+            goto 1
+        endif
+        !klo and khi now bracket the value of x
+        h = xa(khi)-xa(klo)
+        if(h.eq.zero) call stop_all(t_r,'bad xa input in splint. kpoints should be distinct')
+        !Evaluate spline
+        a = (xa(khi)-x)/h
+        b = (x-xa(klo))/h
+        y = a*ya(klo)+b*ya(khi) + ((a**3-a)*y2a(klo)+(b**3-b)*y2a(khi))*(h**2)/6.0_dp
+    end subroutine splint
+
+
+    !From numerical recipies
+    subroutine spline(x,y,n,yp1,ypn,y2)
+        implicit none
+        integer, intent(in) :: n
+        real(dp), intent(in) :: yp1,ypn,x(n),y(n)
+        real(dp), intent(out) :: y2(n)
+        !Given arrays x(1:n) and y(1:n) containing a tabulated function, i.e. y_i = f(x_i), with
+        !x_1 < x_2 < x_3 < ... < x_n, and given values yp1 and ypn for the first derivative of the
+        !interpolating function at points 1 and n, respectively, this routine returns an array y2(1:n)
+        !of length n which contains the second derivatives of the interpolating function at the tabulated
+        !points x_i. If yp1 and/or ypn are > 1e30, the routine is signaled to set the corresponding boundary
+        !condition for a natural spline, with zero second derivative on that boundary.
+        integer :: i,k
+        real(dp) :: p,qn,sig,un
+        real(dp), allocatable :: u(:)
+
+        allocate(u(n))
+        if(yp1.gt.0.99e30_dp) then
+            !The lower boundary condition is set to be 'natural'
+            y2(1) = zero
+            u(1) = zero
+        else
+            !A specified first derivative
+            y2(1)=-0.5_dp
+            u(1)=(3.0_dp/(x(2)-x(1)))*((y(2)-y(1))/(x(2)-x(1))-yp1)
+        endif
+        do i=2,n-1
+            !This is the decomposition loop of the tridiagonal algorithm. y2 and u are used for temp storage of the decomposed factors
+            sig=(x(i)-x(i-1))/(x(i+1)-x(i-1))
+            p=sig*y2(i-1)+2.0_dp
+            y2(i)=(sig-one)/p
+            u(i) = (6.0_dp*((y(i+1)-y(i))/(x(i+1)-x(i))-(y(i)-y(i-1))/(x(i)-x(i-1)))/(x(i+1)-x(i-1))-sig*u(i-1))/p
+        enddo
+        if(ypn.gt.0.99e30_dp) then
+            !Upper boundary condition is 'natural'
+            qn = zero
+            un = zero
+        else
+            !Specified first derivative
+            qn = 0.5_dp
+            un = (3.0_dp/(x(n)-x(n-1)))*(ypn-(y(n)-y(n-1))/(x(n)-x(n-1)))
+        endif
+        y2(n) = (un-qn*u(n-1))/(qn*y2(n-1)+1.0_dp)
+        do k=n-1,1,-1
+            !This is the backsubstitution loop of the tridiagonal algorithm
+            y2(k) = y2(k)*y2(k+1)+u(k)
+        enddo
+        deallocate(u)
+    end subroutine spline
+    
+    !Get next omega value for optionally real/matsubara axis
+    !OmegaVal = 0 on input initializes
+    !OmegaVal = -1 on exit means we have finished
+    subroutine GetNextOmega(Omega,OmegaVal,tMatbrAxis,nFreqPoints,FreqPoints)
+        implicit none
+        real(dp), intent(inout) :: Omega
+        integer, intent(inout) :: OmegaVal
+        logical, intent(in) :: tMatbrAxis
+        integer, intent(in), optional :: nFreqPoints
+        real(dp), intent(in), optional :: FreqPoints(:)
+        logical :: tUseFreqArray
+        character(len=*), parameter :: t_r='GetNextOmega'
+
+!        write(6,*) "In Get Next Omega: ",OmegaVal
+        if(present(FreqPoints)) then
+            tUseFreqArray = .true.
+        else
+            tUseFreqArray = .false.
+        endif
+
+        if(OmegaVal.eq.0) then
+            if(tUseFreqArray) then
+                Omega = FreqPoints(1)
+            else
+                if(tMatbrAxis) then
+                    Omega = Start_Omega_Im
+                else
+                    Omega = Start_Omega
+                endif
+            endif
+            OmegaVal = OmegaVal + 1
+!            write(6,*) "Returned Omega: ",Omega
+            return
+        endif
+
+        if(tUseFreqArray) then
+            if(.not.present(nFreqPoints)) call stop_all(t_r,'Error here')
+            if(OmegaVal.eq.nFreqPoints) then
+                OmegaVal = -1
+                return
+            else
+                Omega = FreqPoints(OmegaVal+1)
+            endif
+        elseif(tMatbrAxis) then
+            !Omega = Omega + Omega_Step_Im
+            Omega = Start_Omega_Im + OmegaVal*Omega_Step_Im
+            if((Omega.gt.(max(Start_Omega_Im,End_Omega_Im)+1.0e-6_dp))  &
+                    .or.(Omega.lt.(min(Start_Omega_Im,End_Omega_Im)-1.0e-6_dp))) then
+                !Hit exit criterion
+                OmegaVal = -1
+                return
+            endif
+        else
+            !Omega = Omega + Omega_Step
+            Omega = Start_Omega + OmegaVal*Omega_Step
+            if((Omega.gt.(max(Start_Omega,End_Omega)+1.0e-6_dp))  &
+                    .or.(Omega.lt.(min(Start_Omega,End_Omega)-1.0e-6_dp))) then
+                !Hit exit criterion
+                OmegaVal = -1
+                return
+            endif
+        endif
+        OmegaVal = OmegaVal + 1
+!        write(6,*) "Returned Omega: ",Omega
+
+    end subroutine GetNextOmega
+    
+    subroutine Imposesym_2(iLatParams,vars,mu)
+        use sort_mod, only: sort_real
+        implicit none
+        integer, intent(in) :: iLatParams
+        real(dp), intent(inout) :: vars(iLatParams)
+        real(dp), intent(in) :: mu
+        integer :: i,j,k,EOrder(iLatParams),nSpec
+        logical :: tNotTaken(iLatParams)
+        real(dp) :: diff,dCurrentE,av,AvE,KBlock(nImp,nImp)
+        integer :: ks
+        complex(dp), allocatable :: KBlocks(:,:,:)
+        character(len=*), parameter :: t_r='Imposesym_2'
+
+        if(tImposeKSym) then
+            allocate(KBlocks(nImp,nImp,nKPnts))
+            call LatParams_to_KBlocks(iLatParams,vars,mu,KBlocks)
+            !After fitting, add back in momentum inversion symmetry (if we are working in k-space)
+            !This means that e(k) = e(-k)
+            !For shifted meshes, this is easy.
+            !For Gamma-centered meshes, two k-points are only singly degenerate
+            !We should not be able to be constraining any syms
+            if(tShift_Mesh) then
+                ks = nKPnts/2
+            else
+                ks = (nKPnts/2) + 1
+            endif
+
+            if(tShift_Mesh) then
+                do i = 1,nKPnts/2
+                    KBlock(:,:) = (KBlocks(:,:,i) + KBlocks(:,:,nKPnts-i+1)) / 2.0_dp
+                    KBlocks(:,:,i) = KBlock(:,:)
+                    KBlocks(:,:,nKPnts-i+1) = KBlock(:,:)
+                enddo
+            else
+                do i = 2,nKPnts/2
+                    KBlock(:,:) = (KBlocks(:,:,i) + KBlocks(:,:,nKPnts-i+2)) / 2.0_dp
+                    KBlocks(:,:,i) = KBlock(:,:)
+                    KBlocks(:,:,nKPnts-i+2) = KBlock(:,:)
+                enddo
+            endif
+            call KBlocks_to_LatParams(iLatParams,vars,KBlocks)
+            deallocate(KBlocks)
+        endif
+
+        if(tImposephsym) then
+            call stop_all(t_r,'Impose ph sym not yet working')
+        endif
+
+    end subroutine Imposesym_2
 
 end module SelfConsistentUtils

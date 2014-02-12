@@ -1134,14 +1134,16 @@ module solvers
     !put U over the impurity sites.
     !If tComp = .true., then the 1-electron array tmat_comp is filled, and the elements complex
     !Umat is real either way
-    subroutine CreateIntMats(tComp,tTwoElecBath,BathHam)
+    subroutine CreateIntMats(tComp,tTwoElecBath,BathHam,cBathHam)
         use DetToolsData
         use DetTools, only: umatind
         implicit none
         logical, intent(in), optional :: tComp
         logical, intent(in), optional :: tTwoElecBath
         real(dp), intent(in), optional :: BathHam(2*nImp,2*nImp)
+        complex(dp), intent(in), optional :: cBathHam(2*nImp,2*nImp)
         real(dp), allocatable :: Emb1e(:,:)
+        complex(dp), allocatable :: cEmb1e(:,:)
         logical :: tComp_,tTwoElecBath_,tBathHam_
         integer :: OrbPairs,UMatSize,j,i,k,l,a
         character(len=*), parameter :: t_r='CreateIntMats'
@@ -1159,17 +1161,40 @@ module solvers
             tComp_ = .false.
         endif
 
-        allocate(Emb1e(2*nImp,2*nImp))
+        if(present(cBathHam).and.present(BathHam)) then
+            call stop_all(t_r,'Cannot have complex and real bath hamiltonians')
+        endif
+
+        if(present(cBathHam).and.(.not.tComp_)) then
+            call stop_all(t_r,'Complex one-electron hamiltonian read in, but complex integrals not requested')
+        endif
+
+        if(tComp_) then
+            allocate(cEmb1e(2*nImp,2*nImp))
+        else
+            allocate(Emb1e(2*nImp,2*nImp))
+        endif
+
         if(present(BathHam)) then
             !Use the sent in hamiltonian over embedded basis for the one-electron blocks
             tBathHam_ = .true.
-            Emb1e(:,:) = BathHam(:,:)
-            !Emb1e(1:nImp,1:nImp) = Emb_h0v(1:nImp,1:nImp)
+            if(tComp_) then
+                cEmb1e(:,:) = dcmplx(BathHam(:,:),zero)
+            else
+                Emb1e(:,:) = BathHam(:,:)
+            endif
+        elseif(present(cBathHam)) then
+            !Use the sent in hamiltonian over embedded basis for the one-electron blocks
+            tBathHam_ = .true.
+            cEmb1e(:,:) = cBathHam(:,:)
         else
             tBathHam_ = .false.
-            Emb1e(:,:) = Emb_h0v(:,:)
+            if(tComp_) then
+                cEmb1e(:,:) = Emb_h0v(:,:)
+            else
+                Emb1e(:,:) = Emb_h0v(:,:)
+            endif
         endif
-
 
         !First, allocate and fill the umat and tmat for the FCI space
         OrbPairs = (EmbSizeSpin*(EmbSizeSpin+1))/2
@@ -1272,7 +1297,7 @@ module solvers
                     endif
                 else
                     if(tComp_) then
-                        tmat_comp(i,j) = dcmplx(Emb1e(i,j),0.0_dp)
+                        tmat_comp(i,j) = cEmb1e(i,j)
                     else
                         tmat(i,j) = Emb1e(i,j)
                     endif
@@ -1296,6 +1321,7 @@ module solvers
             endif
         endif
         if(allocated(Emb1e)) deallocate(Emb1e)
+        if(allocated(cEmb1e)) deallocate(cEmb1e)
 
     end subroutine CreateIntMats
 

@@ -6,6 +6,7 @@ module LinearResponse
     use mat_tools, only: DiagNonHermLatticeHam
     use globals
     use LRSolvers
+    use SelfConsistentUtils 
     implicit none
     integer :: CVIndex,AVIndex,CAIndex
     
@@ -13,7 +14,7 @@ module LinearResponse
     
     !Calculate linear response for charged excitations - add the hole creation to particle creation
     !This is a tester routine to calculate the whole GF matrix, and include an optional self-energy in the bath construction
-    subroutine SchmidtGF_wSE(G_Mat,GFChemPot,SE,nESteps,tMatbrAxis,ham,FreqPoints)
+    subroutine SchmidtGF_wSE(G_Mat,GFChemPot,SE,nESteps,tMatbrAxis,ham,cham,FreqPoints)
         use mat_tools, only: add_localpot_comp_inplace
         use utils, only: get_free_unit,append_ext_real,append_ext
         use DetBitOps, only: DecodeBitDet,SQOperator,CountBits
@@ -29,6 +30,7 @@ module LinearResponse
         complex(dp), intent(out) :: G_Mat(nImp,nImp,nESteps)
         logical, intent(in), optional :: tMatbrAxis
         real(dp), intent(in), optional :: ham(nSites,nSites)
+        complex(dp), intent(in), optional :: cham(nSites,nSites)    !A complex (hermitian) lattice hamiltonian
         real(dp), intent(in), optional :: FreqPoints(nESteps)
         logical :: tMatbrAxis_,tLatHamProvided_
         complex(dp), allocatable :: NFCIHam(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
@@ -41,6 +43,7 @@ module LinearResponse
         complex(dp), allocatable :: temp_vecc(:),Work(:),Psi_0(:),RHS(:)
         complex(dp), allocatable :: NI_LRMat_Cre(:,:),NI_LRMat_Ann(:,:),GSHam(:,:)
         complex(dp), allocatable :: LatVals(:),LatVecs_R(:,:),LatVecs_L(:,:)
+        complex(dp), allocatable :: ctemp(:,:),cham_schmidt(:,:),cFullSchmidtBasis(:,:),cEmb_h_fit(:,:)
         integer, allocatable :: Coup_Ann_alpha(:,:,:),Coup_Create_alpha(:,:,:)
         integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,ierr,info,iunit,nCore
         integer :: nLinearSystem,nOrbs,nVirt,tempK,VIndex,VirtStart,VirtEnd
@@ -51,7 +54,7 @@ module LinearResponse
         real(dp) :: Diff_GF,GSEnergy
         complex(dp) :: ResponseFn,tempel,ni_lr,ni_lr_p,ni_lr_h,AvResFn_p,AvResFn_h
         complex(dp) :: zdotc,VNorm,CNorm,SelfE(nImp,nImp)
-        logical :: tParity,tFirst
+        logical :: tParity,tFirst,tCompLatHam
         character(64) :: filename,filename2
         character(len=*), parameter :: t_r='SchmidtGF_wSE'
 
@@ -62,9 +65,14 @@ module LinearResponse
             !If not specified, calculate greens functions on the real axis
             tMatbrAxis_ = .false.
         endif
-        if(present(ham)) then
+        if(present(ham).or.present(cham)) then
             !Optional argument to provide your own lattice hamiltonian
             tLatHamProvided_ = .true.
+            if(present(cham)) then
+                tCompLatHam = .true.
+            else
+                tCompLatHam = .false.
+            endif
         else
             tLatHamProvided_ = .false.
             if(tStaticBathFitLat) then
@@ -158,38 +166,66 @@ module LinearResponse
             endif
             !And then, the lattice hamiltonian is frequency independent.
             !We can then diagonalize it here to save time later.
-
             allocate(LatVals(nSites))
             allocate(LatVecs_R(nSites,nSites))
             allocate(LatVecs_L(nSites,nSites))
-            call DiagNonHermLatticeHam(ham,LatVals,LatVecs_R,LatVecs_L)
-
-            if(tEnvLatHam) then
-                !Construct the environment lattice contributions
-                allocate(temp(nSites,nSites))
-                allocate(ham_schmidt(nSites,nSites))
-                call DGEMM('T','N',nSites,nSites,nSites,one,FullSchmidtBasis,nSites,ham,nSites,zero,temp,nSites)
-                call DGEMM('N','N',nSites,nSites,nSites,one,temp,nSites,FullSchmidtBasis,nSites,zero,ham_schmidt,nSites)
-                !Order of ham_schmidt = core, imp, bath, virt
-                deallocate(temp)
+            if(tCompLatHam) then
+                call DiagNonHermLatticeHam(LatVals,LatVecs_R,LatVecs_L,cham=cham)
+                if(tEnvLatHam) then
+                    !Construct the environment lattice contributions
+                    allocate(ctemp(nSites,nSites))
+                    allocate(cham_schmidt(nSites,nSites))
+                    allocate(cFullSchmidtBasis(nSites,nSites))
+                    cFullSchmidtBasis(:,:) = zzero
+                    cFullSchmidtBasis(:,:) = dcmplx(FullSchmidtBasis(:,:),zero)
+                    call ZGEMM('C','N',nSites,nSites,nSites,zone,cFullSchmidtBasis,nSites,cham,nSites,zzero,ctemp,nSites)
+                    call ZGEMM('N','N',nSites,nSites,nSites,zone,ctemp,nSites,cFullSchmidtBasis,nSites,zzero,cham_schmidt,nSites)
+                    !Order of ham_schmidt = core, imp, bath, virt
+                    deallocate(ctemp,cFullSchmidtBasis)
+                endif
+            else
+                call DiagNonHermLatticeHam(LatVals,LatVecs_R,LatVecs_L,ham=ham)
+                if(tEnvLatHam) then
+                    !Construct the environment lattice contributions
+                    allocate(temp(nSites,nSites))
+                    allocate(ham_schmidt(nSites,nSites))
+                    call DGEMM('T','N',nSites,nSites,nSites,one,FullSchmidtBasis,nSites,ham,nSites,zero,temp,nSites)
+                    call DGEMM('N','N',nSites,nSites,nSites,one,temp,nSites,FullSchmidtBasis,nSites,zero,ham_schmidt,nSites)
+                    !Order of ham_schmidt = core, imp, bath, virt
+                    deallocate(temp)
+                endif
             endif
+
         endif
 
         !umat and tmat for the active space
         if(tStaticBathFitLat) then
-            allocate(Emb_h_fit(EmbSize,EmbSize))
-            Emb_h_fit(:,:) = zero
-            !For the uncontracted space, we want to use the bare 1e hamiltonian over the impurity (and impurity-bath coupling?)
-            !Fot the uncontracted, static bath space, use the fit hamiltonian
-            if(.not.allocated(Emb_h0)) call stop_all(t_r,'Error here')
-            Emb_h_fit(:,1:nImp) = Emb_h0v(:,1:nImp)
-            Emb_h_fit(1:nImp,:) = Emb_h0v(1:nImp,:)
-            Emb_h_fit(nImp+1:EmbSize,nImp+1:EmbSize) = ham_schmidt(nOcc+1:nOcc+nImp,nOcc+1:nOcc+nImp)
-            call CreateIntMats(tComp=.true.,tTwoElecBath=.false.,bathham=Emb_h_fit)
-            !call writematrix(Emb_h_fit,'Emb_h_fit',.false.)
-            deallocate(Emb_h_fit)
-            !write(6,*) "tmat_comp:", tmat_comp(:,:)
-            !call writematrix(tmat,'tmat_comp',.false.)
+            if(.not.tCompLatHam) then
+                allocate(Emb_h_fit(EmbSize,EmbSize))
+                Emb_h_fit(:,:) = zero
+                !For the uncontracted space, we want to use the bare 1e hamiltonian over the impurity (and impurity-bath coupling?)
+                !Fot the uncontracted, static bath space, use the fit hamiltonian
+                if(.not.allocated(Emb_h0)) call stop_all(t_r,'Error here')
+                Emb_h_fit(:,1:nImp) = Emb_h0v(:,1:nImp)
+                Emb_h_fit(1:nImp,:) = Emb_h0v(1:nImp,:)
+                Emb_h_fit(nImp+1:EmbSize,nImp+1:EmbSize) = ham_schmidt(nOcc+1:nOcc+nImp,nOcc+1:nOcc+nImp)
+                call CreateIntMats(tComp=.true.,tTwoElecBath=.false.,bathham=Emb_h_fit)
+                !call writematrix(Emb_h_fit,'Emb_h_fit',.false.)
+                deallocate(Emb_h_fit)
+                !write(6,*) "tmat_comp:", tmat_comp(:,:)
+                !call writematrix(tmat,'tmat_comp',.false.)
+            elseif(tCompLatHam) then
+                allocate(cEmb_h_fit(EmbSize,EmbSize))
+                cEmb_h_fit(:,:) = zzero
+                !For the uncontracted space, we want to use the bare 1e hamiltonian over the impurity (and impurity-bath coupling?)
+                !Fot the uncontracted, static bath space, use the fit hamiltonian
+                if(.not.allocated(Emb_h0)) call stop_all(t_r,'Error here')
+                cEmb_h_fit(:,1:nImp) = dcmplx(Emb_h0v(:,1:nImp),zero)
+                cEmb_h_fit(1:nImp,:) = dcmplx(Emb_h0v(1:nImp,:),zero)
+                cEmb_h_fit(nImp+1:EmbSize,nImp+1:EmbSize) = cham_schmidt(nOcc+1:nOcc+nImp,nOcc+1:nOcc+nImp)
+                call CreateIntMats(tComp=.true.,tTwoElecBath=.false.,cbathham=cEmb_h_fit)
+                deallocate(cEmb_h_fit)
+            endif
         else
             call CreateIntMats(tComp=.true.,tTwoElecBath=.false.)
         endif
@@ -334,11 +370,15 @@ module LinearResponse
         !Set up the one-electron terms over the external space
         if(tEnvLatHam) then
             !Use ham_schmidt over the whole external space from the hamiltonian read in
-            do i = 1,nSites
-                do j = 1,nSites
-                    FockSchmidt_SE(j,i) = dcmplx(ham_schmidt(j,i),zero)
+            if(tCompLatHam) then
+                FockSchmidt_SE(:,:) = cham_schmidt(:,:)
+            else
+                do i = 1,nSites
+                    do j = 1,nSites
+                        FockSchmidt_SE(j,i) = dcmplx(ham_schmidt(j,i),zero)
+                    enddo
                 enddo
-            enddo
+            endif
             if(tStaticBathFitLat) then
                 !Ensure that the impurity part is not from the fit lattice hamiltonian, but rather the plain h 
                 do i = nOcc-nImp+1,nOcc
@@ -933,6 +973,7 @@ module LinearResponse
         if(allocated(LatVecs_R)) deallocate(LatVecs_R)
         if(allocated(LatVecs_L)) deallocate(LatVecs_L)
         if(allocated(ham_schmidt)) deallocate(ham_schmidt)
+        if(allocated(cham_schmidt)) deallocate(cham_schmidt)
 
     end subroutine SchmidtGF_wSE
     
@@ -8759,9 +8800,9 @@ module LinearResponse
             RVec_R(:,:) = latvecs_R(:,:)
         else
             if(present(ham)) then
-                call DiagNonHermLatticeHam(ham,EVals_R,LVec_R,RVec_R,k_ind_mat=SE)
+                call DiagNonHermLatticeHam(EVals_R,LVec_R,RVec_R,ham=ham,k_ind_mat=SE)
             else
-                call DiagNonHermLatticeHam(h0v,EVals_R,LVec_R,RVec_R,k_ind_mat=SE)
+                call DiagNonHermLatticeHam(EVals_R,LVec_R,RVec_R,ham=h0v,k_ind_mat=SE)
             endif
         endif
         
@@ -9494,72 +9535,5 @@ module LinearResponse
         !call stop_all('sdg','sdf')
 
     end subroutine FindSchmidtPert
-            
-    !Get next omega value for optionally real/matsubara axis
-    !OmegaVal = 0 on input initializes
-    !OmegaVal = -1 on exit means we have finished
-    subroutine GetNextOmega(Omega,OmegaVal,tMatbrAxis,nFreqPoints,FreqPoints)
-        implicit none
-        real(dp), intent(inout) :: Omega
-        integer, intent(inout) :: OmegaVal
-        logical, intent(in) :: tMatbrAxis
-        integer, intent(in), optional :: nFreqPoints
-        real(dp), intent(in), optional :: FreqPoints(:)
-        logical :: tUseFreqArray
-        character(len=*), parameter :: t_r='GetNextOmega'
-
-!        write(6,*) "In Get Next Omega: ",OmegaVal
-        if(present(FreqPoints)) then
-            tUseFreqArray = .true.
-        else
-            tUseFreqArray = .false.
-        endif
-
-        if(OmegaVal.eq.0) then
-            if(tUseFreqArray) then
-                Omega = FreqPoints(1)
-            else
-                if(tMatbrAxis) then
-                    Omega = Start_Omega_Im
-                else
-                    Omega = Start_Omega
-                endif
-            endif
-            OmegaVal = OmegaVal + 1
-!            write(6,*) "Returned Omega: ",Omega
-            return
-        endif
-
-        if(tUseFreqArray) then
-            if(.not.present(nFreqPoints)) call stop_all(t_r,'Error here')
-            if(OmegaVal.eq.nFreqPoints) then
-                OmegaVal = -1
-                return
-            else
-                Omega = FreqPoints(OmegaVal+1)
-            endif
-        elseif(tMatbrAxis) then
-            !Omega = Omega + Omega_Step_Im
-            Omega = Start_Omega_Im + OmegaVal*Omega_Step_Im
-            if((Omega.gt.(max(Start_Omega_Im,End_Omega_Im)+1.0e-6_dp))  &
-                    .or.(Omega.lt.(min(Start_Omega_Im,End_Omega_Im)-1.0e-6_dp))) then
-                !Hit exit criterion
-                OmegaVal = -1
-                return
-            endif
-        else
-            !Omega = Omega + Omega_Step
-            Omega = Start_Omega + OmegaVal*Omega_Step
-            if((Omega.gt.(max(Start_Omega,End_Omega)+1.0e-6_dp))  &
-                    .or.(Omega.lt.(min(Start_Omega,End_Omega)-1.0e-6_dp))) then
-                !Hit exit criterion
-                OmegaVal = -1
-                return
-            endif
-        endif
-        OmegaVal = OmegaVal + 1
-!        write(6,*) "Returned Omega: ",Omega
-
-    end subroutine GetNextOmega
 
 end module LinearResponse

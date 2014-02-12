@@ -2591,13 +2591,14 @@ module mat_tools
 
     !Diagonalize a lattice matrix, with optional k-independent additional terms,
     !in kspace or real space.
-    subroutine DiagNonHermLatticeHam(ham,LatVals,LatVecs_L,LatVecs_R,k_ind_mat)
+    subroutine DiagNonHermLatticeHam(LatVals,LatVecs_L,LatVecs_R,ham,cham,k_ind_mat)
         use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
         use sort_mod, only: Orthonorm_zgeev_vecs
         implicit none
-        real(dp), intent(in) :: ham(nSites,nSites)
         complex(dp), intent(out) :: LatVals(nSites)
         complex(dp), intent(out) :: LatVecs_R(nSites,nSites),LatVecs_L(nSites,nSites)
+        real(dp), intent(in), optional :: ham(nSites,nSites)
+        complex(dp), intent(in), optional :: cham(nSites,nSites)
         complex(dp), intent(in), optional :: k_ind_mat(nImp,nImp)   !An optinoal matrix to stripe through the space
 
         complex(dp), allocatable :: k_Ham(:,:),RVec(:,:),LVec(:,:),W_Vals(:)
@@ -2605,6 +2606,10 @@ module mat_tools
         complex(dp), allocatable :: ztemp(:,:),ham_temp(:,:),cWork(:)
         integer :: i,j,kPnt,ind_1,ind_2,lwork,info
         character(len=*), parameter :: t_r='DiagLatticeHam'
+
+        if((.not.present(ham)).and.(.not.present(cham))) then
+            call stop_all(t_r,'Neither real or complex hamiltonian passed in')
+        endif
 
         if(tDiag_kspace) then
             !Diagonalize in the k-space supercell
@@ -2617,11 +2622,15 @@ module mat_tools
             allocate(ztemp(nSites,nImp))
 
             allocate(ham_temp(nSites,nSites))
-            do i = 1,nSites
-                do j = 1,nSites
-                    ham_temp(j,i) = cmplx(ham(j,i),zero,dp)
+            if(present(ham)) then
+                do i = 1,nSites
+                    do j = 1,nSites
+                        ham_temp(j,i) = cmplx(ham(j,i),zero,dp)
+                    enddo
                 enddo
-            enddo
+            else
+                ham_temp(:,:) = cham(:,:)
+            endif
 
             do kPnt = 1,nKPnts
                 ind_1 = ((kPnt-1)*nImp) + 1
@@ -2661,11 +2670,15 @@ module mat_tools
         else
             !Diagonalize in r-space
             allocate(Ham_temp(nSites,nSites))
-            do i = 1,nSites
-                do j = 1,nSites
-                    Ham_temp(j,i) = cmplx(ham(j,i),zero,dp)
+            if(present(ham)) then
+                do i = 1,nSites
+                    do j = 1,nSites
+                        Ham_temp(j,i) = cmplx(ham(j,i),zero,dp)
+                    enddo
                 enddo
-            enddo
+            else
+                Ham_temp(:,:) = cham(:,:)
+            endif
             if(present(k_ind_mat)) then
                 !Stripe the complex self-energy through the AO one-electron hamiltonian
                 call add_localpot_comp_inplace(Ham_temp,k_ind_mat)

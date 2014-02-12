@@ -7,6 +7,7 @@ module SelfConsistentLR
     use Continuation
     use utils, only: get_free_unit,append_ext_real,append_ext
     use mat_tools, only: AddPeriodicImpCoupling_RealSpace 
+    use SelfConsistentUtils
     implicit none
 
     contains
@@ -227,7 +228,7 @@ module SelfConsistentLR
 
             if(iLatticeFitType.eq.2) then
                 !Invert the high-level greens function, since we are fitting the residual of the inverses
-                call InvertLocalNonHermGF(nFitPoints,G_Mat_Fit)
+                call InvertLocalNonHermFunc(nFitPoints,G_Mat_Fit)
             endif
 
             if((abs(Damping_SE-one).gt.1.0e-8_dp).and.(iter.gt.1)) then
@@ -459,10 +460,10 @@ module SelfConsistentLR
             if(tCreateBathGF) then
                 !The 'bath' greens function is defined as [G_0^-1 + SE]^-1
                 Bath_GF(:,:,:) = Lattice_GF(:,:,:)
-                call InvertLocalNonHermGF(nESteps_Im,Bath_GF)
+                call InvertLocalNonHermFunc(nESteps_Im,Bath_GF)
                 Bath_GF(:,:,:) = Bath_GF(:,:,:) + SE_Im(:,:,:)
                 if(iLatticeFitType.ne.2) then
-                    call InvertLocalNonHermGF(nESteps_Im,Bath_GF)
+                    call InvertLocalNonHermFunc(nESteps_Im,Bath_GF)
                     call writedynamicfunction(nESteps_Im,Bath_GF,'G_Bath_Im',tag=iter,tMatbrAxis=.true.)
                     write(6,"(A)") "Bath greens function calculated and written to disk."
                 else
@@ -475,7 +476,7 @@ module SelfConsistentLR
                 Bath_GF(:,:,:) = Lattice_GF(:,:,:)
                 if(iLatticeFitType.eq.2) then
                     !Invert the bath greens function, since we are fitting the residual of the inverses
-                    call InvertLocalNonHermGF(nESteps_Im,Bath_GF)
+                    call InvertLocalNonHermFunc(nESteps_Im,Bath_GF)
                 endif
             endif
             
@@ -514,10 +515,10 @@ module SelfConsistentLR
                 continue
             else
                 !Bath_GF is the bath greens function. Invert it to apply Dysons
-                call InvertLocalNonHermGF(nESteps_Im,Bath_GF)
+                call InvertLocalNonHermFunc(nESteps_Im,Bath_GF)
             endif
             !   Invert the impurity greens function
-            call InvertLocalNonHermGF(nESteps_Im,G_Mat_Im)  
+            call InvertLocalNonHermFunc(nESteps_Im,G_Mat_Im)  
             !   Apply Dyson
             DeltaSE(:,:,:) = SE_Im(:,:,:)   !Store old SE
             SE_Im(:,:,:) = Damping_SE * (Bath_GF(:,:,:) - G_Mat_Im(:,:,:)) + ((one-Damping_SE)*DeltaSE(:,:,:))
@@ -651,7 +652,7 @@ module SelfConsistentLR
 
         if(iLatticeFitType.eq.2) then
             !If required (i.e. we are fitting the inverses of the functions), invert the lattice greens function
-            call InvertLocalNonHermGF(nESteps,Lattice_GF)
+            call InvertLocalNonHermFunc(nESteps,Lattice_GF)
         endif
         
         allocate(DiffMat(nImp,nImp,nESteps))
@@ -1769,94 +1770,6 @@ module SelfConsistentLR
 
     end subroutine WriteBandstructure
 
-
-
-    !From num rec
-    subroutine splint(xa,ya,y2a,n,x,y)
-        implicit none
-        integer, intent(in) :: n
-        real(dp), intent(in) :: x, xa(n),y2a(n),ya(n)
-        real(dp), intent(out) :: y
-        !Given the arrays xa(1:n) and ya(1:n) of length n, which tabulate a function (with the xa_i's in order),
-        !and given the array y2a(1:n), which is the output from spline, and given a value of x, this routine
-        !returns a cubic-spline interpolated value y.
-        integer :: k,khi,klo
-        real(dp) :: a, b, h
-        character(len=*), parameter :: t_r='splint'
-
-        klo = 1
-        khi = n
-1       if (khi-klo.gt.1) then
-            !Bisection to find right place in table
-            k = (khi+klo)/2
-            if(xa(k).gt.x) then
-                khi = k
-            else
-                klo = k
-            endif
-            goto 1
-        endif
-        !klo and khi now bracket the value of x
-        h = xa(khi)-xa(klo)
-        if(h.eq.zero) call stop_all(t_r,'bad xa input in splint. kpoints should be distinct')
-        !Evaluate spline
-        a = (xa(khi)-x)/h
-        b = (x-xa(klo))/h
-        y = a*ya(klo)+b*ya(khi) + ((a**3-a)*y2a(klo)+(b**3-b)*y2a(khi))*(h**2)/6.0_dp
-    end subroutine splint
-
-
-    !From numerical recipies
-    subroutine spline(x,y,n,yp1,ypn,y2)
-        implicit none
-        integer, intent(in) :: n
-        real(dp), intent(in) :: yp1,ypn,x(n),y(n)
-        real(dp), intent(out) :: y2(n)
-        !Given arrays x(1:n) and y(1:n) containing a tabulated function, i.e. y_i = f(x_i), with
-        !x_1 < x_2 < x_3 < ... < x_n, and given values yp1 and ypn for the first derivative of the
-        !interpolating function at points 1 and n, respectively, this routine returns an array y2(1:n)
-        !of length n which contains the second derivatives of the interpolating function at the tabulated
-        !points x_i. If yp1 and/or ypn are > 1e30, the routine is signaled to set the corresponding boundary
-        !condition for a natural spline, with zero second derivative on that boundary.
-        integer :: i,k
-        real(dp) :: p,qn,sig,un
-        real(dp), allocatable :: u(:)
-
-        allocate(u(n))
-        if(yp1.gt.0.99e30_dp) then
-            !The lower boundary condition is set to be 'natural'
-            y2(1) = zero
-            u(1) = zero
-        else
-            !A specified first derivative
-            y2(1)=-0.5_dp
-            u(1)=(3.0_dp/(x(2)-x(1)))*((y(2)-y(1))/(x(2)-x(1))-yp1)
-        endif
-        do i=2,n-1
-            !This is the decomposition loop of the tridiagonal algorithm. y2 and u are used for temp storage of the decomposed factors
-            sig=(x(i)-x(i-1))/(x(i+1)-x(i-1))
-            p=sig*y2(i-1)+2.0_dp
-            y2(i)=(sig-one)/p
-            u(i) = (6.0_dp*((y(i+1)-y(i))/(x(i+1)-x(i))-(y(i)-y(i-1))/(x(i)-x(i-1)))/(x(i+1)-x(i-1))-sig*u(i-1))/p
-        enddo
-        if(ypn.gt.0.99e30_dp) then
-            !Upper boundary condition is 'natural'
-            qn = zero
-            un = zero
-        else
-            !Specified first derivative
-            qn = 0.5_dp
-            un = (3.0_dp/(x(n)-x(n-1)))*(ypn-(y(n)-y(n-1))/(x(n)-x(n-1)))
-        endif
-        y2(n) = (un-qn*u(n-1))/(qn*y2(n-1)+1.0_dp)
-        do k=n-1,1,-1
-            !This is the backsubstitution loop of the tridiagonal algorithm
-            y2(k) = y2(k)*y2(k+1)+u(k)
-        enddo
-        deallocate(u)
-    end subroutine spline
-        
-
     subroutine Imposesym(nCoups,vars)
         use sort_mod, only: sort_real
         implicit none
@@ -2120,11 +2033,11 @@ module SelfConsistentLR
         !First, invert both greens functions
         allocate(InvG_Imp(nImp,nImp,n))
         InvG_Imp(:,:,:) = G_Imp(:,:,:)
-        call InvertLocalNonHermGF(n,InvG_Imp)
+        call InvertLocalNonHermFunc(n,InvG_Imp)
 
         allocate(InvG_Lat(nImp,nImp,n))
         InvG_Lat(:,:,:) = G_Lat(:,:,:)
-        call InvertLocalNonHermGF(n,InvG_Lat)
+        call InvertLocalNonHermFunc(n,InvG_Lat)
 
         !Now, apply dysons equation
         SE(:,:,:) = SE(:,:,:) + (Damping_SE * ( InvG_Lat(:,:,:) - InvG_Imp(:,:,:) ))
@@ -2352,7 +2265,7 @@ module SelfConsistentLR
             InvLocalMomGF(:,:,:) = LocalMomGF(:,:,:)
             write(6,*) "2"
             call flush(6)
-            call InvertLocalNonHermGF(nESteps,InvLocalMomGF)
+            call InvertLocalNonHermFunc(nESteps,InvLocalMomGF)
 
             !Now find hybridization
             !This is given by (omega + mu + idelta - e_0 - SE - InvGF)
@@ -2633,7 +2546,7 @@ module SelfConsistentLR
             
         !write(6,*) "Inverting high-level greens function"
         InvG00(:,:,:) = G00(:,:,:)
-        call InvertLocalNonHermGF(nESteps,InvG00)
+        call InvertLocalNonHermFunc(nESteps,InvG00)
 
         write(6,"(A)") "      Iter   Max[delta(SE)]         Min[delta(SE)]      Mean[delta(SE)]    Max[delta(GF)]   Mean[delta(GF)]"
         call flush(6)
@@ -2664,7 +2577,7 @@ module SelfConsistentLR
             !Invert the matrix of non-interacting local greens functions.
             !write(6,*) "Inverting Local greens function"
             InvLocalMomGF(:,:,:) = LocalMomGF(:,:,:)
-            call InvertLocalNonHermGF(nESteps,InvLocalMomGF)
+            call InvertLocalNonHermFunc(nESteps,InvLocalMomGF)
             !call writevectorcomp(InvLocalMomGF(1,1,:),'inverse of local FT of NI GF')
             
             !Save previous Self-energy
@@ -2926,7 +2839,7 @@ module SelfConsistentLR
             
         !write(6,*) "Inverting high-level greens function"
         InvG00(:,:,:) = G00(:,:,:)
-        call InvertLocalNonHermGF(nESteps,InvG00)
+        call InvertLocalNonHermFunc(nESteps,InvG00)
 
         write(6,"(A)") "      Iter   Max[delta(SE)]         Min[delta(SE)]      Mean[delta(SE)]    Max[delta(GF)]   Mean[delta(GF)]"
         iter = 0
@@ -2944,7 +2857,7 @@ module SelfConsistentLR
             !Invert the matrix of non-interacting local greens functions.
             !write(6,*) "Inverting Local greens function"
             InvLocalMomGF(:,:,:) = LocalMomGF(:,:,:)
-            call InvertLocalNonHermGF(nESteps,InvLocalMomGF)
+            call InvertLocalNonHermFunc(nESteps,InvLocalMomGF)
             !call writevectorcomp(InvLocalMomGF(1,1,:),'inverse of local FT of NI GF')
 
             !Now find hybridization
@@ -3208,7 +3121,7 @@ module SelfConsistentLR
             Omega = Omega + Omega_Step
         enddo
 
-        call InvertLocalNonHermGF(n,TrueLocGF)
+        call InvertLocalNonHermFunc(n,TrueLocGF)
 
         do i = 1,n
             !Now, check they're the same
@@ -3284,136 +3197,10 @@ module SelfConsistentLR
             Omega = Omega + Omega_Step
         enddo
 
-        call InvertLocalNonHermGF(n,LocalCoup)
+        call InvertLocalNonHermFunc(n,LocalCoup)
 
         deallocate(LocalH)
     end subroutine CalcLocalCoupling
-
-    !Write out the isotropic average of a dynamic function in the impurity space.
-    subroutine writedynamicfunction(n,Func,FileRoot,tag,tCheckCausal,tCheckOffDiagHerm,tWarn,tMatbrAxis,ErrMat,FreqPoints)
-        implicit none
-        integer, intent(in) :: n
-        complex(dp), intent(in) :: Func(nImp,nImp,n)
-        character(len=*), intent(in) :: FileRoot
-        integer, intent(in), optional :: tag
-        logical, intent(in), optional :: tCheckCausal
-        logical, intent(in), optional :: tCheckOffDiagHerm
-        logical, intent(in), optional :: tWarn  !If true, don't die if non-causal
-        logical, intent(in), optional :: tMatbrAxis !If true, then this correlation function is defined on the Im Axis
-        complex(dp), intent(in), optional :: ErrMat(nImp,nImp,n)    !Optional errors on the function
-        real(dp), intent(in), optional :: FreqPoints(n)
-
-        character(64) :: filename
-        logical :: tCheckOffDiagHerm_,tCheckCausal_,tWarn_,tMatbrAxis_
-        integer :: iunit,i,j,k
-        real(dp) :: Omega,Prev_Spec,SpectralWeight
-        complex(dp) :: IsoAv,IsoErr
-        character(len=*), parameter :: t_r='writedynamicfunction'
-
-        if(present(tCheckCausal)) then
-            tCheckCausal_ = tCheckCausal
-        else
-            tCheckCausal_ = .false.
-        endif
-
-        if(present(tCheckOffDiagHerm)) then
-            tCheckOffDiagHerm_ = tCheckOffDiagHerm
-        else
-            tCheckOffDiagHerm_ = .false.
-        endif
-
-        if(present(tWarn)) then
-            tWarn_ = tWarn
-        else
-            tWarn_ = .false.    !i.e. die by default
-        endif
-
-        if(present(tMatbrAxis)) then
-            tMatbrAxis_ = tMatbrAxis
-        else
-            tMatbrAxis_ = .false.
-        endif
-
-        if(present(tag)) then
-            call append_ext(FileRoot,tag,filename)
-        else
-            filename = FileRoot
-        endif
-        iunit = get_free_unit()
-        open(unit=iunit,file=filename,status='unknown')
-
-        SpectralWeight = 0.0_dp
-        Prev_Spec = 0.0_dp
-        i=0
-        do while(.true.)
-            if(present(FreqPoints)) then
-                call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis_,nFreqPoints=n,FreqPoints=FreqPoints)
-            else
-                call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis_)
-            endif
-            if(i.lt.0) exit
-            if(i.gt.n) call stop_all(t_r,'Wrong number of frequency points used')
-            !Find isotropic part
-            IsoAv = zzero
-            IsoErr = zzero
-            do j = 1,nImp
-                IsoAv = IsoAv + Func(j,j,i)
-                if(present(ErrMat)) IsoErr = IsoErr + ErrMat(j,j,i)
-                if(tCheckOffDiagHerm_) then
-                    do k = 1,nImp
-                        if(k.ne.j) then
-                            if(abs(Func(k,j,i)-dconjg(Func(j,k,i))).gt.1.0e-8) then
-                                write(6,*) "While writing file: ",filename
-                                if(present(tag)) write(6,*) "Filename extension: ",tag
-                                write(6,*) "Element of function: ",k,j
-                                write(6,*) "Frequency point: ",Omega
-                                write(6,*) "Values: ",Func(k,j,i),Func(j,k,i)
-                                if(tWarn) then
-                                    call warning(t_r,'Function no longer off-diagonal hermitian')
-                                else
-                                    call stop_all(t_r,'Function no longer off-diagonal hermitian')
-                                endif
-                            endif
-                        endif
-                    enddo
-                endif
-            enddo
-            IsoAv = IsoAv / real(nImp,dp)
-            IsoErr = IsoErr / real(nImp,dp)
-            if(tCheckCausal_.and.(aimag(IsoAv).gt.1.0e-8_dp)) then
-                write(6,*) "While writing file: ",filename
-                if(present(tag)) write(6,*) "Filename extension: ",tag
-                write(6,*) "Frequency point: ",Omega
-                write(6,*) "Isotropic value: ",IsoAv,Func(1,1,i)
-                if(tWarn_) then
-                    call warning(t_r,'Function not causal')
-                else
-                    call stop_all(t_r,'Function not causal')
-                endif
-            endif
-
-            if(present(ErrMat)) then
-                write(iunit,"(5G25.10)") Omega,real(IsoAv,dp),aimag(IsoAv),real(IsoErr,dp),aimag(IsoErr)
-            else
-                if(i.ne.1) then
-                    if(tMatbrAxis_) then
-                        SpectralWeight = SpectralWeight + Omega_Step_Im*(Prev_Spec-aimag(IsoAv))/(2.0_dp*pi)
-                    else
-                        SpectralWeight = SpectralWeight + Omega_Step*(Prev_Spec-aimag(IsoAv))/(2.0_dp*pi)
-                    endif
-                    Prev_Spec = -aimag(IsoAv)
-                endif
-                write(iunit,"(3G25.10)") Omega,real(IsoAv,dp),aimag(IsoAv)
-            endif
-        enddo
-        if(tMatbrAxis_) then
-            write(6,"(A,F17.10)") "Total approximate spectral weight on Matsubara axis: ",SpectralWeight
-        else
-            write(6,"(A,F17.10)") "Total approximate spectral weight on real axis: ",SpectralWeight
-        endif
-        close(iunit)
-
-    end subroutine writedynamicfunction
 
     !A simplex algorithm for a direct minimization ofr the cost function
     subroutine ConvergeGlobalCoupling_Direct(n,G,SE,mu,dFuncTol,dChangeSE_Tol,tOmegaConv,tSuccess)
@@ -4017,7 +3804,7 @@ module SelfConsistentLR
         !First, invert the interacting greens function
         allocate(InvG00(nImp,nImp,n))
         InvG00(:,:,:) = G(:,:,:)
-        call InvertLocalNonHermGF(n,InvG00)
+        call InvertLocalNonHermFunc(n,InvG00)
         
         allocate(LocalH(nImp,nImp))
         do j = 1,nImp
@@ -4330,77 +4117,6 @@ module SelfConsistentLR
 
     end subroutine FindHybrid
             
-    !This function inverts a local greens function matrix, allowing it to be non-hermitian
-    !Function is sent in as the normal greens function, n, nImp x nImp matrices, and the inverse
-    !for each frequency is returned
-    subroutine InvertLocalNonHermGF(n,InvGF)
-        use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
-        use sort_mod, only: Orthonorm_zgeev_vecs
-        use matrixops, only: mat_inv
-        implicit none
-        integer, intent(in) :: n
-        complex(dp), intent(inout) :: InvGF(nImp,nImp,n)
-        real(dp), allocatable :: Work(:)
-        complex(dp), allocatable :: LVec(:,:),RVec(:,:),W_Vals(:),cWork(:)
-        complex(dp) :: ztemp2(nImp,nImp),IGF(nImp,nImp)
-        integer :: i,lwork,info,j
-        character(len=*), parameter :: t_r='InvertLocalNonHermGF'
-
-        if(.true.) then
-            do i = 1,n
-                call mat_inv(InvGF(:,:,i),IGF)
-                InvGF(:,:,i) = IGF(:,:)
-            enddo
-        else
-            !Invert via diagonalization
-            allocate(LVec(nImp,nImp))
-            allocate(RVec(nImp,nImp))
-            allocate(W_Vals(nImp))
-            allocate(Work(max(1,2*nImp)))
-
-            do i = 1,n
-
-                !Diagonalize
-                LVec(:,:) = zzero
-                RVec(:,:) = zzero
-                W_Vals(:) = zzero
-                IGF(:,:) = InvGF(:,:,i)
-
-                allocate(cWork(1))
-                lwork = -1
-                info = 0
-                call zgeev('V','V',nImp,IGF,nImp,W_Vals,LVec,nImp,RVec,nImp,cWork,lWork,Work,info)
-                if(info.ne.0) call stop_all(t_r,'Workspace query failed')
-                lwork = int(abs(cWork(1)))+1
-                deallocate(cWork)
-                allocate(cWork(lWork))
-                call zgeev('V','V',nImp,IGF,nImp,W_Vals,LVec,nImp,RVec,nImp,cWork,lWork,Work,info)
-                if(info.ne.0) call stop_all(t_r,'Diagonalization of 1-electron GF failed')
-                deallocate(cWork)
-
-                !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
-                !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
-                call Order_zgeev_vecs(W_Vals,LVec,RVec)
-                !call writevectorcomp(W_Vals,'Eigenvalues ordered')
-                !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
-                call Orthonorm_zgeev_vecs(nImp,W_Vals,LVec,RVec)
-                !Calculate greens function for this k-vector
-                IGF = zzero
-                do j = 1,nImp
-                    IGF(j,j) = zone / W_Vals(j)
-                enddo
-                !Now rotate this back into the original basis
-                call zGEMM('N','N',nImp,nImp,nImp,zone,RVec,nImp,IGF,nImp,zzero,ztemp2,nImp)
-                call zGEMM('N','C',nImp,nImp,nImp,zone,ztemp2,nImp,LVec,nImp,zzero,IGF,nImp)
-
-                InvGF(:,:,i) = IGF(:,:)
-            enddo
-
-            deallocate(LVec,RVec,W_Vals,Work)
-        endif
-
-    end subroutine InvertLocalNonHermGF
-
     !The same as FindRealSpaceLocaMomGF below, but doing the diagonalizations in k-space rather than r-space.
     subroutine FindRealSpaceLocalMomGF_Kspace(n,SE,RealSpaceLocGF)
         use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
@@ -5321,61 +5037,5 @@ module SelfConsistentLR
         deallocate(FullJac)
 
     end subroutine CalcJacobian
-
-    !From numerical recepies - Find Legendre points and weights between interval
-    subroutine gauleg(x1,x2,x,w,n)
-        implicit none
-        integer, intent(in) :: n
-        real(dp), intent(in) :: x1,x2
-        real(dp), intent(out) :: x(n),w(n)
-        real(dp), parameter :: eps=3.0e-14_dp   !Relative precision
-        !Given the lower and upper limits of integration x1 and x2,
-        !and given n, this routine returns arrays x(1:n) and w(1:n) of length
-        !n, containing the abscissas and weights of the Gauss-Legendre n-point quadrature formula
-        integer :: i,j,m
-        real(dp) :: p1,p2,p3,pp,xl,xm,z,z1
-        
-        m = (n+1)/2     !Roots are symmetric in the interval, so we only have to find half of them
-        xm = 0.5_dp*(x2+x1)
-        xl = 0.5_dp*(x2-x1)
-        do i = 1,m      !Loop over desired roots
-            z = cos(pi*(i-0.25_dp)/(n + 0.5_dp))
-            !Starting with the above approximation to the ith root, we enter the
-            !main loop of refinement by Newtons method
-1           continue
-            p1 = one
-            p2 = zero
-            do j = 1,n
-                p3 = p2
-                p2 = p1
-                p1 = ((2.0_dp*j-1.0_dp)*z*p2-(j-one)*p3)/j
-            enddo
-            !p1 is now the desired Legendre polynomial. We next computer pp,
-            !its derivative, by a standard relation involving also p2, the
-            !polynomial of one lower order
-            pp = n*(z*p1-p2)/(z*z-one)
-            z1 = z
-            z = z1-p1/pp                    !Newtons method
-            if(abs(z-z1).gt.eps) goto 1
-            x(i) = xm-xl*z                  !Scale the root by the desired inteval
-            x(n+1-i) = xm+xl*z              !and put in its symmetric counterpart
-            w(i) = 2.0_dp*xl/((one-z*z)*pp*pp)  !Compute weight
-            w(n+1-i) = w(i)                     !and symmetric counterpart
-        enddo
-
-    end subroutine gauleg 
-
-    !Scale the legendre abscissas and weights to the range \pm infty
-    subroutine ScaleFreqPointsWeights(n,f,w)
-        implicit none
-        integer, intent(in) :: n
-        real(dp), intent(inout) :: w(n),f(n)
-        integer :: i
-
-        do i = 1,n
-            w(i) = w(i)*((one + f(i)**2)/(one - f(i)**2)**2)
-            f(i) = -f(i)/(one-f(i)**2)
-        enddo
-    end subroutine ScaleFreqPointsWeights
 
 end module SelfConsistentLR
