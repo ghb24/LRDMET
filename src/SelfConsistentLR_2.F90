@@ -68,7 +68,8 @@ module SelfConsistentLR2
             dummy_Re(:,:,:) = zzero
         endif
 
-        call CalcLatticeSpectrum(iCorrFnTag,nFitPoints,CorrFn_Fit,GFChemPot,tMatbrAxis=tFitMatAxis,iLatParams=iLatParams,LatParams=LatParams,FreqPoints=FreqPoints)
+        call CalcLatticeSpectrum(iCorrFnTag,nFitPoints,CorrFn_Fit,GFChemPot,tMatbrAxis=tFitMatAxis, &
+            iLatParams=iLatParams,LatParams=LatParams,FreqPoints=FreqPoints)
 
         allocate(AllDiffs(3,0:iMaxIter_MacroFit))
         AllDiffs(:,:) = zero
@@ -81,8 +82,10 @@ module SelfConsistentLR2
 
             CorrFn_HL_Old(:,:,:) = CorrFn_HL(:,:,:)
             if(iCorrFnTag.eq.1) then
-                call SchmidtGF_wSE(CorrFn_HL,GFChemPot,dummy_Im,nFitPoints,tMatbrAxis=tFitMatAxis,cham=h_lat_fit,FreqPoints=FreqPoints)
-                call writedynamicfunction(nFitPoints,CorrFn_HL,'G_Imp_Fit',tag=iter,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
+                call SchmidtGF_wSE(CorrFn_HL,GFChemPot,dummy_Im,nFitPoints,tMatbrAxis=tFitMatAxis,  &
+                    cham=h_lat_fit,FreqPoints=FreqPoints)
+                call writedynamicfunction(nFitPoints,CorrFn_HL,'G_Imp_Fit',tag=iter,    &
+                    tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
             else
                 call stop_all(t_r,'Non GF correlation functions not yet coded up')
             endif
@@ -90,7 +93,8 @@ module SelfConsistentLR2
             if(tCalcRealSpectrum) then
                 call SchmidtGF_wSE(CorrFn_HL_Re,GFChemPot,dummy_Re,nFreq_Re,tMatbrAxis=.false.,cham=h_lat_fit)
                 call writedynamicfunction(nFreq_Re,CorrFn_HL_Re,'G_Imp_Re',tag=iter,tMatbrAxis=.false.)
-                call CalcLatticeSpectrum(iCorrFnTag,nFreq_Re,CorrFn_Re,GFChemPot,tMatbrAxis=.false.,iLatParams=iLatParams,LatParams=LatParams)
+                call CalcLatticeSpectrum(iCorrFnTag,nFreq_Re,CorrFn_Re,GFChemPot,tMatbrAxis=.false.,    &
+                    iLatParams=iLatParams,LatParams=LatParams)
                 call writedynamicfunction(nFreq_Re,CorrFn_Re,'G_Lat_Re',tag=iter,tMatbrAxis=.false.)
             endif
 
@@ -106,19 +110,22 @@ module SelfConsistentLR2
 
             if(iter.eq.1) then
                 !calculate the initial residual
-                call CalcLatticeFitResidual_2(iCorrFnTag,CorrFn_HL,nFitPoints,GFChemPot,iLatParams,LatParams,AllDiffs(1,0),tFitMatAxis,FreqPoints=FreqPoints,Weights=Weights)
+                call CalcLatticeFitResidual_2(iCorrFnTag,CorrFn_HL,nFitPoints,GFChemPot,iLatParams,LatParams,   &
+                    AllDiffs(1,0),tFitMatAxis,FreqPoints=FreqPoints,Weights=Weights)
                 write(6,"(A,F20.10)") "Initial spectrum residual: ",AllDiffs(1,0)
                 AllDiffs(2,0) = zero
             endif
 
-            call FitLatParams(iCorrFnTag,CorrFn_HL,nFitPoints,GFChemPot,iLatParams,LatParams,FinalDist,tFitMatAxis,FreqPoints,Weights)
+            call FitLatParams(iCorrFnTag,CorrFn_HL,nFitPoints,GFChemPot,iLatParams, &
+                LatParams,FinalDist,tFitMatAxis,FreqPoints,Weights)
 
             !What is the lattice hamiltonian
             call LatParams_to_ham(iLatParams,LatParams,GFChemPot,h_lat_fit)
 
             !Now, calculate the local lattice greens function
             CorrFn_Fit_Old(:,:,:) = CorrFn_Fit(:,:,:)
-            call CalcLatticeSpectrum(iCorrFnTag,nFitPoints,CorrFn_Fit,GFChemPot,tMatbrAxis=tFitMatAxis,iLatParams=iLatParams,LatParams=LatParams,FreqPoints=FreqPoints)
+            call CalcLatticeSpectrum(iCorrFnTag,nFitPoints,CorrFn_Fit,GFChemPot,tMatbrAxis=tFitMatAxis, &
+                iLatParams=iLatParams,LatParams=LatParams,FreqPoints=FreqPoints)
 
             !Write out the lattice couplings
             call WriteLatticeParams(iLatParams,LatParams)
