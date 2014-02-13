@@ -1397,7 +1397,7 @@ module SelfConsistentLR
         real(dp) :: dist2,diff,NumDiff
         real(dp), allocatable :: CoupsTemp(:,:),CoupsTemp2(:,:)
         integer :: i,j,ivar,iunit2,RealCoupsNum
-        logical, parameter :: tTest=.false. 
+        logical, parameter :: tTest=.true. 
         character(len=*), parameter :: t_r='MinCoups'
 
         if(nImp.ne.1) call stop_all(t_r,'n != nfreq')
@@ -1444,6 +1444,8 @@ module SelfConsistentLR
                 !Test analytic derivatives
                 allocate(CoupsTemp2(iNumOptCoups,nImp))
                 iunit2 = 66
+
+                write(6,*) "Testing derivatives of parameters: ",CoupsTemp(:,1)
 
                 do ivar = 1,iNumOptCoups
 

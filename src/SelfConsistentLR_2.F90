@@ -339,6 +339,7 @@ module SelfConsistentLR2
         logical :: tNonStandardGrid
         integer :: i,j,k
         integer, parameter :: iNormPower = 2    !The power of the matrix norm for the residual
+        logical, parameter :: tTestDerivs = .true.
         character(len=*), parameter :: t_r='CalcLatticeFitResidual_2'
 
         !TODO: Fix this, so that the self-energy is an optional argument
@@ -431,10 +432,63 @@ module SelfConsistentLR2
             !write(6,*) "Lattweight = ",LattWeight
             dist = dist/LattWeight
         endif
+            
+        if(present(dJacobian).and.tTestDerivs) then
+            if(present(FreqPoints)) then
+                call TestGradients(dist,iCorrFnTag,nESteps,iLatParams,LatParams,mu,G_Imp,tMatbrAxis,dJacobian,FreqPoints=FreqPoints,Weights=Weights)
+            else
+                call TestGradients(dist,iCorrFnTag,nESteps,iLatParams,LatParams,mu,G_Imp,tMatbrAxis,dJacobian)
+            endif
+        endif
 
         deallocate(DiffMat,Lattice_Func,DiffMatr)
 
     end subroutine CalcLatticeFitResidual_2
+        
+    subroutine TestGradients(dist,iCorrFnTag,nESteps,iLatParams,LatParams,mu,G_Imp,tMatbrAxis,dJac,FreqPoints,Weights)
+        implicit none
+        real(dp), intent(in) :: dist
+        integer, intent(in) :: iCorrFnTag,nESteps,iLatParams
+        real(dp), intent(in) :: LatParams(iLatParams),mu
+        complex(dp), intent(in) :: G_Imp(nImp,nImp,nESteps)
+        logical, intent(in) :: tMatbrAxis
+        real(dp), intent(in) :: dJac(iLatParams)
+        real(dp), intent(in), optional :: FreqPoints(nESteps),Weights(nESteps)
+
+        integer :: iunit,ivar
+        real(dp) :: diff,NumDiff,Dist2
+        real(dp), allocatable :: varsTemp(:)
+        character(len=*), parameter :: t_r='TestGradients'
+
+        iunit = 66
+                
+        write(6,*) "Testing derivatives of parameters: ",LatParams(:)
+        
+        allocate(varsTemp(iLatParams))
+        do ivar = 1,iLatParams
+            diff = 0.0001_dp
+            do while(diff.gt.1.0e-16_dp)
+
+                varsTemp(:) = LatParams(:)
+                varsTemp(ivar) = varsTemp(ivar) + diff
+                if(present(FreqPoints)) then
+                    call CalcLatticeFitResidual_2(iCorrFnTag,G_Imp,nESteps,mu,iLatParams,varsTemp,dist2,tMatbrAxis,FreqPoints=FreqPoints,Weights=Weights)
+                else
+                    call CalcLatticeFitResidual_2(iCorrFnTag,G_Imp,nESteps,mu,iLatParams,varsTemp,dist2,tMatbrAxis)
+                endif
+                NumDiff = (dist2 - dist) / diff
+                write(iunit,"(I8,6G25.14)") ivar,diff,NumDiff,dJac(ivar),abs((NumDiff-dJac(ivar))/NumDiff),abs(NumDiff-dJac(ivar)),dist2
+                if(abs((NumDiff-dJac(ivar))/NumDiff).gt.one) then
+                    write(6,"(A,I8,6G25.14)") "***",ivar,diff,NumDiff,dJac(ivar),abs((NumDiff-dJac(ivar))/NumDiff),abs(NumDiff-dJac(ivar)),dist2
+                endif
+                diff = diff/2.0_dp
+            enddo
+            write(iunit,"(A)") ""
+        enddo
+        deallocate(varsTemp)
+        call stop_all(t_r,'End of Gradients Test')
+
+    end subroutine TestGradients
 
     !Use a minimization routine to fit the greens functions by adjusting the lattice coupling
     subroutine FitLatParams(iCorrFnTag,CorrFn_HL,n,mu,iLatParams,LatParams,FinalErr,tMatbrAxis,FreqPoints,Weights)
@@ -552,6 +606,7 @@ module SelfConsistentLR2
             !Vars is updated to be the best value to minimize the residual
             call uobyqa(iLatParams,vars,rhobeg,rhoend,iprint,maxf,FinalErr,Min_Interface,n,CorrFn_HL,   &
                 tMatbrAxis,.true., FreqPoints, Weights)
+            write(6,"(A,G20.10)") "Residual after fit: ",FinalErr
 
         elseif(iFitAlgo.eq.1) then
             !Use simplex method for optimization without derivatives
@@ -626,7 +681,7 @@ module SelfConsistentLR2
                 !Symmetrize the resulting eigenvalues
                 call Imposesym_2(iLatParams,vars,mu)
             elseif(tConstrainphsym) then
-                call stop_all(t_r,'Sort this')
+                call stop_all(t_r,'Constraining ph symmetry not currently working. Fix me?')
                 !Eigenvalues may have drifted to be occupied orbitals. 
                 !Flip them. This should not change the *local* lattice greens function at all, but will change the bandstructure
                 !and the coupling to the impurity site. However, since this is not what we are fitting, we should not worry if we
@@ -705,9 +760,9 @@ module SelfConsistentLR2
         
         complex(dp), allocatable :: KBlocks(:,:,:),FullJac_Re(:,:,:),FullJac_Im(:,:,:)
         complex(dp) :: ExtractMat(nImp,nImp),Mat(nImp,nImp),InvMat(nImp,nImp),ztmp(nImp,nImp),ztmp2(nImp,nImp)
-        complex(dp) :: compval,realval
+        complex(dp) :: compval,realval,num(nImp,nImp)
         real(dp) :: Omega
-        integer :: i,j,jj,k,w,ind,ks
+        integer :: i,j,jj,k,w,ind,ks,ii,ind_1,ind_2
         logical :: tNonStandardGrid
         character(len=*), parameter :: t_r='CalcJacobian_3'
 
@@ -732,6 +787,12 @@ module SelfConsistentLR2
         FullJac_Im(:,:,:) = zzero  !Complex?
 
         do k = 1,nKPnts
+            ind_1 = ((k-1)*nImp) + 1
+            ind_2 = nImp*k
+
+!            C * C^+ here?  For 1 imp, should be |RtoK_Rot(1,k)|^2
+            call ZGEMM('N','C',nImp,nImp,nImp,zone,RtoK_Rot(1:nImp,ind_1:ind_2),nImp,RtoK_Rot(1:nImp,ind_1:ind_2),nImp,zzero,num,nImp)
+
             do i = 1,nImp
                 do j = 1,nImp
 
@@ -762,16 +823,22 @@ module SelfConsistentLR2
                         call ZGEMM('N','N',nImp,nImp,nImp,zone,InvMat,nImp,ztmp,nImp,zzero,ztmp2,nImp)
 
                         ztmp2(:,:) = ztmp2(:,:) / real(nKPnts,dp)
-
-                        call ZGEMM('N','C',nImp,nImp,nImp,zone,ztmp2,nImp,DiffMat,nImp,zzero,ztmp,nImp)
+                        ztmp(:,:) = ztmp2(:,:) * dconjg(DiffMat(:,:,k)) * num(:,:)
+!                        call ZGEMM('N','C',nImp,nImp,nImp,zone,ztmp2,nImp,DiffMat,nImp,zzero,ztmp,nImp)
 
                         ztmp2(:,:) = ztmp(:,:) + dconjg(ztmp(:,:))
 
                         compval = zzero
                         do jj = 1,nImp
-                            compval = compval + ztmp2(jj,jj)
+                            do ii = 1,nImp
+                                compval = compval + ztmp2(ii,jj)
+                            enddo
                         enddo
-                        FullJac_Re(j,i,k) = FullJac_Re(j,i,k) + compval
+                        if(tNonStandardGrid) then
+                            FullJac_Re(j,i,k) = FullJac_Re(j,i,k) + (compval * Weights(w))
+                        else
+                            FullJac_Re(j,i,k) = FullJac_Re(j,i,k) + compval
+                        endif
                     enddo
 
                     !Pick imaginary part
@@ -801,16 +868,22 @@ module SelfConsistentLR2
                         call ZGEMM('N','N',nImp,nImp,nImp,zone,InvMat,nImp,ztmp,nImp,zzero,ztmp2,nImp)
 
                         ztmp2(:,:) = ztmp2(:,:) / real(nKPnts,dp)
-
-                        call ZGEMM('N','C',nImp,nImp,nImp,zone,ztmp2,nImp,DiffMat,nImp,zzero,ztmp,nImp)
+                        ztmp(:,:) = ztmp2(:,:) * dconjg(DiffMat(:,:,k)) * num(:,:)
+!                        call ZGEMM('N','C',nImp,nImp,nImp,zone,ztmp2,nImp,DiffMat,nImp,zzero,ztmp,nImp)
 
                         ztmp2(:,:) = ztmp(:,:) + dconjg(ztmp(:,:))
 
                         compval = zzero
                         do jj = 1,nImp
-                            compval = compval + ztmp2(jj,jj)
+                            do ii = 1,nImp
+                                compval = compval + ztmp2(ii,jj)
+                            enddo
                         enddo
-                        FullJac_Im(j,i,k) = FullJac_Im(j,i,k) + compval
+                        if(tNonStandardGrid) then
+                            FullJac_Im(j,i,k) = FullJac_Im(j,i,k) + (compval * Weights(w))
+                        else
+                            FullJac_Im(j,i,k) = FullJac_Im(j,i,k) + compval
+                        endif
                     enddo
 
                 enddo
