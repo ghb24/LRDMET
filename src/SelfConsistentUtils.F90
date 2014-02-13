@@ -871,27 +871,29 @@ module SelfConsistentUtils
         integer, intent(in) :: iLatParams
         real(dp), intent(inout) :: vars(iLatParams)
         real(dp), intent(in) :: mu
-        integer :: i,j,k,EOrder(iLatParams),nSpec
-        logical :: tNotTaken(iLatParams)
-        real(dp) :: diff,dCurrentE,av,AvE,KBlock(nImp,nImp)
+        integer :: i,k,lWork,iErr
+        real(dp) :: DistFromMu,Bands_k(nImp)
         integer :: ks
-        complex(dp), allocatable :: KBlocks(:,:,:)
+        real(dp), allocatable :: rWork(:)
+        complex(dp) :: KBlock(nImp,nImp),KBlock2(nImp,nImp),cTemp(nImp,nImp)
+        complex(dp), allocatable :: KBlocks(:,:,:),cWork(:)
         character(len=*), parameter :: t_r='Imposesym_2'
+            
+        allocate(KBlocks(nImp,nImp,nKPnts))
+        call LatParams_to_KBlocks(iLatParams,vars,mu,KBlocks)
+            
+        if(tShift_Mesh) then
+            ks = nKPnts/2
+        else
+            ks = (nKPnts/2) + 1
+        endif
 
         if(tImposeKSym) then
-            allocate(KBlocks(nImp,nImp,nKPnts))
-            call LatParams_to_KBlocks(iLatParams,vars,mu,KBlocks)
             !After fitting, add back in momentum inversion symmetry (if we are working in k-space)
             !This means that e(k) = e(-k)
             !For shifted meshes, this is easy.
             !For Gamma-centered meshes, two k-points are only singly degenerate
             !We should not be able to be constraining any syms
-            if(tShift_Mesh) then
-                ks = nKPnts/2
-            else
-                ks = (nKPnts/2) + 1
-            endif
-
             if(tShift_Mesh) then
                 do i = 1,nKPnts/2
                     KBlock(:,:) = (KBlocks(:,:,i) + KBlocks(:,:,nKPnts-i+1)) / 2.0_dp
@@ -905,13 +907,80 @@ module SelfConsistentUtils
                     KBlocks(:,:,nKPnts-i+2) = KBlock(:,:)
                 enddo
             endif
-            call KBlocks_to_LatParams(iLatParams,vars,KBlocks)
-            deallocate(KBlocks)
         endif
 
         if(tImposephsym) then
-            call stop_all(t_r,'Impose ph sym not yet working')
+
+            if(mod(nImp,2).eq.0) then
+                !Multiple of two bands per kpoint. Constrain them so that they are in pairs
+                allocate(rWork(max(1,3*nImp-2)))
+                do k = 1,nKPnts
+                    KBlock(:,:) = KBlocks(:,:,k)
+                    !Diagonalize each kBlock
+                    allocate(cWork(1))
+                    lWork = -1
+                    ierr = 0
+                    call zheev('V','U',nImp,KBlock,nImp,Bands_k,cWork,lWork,rWork,ierr)
+                    if(ierr.ne.0) call stop_all(t_r,'Error in diag')
+                    lWork = int(real(cWork(1))) + 1
+                    deallocate(cWork)
+                    allocate(cWork(lWork))
+                    call zheev('V','U',nImp,KBlock,nImp,Bands_k,cWork,lWork,rWork,ierr)
+                    if(ierr.ne.0) call stop_all(t_r,'Error in diag')
+                    deallocate(cWork)
+
+                    !Now pair up the bands in this kblock
+                    do i = 1,nImp/2
+                        DistFromMu = 0.5_dp * (Bands_k(i) + Bands_k(nImp-i+1) )
+                        Bands_k(i) = mu - DistFromMu
+                        Bands_k(nImp-i+1) = mu + DistFromMu
+                    enddo
+
+                    !Now, rotate the block back into k-space using the same eigenvectors
+                    KBlock2(:,:) = zzero
+                    do i = 1,nImp
+                        KBlock2(i,i) = cmplx(Bands_k(i),zero,dp)
+                    enddo
+                    call ZGEMM('N','N',nImp,nImp,nImp,zone,KBlock,nImp,KBlock2,nImp,zzero,cTemp,nImp)
+                    call ZGEMM('N','C',nImp,nImp,nImp,zone,cTemp,nImp,KBlock,nImp,zzero,KBlocks(:,:,k),nImp)
+                enddo
+                deallocate(rWork)
+            elseif(nImp.eq.1) then
+                !If there is only one band per kpoint, then the pairs correspond to different kpoints.
+                do i = 1,ks/2
+                    DistFromMu = 0.5_dp*( (mu - real(KBlocks(1,1,ks-i+1)) ) + (real(KBlocks(1,1,i)) - mu))
+                    KBlocks(1,1,ks-i+1) = cmplx(mu - DistFromMu,zero,dp)
+                    KBlocks(1,1,i) = cmplx(mu + DistFromMu,zero,dp)
+                enddo
+
+                !Since we are mixing kpoint, this might break k-symmetry. Reimpose it if it is being constrained
+                if(tImposeKSym) then
+                    !After fitting, add back in momentum inversion symmetry (if we are working in k-space)
+                    !This means that e(k) = e(-k)
+                    !For shifted meshes, this is easy.
+                    !For Gamma-centered meshes, two k-points are only singly degenerate
+                    !We should not be able to be constraining any syms
+                    if(tShift_Mesh) then
+                        do i = 1,nKPnts/2
+                            KBlock(:,:) = (KBlocks(:,:,i) + KBlocks(:,:,nKPnts-i+1)) / 2.0_dp
+                            KBlocks(:,:,i) = KBlock(:,:)
+                            KBlocks(:,:,nKPnts-i+1) = KBlock(:,:)
+                        enddo
+                    else
+                        do i = 2,nKPnts/2
+                            KBlock(:,:) = (KBlocks(:,:,i) + KBlocks(:,:,nKPnts-i+2)) / 2.0_dp
+                            KBlocks(:,:,i) = KBlock(:,:)
+                            KBlocks(:,:,nKPnts-i+2) = KBlock(:,:)
+                        enddo
+                    endif
+                endif
+            else
+                call stop_all(t_r,'Cannot impose ph symmetry if nImp != 1 or multiple of 2')
+            endif
         endif
+            
+        call KBlocks_to_LatParams(iLatParams,vars,KBlocks)
+        deallocate(KBlocks)
 
     end subroutine Imposesym_2
 

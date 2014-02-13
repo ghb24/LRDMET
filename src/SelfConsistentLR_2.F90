@@ -29,6 +29,10 @@ module SelfConsistentLR2
         real(dp), parameter :: dDeltaImpThresh = 1.0e-4_dp 
         character(len=*), parameter :: t_r='SC_Spectrum_Opt'
 
+        if(.not.tDiag_kSpace) then
+            call stop_all(t_r,"Unfortunately, this is only for systems with a kspace representation currently")
+        endif
+
         iCorrFnTag = 1    !1 for greens function optimization
 
         !This will set FreqPoints and Weights. nFitPoints is the size of FreqPoints/Weights, 
