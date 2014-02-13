@@ -385,11 +385,16 @@ module SelfConsistentUtils
                     do j = i,nImp
                         !Run through rows
                         if(i.eq.j) then
-                            if(ind.gt.iLatParams) call stop_all(t_r,'Incorrect indexing')
+                            if(ind.gt.iLatParams) then
+                                write(6,*) "i,j,k: ",i,j,k
+                                write(6,*) "ind: ",ind
+                                write(6,*) "iLatParams: ",iLatParams
+                                call stop_all(t_r,'Incorrect indexing 1')
+                            endif
                             KBlocks(j,i,k) = cmplx(LatParams(ind),zero,dp)
                             ind = ind + 1
                         else
-                            if((ind+1).gt.iLatParams) call stop_all(t_r,'Incorrect indexing')
+                            if((ind+1).gt.iLatParams) call stop_all(t_r,'Incorrect indexing 2')
                             KBlocks(j,i,k) = cmplx(LatParams(ind),LatParams(ind+1),dp)
                             ind = ind + 2
                         endif

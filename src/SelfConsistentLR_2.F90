@@ -456,7 +456,7 @@ module SelfConsistentLR2
         real(dp), allocatable :: step(:),vars(:),var(:),FinalVec(:),Jac(:,:),vars_temp(:)
         real(dp), allocatable :: Freqs_dum(:),Weights_dum(:),low(:),upp(:),grad(:),wa(:)
         integer, allocatable :: iwork(:),nbd(:),iwa(:)
-        integer :: nop,i,maxf,iprint,nloop,iquad,ierr,iRealCoupNum,nFuncs,j,ierr_tmp,corrs
+        integer :: nop,i,maxf,iprint,nloop,iquad,ierr,nFuncs,j,ierr_tmp,corrs
         real(dp) :: stopcr,simp,rhobeg,rhoend,InitErr,dsave(29),pgtol
         logical :: tfirst,tOptEVals_,tNonStandardGrid
         character(len=60) :: task,csave
@@ -608,7 +608,7 @@ module SelfConsistentLR2
             elseif(ierr.eq.4) then
                 call stop_all(t_r,'nloop < 1')
             elseif(ierr.eq.3) then
-                call stop_all(t_r,'iRealCoupNum < 1')
+                call stop_all(t_r,'iLatParams < 1')
             elseif(ierr.eq.2) then
                 call warning(t_r,'Information matrix is not +ve semi-definite')
                 write(6,"(A,F14.7)") "Final residual: ",FinalErr
@@ -624,14 +624,14 @@ module SelfConsistentLR2
             if(tImposephsym.or.tImposeksym) then
                 !Impose momentum inversion, and potentially ph symmetry
                 !Symmetrize the resulting eigenvalues
-                call Imposesym_2(iRealCoupNum,vars,mu)
+                call Imposesym_2(iLatParams,vars,mu)
             elseif(tConstrainphsym) then
                 call stop_all(t_r,'Sort this')
                 !Eigenvalues may have drifted to be occupied orbitals. 
                 !Flip them. This should not change the *local* lattice greens function at all, but will change the bandstructure
                 !and the coupling to the impurity site. However, since this is not what we are fitting, we should not worry if we
                 !change this?
-                do i=1,iRealCoupNum
+                do i=1,iLatParams
                     if(vars(i).lt.mu) then
                         !It is below the chemical potential. Flip it to get it to become a virtual again
                         !This should not change anything, since a corresponding virtual will also be flipped
@@ -640,12 +640,12 @@ module SelfConsistentLR2
                         !write(6,*) "new e: ",vars(i)
                     endif
                 enddo
-                call sort_real(vars,iRealCoupNum)
+                call sort_real(vars,iLatParams)
                 !Actually, this has sorted things the wrong way around. Swap them
-                allocate(vars_temp(iRealCoupNum))
+                allocate(vars_temp(iLatParams))
                 vars_temp(:) = vars(:)
-                do i = 1,iRealCoupNum
-                    vars(i) = vars_temp(iRealCoupNum-i+1)
+                do i = 1,iLatParams
+                    vars(i) = vars_temp(iLatParams-i+1)
                 enddo
                 deallocate(vars_temp)
             endif
