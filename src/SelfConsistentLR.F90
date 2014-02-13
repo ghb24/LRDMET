@@ -1430,6 +1430,7 @@ module SelfConsistentLR
             enddo
         endif
 
+        !write(6,*) "Input Vars: ",vars(:)
         if(present(dJac)) then
             !Compute the gradient
             if(tNonStandardGrid) then
@@ -1482,6 +1483,7 @@ module SelfConsistentLR
             endif
         endif
 
+        !write(6,*) "Output resid: ",dist
         deallocate(CoupsTemp)
     end subroutine MinCoups
 

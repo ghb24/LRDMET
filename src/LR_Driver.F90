@@ -6,6 +6,7 @@ module LRDriver
     use MomSpectra 
     use globals
     use SelfConsistentLR
+    use SelfConsistentLR2
     implicit none
 
     contains
@@ -23,7 +24,11 @@ module LRDriver
             !Direct application of Dysons equation on the Im axis
             !call SC_Imaginary_Dyson()
             !Fitting of a frequency independent lattice coupling
-            call SC_FitLatticeGF_Im()
+            if(tOptGF_EVals) then
+                call SC_FitLatticeGF_Im()
+            else
+                call SC_Spectrum_Opt()
+            endif
             !DMFT-style fitting of a lattice & matsubara self-energy
             !call SC_FitLat_and_SE_Im() 
         endif

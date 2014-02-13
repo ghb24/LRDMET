@@ -26,7 +26,6 @@ module SelfConsistentLR2
 
         real(dp) :: FinalDist,LowFreq,HighFreq
         integer :: i,iter,iLatParams,j,iCorrFnTag
-        logical :: tFitMatAxis,tCalcRealSpectrum
         real(dp), parameter :: dDeltaImpThresh = 1.0e-4_dp 
         character(len=*), parameter :: t_r='SC_Spectrum_Opt'
 
@@ -61,6 +60,7 @@ module SelfConsistentLR2
         allocate(DiffImpCorrFn(nImp,nImp,nFitPoints))
         allocate(dummy_Im(nImp,nImp,nFitPoints))
         dummy_Im(:,:,:) = zzero
+        CorrFn_HL(:,:,:) = zzero
         if(tCalcRealSpectrum) then
             allocate(dummy_Re(nImp,nImp,nFreq_Re))
             allocate(CorrFn_HL_Re(nImp,nImp,nFreq_Re))
@@ -133,6 +133,7 @@ module SelfConsistentLR2
             !Calculate & write out stats (all of them)
             AllDiffs(1,iter) = FinalDist
             DiffImpCorrFn(:,:,:) = CorrFn_HL_Old(:,:,:) - CorrFn_HL(:,:,:)
+            !write(6,*) DiffImpCorrFn(:,:,:)
             DiffImpCorrFn(:,:,:) = DiffImpCorrFn(:,:,:) * dconjg(DiffImpCorrFn(:,:,:))
             AllDiffs(2,iter) = sum(real(DiffImpCorrFn(:,:,:),dp))
             !And diff for LatticeGF
@@ -461,6 +462,7 @@ module SelfConsistentLR2
 
         !Initialize parameters
         allocate(vars(iLatParams))
+        vars(:) = LatParams(:)
 
         if(iFitAlgo.eq.4) then
             !Use L-BFGS(-constrained) to fit
@@ -677,8 +679,10 @@ module SelfConsistentLR2
             call stop_all(t_r,'Should not be here')
         endif
         if((.not.present(Freqs)).or.(.not.present(Weights))) call stop_all(t_r,'Should pass in freqs and weights')
+        !write(6,*) "Input Vars: ",LatParams(:)
         call CalcLatticeFitResidual_2(SCF_iCorrFn,CorrFn_HL,nFreq,SCF_mu,iLatParams,LatParams,dist,  &
             tMatAxis,FreqPoints=FreqPoints,Weights=Weights)
+        !write(6,*) "Output resid: ",dist
 
     end subroutine Min_Interface
 

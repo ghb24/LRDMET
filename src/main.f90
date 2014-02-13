@@ -1017,10 +1017,10 @@ Program RealHub
         if(tDiag_KSpace.and.LatticeDim.eq.2) then
             call stop_all(t_r,'Cannot currently do k-space diagonalizations for 2D models. Fix me!')
         endif
-        if(tSC_LR.and.(.not.tRealSpaceSC).and.(.not.tOptGF_EVals).and.(iLatticeCoups.eq.0)) then
-            call stop_all(t_r,'Matsubara lattice couplings self-consistency, '  &
-                //'but no number of lattice coupling parameters specified')
-        endif
+!        if(tSC_LR.and.(.not.tRealSpaceSC).and.(.not.tOptGF_EVals).and.(iLatticeCoups.eq.0)) then
+!            call stop_all(t_r,'Matsubara lattice couplings self-consistency, '  &
+!                //'but no number of lattice coupling parameters specified')
+!        endif
         if(tSC_LR.and.tOptGF_EVals.and.(iLatticeCoups.ne.0)) then
             call stop_all(t_r,'Lattice eigenvalues self-consistency cannot do a smaller number of lattice sites')
         endif
@@ -1039,9 +1039,9 @@ Program RealHub
         if(tImposephsym.and.tConstrainphsym) then
             call stop_all(t_r,'No need to impose ph sym if we are constraining it in the fit')
         endif
-        if((tImposephsym.or.tConstrainphsym.or.tImposeksym.or.tConstrainksym).and.(.not.tOptGF_EVals)) then
-            call stop_all(t_r,'Cannot impose symmetries unless optimizing eigenvalues')
-        endif
+!        if((tImposephsym.or.tConstrainphsym.or.tImposeksym.or.tConstrainksym).and.(.not.tOptGF_EVals)) then
+!            call stop_all(t_r,'Cannot impose symmetries unless optimizing eigenvalues')
+!        endif
         if(tConstrainphsym.and.(.not.tConstrainksym)) then
             call stop_all(t_r,'Sorry - you cant constrain ph sym without also constraining ksym')
         endif
