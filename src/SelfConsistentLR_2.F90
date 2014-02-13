@@ -435,7 +435,8 @@ module SelfConsistentLR2
             
         if(present(dJacobian).and.tTestDerivs) then
             if(present(FreqPoints)) then
-                call TestGradients(dist,iCorrFnTag,nESteps,iLatParams,LatParams,mu,G_Imp,tMatbrAxis,dJacobian,FreqPoints=FreqPoints,Weights=Weights)
+                call TestGradients(dist,iCorrFnTag,nESteps,iLatParams,LatParams,mu,G_Imp,tMatbrAxis,    &
+                    dJacobian,FreqPoints=FreqPoints,Weights=Weights)
             else
                 call TestGradients(dist,iCorrFnTag,nESteps,iLatParams,LatParams,mu,G_Imp,tMatbrAxis,dJacobian)
             endif
@@ -472,14 +473,17 @@ module SelfConsistentLR2
                 varsTemp(:) = LatParams(:)
                 varsTemp(ivar) = varsTemp(ivar) + diff
                 if(present(FreqPoints)) then
-                    call CalcLatticeFitResidual_2(iCorrFnTag,G_Imp,nESteps,mu,iLatParams,varsTemp,dist2,tMatbrAxis,FreqPoints=FreqPoints,Weights=Weights)
+                    call CalcLatticeFitResidual_2(iCorrFnTag,G_Imp,nESteps,mu,iLatParams,varsTemp,dist2,    &
+                        tMatbrAxis,FreqPoints=FreqPoints,Weights=Weights)
                 else
                     call CalcLatticeFitResidual_2(iCorrFnTag,G_Imp,nESteps,mu,iLatParams,varsTemp,dist2,tMatbrAxis)
                 endif
                 NumDiff = (dist2 - dist) / diff
-                write(iunit,"(I8,6G25.14)") ivar,diff,NumDiff,dJac(ivar),abs((NumDiff-dJac(ivar))/NumDiff),abs(NumDiff-dJac(ivar)),dist2
+                write(iunit,"(I8,6G25.14)") ivar,diff,NumDiff,dJac(ivar),abs((NumDiff-dJac(ivar))/NumDiff), &
+                    abs(NumDiff-dJac(ivar)),dist2
                 if(abs((NumDiff-dJac(ivar))/NumDiff).gt.one) then
-                    write(6,"(A,I8,6G25.14)") "***",ivar,diff,NumDiff,dJac(ivar),abs((NumDiff-dJac(ivar))/NumDiff),abs(NumDiff-dJac(ivar)),dist2
+                    write(6,"(A,I8,6G25.14)") "***",ivar,diff,NumDiff,dJac(ivar),abs((NumDiff-dJac(ivar))/NumDiff), &
+                        abs(NumDiff-dJac(ivar)),dist2
                 endif
                 diff = diff/2.0_dp
             enddo
@@ -791,7 +795,8 @@ module SelfConsistentLR2
             ind_2 = nImp*k
 
 !            C * C^+ here?  For 1 imp, should be |RtoK_Rot(1,k)|^2
-            call ZGEMM('N','C',nImp,nImp,nImp,zone,RtoK_Rot(1:nImp,ind_1:ind_2),nImp,RtoK_Rot(1:nImp,ind_1:ind_2),nImp,zzero,num,nImp)
+            call ZGEMM('N','C',nImp,nImp,nImp,zone,RtoK_Rot(1:nImp,ind_1:ind_2),nImp,   &
+                RtoK_Rot(1:nImp,ind_1:ind_2),nImp,zzero,num,nImp)
 
             do i = 1,nImp
                 do j = 1,nImp
