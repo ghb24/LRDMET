@@ -4789,6 +4789,8 @@ module SelfConsistentLR
                 !termr = 2.0_dp*num*((mu - evals_full(k))**2)/denom2 - num/denom1
                 !termi = -2.0_dp*Omega*(mu - evals_full(k))*num/denom2
                 !compval = cmplx(termr,termi,dp)*dconjg(DiffMat(1,1,i))
+
+!                write(6,*) k,Omega,num,dconjg(DiffMat(1,1,i)),zone/(cmplx(Omega + mu - evals_full(k),dDelta,dp)**2) 
                 
                 if(tNonStandardGrid) then
                     !Add the weighting factor

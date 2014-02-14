@@ -822,14 +822,15 @@ module SelfConsistentLR2
                                 Mat(jj,jj) = Mat(jj,jj) + cmplx(Omega + mu,dDelta,dp)
                             endif
                         enddo
+                        InvMat = zzero
                         call mat_inv(Mat,InvMat)
 
                         call ZGEMM('N','N',nImp,nImp,nImp,zone,ExtractMat,nImp,InvMat,nImp,zzero,ztmp,nImp)
                         call ZGEMM('N','N',nImp,nImp,nImp,zone,InvMat,nImp,ztmp,nImp,zzero,ztmp2,nImp)
 
-                        ztmp2(:,:) = ztmp2(:,:) / real(nKPnts,dp)
-                        ztmp(:,:) = ztmp2(:,:) * dconjg(DiffMat(:,:,k)) * num(:,:)
-!                        call ZGEMM('N','C',nImp,nImp,nImp,zone,ztmp2,nImp,DiffMat,nImp,zzero,ztmp,nImp)
+                        !Either divide by nKPnts, *or* multiply by num - they should be the same (only for 1 impurity?)
+!                        ztmp2(:,:) = ztmp2(:,:) / real(nKPnts,dp)
+                        ztmp(:,:) = ztmp2(:,:) * dconjg(DiffMat(:,:,w)) * num(:,:)
 
                         ztmp2(:,:) = ztmp(:,:) + dconjg(ztmp(:,:))
 
@@ -872,9 +873,8 @@ module SelfConsistentLR2
                         call ZGEMM('N','N',nImp,nImp,nImp,zone,ExtractMat,nImp,InvMat,nImp,zzero,ztmp,nImp)
                         call ZGEMM('N','N',nImp,nImp,nImp,zone,InvMat,nImp,ztmp,nImp,zzero,ztmp2,nImp)
 
-                        ztmp2(:,:) = ztmp2(:,:) / real(nKPnts,dp)
-                        ztmp(:,:) = ztmp2(:,:) * dconjg(DiffMat(:,:,k)) * num(:,:)
-!                        call ZGEMM('N','C',nImp,nImp,nImp,zone,ztmp2,nImp,DiffMat,nImp,zzero,ztmp,nImp)
+!                        ztmp2(:,:) = ztmp2(:,:) / real(nKPnts,dp)
+                        ztmp(:,:) = ztmp2(:,:) * dconjg(DiffMat(:,:,w)) * num(:,:)
 
                         ztmp2(:,:) = ztmp(:,:) + dconjg(ztmp(:,:))
 
