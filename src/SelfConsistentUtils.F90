@@ -147,7 +147,6 @@ module SelfConsistentUtils
         if(tReadCouplings) then
 
             write(6,"(A)") "Reading lattice k-space hamiltonian..."
-
             LatParams(:) = zero
 
             inquire(file='LatkBlocks_Read',exist=exists)
@@ -177,6 +176,7 @@ module SelfConsistentUtils
             endif
         else
             !Just set to h0v
+            ham = zzero
             do i = 1,nSites
                 do j = 1,nSites
                     ham(j,i) = cmplx(h0v(j,i),zero,dp)

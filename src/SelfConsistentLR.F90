@@ -1397,7 +1397,7 @@ module SelfConsistentLR
         real(dp) :: dist2,diff,NumDiff
         real(dp), allocatable :: CoupsTemp(:,:),CoupsTemp2(:,:)
         integer :: i,j,ivar,iunit2,RealCoupsNum
-        logical, parameter :: tTest=.true. 
+        logical, parameter :: tTest=.false.
         character(len=*), parameter :: t_r='MinCoups'
 
         if(nImp.ne.1) call stop_all(t_r,'n != nfreq')

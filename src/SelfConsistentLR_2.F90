@@ -339,7 +339,7 @@ module SelfConsistentLR2
         logical :: tNonStandardGrid
         integer :: i,j,k
         integer, parameter :: iNormPower = 2    !The power of the matrix norm for the residual
-        logical, parameter :: tTestDerivs = .true.
+        logical, parameter :: tTestDerivs = .false.
         character(len=*), parameter :: t_r='CalcLatticeFitResidual_2'
 
         !TODO: Fix this, so that the self-energy is an optional argument
@@ -847,49 +847,51 @@ module SelfConsistentLR2
                         endif
                     enddo
 
-                    !Pick imaginary part
-                    ExtractMat(:,:) = zzero
-                    ExtractMat(j,i) = cmplx(zero,one,dp)
+                    if(i.ne.j) then
+                        !Pick imaginary part
+                        ExtractMat(:,:) = zzero
+                        ExtractMat(j,i) = cmplx(zero,one,dp)
 
-                    w = 0
-                    do while(.true.)
-                        if(tNonStandardGrid) then
-                            call GetNextOmega(Omega,w,tMatbrAxis=tMatbrAxis,nFreqPoints=n,FreqPoints=FreqPoints)
-                        else
-                            call GetNextOmega(Omega,w,tMatbrAxis=tMatbrAxis)
-                        endif
-                        if(w.lt.0) exit
-
-                        Mat(:,:) = - KBlocks(:,:,k)
-                        do jj = 1,nImp
-                            if(tMatbrAxis) then
-                                Mat(jj,jj) = Mat(jj,jj) + cmplx(mu,Omega,dp)
+                        w = 0
+                        do while(.true.)
+                            if(tNonStandardGrid) then
+                                call GetNextOmega(Omega,w,tMatbrAxis=tMatbrAxis,nFreqPoints=n,FreqPoints=FreqPoints)
                             else
-                                Mat(jj,jj) = Mat(jj,jj) + cmplx(Omega + mu,dDelta,dp)
+                                call GetNextOmega(Omega,w,tMatbrAxis=tMatbrAxis)
+                            endif
+                            if(w.lt.0) exit
+
+                            Mat(:,:) = - KBlocks(:,:,k)
+                            do jj = 1,nImp
+                                if(tMatbrAxis) then
+                                    Mat(jj,jj) = Mat(jj,jj) + cmplx(mu,Omega,dp)
+                                else
+                                    Mat(jj,jj) = Mat(jj,jj) + cmplx(Omega + mu,dDelta,dp)
+                                endif
+                            enddo
+                            call mat_inv(Mat,InvMat)
+
+                            call ZGEMM('N','N',nImp,nImp,nImp,zone,ExtractMat,nImp,InvMat,nImp,zzero,ztmp,nImp)
+                            call ZGEMM('N','N',nImp,nImp,nImp,zone,InvMat,nImp,ztmp,nImp,zzero,ztmp2,nImp)
+
+    !                        ztmp2(:,:) = ztmp2(:,:) / real(nKPnts,dp)
+                            ztmp(:,:) = ztmp2(:,:) * dconjg(DiffMat(:,:,w)) * num(:,:)
+
+                            ztmp2(:,:) = ztmp(:,:) + dconjg(ztmp(:,:))
+
+                            compval = zzero
+                            do jj = 1,nImp
+                                do ii = 1,nImp
+                                    compval = compval + ztmp2(ii,jj)
+                                enddo
+                            enddo
+                            if(tNonStandardGrid) then
+                                FullJac_Im(j,i,k) = FullJac_Im(j,i,k) + (compval * Weights(w))
+                            else
+                                FullJac_Im(j,i,k) = FullJac_Im(j,i,k) + compval
                             endif
                         enddo
-                        call mat_inv(Mat,InvMat)
-
-                        call ZGEMM('N','N',nImp,nImp,nImp,zone,ExtractMat,nImp,InvMat,nImp,zzero,ztmp,nImp)
-                        call ZGEMM('N','N',nImp,nImp,nImp,zone,InvMat,nImp,ztmp,nImp,zzero,ztmp2,nImp)
-
-!                        ztmp2(:,:) = ztmp2(:,:) / real(nKPnts,dp)
-                        ztmp(:,:) = ztmp2(:,:) * dconjg(DiffMat(:,:,w)) * num(:,:)
-
-                        ztmp2(:,:) = ztmp(:,:) + dconjg(ztmp(:,:))
-
-                        compval = zzero
-                        do jj = 1,nImp
-                            do ii = 1,nImp
-                                compval = compval + ztmp2(ii,jj)
-                            enddo
-                        enddo
-                        if(tNonStandardGrid) then
-                            FullJac_Im(j,i,k) = FullJac_Im(j,i,k) + (compval * Weights(w))
-                        else
-                            FullJac_Im(j,i,k) = FullJac_Im(j,i,k) + compval
-                        endif
-                    enddo
+                    endif
 
                 enddo
             enddo
