@@ -443,8 +443,10 @@ module SelfConsistentUtils
         if(.not.tHalfFill.and.tUsePoswFreqPoints) then
             call stop_all(t_r,'Trying to just optimize the positive frequency points, but not half filled system')
         endif
-        if(tHalfFill) then
+        if(tHalfFill.and.(nImp.eq.1)) then
             tUsePoswFreqPoints = .true. !For ph symmetric systems, this seems to make no difference (but is faster!)
+        else
+            tUsePoswFreqPoints = .false.
         endif
 
         nFreq_Re = 0
@@ -521,7 +523,7 @@ module SelfConsistentUtils
 
     end subroutine SetFreqPoints
 
-    !Write out the isotropic average of a dynamic function in the impurity space.
+    !Write out the isotropic average, and individual elements of a dynamic function in the impurity space.
     subroutine writedynamicfunction(n,Func,FileRoot,tag,tCheckCausal,tCheckOffDiagHerm,tWarn,tMatbrAxis,ErrMat,FreqPoints)
         implicit none
         integer, intent(in) :: n
@@ -537,7 +539,7 @@ module SelfConsistentUtils
 
         character(64) :: filename
         logical :: tCheckOffDiagHerm_,tCheckCausal_,tWarn_,tMatbrAxis_
-        integer :: iunit,i,j,k
+        integer :: iunit,i,j,k,imp1,imp2
         real(dp) :: Omega,Prev_Spec,SpectralWeight
         complex(dp) :: IsoAv,IsoErr
         character(len=*), parameter :: t_r='writedynamicfunction'
@@ -635,7 +637,13 @@ module SelfConsistentUtils
                     endif
                     Prev_Spec = -aimag(IsoAv)
                 endif
-                write(iunit,"(3G25.10)") Omega,real(IsoAv,dp),aimag(IsoAv)
+                write(iunit,"(3G25.10)",advance='no') Omega,real(IsoAv,dp),aimag(IsoAv)
+                do imp1=1,nImp
+                    do imp2=1,nImp
+                        write(iunit,"(2G25.10)",advance='no') real(Func(imp2,imp1,i),dp),aimag(Func(imp2,imp1,i))
+                    enddo
+                enddo
+                write(iunit,*) 
             endif
         enddo
         if(tMatbrAxis_) then
