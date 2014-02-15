@@ -195,6 +195,7 @@ module SelfConsistentLR2
             allocate(CorrFn_Fit(nImp,nImp,nFreq_Re))
             allocate(dummy_Re(nImp,nImp,nFreq_Re))
             allocate(CorrFn_HL_Re(nImp,nImp,nFreq_Re))
+            dummy_Re = zzero
                 
             write(6,"(A)") "Now calculating spectral functions on the REAL axis"
             call flush(6)
@@ -232,10 +233,10 @@ module SelfConsistentLR2
         complex(dp), intent(in), optional :: ham(nSites,nSites)
         complex(dp), intent(in), optional :: SE(nImp,nImp,n)
 
-        integer :: i,j,k
+        integer :: i,j,k,ind_1,ind_2
         real(dp) :: Omega
         complex(dp), allocatable :: KBlocks(:,:,:)
-        complex(dp) :: InvMat(nImp,nImp),InvMat2(nImp,nImp)
+        complex(dp) :: InvMat(nImp,nImp),InvMat2(nImp,nImp),num(nImp,nImp)
         logical :: tMatbrAxis_
         character(len=*), parameter :: t_r='CalcLatticeSpectrum'
 
@@ -294,16 +295,23 @@ module SelfConsistentLR2
                         endif
                     enddo
                     call mat_inv(InvMat,InvMat2)
-                    CorrFn(:,:,i) = CorrFn(:,:,i) + InvMat2(:,:)
+                    ind_1 = ((k-1)*nImp) + 1
+                    ind_2 = nImp*k
+
+        !            C * C^+ here?  For 1 imp, should be |RtoK_Rot(1,k)|^2
+                    call ZGEMM('N','C',nImp,nImp,nImp,zone,RtoK_Rot(1:nImp,ind_1:ind_2),nImp,   &
+                        RtoK_Rot(1:nImp,ind_1:ind_2),nImp,zzero,num,nImp)
+                    CorrFn(:,:,i) = CorrFn(:,:,i) + ( InvMat2(:,:) * num(:,:) )
                 else
                     call stop_all(t_r,'Cannot deal with non-greens functions right now')
                 endif
             enddo
         enddo
 
-        if(iCorrFn.eq.1) then
-            CorrFn(:,:,:) = CorrFn(:,:,:) / real(nKPnts,dp)
-        endif
+!        if(iCorrFn.eq.1) then
+            !num term Equivalent to below for one impurity
+            !CorrFn(:,:,:) = CorrFn(:,:,:) / real(nKPnts,dp)
+!        endif
 
         deallocate(KBlocks)
 
@@ -869,6 +877,7 @@ module SelfConsistentLR2
                                     Mat(jj,jj) = Mat(jj,jj) + cmplx(Omega + mu,dDelta,dp)
                                 endif
                             enddo
+                            InvMat = zzero
                             call mat_inv(Mat,InvMat)
 
                             call ZGEMM('N','N',nImp,nImp,nImp,zone,ExtractMat,nImp,InvMat,nImp,zzero,ztmp,nImp)
@@ -896,7 +905,6 @@ module SelfConsistentLR2
                 enddo
             enddo
         enddo
-
         deallocate(KBlocks)
 
         !Now, package up the jacobian back into the individual lattice parameters
@@ -960,14 +968,16 @@ module SelfConsistentLR2
                             endif
                             if(abs(aimag(realval)).gt.1.0e-7_dp) call stop_all(t_r,'This should be real')
                             Jacobian(ind) = real(realval,dp)
-                            realval = FullJac_Im(j,i,k) + FullJac_Im(j,i,k)
+
+                            !Remember that the transpose element will have opposite imaginary sign, therefore will move in the other direction?
+                            realval = FullJac_Im(j,i,k) - FullJac_Im(i,j,k)
                             if(tConstrainKSym) then
                                 !Add the other kpoint which matches
                                 if(tShift_Mesh) then
-                                    realval = realval + FullJac_Im(j,i,nKPnts-k+1) + FullJac_Im(i,j,nKPnts-k+1)
+                                    realval = realval + FullJac_Im(j,i,nKPnts-k+1) - FullJac_Im(i,j,nKPnts-k+1)
                                 else
                                     if((k.ne.1).and.(k.ne.ks)) then
-                                        realval = realval + FullJac_Im(j,i,nKPnts-k+2) + FullJac_Im(i,j,nKPnts-k+2)
+                                        realval = realval + FullJac_Im(j,i,nKPnts-k+2) - FullJac_Im(i,j,nKPnts-k+2)
                                     endif
                                 endif
                             endif
