@@ -121,7 +121,7 @@ module SelfConsistentLR2
             endif
 
             call FitLatParams(iCorrFnTag,CorrFn_HL,nFitPoints,GFChemPot,iLatParams, &
-                LatParams,FinalDist,tFitMatAxis,FreqPoints,Weights)
+                LatParams,FinalDist,tFitMatAxis,FreqPoints,Weights,iter)
 
             !What is the lattice hamiltonian
             call LatParams_to_ham(iLatParams,LatParams,GFChemPot,h_lat_fit)
@@ -503,7 +503,7 @@ module SelfConsistentLR2
     end subroutine TestGradients
 
     !Use a minimization routine to fit the greens functions by adjusting the lattice coupling
-    subroutine FitLatParams(iCorrFnTag,CorrFn_HL,n,mu,iLatParams,LatParams,FinalErr,tMatbrAxis,FreqPoints,Weights)
+    subroutine FitLatParams(iCorrFnTag,CorrFn_HL,n,mu,iLatParams,LatParams,FinalErr,tMatbrAxis,FreqPoints,Weights,iter)
         use MinAlgos
         use Levenberg_Marquardt
         use lbfgs
@@ -518,6 +518,7 @@ module SelfConsistentLR2
         real(dp), intent(in) :: mu
         logical, intent(in) :: tMatbrAxis
         real(dp), intent(in) :: FreqPoints(n),Weights(n)
+        integer, intent(in) :: iter
 
         real(dp), allocatable :: step(:),vars(:),var(:),FinalVec(:),Jac(:,:),vars_temp(:)
         real(dp), allocatable :: Freqs_dum(:),Weights_dum(:),low(:),upp(:),grad(:),wa(:)
@@ -525,6 +526,7 @@ module SelfConsistentLR2
         integer :: nop,i,maxf,iprint,nloop,iquad,ierr,nFuncs,j,ierr_tmp,corrs
         real(dp) :: stopcr,simp,rhobeg,rhoend,InitErr,dsave(29),pgtol
         logical :: tfirst,tOptEVals_,tNonStandardGrid
+        complex(dp), allocatable :: PreSymCorr(:,:,:)
         character(len=60) :: task,csave
         integer :: isave(44)
         logical :: lsave(4)
@@ -688,6 +690,11 @@ module SelfConsistentLR2
         endif
             
         if(tImposephsym.or.tImposeksym.or.tConstrainphsym) then
+            allocate(PreSymCorr(nImp,nImp,n))
+            call CalcLatticeSpectrum(iCorrFnTag,n,PreSymCorr,mu,tMatbrAxis=tMatbrAxis,    &
+                iLatParams=iLatParams,LatParams=vars,FreqPoints=FreqPoints)
+            call writedynamicfunction(n,PreSymCorr,'G_Lat_Presym',tag=iter+1,tMatbrAxis=tMatbrAxis)
+            deallocate(PreSymCorr)
             if(tImposephsym.or.tImposeksym) then
                 !Impose momentum inversion, and potentially ph symmetry
                 !Symmetrize the resulting eigenvalues
