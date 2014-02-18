@@ -1439,6 +1439,7 @@ Program RealHub
                     if(tHalfFill) then
                         call WriteCorrPot()
                     endif
+                    call writematrix(v_loc,'Converged Correlation Potential',.true.)
                 endif
         
                 deallocate(MeanFieldDM)

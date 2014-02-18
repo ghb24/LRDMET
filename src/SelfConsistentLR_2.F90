@@ -22,6 +22,7 @@ module SelfConsistentLR2
         complex(dp), allocatable :: CorrFn_Fit(:,:,:),CorrFn_HL(:,:,:),CorrFn_HL_Old(:,:,:)
         complex(dp), allocatable :: CorrFn_Fit_Old(:,:,:),DiffImpCorrFn(:,:,:)
         complex(dp), allocatable :: dummy_Im(:,:,:),dummy_Re(:,:,:),CorrFn_HL_Re(:,:,:),CorrFn_Re(:,:,:)
+        complex(dp), allocatable :: Debug_Lat_CorrFn_Re(:,:,:),Debug_Lat_CorrFn_Fit(:,:,:)
         real(dp), allocatable :: AllDiffs(:,:)
 
         real(dp) :: FinalDist,LowFreq,HighFreq
@@ -63,12 +64,14 @@ module SelfConsistentLR2
         allocate(CorrFn_HL_Old(nImp,nImp,nFitPoints))
         allocate(DiffImpCorrFn(nImp,nImp,nFitPoints))
         allocate(dummy_Im(nImp,nImp,nFitPoints))
+        allocate(Debug_Lat_CorrFn_Fit(nImp,nImp,nFitPoints))
         dummy_Im(:,:,:) = zzero
         CorrFn_HL(:,:,:) = zzero
         if(tCalcRealSpectrum) then
             allocate(dummy_Re(nImp,nImp,nFreq_Re))
             allocate(CorrFn_HL_Re(nImp,nImp,nFreq_Re))
             allocate(CorrFn_Re(nImp,nImp,nFreq_Re))
+            allocate(Debug_Lat_CorrFn_Re(nImp,nImp,nFreq_Re))
             dummy_Re(:,:,:) = zzero
         endif
 
@@ -82,24 +85,37 @@ module SelfConsistentLR2
         do while(.not.tSkip_Lattice_Fit)
             iter = iter + 1
 
-            call writedynamicfunction(nFitPoints,CorrFn_Fit,'G_Lat_Fit',tag=iter,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
+            call writedynamicfunction(nFitPoints,CorrFn_Fit,'G_Lat_Fit',tag=iter,tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
+
+!            write(6,*) "For iteration ",iter
+!            write(6,*) "First nImp rows of the lattice hamiltonian: "
+!            do i = 1,nImp
+!                write(6,*) h_lat_fit(i,:)
+!                write(6,*) "***"
+!            enddo
 
             CorrFn_HL_Old(:,:,:) = CorrFn_HL(:,:,:)
             if(iCorrFnTag.eq.1) then
                 call SchmidtGF_wSE(CorrFn_HL,GFChemPot,dummy_Im,nFitPoints,tMatbrAxis=tFitMatAxis,  &
-                    cham=h_lat_fit,FreqPoints=FreqPoints)
+                    cham=h_lat_fit,FreqPoints=FreqPoints,Lat_G_Mat=Debug_Lat_CorrFn_Fit)
+                call writedynamicfunction(nFitPoints,Debug_Lat_CorrFn_Fit,'G_LatDebug_Fit',tag=iter,    &
+                    tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
                 call writedynamicfunction(nFitPoints,CorrFn_HL,'G_Imp_Fit',tag=iter,    &
-                    tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
+                    tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
             else
                 call stop_all(t_r,'Non GF correlation functions not yet coded up')
             endif
 
             if(tCalcRealSpectrum) then
-                call SchmidtGF_wSE(CorrFn_HL_Re,GFChemPot,dummy_Re,nFreq_Re,tMatbrAxis=.false.,cham=h_lat_fit)
-                call writedynamicfunction(nFreq_Re,CorrFn_HL_Re,'G_Imp_Re',tag=iter,tMatbrAxis=.false.)
+                call SchmidtGF_wSE(CorrFn_HL_Re,GFChemPot,dummy_Re,nFreq_Re,tMatbrAxis=.false.,cham=h_lat_fit,Lat_G_Mat=Debug_Lat_CorrFn_Fit)
+                call writedynamicfunction(nFreq_Re,CorrFn_HL_Re,'G_Imp_Re',tag=iter,    &
+                    tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=.false.)
+                call writedynamicfunction(nFreq_Re,Debug_Lat_CorrFn_Fit,'G_LatDebug_Re',tag=iter,    &
+                    tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=.false.)
                 call CalcLatticeSpectrum(iCorrFnTag,nFreq_Re,CorrFn_Re,GFChemPot,tMatbrAxis=.false.,    &
                     iLatParams=iLatParams,LatParams=LatParams)
-                call writedynamicfunction(nFreq_Re,CorrFn_Re,'G_Lat_Re',tag=iter,tMatbrAxis=.false.)
+                call writedynamicfunction(nFreq_Re,CorrFn_Re,'G_Lat_Re',tag=iter,   &
+                    tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=.false.)
             endif
 
             if(iLatticeFitType.eq.2) then
@@ -186,7 +202,8 @@ module SelfConsistentLR2
         !    call WriteBandstructure(Couplings,iLatParams)
         !endif
 
-        call writedynamicfunction(nFitPoints,CorrFn_Fit,'G_Lat_Fit_Final',tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
+        call writedynamicfunction(nFitPoints,CorrFn_Fit,'G_Lat_Fit_Final',      &
+            tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
 
         deallocate(DiffImpCorrFn,AllDiffs,CorrFn_Fit_Old,CorrFn_Fit,CorrFn_HL_Old,dummy_Im)
         if(tCalcRealSpectrum) deallocate(dummy_Re,CorrFn_HL_Re,CorrFn_Re)
@@ -204,14 +221,17 @@ module SelfConsistentLR2
                 LatParams=LatParams)
             !Write out lattice greens function
             !Is it the same as the impurity greens function on the real axis. This would be nice.
-            call writedynamicfunction(nFreq_Re,CorrFn_Fit,'G_Lat_Re_Final',tMatbrAxis=.false.)
+            call writedynamicfunction(nFreq_Re,CorrFn_Fit,'G_Lat_Re_Final',     &
+                tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=.false.)
 
             !Finally, calculate the greens function in real-frequency space.
             call SchmidtGF_wSE(CorrFn_HL_Re,GFChemPot,dummy_Re,nFreq_Re,tMatbrAxis=.false.,cham=h_lat_fit)
-            call writedynamicfunction(nFreq_Re,CorrFn_HL_Re,'G_Imp_Re_Final',tMatbrAxis=.false.)
+            call writedynamicfunction(nFreq_Re,CorrFn_HL_Re,'G_Imp_Re_Final',   &
+                tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=.false.)
             deallocate(CorrFn_HL_Re,CorrFn_Fit,dummy_Re)
         else
-            call writedynamicfunction(nFreq_Re,CorrFn_HL,'G_Imp_Fit_Final',tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
+            call writedynamicfunction(nFreq_Re,CorrFn_HL,'G_Imp_Fit_Final',     &
+                tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
         endif
 
         deallocate(CorrFn_HL)
@@ -299,9 +319,14 @@ module SelfConsistentLR2
                     ind_2 = nImp*k
 
         !            C * C^+ here?  For 1 imp, should be |RtoK_Rot(1,k)|^2
-                    call ZGEMM('N','C',nImp,nImp,nImp,zone,RtoK_Rot(1:nImp,ind_1:ind_2),nImp,   &
-                        RtoK_Rot(1:nImp,ind_1:ind_2),nImp,zzero,num,nImp)
-                    CorrFn(:,:,i) = CorrFn(:,:,i) + ( InvMat2(:,:) * num(:,:) )
+!                    call ZGEMM('N','C',nImp,nImp,nImp,zone,RtoK_Rot(1:nImp,ind_1:ind_2),nImp,   &
+!                        RtoK_Rot(1:nImp,ind_1:ind_2),nImp,zzero,num,nImp)
+!                    CorrFn(:,:,i) = CorrFn(:,:,i) + ( InvMat2(:,:) * num(:,:) )
+                    call ZGEMM('N','C',nImp,nImp,nImp,zone,InvMat2,nImp,RtoK_Rot(1:nImp,ind_1:ind_2),nImp,    &
+                        zzero,num,nImp)
+                    call ZGEMM('N','N',nImp,nImp,nImp,zone,RtoK_Rot(1:nImp,ind_1:ind_2),nImp,num,nImp,  &
+                        zone,CorrFn(:,:,i),nImp)
+                        
                 else
                     call stop_all(t_r,'Cannot deal with non-greens functions right now')
                 endif
@@ -693,7 +718,7 @@ module SelfConsistentLR2
             allocate(PreSymCorr(nImp,nImp,n))
             call CalcLatticeSpectrum(iCorrFnTag,n,PreSymCorr,mu,tMatbrAxis=tMatbrAxis,    &
                 iLatParams=iLatParams,LatParams=vars,FreqPoints=FreqPoints)
-            call writedynamicfunction(n,PreSymCorr,'G_Lat_Presym',tag=iter+1,tMatbrAxis=tMatbrAxis)
+            call writedynamicfunction(n,PreSymCorr,'G_Lat_Presym',tag=iter+1,tMatbrAxis=tMatbrAxis,FreqPoints=FreqPoints)
             deallocate(PreSymCorr)
             if(tImposephsym.or.tImposeksym) then
                 !Impose momentum inversion, and potentially ph symmetry

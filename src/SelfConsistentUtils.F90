@@ -567,6 +567,7 @@ module SelfConsistentUtils
         else
             tMatbrAxis_ = .false.
         endif
+        if(tMatbrAxis_) tCheckCausal_ = .false. !The imaginary part won't be negative on the matsubara axis (fn is antisym)
 
         if(present(tag)) then
             call append_ext(FileRoot,tag,filename)
@@ -596,13 +597,13 @@ module SelfConsistentUtils
                 if(tCheckOffDiagHerm_) then
                     do k = 1,nImp
                         if(k.ne.j) then
-                            if(abs(Func(k,j,i)-dconjg(Func(j,k,i))).gt.1.0e-8) then
+                            if(abs(Func(k,j,i)-dconjg(Func(j,k,i))).gt.1.0e-6) then
                                 write(6,*) "While writing file: ",filename
                                 if(present(tag)) write(6,*) "Filename extension: ",tag
                                 write(6,*) "Element of function: ",k,j
                                 write(6,*) "Frequency point: ",Omega
                                 write(6,*) "Values: ",Func(k,j,i),Func(j,k,i)
-                                if(tWarn) then
+                                if(tWarn_) then
                                     call warning(t_r,'Function no longer off-diagonal hermitian')
                                 else
                                     call stop_all(t_r,'Function no longer off-diagonal hermitian')

@@ -14,7 +14,7 @@ module LinearResponse
     
     !Calculate linear response for charged excitations - add the hole creation to particle creation
     !This is a tester routine to calculate the whole GF matrix, and include an optional self-energy in the bath construction
-    subroutine SchmidtGF_wSE(G_Mat,GFChemPot,SE,nESteps,tMatbrAxis,ham,cham,FreqPoints)
+    subroutine SchmidtGF_wSE(G_Mat,GFChemPot,SE,nESteps,tMatbrAxis,ham,cham,FreqPoints,Lat_G_Mat)
         use mat_tools, only: add_localpot_comp_inplace
         use utils, only: get_free_unit,append_ext_real,append_ext
         use DetBitOps, only: DecodeBitDet,SQOperator,CountBits
@@ -32,6 +32,7 @@ module LinearResponse
         real(dp), intent(in), optional :: ham(nSites,nSites)
         complex(dp), intent(in), optional :: cham(nSites,nSites)    !A complex (hermitian) lattice hamiltonian
         real(dp), intent(in), optional :: FreqPoints(nESteps)
+        complex(dp), intent(out), optional :: Lat_G_Mat(nImp,nImp,nESteps)  !An optional lattice greens function calculated in this routine
         logical :: tMatbrAxis_,tLatHamProvided_
         complex(dp), allocatable :: NFCIHam(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
         real(dp), allocatable :: dNorm_p(:),dNorm_h(:),W(:),temp(:,:),ham_schmidt(:,:),Emb_h_fit(:,:)
@@ -88,6 +89,7 @@ module LinearResponse
         iters_h = 0
 
         G_Mat(:,:,:) = zzero
+        Lat_G_Mat(:,:,:) = zzero
         SpectralWeight = 0.0_dp
         Prev_Spec = 0.0_dp
         tFirst = .true.
@@ -196,6 +198,13 @@ module LinearResponse
                 endif
             endif
 
+            write(6,*) "Lattice eigenvalues: ",GFChemPot
+            do i = 1,nSites/2
+                write(6,*) (LatVals(i)-GFChemPot)+(LatVals(nSites-i+1)-GFChemPot)
+                if(abs(aimag(LatVals(i))).gt.1.0e-8_dp) call stop_all(t_r,'Lattice eigenvalues complex')
+                if(abs((LatVals(i)-GFChemPot)+(LatVals(nSites-i+1)-GFChemPot)).gt.1.0e-6_dp) call stop_all(t_r,'Losing ph sym')
+            enddo
+
         endif
 
         !umat and tmat for the active space
@@ -206,8 +215,8 @@ module LinearResponse
                 !For the uncontracted space, we want to use the bare 1e hamiltonian over the impurity (and impurity-bath coupling?)
                 !Fot the uncontracted, static bath space, use the fit hamiltonian
                 if(.not.allocated(Emb_h0)) call stop_all(t_r,'Error here')
-                Emb_h_fit(:,1:nImp) = Emb_h0v(:,1:nImp)
-                Emb_h_fit(1:nImp,:) = Emb_h0v(1:nImp,:)
+                Emb_h_fit(:,1:nImp) = Emb_h0(:,1:nImp)
+                Emb_h_fit(1:nImp,:) = Emb_h0(1:nImp,:)
                 Emb_h_fit(nImp+1:EmbSize,nImp+1:EmbSize) = ham_schmidt(nOcc+1:nOcc+nImp,nOcc+1:nOcc+nImp)
                 call CreateIntMats(tComp=.true.,tTwoElecBath=.false.,bathham=Emb_h_fit)
                 !call writematrix(Emb_h_fit,'Emb_h_fit',.false.)
@@ -217,11 +226,11 @@ module LinearResponse
             elseif(tCompLatHam) then
                 allocate(cEmb_h_fit(EmbSize,EmbSize))
                 cEmb_h_fit(:,:) = zzero
-                !For the uncontracted space, we want to use the bare 1e hamiltonian over the impurity (and impurity-bath coupling?)
+                !For the uncontracted space, we want to use the bare 1e hamiltonian over the impurity and impurity-bath coupling
                 !Fot the uncontracted, static bath space, use the fit hamiltonian
                 if(.not.allocated(Emb_h0)) call stop_all(t_r,'Error here')
-                cEmb_h_fit(:,1:nImp) = dcmplx(Emb_h0v(:,1:nImp),zero)
-                cEmb_h_fit(1:nImp,:) = dcmplx(Emb_h0v(1:nImp,:),zero)
+                cEmb_h_fit(:,1:nImp) = dcmplx(Emb_h0(:,1:nImp),zero)
+                cEmb_h_fit(1:nImp,:) = dcmplx(Emb_h0(1:nImp,:),zero)
                 cEmb_h_fit(nImp+1:EmbSize,nImp+1:EmbSize) = cham_schmidt(nOcc+1:nOcc+nImp,nOcc+1:nOcc+nImp)
                 call CreateIntMats(tComp=.true.,tTwoElecBath=.false.,cbathham=cEmb_h_fit)
                 deallocate(cEmb_h_fit)
@@ -366,7 +375,7 @@ module LinearResponse
         
         !Set the impurity parts to the correct values (even though we don't access them from FockSchmidt)
         !They are different since the correlation potential is not defined over the impurity sites.
-        FockSchmidt(nOcc-nImp+1:nOcc+nImp,nOcc-nImp+1:nOcc+nImp) = Emb_h0v(:,:)
+        FockSchmidt(nOcc-nImp+1:nOcc+nImp,nOcc-nImp+1:nOcc+nImp) = Emb_h0v(:,:)     !Defining the impurity & bath space of the FockSchmidt array (corrpot defined only over bath-bath space)
         !Set up the one-electron terms over the external space
         if(tEnvLatHam) then
             !Use ham_schmidt over the whole external space from the hamiltonian read in
@@ -382,10 +391,9 @@ module LinearResponse
             if(tStaticBathFitLat) then
                 !Ensure that the impurity part is not from the fit lattice hamiltonian, but rather the plain h 
                 do i = nOcc-nImp+1,nOcc
-                    !We want the coupling to the impurity to be *just* from the h0v matrix rotated into the schmidt basis.
+                    !We want the coupling to the impurity to be *just* from the h0 matrix rotated into the schmidt basis.
                     !However, this wants to be extended to the whole impurity-lattice coupling too
                     do j = 1,nSites
-                    !do j = nOcc-nImp+1,nOcc
                         FockSchmidt_SE(j,i) = dcmplx(FockSchmidt(j,i),zero)
                         FockSchmidt_SE(i,j) = FockSchmidt_SE(j,i) 
                     enddo
@@ -868,10 +876,20 @@ module LinearResponse
 
             enddo   !End do over pertsite. We now have all the greens funtions 
 
+            !call writevectorcomp(Cre_0(:,1),'Cre_0')
+
             !Sum them
             ResponseFn_Mat(:,:) = ResponseFn_p(:,:) + ResponseFn_h(:,:)
             ni_lr_Mat(:,:) = NI_LRMat_Cre(:,:) + NI_LRMat_Ann(:,:)
             G_Mat(:,:,OmegaVal) = ResponseFn_Mat(:,:)
+            if(present(Lat_G_Mat)) then
+                Lat_G_Mat(:,:,OmegaVal) = ni_lr_Mat(:,:)
+            endif
+            
+            call writematrixcomp(ResponseFn_p,'ResponseFn_p',.true.)
+            call writematrixcomp(ResponseFn_h,'ResponseFn_h',.true.)
+            call writematrixcomp(ni_lr_Mat,'NI_LR',.true.)
+            call writematrixcomp(ResponseFn_Mat,'ResponseMat',.true.)
 
             !Now, calculate NI and interacting response function as trace over diagonal parts of the local greens functions
             !This is the isotropic average of the local greens function
@@ -923,7 +941,7 @@ module LinearResponse
             write(iunit,"(18G22.10,2I7)") Omega,real(ResponseFn),-aimag(ResponseFn), &
                 real(AvResFn_p),-aimag(AvResFn_p),real(AvResFn_h),-aimag(AvResFn_h),    &
                 HL_Energy,GSEnergy,abs(AvdNorm_p),abs(AvdNorm_h),real(ni_lr),-aimag(ni_lr),real(ni_lr_p),    &
-                -aimag(ni_lr_p),real(ni_lr_h),-aimag(ni_lr_h),SpectralWeight,iters_p,iters_h
+                -aimag(ni_lr_p),real(ni_lr_h),-aimag(ni_lr_h),SpectralWeight,iters_p,iters_h!,real(ni_lr_Mat(1,2)),aimag(ni_lr_Mat(1,2))
             call flush(iunit)
             call flush(6)
 
