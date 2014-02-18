@@ -85,7 +85,8 @@ module SelfConsistentLR2
         do while(.not.tSkip_Lattice_Fit)
             iter = iter + 1
 
-            call writedynamicfunction(nFitPoints,CorrFn_Fit,'G_Lat_Fit',tag=iter,tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
+            call writedynamicfunction(nFitPoints,CorrFn_Fit,'G_Lat_Fit',tag=iter,tCheckCausal=.true.,   &
+                tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
 
 !            write(6,*) "For iteration ",iter
 !            write(6,*) "First nImp rows of the lattice hamiltonian: "
@@ -107,7 +108,8 @@ module SelfConsistentLR2
             endif
 
             if(tCalcRealSpectrum) then
-                call SchmidtGF_wSE(CorrFn_HL_Re,GFChemPot,dummy_Re,nFreq_Re,tMatbrAxis=.false.,cham=h_lat_fit,Lat_G_Mat=Debug_Lat_CorrFn_Fit)
+                call SchmidtGF_wSE(CorrFn_HL_Re,GFChemPot,dummy_Re,nFreq_Re,tMatbrAxis=.false., &
+                    cham=h_lat_fit,Lat_G_Mat=Debug_Lat_CorrFn_Fit)
                 call writedynamicfunction(nFreq_Re,CorrFn_HL_Re,'G_Imp_Re',tag=iter,    &
                     tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=.false.)
                 call writedynamicfunction(nFreq_Re,Debug_Lat_CorrFn_Fit,'G_LatDebug_Re',tag=iter,    &
