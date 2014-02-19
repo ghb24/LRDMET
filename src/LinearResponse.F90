@@ -89,7 +89,7 @@ module LinearResponse
         iters_h = 0
 
         G_Mat(:,:,:) = zzero
-        Lat_G_Mat(:,:,:) = zzero
+        if(present(Lat_G_Mat)) Lat_G_Mat(:,:,:) = zzero
         SpectralWeight = 0.0_dp
         Prev_Spec = 0.0_dp
         tFirst = .true.

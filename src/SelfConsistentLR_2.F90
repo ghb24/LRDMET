@@ -78,7 +78,7 @@ module SelfConsistentLR2
         call CalcLatticeSpectrum(iCorrFnTag,nFitPoints,CorrFn_Fit,GFChemPot,tMatbrAxis=tFitMatAxis, &
             iLatParams=iLatParams,LatParams=LatParams,FreqPoints=FreqPoints)
 
-        allocate(AllDiffs(3,0:iMaxIter_MacroFit))
+        allocate(AllDiffs(3,0:iMaxIter_MacroFit+1))
         AllDiffs(:,:) = zero
 
         iter = 0
@@ -109,10 +109,10 @@ module SelfConsistentLR2
 
             if(tCalcRealSpectrum) then
                 call SchmidtGF_wSE(CorrFn_HL_Re,GFChemPot,dummy_Re,nFreq_Re,tMatbrAxis=.false., &
-                    cham=h_lat_fit,Lat_G_Mat=Debug_Lat_CorrFn_Fit)
+                    cham=h_lat_fit,Lat_G_Mat=Debug_Lat_CorrFn_Re)
                 call writedynamicfunction(nFreq_Re,CorrFn_HL_Re,'G_Imp_Re',tag=iter,    &
                     tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=.false.)
-                call writedynamicfunction(nFreq_Re,Debug_Lat_CorrFn_Fit,'G_LatDebug_Re',tag=iter,    &
+                call writedynamicfunction(nFreq_Re,Debug_Lat_CorrFn_Re,'G_LatDebug_Re',tag=iter,    &
                     tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=.false.)
                 call CalcLatticeSpectrum(iCorrFnTag,nFreq_Re,CorrFn_Re,GFChemPot,tMatbrAxis=.false.,    &
                     iLatParams=iLatParams,LatParams=LatParams)
@@ -203,12 +203,14 @@ module SelfConsistentLR2
         !    !Write out the converged one-electron dispersion / bandstructure
         !    call WriteBandstructure(Couplings,iLatParams)
         !endif
+        write(6,*) "Get here 0"
+        call flush(6)
 
         call writedynamicfunction(nFitPoints,CorrFn_Fit,'G_Lat_Fit_Final',      &
             tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
 
-        deallocate(DiffImpCorrFn,AllDiffs,CorrFn_Fit_Old,CorrFn_Fit,CorrFn_HL_Old,dummy_Im)
-        if(tCalcRealSpectrum) deallocate(dummy_Re,CorrFn_HL_Re,CorrFn_Re)
+        deallocate(DiffImpCorrFn,AllDiffs,CorrFn_Fit_Old,CorrFn_Fit,CorrFn_HL_Old,dummy_Im,Debug_Lat_CorrFn_Fit)
+        if(tCalcRealSpectrum) deallocate(dummy_Re,CorrFn_HL_Re,CorrFn_Re,Debug_Lat_CorrFn_Re)
 
         if(tFitMatAxis) then
             allocate(CorrFn_Fit(nImp,nImp,nFreq_Re))
