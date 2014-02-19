@@ -14,7 +14,7 @@ module LinearResponse
     
     !Calculate linear response for charged excitations - add the hole creation to particle creation
     !This is a tester routine to calculate the whole GF matrix, and include an optional self-energy in the bath construction
-    subroutine SchmidtGF_wSE(G_Mat,GFChemPot,SE,nESteps,tMatbrAxis,ham,cham,FreqPoints,Lat_G_Mat)
+    subroutine SchmidtGF_wSE(G_Mat,GFChemPot,SE,nESteps,tMatbrAxis,ham,cham,ham_vals,ham_vecs,FreqPoints,Lat_G_Mat)
         use mat_tools, only: add_localpot_comp_inplace
         use utils, only: get_free_unit,append_ext_real,append_ext
         use DetBitOps, only: DecodeBitDet,SQOperator,CountBits
@@ -31,6 +31,8 @@ module LinearResponse
         logical, intent(in), optional :: tMatbrAxis
         real(dp), intent(in), optional :: ham(nSites,nSites)
         complex(dp), intent(in), optional :: cham(nSites,nSites)    !A complex (hermitian) lattice hamiltonian
+        complex(dp), intent(in), optional :: ham_vals(nSites)       !The eigenvalues of the lattice hamiltonian
+        complex(dp), intent(in), optional :: ham_vecs(nSites,nSites)       !The eigenvectors of the lattice hamiltonian
         real(dp), intent(in), optional :: FreqPoints(nESteps)
         complex(dp), intent(out), optional :: Lat_G_Mat(nImp,nImp,nESteps)  !An optional lattice greens function calculated in this routine
         logical :: tMatbrAxis_,tLatHamProvided_
@@ -172,7 +174,13 @@ module LinearResponse
             allocate(LatVecs_R(nSites,nSites))
             allocate(LatVecs_L(nSites,nSites))
             if(tCompLatHam) then
-                call DiagNonHermLatticeHam(LatVals,LatVecs_R,LatVecs_L,cham=cham)
+                if(.not.present(ham_vals)) then
+                    call DiagNonHermLatticeHam(LatVals,LatVecs_R,LatVecs_L,cham=cham)
+                else
+                    LatVals(:) = Ham_Vals(:)
+                    LatVecs_R(:,:) = Ham_Vecs(:,:)
+                    LatVecs_L(:,:) = Ham_Vecs(:,:)
+                endif
                 if(tEnvLatHam) then
                     !Construct the environment lattice contributions
                     allocate(ctemp(nSites,nSites))
@@ -186,7 +194,13 @@ module LinearResponse
                     deallocate(ctemp,cFullSchmidtBasis)
                 endif
             else
-                call DiagNonHermLatticeHam(LatVals,LatVecs_R,LatVecs_L,ham=ham)
+                if(.not.present(ham_vals)) then
+                    call DiagNonHermLatticeHam(LatVals,LatVecs_R,LatVecs_L,ham=ham)
+                else
+                    LatVals(:) = Ham_Vals(:)
+                    LatVecs_R(:,:) = Ham_Vecs(:,:)
+                    LatVecs_L(:,:) = Ham_Vecs(:,:)
+                endif
                 if(tEnvLatHam) then
                     !Construct the environment lattice contributions
                     allocate(temp(nSites,nSites))
@@ -8790,6 +8804,7 @@ module LinearResponse
         complex(dp), allocatable :: AO_OneE_Ham(:,:),W_Vals(:),RVec(:,:),LVec(:,:),FullSchmidtTrans_C(:,:)
         complex(dp), allocatable :: HFPertBasis_Ann_Ket(:,:),HFPertBasis_Cre_Ket(:,:),temp(:,:),temp2(:,:)
         complex(dp), allocatable :: HFPertBasis_Ann_Bra(:,:),HFPertBasis_Cre_Bra(:,:),cWork(:),EmbeddedBasis_C(:,:)
+        complex(dp) :: mat(nSites,nSites),mat2(nSites,nSites)
         integer :: lwork,info,i,a,pertBra,j,pertsite,nVirt,CoreEnd,VirtStart,ActiveStart,ActiveEnd,nCore
         integer :: kPnt,ind_1,ind_2
         complex(dp) :: test
@@ -8860,7 +8875,7 @@ module LinearResponse
                 endif
             enddo
 
-            !Run over operators acting of the Bra in the impurity space
+            !Run over operators acting in the Bra in the impurity space
             do pertBra = 1,nImp
                 !Now perform the set of dot products of <0|V* with |1> for all combinations of sites
                 do i = 1,nOcc
@@ -8868,11 +8883,28 @@ module LinearResponse
                         RVec_R(pertBra,i)*HFPertBasis_Ann_Ket(i,pertsite)
                 enddo
                 do a = nOcc+1,nSites
-                    NI_LRMat_Cre(pertBra,pertsite) = NI_LRMat_Cre(pertBra,pertsite) +   &
+                    NI_LRMat_Cre(pertsite,pertBra) = NI_LRMat_Cre(pertsite,pertBra) +   &
                         RVec_R(pertBra,a)*HFPertBasis_Cre_Ket(a,pertsite)
                 enddo
             enddo
         enddo
+
+        !Calculate NI, 1,2 for comparison
+        mat = zzero
+        do i = 1,nSites
+            !mat(i,i) = zone/(dcmplx(GFChemPot,Omega)-EVals_R(i))
+            mat(i,i) = EVals_R(i)
+        enddo
+        call ZGEMM('N','C',nSites,nSites,nSites,zone,mat,nSites,LVec_R,nSites,zzero,mat2,nSites)
+        call ZGEMM('N','N',nSites,nSites,nSites,zone,RVec_R,nSites,mat2,nSites,zzero,mat,nSites)
+
+        call writematrixcomp(mat,'real space ham 2',.true.)
+        !call writematrixcomp(NI_LRMat_Cre + NI_LRMat_Ann,'Calc NI GF',.true.)
+        call writevectorcomp(EVals_R,'EVals_nonhermdiag')
+        call writevectorcomp(LVec_R(:,1),'LVec(:,1)')
+        call writevectorcomp(RVec_R(:,1),'RVec(:,1)')
+        call writevectorcomp(LVec_R(:,2),'LVec(:,2)')
+        call writevectorcomp(RVec_R(:,2),'RVec(:,2)')
         
         !Schmidt basis bounds
         nVirt = nSites-nOcc-nImp   

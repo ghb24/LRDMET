@@ -75,6 +75,8 @@ module SelfConsistentLR2
             dummy_Re(:,:,:) = zzero
         endif
 
+        call writematrixcomp(h_lat_fit,'Initial matrix',.true.)
+
         call CalcLatticeSpectrum(iCorrFnTag,nFitPoints,CorrFn_Fit,GFChemPot,tMatbrAxis=tFitMatAxis, &
             iLatParams=iLatParams,LatParams=LatParams,FreqPoints=FreqPoints)
 
@@ -203,9 +205,6 @@ module SelfConsistentLR2
         !    !Write out the converged one-electron dispersion / bandstructure
         !    call WriteBandstructure(Couplings,iLatParams)
         !endif
-        write(6,*) "Get here 0"
-        call flush(6)
-
         call writedynamicfunction(nFitPoints,CorrFn_Fit,'G_Lat_Fit_Final',      &
             tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
 
@@ -257,10 +256,10 @@ module SelfConsistentLR2
         complex(dp), intent(in), optional :: ham(nSites,nSites)
         complex(dp), intent(in), optional :: SE(nImp,nImp,n)
 
-        integer :: i,j,k,ind_1,ind_2
+        integer :: i,j,k,ind_1,ind_2,ii,jj
         real(dp) :: Omega
         complex(dp), allocatable :: KBlocks(:,:,:)
-        complex(dp) :: InvMat(nImp,nImp),InvMat2(nImp,nImp),num(nImp,nImp)
+        complex(dp) :: InvMat(nImp,nImp),InvMat2(nImp,nImp),num(nImp,nImp),hamtmp(nSites,nSites)
         logical :: tMatbrAxis_
         character(len=*), parameter :: t_r='CalcLatticeSpectrum'
 
@@ -295,6 +294,9 @@ module SelfConsistentLR2
             call stop_all(t_r,'No hamiltonian (r or k space) read in')
         endif
 
+        call LatParams_to_ham(iLatParams,LatParams,mu,hamtmp)
+        call writematrixcomp(hamtmp,'real space ham',.true.)
+
         i = 0
         do while(.true.)
             if(present(FreqPoints)) then
@@ -315,10 +317,32 @@ module SelfConsistentLR2
                         if(tMatbrAxis_) then
                             InvMat(j,j) = InvMat(j,j) + cmplx(mu,Omega,dp)
                         else
-                            InvMat(j,j) = InvMat(j,j) + cmplx(Omega + mu,dDelta,dp)
+                            !To get the off-diagonals to be hermitian, we have to be careful with the sign of the broadening.
+                            !Do not worry about this for the moment, because for the diagonals it should be fine, and we are not fitting the real spectrum atm.
+!                            if(Omega.gt.zero) then
+                                InvMat(j,j) = InvMat(j,j) + cmplx(Omega + mu,dDelta,dp)
+!                            else
+!                                InvMat(j,j) = InvMat(j,j) + cmplx(Omega + mu,-dDelta,dp)
+!                            endif
                         endif
                     enddo
                     call mat_inv(InvMat,InvMat2)
+
+                    do ii = 1,nImp
+                        do jj = 1,nImp
+                            if(ii.eq.jj) then
+                                cycle
+                            else
+                                if(abs(aimag(InvMat2(ii,jj))+aimag(InvMat2(jj,ii))).gt.1.0e-5_dp) then
+                                    call writematrixcomp(InvMat,'Mat',.true.)
+                                    call writematrixcomp(InvMat2,'InvMat',.true.)
+                                    write(6,*) "Omega: ",Omega
+                                    write(6,*) "k: ",k
+                                    write(6,*) "Error is: ",abs(aimag(InvMat2(ii,jj))+aimag(InvMat2(jj,ii)))
+                                endif
+                            endif
+                        enddo
+                    enddo
                     ind_1 = ((k-1)*nImp) + 1
                     ind_2 = nImp*k
 

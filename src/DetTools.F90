@@ -322,7 +322,7 @@ module DetTools
             if(iElec.eq.NEl) then
                 !This is the last electron
                 nDetCurr = nDetCurr + 1
-    !            write(6,*) "Found determinant: ",Det(:)
+!                write(6,*) "Found determinant: ",Det(:)
                 if(.not.tCount) then
                     DetList(:,nDetCurr) = Det(:)
                 endif
@@ -330,6 +330,7 @@ module DetTools
                 call GenDets_R(Det,NEl,SpatOrbs,iElec+1,nDetCurr,tCount,DetList)
             endif
         enddo
+!        write(6,*) "Returning",iElec,iEl
         return
 
     end subroutine GenDets_R

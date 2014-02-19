@@ -330,6 +330,56 @@ module SelfConsistentUtils
 
     end subroutine KBlocks_to_LatParams
 
+!    subroutine RealSpace_EValsVecs(EVecs_k,EVals_k,EVecs_r,EVals_r)
+!        complex(dp), intent(in) :: EVecs_k(nImp,nImp,nKPnts)
+!        complex(dp), intent(in) :: EVals_k(nSites)
+!        complex(dp), intent(out) :: EVecs_r(nSites,nSites)
+!        complex(dp), intent(out) :: EVals_r(nSites)
+!
+!        do k = 1,nKPnts
+!
+!            call ZGEMM('N','N',
+!
+!    end subroutine RealSpace_EValsVecs
+
+    subroutine KBlocks_to_diag(KBlocks,EVecs,EVals)
+        complex(dp), intent(in) :: KBlocks(nImp,nImp,nKPnts)
+        complex(dp), intent(out) :: EVecs(nImp,nImp,nKPnts)
+        complex(dp), intent(out) :: EVals(nSites)
+        complex(dp) :: KBlock(nImp,nImp)
+        complex(dp), allocatable :: cWork(:)
+        real(dp) :: Bands_k(nImp)
+        real(dp), allocatable :: rWork(:)
+        integer :: k,lWork,ierr,i
+        character(len=*), parameter :: t_r='KBlocks_to_diag'
+
+        EVals = zzero
+        EVecs = zzero
+
+        do k = 1,nKPnts
+
+            EVecs(:,:,k) = KBlocks(:,:,k)
+            !Diagonalize each kBlock
+            allocate(cWork(1))
+            lWork = -1
+            ierr = 0
+            call zheev('V','U',nImp,EVecs(:,:,k),nImp,Bands_k,cWork,lWork,rWork,ierr)
+            if(ierr.ne.0) call stop_all(t_r,'Error in diag')
+            lWork = int(real(cWork(1))) + 1
+            deallocate(cWork)
+            allocate(cWork(lWork))
+            call zheev('V','U',nImp,EVecs(:,:,k),nImp,Bands_k,cWork,lWork,rWork,ierr)
+            if(ierr.ne.0) call stop_all(t_r,'Error in diag')
+            deallocate(cWork)
+
+            do i = 1,nImp
+                EVals(((k-1)*nImp)+i) = cmplx(Bands_k(i),zero,dp)
+            enddo
+
+        enddo
+
+    end subroutine KBlocks_to_diag
+
     subroutine LatParams_to_KBlocks(iLatParams,LatParams,mu,KBlocks)
         integer, intent(in) :: iLatParams
         real(dp), intent(in) :: mu
