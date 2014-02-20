@@ -1436,8 +1436,8 @@ module mat_tools
     subroutine setup_kspace()
         implicit none
         integer :: SS_Period,i,k,ind_1,ind_2,j
-        real(dp) :: PrimLattVec(LatticeDim),phase,ddot
-        complex(dp) , allocatable :: temp(:,:)
+        real(dp) :: PrimLattVec(LatticeDim),phase,ddot,r,r2
+        complex(dp) , allocatable :: temp(:,:),ham_temp(:,:),Random_CorrPot(:,:)
         character(len=*), parameter :: t_r='setup_kspace'
 
         !SS_Period is the size of the supercell repeating unit (e.g. the coupling correlation potential)
@@ -1462,12 +1462,13 @@ module mat_tools
                     tShift_Mesh = .true.
                 endif
             else
+                !Odd number of k-points
                 if(tPeriodic) then
                     !We want to use a Gamma centered mesh
-                    tShift_Mesh = .false.
+                    tShift_Mesh = .true. 
                 else
                     !Monkhorst-Pack mesh
-                    tShift_Mesh = .true.
+                    tShift_Mesh = .false.
                 endif
             endif
             if(tShift_Mesh) then
@@ -1529,13 +1530,13 @@ module mat_tools
             call stop_all(t_r,'Error here')
         endif
 
-        if(tWriteOut) then
-            write(6,*) "Writing out kpoint mesh: "
-            do k=1,nKPnts
-                write(6,*) "KPnt ",k,KPnts(:,k)
-            enddo
-        endif
-            
+!        if(tWriteOut) then
+        write(6,"(A)") "Writing out kpoint mesh: "
+        do k=1,nKPnts
+            write(6,*) "KPnt ",k,KPnts(:,k)
+        enddo
+!        endif
+
         !Setup rotation matrix from site basis to k-space
         !First index r, second k
         allocate(RtoK_Rot(nSites,nSites))
@@ -1558,7 +1559,8 @@ module mat_tools
 
         if(tWriteOut) call writematrixcomp(RtoK_Rot,'RtoK_Rot',.true.)
 
-        if(tCheck) then
+!        if(tCheck) then
+        if(.true.) then
             !Now, is RtoK_Rot unitary?
             allocate(temp(nSites,nSites))
             !Check unitarity of matrix
@@ -1594,6 +1596,53 @@ module mat_tools
             write(6,*) "Rotation matrix unitary... :)"
             deallocate(temp)
         endif
+
+        !Right, just as a sanity check, see if this rotation block diagonalizes the hopping matrix
+        allocate(ham_temp(nSites,nSites))
+        do i = 1,nSites
+            do j = 1,nSites
+                ham_temp(j,i) = cmplx(h0(j,i),zero,dp)
+            enddo
+        enddo
+        !Add a random correlation potential
+        allocate(Random_Corrpot(nImp,nImp))
+        Random_CorrPot(:,:) = zzero
+        do i = 1,nImp
+            do j = i,nImp
+                if(i.eq.j) then
+                    call random_number(r)
+                    Random_CorrPot(j,i) = cmplx(r,zero,dp)
+                else
+                    call random_number(r)
+                    call random_number(r2)
+                    Random_CorrPot(j,i) = cmplx(r,r2,dp)
+                endif
+            enddo
+        enddo
+        call MakeBlockHermitian(Random_CorrPot,nImp)
+        call add_localpot_comp_inplace(ham_temp,Random_CorrPot,tAdd=.true.)
+        allocate(temp(nSites,nSites))
+        call ZGEMM('C','N',nSites,nSites,nSites,zone,RtoK_Rot,nSites,ham_temp,nSites,zzero,temp,nSites)
+        call ZGEMM('N','N',nSites,nSites,nSites,zone,temp,nSites,RtoK_Rot,nSites,zzero,ham_temp,nSites)
+        !ham_temp is now in kspace
+        !Zero the diagonal blocks
+        do k = 1,nKPnts
+            ind_1 = ((k-1)*nImp) + 1
+            ind_2 = nImp*k
+            ham_temp(ind_1:ind_2,ind_1:ind_2) = zzero
+        enddo
+        !Now check to see if there are any non-zero elements. If so, the unitary rotation is not correct
+        do i = 1,nSites
+            do j = 1,nSites
+                if(abs(ham_temp(j,i)).gt.1.0e-7_dp) then
+                    write(6,*) "i,j: ",j,i
+                    write(6,*) "ham in kspace: ",ham_temp(j,i)
+                    call stop_all(t_r,'kspace rotations not correctly set up. One-electron hamiltonian is not block diagonal in kspace')
+                endif
+            enddo
+        enddo
+        deallocate(temp,Random_Corrpot,ham_temp)
+        write(6,"(A)") "k-space rotations correctly block diagonalize general one-electron matrix"
 
     end subroutine setup_kspace
         
@@ -2095,34 +2144,60 @@ module mat_tools
             if(tCheck.and.LatticeDim.eq.1) then
                 !Check for translational invariance of the system
                 !That is: is each supercell row equivalent when translated to the supercell ajacent to it?
-                do i=1,nLat,SS_Period
-                    do j=1,SS_Period
-                        do k=1,nLat
-                            MappedInd = mod(i+j-1+SS_Period,nLat)
-                            if(MappedInd.eq.0) MappedInd = nLat
-                            if(MappedInd.ne.(i+j-1+SS_Period)) then
-                                !We have wrapped around the lattice
-                                tWrapped=.true.
-                            else
-                                tWrapped=.false.
-                            endif
-
-                            MappedInd2 = mod(k+SS_Period,nLat)
-                            if(MappedInd2.eq.0) MappedInd2 = nLat
-                            if(MappedInd2.ne.(k+SS_Period)) then
-                                !We have wrapped around the chain
-                                tWrapped=.true.
-                            endif
-
-                            if(abs(Ham(i+j-1,k)-Ham(MappedInd,MappedInd2)).gt.1.0e-7_dp) then
-                                if(.not.(tWrapped.and.tAntiPeriodic.and.    &
-                                    (abs(Ham(i+j-1,k)+Ham(MappedInd,MappedInd2))).gt.1.0e-7_dp)) then
-                                    call stop_all(t_r,'Translational symmetry not maintained in real-space hamiltonian')
-                                endif
-                            endif
-                        enddo
+                do j = 1,nLat
+                    do i = 1,nLat
+                        ind_1 = i
+                        ind_2 = j
+                        !Translate a supercell down
+                        ind_1 = i + SS_Period
+                        ind_2 = j + SS_Period
+                        phase = 1
+                        if(ind_1.gt.nLat) then
+                            ind_1 = ind_1 - nLat
+                            if(tAntiPeriodic) phase = -1 * phase
+                        endif
+                        if(ind_2.gt.nLat) then
+                            ind_2 = ind_2 - nLat
+                            if(tAntiPeriodic) phase = -1 * phase
+                        endif
+                        if(abs(ham(i,j)-(phase*ham(ind_1,ind_2))).gt.1.0e-7_dp) then
+                            write(6,"(2I6,A,2I6)") i,j," -> ",ind_1,ind_2
+                            write(6,*) "Phase change: ",phase
+                            write(6,*) ham(i,j),phase*ham(ind_1,ind_2)
+                            call writematrix(ham,'real space ham',.true.)
+                            call stop_all(t_r,'Translational symmetry not maintained in real-space hamiltonian')
+                        endif
                     enddo
                 enddo
+!                do i=1,nLat,SS_Period
+!                    do j=1,SS_Period
+!                        do k=1,nLat
+!                            MappedInd = mod(i+j-1+SS_Period,nLat)
+!                            if(MappedInd.eq.0) MappedInd = nLat
+!                            if(MappedInd.ne.(i+j-1+SS_Period)) then
+!                                !We have wrapped around the lattice
+!                                tWrapped=.true.
+!                            else
+!                                tWrapped=.false.
+!                            endif
+!
+!                            MappedInd2 = mod(k+SS_Period,nLat)
+!                            if(MappedInd2.eq.0) MappedInd2 = nLat
+!                            if(MappedInd2.ne.(k+SS_Period)) then
+!                                !We have wrapped around the chain
+!                                tWrapped=.true.
+!                            endif
+!
+!                            if(abs(Ham(i+j-1,k)-Ham(MappedInd,MappedInd2)).gt.1.0e-7_dp) then
+!                                if(.not.(tWrapped.and.tAntiPeriodic.and.    &
+!                                    (abs(Ham(i+j-1,k)+Ham(MappedInd,MappedInd2))).gt.1.0e-7_dp)) then
+!                                    call writematrix(ham,'real space ham',.true.)
+!                                    call stop_all(t_r,'Translational symmetry not maintained in real-space hamiltonian')
+!                                endif
+!                            endif
+!                        enddo
+!                    enddo
+!                enddo
                 write(6,"(A)") "Lattice system appropriately periodic in real space"
             endif
 
