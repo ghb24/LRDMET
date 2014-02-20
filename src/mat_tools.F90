@@ -1637,7 +1637,8 @@ module mat_tools
                 if(abs(ham_temp(j,i)).gt.1.0e-7_dp) then
                     write(6,*) "i,j: ",j,i
                     write(6,*) "ham in kspace: ",ham_temp(j,i)
-                    call stop_all(t_r,'kspace rotations not correctly set up. One-electron hamiltonian is not block diagonal in kspace')
+                    call stop_all(t_r,'kspace rotations not correctly set up. ' &
+                        //'One-electron hamiltonian is not block diagonal in kspace')
                 endif
             enddo
         enddo
