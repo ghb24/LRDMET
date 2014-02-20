@@ -113,13 +113,13 @@ module SelfConsistentLR2
                 call SchmidtGF_wSE(CorrFn_HL_Re,GFChemPot,dummy_Re,nFreq_Re,tMatbrAxis=.false., &
                     cham=h_lat_fit,Lat_G_Mat=Debug_Lat_CorrFn_Re)
                 call writedynamicfunction(nFreq_Re,CorrFn_HL_Re,'G_Imp_Re',tag=iter,    &
-                    tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=.false.)
+                    tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
                 call writedynamicfunction(nFreq_Re,Debug_Lat_CorrFn_Re,'G_LatDebug_Re',tag=iter,    &
-                    tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=.false.)
+                    tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
                 call CalcLatticeSpectrum(iCorrFnTag,nFreq_Re,CorrFn_Re,GFChemPot,tMatbrAxis=.false.,    &
                     iLatParams=iLatParams,LatParams=LatParams)
                 call writedynamicfunction(nFreq_Re,CorrFn_Re,'G_Lat_Re',tag=iter,   &
-                    tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=.false.)
+                    tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
             endif
 
             if(iLatticeFitType.eq.2) then
@@ -225,12 +225,12 @@ module SelfConsistentLR2
             !Write out lattice greens function
             !Is it the same as the impurity greens function on the real axis. This would be nice.
             call writedynamicfunction(nFreq_Re,CorrFn_Fit,'G_Lat_Re_Final',     &
-                tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=.false.)
+                tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
 
             !Finally, calculate the greens function in real-frequency space.
             call SchmidtGF_wSE(CorrFn_HL_Re,GFChemPot,dummy_Re,nFreq_Re,tMatbrAxis=.false.,cham=h_lat_fit)
             call writedynamicfunction(nFreq_Re,CorrFn_HL_Re,'G_Imp_Re_Final',   &
-                tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=.false.)
+                tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
             deallocate(CorrFn_HL_Re,CorrFn_Fit,dummy_Re)
         else
             call writedynamicfunction(nFreq_Re,CorrFn_HL,'G_Imp_Fit_Final',     &
@@ -352,7 +352,7 @@ module SelfConsistentLR2
 !                            if(ii.eq.jj) then
 !                                cycle
 !                            else
-!                                if(abs(aimag(InvMat2(ii,jj))+aimag(InvMat2(jj,ii))).gt.1.0e-5_dp) then
+!                                if(abs(aimag(InvMat2(ii,jj))+aimag(InvMat2(jj,ii))).gt.1.0e-6_dp) then
 !                                    call writematrixcomp(InvMat,'Mat',.true.)
 !                                    call writematrixcomp(InvMat2,'InvMat',.true.)
 !                                    write(6,*) "Omega: ",Omega

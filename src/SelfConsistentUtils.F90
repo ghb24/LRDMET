@@ -4,7 +4,7 @@ module SelfConsistentUtils
     use Globals
     use utils, only: get_free_unit,append_ext
     use SC_Data
-    use mat_tools, only: MakeBlockHermitian,writematrixcomp
+    use mat_tools, only: MakeBlockHermitian,writematrixcomp,writevector
     implicit none
 
     contains
@@ -985,7 +985,8 @@ module SelfConsistentUtils
         endif
 
         if(tImposephsym) then
-
+        
+            !write(6,*) "*** IMPOSING PH SYMMETRY ***",mu
             if(mod(nImp,2).eq.0) then
                 !Multiple of two bands per kpoint. Constrain them so that they are in pairs
                 allocate(rWork(max(1,3*nImp-2)))
@@ -1004,12 +1005,18 @@ module SelfConsistentUtils
                     if(ierr.ne.0) call stop_all(t_r,'Error in diag')
                     deallocate(cWork)
 
+                    !write(6,*) "For k point: ",k
+                    !call writematrixcomp(KBlocks(:,:,k),'k-space ham',.true.)
+                    !call writevector(Bands_k,'eigenvalues at kpoint')
+
                     !Now pair up the bands in this kblock
                     do i = 1,nImp/2
-                        DistFromMu = 0.5_dp * (Bands_k(i) + Bands_k(nImp-i+1) )
+                        DistFromMu = 0.5_dp * (- Bands_k(i) + Bands_k(nImp-i+1) )
+                        !write(6,*) "Dist from mu: ",DistFromMu 
                         Bands_k(i) = mu - DistFromMu
                         Bands_k(nImp-i+1) = mu + DistFromMu
                     enddo
+                    !call writevector(Bands_k,'ph symmetrized eigenvalues at kpoint')
 
                     !Now, rotate the block back into k-space using the same eigenvectors
                     KBlock2(:,:) = zzero
@@ -1018,6 +1025,7 @@ module SelfConsistentUtils
                     enddo
                     call ZGEMM('N','N',nImp,nImp,nImp,zone,KBlock,nImp,KBlock2,nImp,zzero,cTemp,nImp)
                     call ZGEMM('N','C',nImp,nImp,nImp,zone,cTemp,nImp,KBlock,nImp,zzero,KBlocks(:,:,k),nImp)
+                    !call writematrixcomp(KBlocks(:,:,k),'new k-space ham',.true.)
                 enddo
                 deallocate(rWork)
             elseif(nImp.eq.1) then
