@@ -369,9 +369,11 @@ module SelfConsistentLR2
 !                    call ZGEMM('N','C',nImp,nImp,nImp,zone,RtoK_Rot(1:nImp,ind_1:ind_2),nImp,   &
 !                        RtoK_Rot(1:nImp,ind_1:ind_2),nImp,zzero,num,nImp)
 !                    CorrFn(:,:,i) = CorrFn(:,:,i) + ( InvMat2(:,:) * num(:,:) )
-                    call ZGEMM('N','C',nImp,nImp,nImp,zone,InvMat2,nImp,RtoK_Rot(1:nImp,ind_1:ind_2),nImp,    &
+                    !Use InvMat as a temporary storage
+                    InvMat(:,:) = RtoK_Rot(1:nImp,ind_1:ind_2)
+                    call ZGEMM('N','C',nImp,nImp,nImp,zone,InvMat2,nImp,InvMat,nImp,    &
                         zzero,num,nImp)
-                    call ZGEMM('N','N',nImp,nImp,nImp,zone,RtoK_Rot(1:nImp,ind_1:ind_2),nImp,num,nImp,  &
+                    call ZGEMM('N','N',nImp,nImp,nImp,zone,InvMat,nImp,num,nImp,  &
                         zone,CorrFn(:,:,i),nImp)
                         
                 else
@@ -882,8 +884,9 @@ module SelfConsistentLR2
             ind_2 = nImp*k
 
 !            C * C^+ here?  For 1 imp, should be |RtoK_Rot(1,k)|^2
-            call ZGEMM('N','C',nImp,nImp,nImp,zone,RtoK_Rot(1:nImp,ind_1:ind_2),nImp,   &
-                RtoK_Rot(1:nImp,ind_1:ind_2),nImp,zzero,num,nImp)
+!            call ZGEMM('N','C',nImp,nImp,nImp,zone,RtoK_Rot(1:nImp,ind_1:ind_2),nImp,   &
+!                RtoK_Rot(1:nImp,ind_1:ind_2),nImp,zzero,num,nImp)
+            num = RtoK_Rot(1:nImp,ind_1:ind_2)
 
             do i = 1,nImp
                 do j = 1,nImp
@@ -915,9 +918,13 @@ module SelfConsistentLR2
                         call ZGEMM('N','N',nImp,nImp,nImp,zone,ExtractMat,nImp,InvMat,nImp,zzero,ztmp,nImp)
                         call ZGEMM('N','N',nImp,nImp,nImp,zone,InvMat,nImp,ztmp,nImp,zzero,ztmp2,nImp)
 
+                        call ZGEMM('N','N',nImp,nImp,nImp,zone,num,nImp,ztmp2,nImp,zzero,ztmp,nImp)
+                        call ZGEMM('N','C',nImp,nImp,nImp,zone,ztmp,nImp,num,nImp,zzero,ztmp2,nImp)
+
                         !Either divide by nKPnts, *or* multiply by num - they should be the same (only for 1 impurity?)
 !                        ztmp2(:,:) = ztmp2(:,:) / real(nKPnts,dp)
-                        ztmp(:,:) = ztmp2(:,:) * dconjg(DiffMat(:,:,w)) * num(:,:)
+!                        ztmp(:,:) = ztmp2(:,:) * dconjg(DiffMat(:,:,w)) * num(:,:)
+                        ztmp(:,:) = ztmp2(:,:) * dconjg(DiffMat(:,:,w))
 
                         ztmp2(:,:) = ztmp(:,:) + dconjg(ztmp(:,:))
 
@@ -961,9 +968,13 @@ module SelfConsistentLR2
 
                             call ZGEMM('N','N',nImp,nImp,nImp,zone,ExtractMat,nImp,InvMat,nImp,zzero,ztmp,nImp)
                             call ZGEMM('N','N',nImp,nImp,nImp,zone,InvMat,nImp,ztmp,nImp,zzero,ztmp2,nImp)
+                        
+                            call ZGEMM('N','N',nImp,nImp,nImp,zone,num,nImp,ztmp2,nImp,zzero,ztmp,nImp)
+                            call ZGEMM('N','C',nImp,nImp,nImp,zone,ztmp,nImp,num,nImp,zzero,ztmp2,nImp)
 
     !                        ztmp2(:,:) = ztmp2(:,:) / real(nKPnts,dp)
-                            ztmp(:,:) = ztmp2(:,:) * dconjg(DiffMat(:,:,w)) * num(:,:)
+                            !ztmp(:,:) = ztmp2(:,:) * dconjg(DiffMat(:,:,w)) * num(:,:)
+                            ztmp(:,:) = ztmp2(:,:) * dconjg(DiffMat(:,:,w))
 
                             ztmp2(:,:) = ztmp(:,:) + dconjg(ztmp(:,:))
 
@@ -1053,10 +1064,10 @@ module SelfConsistentLR2
                             if(tConstrainKSym) then
                                 !Add the other kpoint which matches
                                 if(tShift_Mesh) then
-                                    realval = realval + FullJac_Im(j,i,nKPnts-k+1) - FullJac_Im(i,j,nKPnts-k+1)
+                                    realval = realval - FullJac_Im(j,i,nKPnts-k+1) + FullJac_Im(i,j,nKPnts-k+1)
                                 else
                                     if((k.ne.1).and.(k.ne.ks)) then
-                                        realval = realval + FullJac_Im(j,i,nKPnts-k+2) - FullJac_Im(i,j,nKPnts-k+2)
+                                        realval = realval - FullJac_Im(j,i,nKPnts-k+2) + FullJac_Im(i,j,nKPnts-k+2)
                                     endif
                                 endif
                             endif
