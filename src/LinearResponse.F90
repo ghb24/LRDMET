@@ -899,11 +899,10 @@ module LinearResponse
             if(present(Lat_G_Mat)) then
                 Lat_G_Mat(:,:,OmegaVal) = ni_lr_Mat(:,:)
             endif
-            
-            call writematrixcomp(ResponseFn_p,'ResponseFn_p',.true.)
-            call writematrixcomp(ResponseFn_h,'ResponseFn_h',.true.)
-            call writematrixcomp(ni_lr_Mat,'NI_LR',.true.)
-            call writematrixcomp(ResponseFn_Mat,'ResponseMat',.true.)
+!            call writematrixcomp(ResponseFn_p,'ResponseFn_p',.true.)
+!            call writematrixcomp(ResponseFn_h,'ResponseFn_h',.true.)
+!            call writematrixcomp(ni_lr_Mat,'NI_LR',.true.)
+!            call writematrixcomp(ResponseFn_Mat,'ResponseMat',.true.)
 
             !Now, calculate NI and interacting response function as trace over diagonal parts of the local greens functions
             !This is the isotropic average of the local greens function
@@ -8883,7 +8882,7 @@ module LinearResponse
                         RVec_R(pertBra,i)*HFPertBasis_Ann_Ket(i,pertsite)
                 enddo
                 do a = nOcc+1,nSites
-                    NI_LRMat_Cre(pertsite,pertBra) = NI_LRMat_Cre(pertsite,pertBra) +   &
+                    NI_LRMat_Cre(pertBra,pertsite) = NI_LRMat_Cre(pertBra,pertsite) +   &
                         RVec_R(pertBra,a)*HFPertBasis_Cre_Ket(a,pertsite)
                 enddo
             enddo
