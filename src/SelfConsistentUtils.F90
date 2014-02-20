@@ -4,7 +4,7 @@ module SelfConsistentUtils
     use Globals
     use utils, only: get_free_unit,append_ext
     use SC_Data
-    use mat_tools, only: MakeBlockHermitian
+    use mat_tools, only: MakeBlockHermitian,writematrixcomp
     implicit none
 
     contains
@@ -140,6 +140,7 @@ module SelfConsistentUtils
         real(dp), intent(in) :: mu
         real(dp), intent(out) :: LatParams(iLatParams)
         complex(dp), intent(out) :: ham(nSites,nSites)  !Return the lattice hamiltonian too
+!        complex(dp) :: ham_k(nSites,nSites),temp(nSites,nSites)
         integer :: i,j,iloclatcoups,iunit
         logical :: exists
         character(len=*), parameter :: t_r='InitLatticeParams'
@@ -183,7 +184,15 @@ module SelfConsistentUtils
                 enddo
             enddo
 
-            call ham_to_LatParams(iLatParams,LatParams,ham) 
+!            call ZGEMM('C','N',nSites,nSites,nSites,zone,RtoK_Rot,nSites,ham,nSites,zzero,temp,nSites)
+!            call ZGEMM('N','N',nSites,nSites,nSites,zone,temp,nSites,RtoK_Rot,nSites,zzero,ham_k,nSites)
+!            call writematrixcomp(ham_k,'Initial k space ham',.true.)
+!
+!            call writematrixcomp(ham,'Initial real space ham',.true.)
+            call ham_to_LatParams(iLatParams,LatParams,ham)
+!            ham = zzero
+!            call LatParams_to_ham(iLatParams,LatParams,mu,ham)
+!            call writematrixcomp(ham,'real space ham converted from latparams',.true.)
         endif
 
     end subroutine InitLatticeParams
@@ -237,7 +246,7 @@ module SelfConsistentUtils
         real(dp), intent(in) :: LatParams(iLatParams)
         complex(dp), intent(out) :: ham(nSites,nSites)
         complex(dp), allocatable :: KBlocks(:,:,:)
-        complex(dp), allocatable :: ctemp(:,:),cham(:,:)
+        complex(dp), allocatable :: ctemp(:,:)
         integer :: k,ind_1,ind_2
         character(len=*), parameter :: t_r='LatParams_to_ham'
 
@@ -356,6 +365,7 @@ module SelfConsistentUtils
         EVals = zzero
         EVecs = zzero
 
+        allocate(rWork(max(1,3*nImp-2)))
         do k = 1,nKPnts
 
             EVecs(:,:,k) = KBlocks(:,:,k)
@@ -377,6 +387,7 @@ module SelfConsistentUtils
             enddo
 
         enddo
+        deallocate(rWork)
 
     end subroutine KBlocks_to_diag
 
@@ -463,12 +474,12 @@ module SelfConsistentUtils
                 !No gamma point sampled. All k-points symmetric.
                 !Mirror the k-space hamiltonian
                 do i = 1,ks
-                    KBlocks(:,:,i+ks) = KBlocks(:,:,ks-i+1)
+                    KBlocks(:,:,i+ks) = dconjg(KBlocks(:,:,ks-i+1))
                 enddo
             else
                 !Mirror the kpoints, but ignore the gamma point and BZ boundary
                 do i = 2,ks-1
-                    KBlocks(:,:,i+ks-1) = KBlocks(:,:,ks-i+1)
+                    KBlocks(:,:,i+ks-1) = dconjg(KBlocks(:,:,ks-i+1))
                 enddo
             endif
         endif
@@ -954,21 +965,21 @@ module SelfConsistentUtils
 
         if(tImposeKSym) then
             !After fitting, add back in momentum inversion symmetry (if we are working in k-space)
-            !This means that e(k) = e(-k)
+            !This means that h(k) = h*(-k)
             !For shifted meshes, this is easy.
             !For Gamma-centered meshes, two k-points are only singly degenerate
             !We should not be able to be constraining any syms
             if(tShift_Mesh) then
                 do i = 1,nKPnts/2
-                    KBlock(:,:) = (KBlocks(:,:,i) + KBlocks(:,:,nKPnts-i+1)) / 2.0_dp
+                    KBlock(:,:) = (KBlocks(:,:,i) + dconjg(KBlocks(:,:,nKPnts-i+1))) / 2.0_dp
                     KBlocks(:,:,i) = KBlock(:,:)
-                    KBlocks(:,:,nKPnts-i+1) = KBlock(:,:)
+                    KBlocks(:,:,nKPnts-i+1) = dconjg(KBlock(:,:))
                 enddo
             else
                 do i = 2,nKPnts/2
-                    KBlock(:,:) = (KBlocks(:,:,i) + KBlocks(:,:,nKPnts-i+2)) / 2.0_dp
+                    KBlock(:,:) = (KBlocks(:,:,i) + dconjg(KBlocks(:,:,nKPnts-i+2))) / 2.0_dp
                     KBlocks(:,:,i) = KBlock(:,:)
-                    KBlocks(:,:,nKPnts-i+2) = KBlock(:,:)
+                    KBlocks(:,:,nKPnts-i+2) = dconjg(KBlock(:,:))
                 enddo
             endif
         endif

@@ -75,8 +75,7 @@ module SelfConsistentLR2
             dummy_Re(:,:,:) = zzero
         endif
 
-        call writematrixcomp(h_lat_fit,'Initial matrix',.true.)
-
+!        call writematrixcomp(h_lat_fit,'Initial real space matrix',.true.)
         call CalcLatticeSpectrum(iCorrFnTag,nFitPoints,CorrFn_Fit,GFChemPot,tMatbrAxis=tFitMatAxis, &
             iLatParams=iLatParams,LatParams=LatParams,FreqPoints=FreqPoints)
 
@@ -99,6 +98,7 @@ module SelfConsistentLR2
 
             CorrFn_HL_Old(:,:,:) = CorrFn_HL(:,:,:)
             if(iCorrFnTag.eq.1) then
+!                call writematrixcomp(h_lat_fit,'real space matrix sent to LR',.true.)
                 call SchmidtGF_wSE(CorrFn_HL,GFChemPot,dummy_Im,nFitPoints,tMatbrAxis=tFitMatAxis,  &
                     cham=h_lat_fit,FreqPoints=FreqPoints,Lat_G_Mat=Debug_Lat_CorrFn_Fit)
                 call writedynamicfunction(nFitPoints,Debug_Lat_CorrFn_Fit,'G_LatDebug_Fit',tag=iter,    &
@@ -256,10 +256,11 @@ module SelfConsistentLR2
         complex(dp), intent(in), optional :: ham(nSites,nSites)
         complex(dp), intent(in), optional :: SE(nImp,nImp,n)
 
-        integer :: i,j,k,ind_1,ind_2,ii,jj
+        integer :: i,j,k,ind_1,ind_2!,ii,jj
         real(dp) :: Omega
-        complex(dp), allocatable :: KBlocks(:,:,:)
-        complex(dp) :: InvMat(nImp,nImp),InvMat2(nImp,nImp),num(nImp,nImp),hamtmp(nSites,nSites)
+!        complex(dp) :: compval
+        complex(dp), allocatable :: KBlocks(:,:,:)!,EVecs(:,:,:),EVals(:)
+        complex(dp) :: InvMat(nImp,nImp),InvMat2(nImp,nImp),num(nImp,nImp)!,hamtmp(nSites,nSites)
         logical :: tMatbrAxis_
         character(len=*), parameter :: t_r='CalcLatticeSpectrum'
 
@@ -294,8 +295,26 @@ module SelfConsistentLR2
             call stop_all(t_r,'No hamiltonian (r or k space) read in')
         endif
 
-        call LatParams_to_ham(iLatParams,LatParams,mu,hamtmp)
-        call writematrixcomp(hamtmp,'real space ham',.true.)
+!        call LatParams_to_ham(iLatParams,LatParams,mu,hamtmp)
+!        allocate(EVecs(nImp,nImp,nKPnts))
+!        allocate(EVals(nSites))
+!        call KBlocks_to_diag(KBlocks,EVecs,EVals)
+!        call writematrixcomp(hamtmp,'real space ham',.true.)
+!        call writevectorcomp(EVals,'EVals')
+!        deallocate(EVecs,EVals)
+!        hamtmp = zzero
+!        do i = 1,nKPnts
+!            ind_1 = ((i-1)*nImp) + 1
+!            ind_2 = nImp*i
+!            hamtmp(ind_1:ind_2,ind_1:ind_2) = KBlocks(:,:,i)
+!        enddo
+!        compval = zzero
+!        do i = 1,nSites
+!            do j = 1,nSites
+!                compval = compval + RtoK_Rot(1,i)*hamtmp(i,j)*dconjg(RtoK_Rot(2,j))
+!            enddo
+!        enddo
+!        write(6,*) "Element 1,2 of ham: ",compval
 
         i = 0
         do while(.true.)
@@ -328,21 +347,21 @@ module SelfConsistentLR2
                     enddo
                     call mat_inv(InvMat,InvMat2)
 
-                    do ii = 1,nImp
-                        do jj = 1,nImp
-                            if(ii.eq.jj) then
-                                cycle
-                            else
-                                if(abs(aimag(InvMat2(ii,jj))+aimag(InvMat2(jj,ii))).gt.1.0e-5_dp) then
-                                    call writematrixcomp(InvMat,'Mat',.true.)
-                                    call writematrixcomp(InvMat2,'InvMat',.true.)
-                                    write(6,*) "Omega: ",Omega
-                                    write(6,*) "k: ",k
-                                    write(6,*) "Error is: ",abs(aimag(InvMat2(ii,jj))+aimag(InvMat2(jj,ii)))
-                                endif
-                            endif
-                        enddo
-                    enddo
+!                    do ii = 1,nImp
+!                        do jj = 1,nImp
+!                            if(ii.eq.jj) then
+!                                cycle
+!                            else
+!                                if(abs(aimag(InvMat2(ii,jj))+aimag(InvMat2(jj,ii))).gt.1.0e-5_dp) then
+!                                    call writematrixcomp(InvMat,'Mat',.true.)
+!                                    call writematrixcomp(InvMat2,'InvMat',.true.)
+!                                    write(6,*) "Omega: ",Omega
+!                                    write(6,*) "k: ",k
+!                                    write(6,*) "Error is: ",abs(aimag(InvMat2(ii,jj))+aimag(InvMat2(jj,ii)))
+!                                endif
+!                            endif
+!                        enddo
+!                    enddo
                     ind_1 = ((k-1)*nImp) + 1
                     ind_2 = nImp*k
 

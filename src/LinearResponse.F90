@@ -85,7 +85,8 @@ module LinearResponse
         if(tStaticBathFitLat.and.(.not.tEnvLatHam)) then
             call stop_all(t_r,'Fit lattice hamiltonian in static bath, but not external space??')
         endif
-
+        
+        !call writematrixcomp(cham,'real space ham in LR',.true.)
         maxminres_iter = iMinRes_MaxIter
         iters_p = 0
         iters_h = 0
@@ -211,13 +212,12 @@ module LinearResponse
                     deallocate(temp)
                 endif
             endif
-
-            write(6,*) "Lattice eigenvalues: ",GFChemPot
-            do i = 1,nSites/2
-                write(6,*) (LatVals(i)-GFChemPot)+(LatVals(nSites-i+1)-GFChemPot)
-                if(abs(aimag(LatVals(i))).gt.1.0e-8_dp) call stop_all(t_r,'Lattice eigenvalues complex')
-                if(abs((LatVals(i)-GFChemPot)+(LatVals(nSites-i+1)-GFChemPot)).gt.1.0e-6_dp) call stop_all(t_r,'Losing ph sym')
-            enddo
+!            write(6,*) "Lattice eigenvalues: ",GFChemPot
+!            do i = 1,nSites/2
+!                write(6,*) (LatVals(i)-GFChemPot)+(LatVals(nSites-i+1)-GFChemPot)
+!                if(abs(aimag(LatVals(i))).gt.1.0e-8_dp) call stop_all(t_r,'Lattice eigenvalues complex')
+!                if(abs((LatVals(i)-GFChemPot)+(LatVals(nSites-i+1)-GFChemPot)).gt.1.0e-6_dp) call warning(t_r,'Losing ph sym')
+!            enddo
 
         endif
 
@@ -8804,7 +8804,7 @@ module LinearResponse
         complex(dp), allocatable :: AO_OneE_Ham(:,:),W_Vals(:),RVec(:,:),LVec(:,:),FullSchmidtTrans_C(:,:)
         complex(dp), allocatable :: HFPertBasis_Ann_Ket(:,:),HFPertBasis_Cre_Ket(:,:),temp(:,:),temp2(:,:)
         complex(dp), allocatable :: HFPertBasis_Ann_Bra(:,:),HFPertBasis_Cre_Bra(:,:),cWork(:),EmbeddedBasis_C(:,:)
-        complex(dp) :: mat(nSites,nSites),mat2(nSites,nSites)
+!        complex(dp) :: mat(nSites,nSites),mat2(nSites,nSites)
         integer :: lwork,info,i,a,pertBra,j,pertsite,nVirt,CoreEnd,VirtStart,ActiveStart,ActiveEnd,nCore
         integer :: kPnt,ind_1,ind_2
         complex(dp) :: test
@@ -8888,24 +8888,23 @@ module LinearResponse
                 enddo
             enddo
         enddo
+!        !Calculate NI, 1,2 for comparison
+!        mat = zzero
+!        do i = 1,nSites
+!            !mat(i,i) = zone/(dcmplx(GFChemPot,Omega)-EVals_R(i))
+!            mat(i,i) = EVals_R(i)
+!        enddo
+!        call ZGEMM('N','C',nSites,nSites,nSites,zone,mat,nSites,LVec_R,nSites,zzero,mat2,nSites)
+!        call ZGEMM('N','N',nSites,nSites,nSites,zone,RVec_R,nSites,mat2,nSites,zzero,mat,nSites)
+!
+!        call writematrixcomp(mat,'real space ham 2',.true.)
+!        !call writematrixcomp(NI_LRMat_Cre + NI_LRMat_Ann,'Calc NI GF',.true.)
+!        call writevectorcomp(EVals_R,'EVals_nonhermdiag')
+!        call writevectorcomp(LVec_R(:,1),'LVec(:,1)')
+!        call writevectorcomp(RVec_R(:,1),'RVec(:,1)')
+!        call writevectorcomp(LVec_R(:,2),'LVec(:,2)')
+!        call writevectorcomp(RVec_R(:,2),'RVec(:,2)')
 
-        !Calculate NI, 1,2 for comparison
-        mat = zzero
-        do i = 1,nSites
-            !mat(i,i) = zone/(dcmplx(GFChemPot,Omega)-EVals_R(i))
-            mat(i,i) = EVals_R(i)
-        enddo
-        call ZGEMM('N','C',nSites,nSites,nSites,zone,mat,nSites,LVec_R,nSites,zzero,mat2,nSites)
-        call ZGEMM('N','N',nSites,nSites,nSites,zone,RVec_R,nSites,mat2,nSites,zzero,mat,nSites)
-
-        call writematrixcomp(mat,'real space ham 2',.true.)
-        !call writematrixcomp(NI_LRMat_Cre + NI_LRMat_Ann,'Calc NI GF',.true.)
-        call writevectorcomp(EVals_R,'EVals_nonhermdiag')
-        call writevectorcomp(LVec_R(:,1),'LVec(:,1)')
-        call writevectorcomp(RVec_R(:,1),'RVec(:,1)')
-        call writevectorcomp(LVec_R(:,2),'LVec(:,2)')
-        call writevectorcomp(RVec_R(:,2),'RVec(:,2)')
-        
         !Schmidt basis bounds
         nVirt = nSites-nOcc-nImp   
         nCore = nOcc-nImp
