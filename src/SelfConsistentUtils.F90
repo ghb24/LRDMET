@@ -658,12 +658,12 @@ module SelfConsistentUtils
                 if(tCheckOffDiagHerm_) then
                     do k = 1,nImp
                         if(k.ne.j) then
-                            if(abs(Func(k,j,i)-dconjg(Func(j,k,i))).gt.1.0e-6) then
+                            if(abs(Func(k,j,i)-dconjg(Func(j,k,i))).gt.1.0e-5) then
                                 write(6,*) "While writing file: ",filename
                                 if(present(tag)) write(6,*) "Filename extension: ",tag
                                 write(6,*) "Element of function: ",k,j
                                 write(6,*) "Frequency point: ",Omega
-                                write(6,*) "Values: ",Func(k,j,i),Func(j,k,i)
+                                write(6,*) "Values: ",Func(k,j,i),Func(j,k,i),abs(Func(k,j,i)-dconjg(Func(j,k,i)))
                                 if(tWarn_) then
                                     call warning(t_r,'Function no longer off-diagonal hermitian')
                                 else

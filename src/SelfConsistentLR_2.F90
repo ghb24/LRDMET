@@ -87,7 +87,7 @@ module SelfConsistentLR2
             iter = iter + 1
 
             call writedynamicfunction(nFitPoints,CorrFn_Fit,'G_Lat_Fit',tag=iter,tCheckCausal=.true.,   &
-                tCheckOffDiagHerm=.true.,tWarn=.false.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
+                tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
 
 !            write(6,*) "For iteration ",iter
 !            write(6,*) "First nImp rows of the lattice hamiltonian: "
@@ -102,9 +102,9 @@ module SelfConsistentLR2
                 call SchmidtGF_wSE(CorrFn_HL,GFChemPot,dummy_Im,nFitPoints,tMatbrAxis=tFitMatAxis,  &
                     cham=h_lat_fit,FreqPoints=FreqPoints,Lat_G_Mat=Debug_Lat_CorrFn_Fit)
                 call writedynamicfunction(nFitPoints,Debug_Lat_CorrFn_Fit,'G_LatDebug_Fit',tag=iter,    &
-                    tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.false.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
+                    tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
                 call writedynamicfunction(nFitPoints,CorrFn_HL,'G_Imp_Fit',tag=iter,    &
-                    tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.false.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
+                    tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
             else
                 call stop_all(t_r,'Non GF correlation functions not yet coded up')
             endif
@@ -206,7 +206,7 @@ module SelfConsistentLR2
         !    call WriteBandstructure(Couplings,iLatParams)
         !endif
         call writedynamicfunction(nFitPoints,CorrFn_Fit,'G_Lat_Fit_Final',      &
-            tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.false.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
+            tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
 
         deallocate(DiffImpCorrFn,AllDiffs,CorrFn_Fit_Old,CorrFn_Fit,CorrFn_HL_Old,dummy_Im,Debug_Lat_CorrFn_Fit)
         if(tCalcRealSpectrum) deallocate(dummy_Re,CorrFn_HL_Re,CorrFn_Re,Debug_Lat_CorrFn_Re)
