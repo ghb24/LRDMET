@@ -774,11 +774,11 @@ module SelfConsistentLR2
         endif
             
         if(tImposephsym.or.tImposeksym.or.tConstrainphsym) then
-            allocate(PreSymCorr(nImp,nImp,n))
-            call CalcLatticeSpectrum(iCorrFnTag,n,PreSymCorr,mu,tMatbrAxis=tMatbrAxis,    &
-                iLatParams=iLatParams,LatParams=vars,FreqPoints=FreqPoints)
-            call writedynamicfunction(n,PreSymCorr,'G_Lat_Presym',tag=iter+1,tMatbrAxis=tMatbrAxis,FreqPoints=FreqPoints)
-            deallocate(PreSymCorr)
+!            allocate(PreSymCorr(nImp,nImp,n))
+!            call CalcLatticeSpectrum(iCorrFnTag,n,PreSymCorr,mu,tMatbrAxis=tMatbrAxis,    &
+!                iLatParams=iLatParams,LatParams=vars,FreqPoints=FreqPoints)
+!            call writedynamicfunction(n,PreSymCorr,'G_Lat_Presym',tag=iter+1,tMatbrAxis=tMatbrAxis,FreqPoints=FreqPoints)
+!            deallocate(PreSymCorr)
             if(tImposephsym.or.tImposeksym) then
                 !Impose momentum inversion, and potentially ph symmetry
                 !Symmetrize the resulting eigenvalues
