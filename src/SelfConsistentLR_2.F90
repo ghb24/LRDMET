@@ -812,7 +812,7 @@ module SelfConsistentLR2
             call CalcLatticeFitResidual_2(iCorrFnTag,CorrFn_HL,n,mu,iLatParams,vars,FinalErr2,.true., &
                     FreqPoints=FreqPoints, Weights=Weights)
             write(6,"(A,G20.10)") "Final residual after symmetrization of lattice h: ",FinalErr2
-            write(6,"()") "Change in residual from symmetrizing variables: ",FinalErr2-FinalErr
+            write(6,"(A,G20.10)") "Change in residual from symmetrizing variables: ",FinalErr2-FinalErr
             FinalErr = FinalErr2
             write(6,"(A)") "Lattice after symmetrization of parameters: "
             write(6,*) vars(:)
