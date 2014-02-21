@@ -735,6 +735,30 @@ module SelfConsistentUtils
         close(iunit)
 
     end subroutine writedynamicfunction
+            
+    subroutine CheckGFsSame(n,G,G_,dTol)
+        implicit none
+        integer, intent(in) :: n
+        complex(dp), intent(in) :: G(nImp,nImp,n)
+        complex(dp), intent(in) :: G_(nImp,nImp,n)
+        real(dp) , intent(in) :: dTol
+        character(len=*), parameter :: t_r='CheckGFsSame'
+        integer :: i,j,k
+
+        do i = 1,n
+            do j = 1,nImp
+                do k = 1,nImp
+                    if(abs(G(k,j,i)-G_(k,j,i)).gt.dTol) then
+                        write(6,*) "Frequency point: ",i
+                        write(6,*) "Element: ",j,k
+                        write(6,*) "Values: ",G(k,j,i),G_(k,j,i)
+                        call stop_all(t_r,'Local functions not the same')
+                    endif
+                enddo
+            enddo
+        enddo
+
+    end subroutine CheckGFsSame
     
     !This function inverts a local greens function matrix, allowing it to be non-hermitian
     !Function is sent in as the normal greens function, n, nImp x nImp matrices, and the inverse

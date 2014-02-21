@@ -3142,30 +3142,6 @@ module SelfConsistentLR
         deallocate(LocalH,TrueLocGF)
 
     end subroutine CheckNIGFsSame
-            
-    subroutine CheckGFsSame(n,G,G_,dTol)
-        implicit none
-        integer, intent(in) :: n
-        complex(dp), intent(in) :: G(nImp,nImp,n)
-        complex(dp), intent(in) :: G_(nImp,nImp,n)
-        real(dp) , intent(in) :: dTol
-        character(len=*), parameter :: t_r='CheckGFsSame'
-        integer :: i,j,k
-
-        do i = 1,n
-            do j = 1,nImp
-                do k = 1,nImp
-                    if(abs(G(k,j,i)-G_(k,j,i)).gt.dTol) then
-                        write(6,*) "Frequency point: ",i
-                        write(6,*) "Element: ",j,k
-                        write(6,*) "Values: ",G(k,j,i),G_(k,j,i)
-                        call stop_all(t_r,'Local functions not the same')
-                    endif
-                enddo
-            enddo
-        enddo
-
-    end subroutine CheckGFsSame
 
     !Now calculate X', the local coupling function, as
     ![omega + mu + i delta - h00 - Delta]^-1

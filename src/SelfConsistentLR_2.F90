@@ -87,7 +87,7 @@ module SelfConsistentLR2
             iter = iter + 1
 
             call writedynamicfunction(nFitPoints,CorrFn_Fit,'G_Lat_Fit',tag=iter,tCheckCausal=.true.,   &
-                tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
+                tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
 
 !            write(6,*) "For iteration ",iter
 !            write(6,*) "First nImp rows of the lattice hamiltonian: "
@@ -101,10 +101,11 @@ module SelfConsistentLR2
 !                call writematrixcomp(h_lat_fit,'real space matrix sent to LR',.true.)
                 call SchmidtGF_wSE(CorrFn_HL,GFChemPot,dummy_Im,nFitPoints,tMatbrAxis=tFitMatAxis,  &
                     cham=h_lat_fit,FreqPoints=FreqPoints,Lat_G_Mat=Debug_Lat_CorrFn_Fit)
-                call writedynamicfunction(nFitPoints,Debug_Lat_CorrFn_Fit,'G_LatDebug_Fit',tag=iter,    &
-                    tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
+!                call writedynamicfunction(nFitPoints,Debug_Lat_CorrFn_Fit,'G_LatDebug_Fit',tag=iter,    &
+!                    tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
+                call CheckGFsSame(nFitPoints,Debug_Lat_CorrFn_Fit,CorrFn_Fit,1.0e-7_dp)
                 call writedynamicfunction(nFitPoints,CorrFn_HL,'G_Imp_Fit',tag=iter,    &
-                    tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
+                    tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
             else
                 call stop_all(t_r,'Non GF correlation functions not yet coded up')
             endif
@@ -114,12 +115,13 @@ module SelfConsistentLR2
                     cham=h_lat_fit,Lat_G_Mat=Debug_Lat_CorrFn_Re)
                 call writedynamicfunction(nFreq_Re,CorrFn_HL_Re,'G_Imp_Re',tag=iter,    &
                     tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
-                call writedynamicfunction(nFreq_Re,Debug_Lat_CorrFn_Re,'G_LatDebug_Re',tag=iter,    &
-                    tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
+!                call writedynamicfunction(nFreq_Re,Debug_Lat_CorrFn_Re,'G_LatDebug_Re',tag=iter,    &
+!                    tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
                 call CalcLatticeSpectrum(iCorrFnTag,nFreq_Re,CorrFn_Re,GFChemPot,tMatbrAxis=.false.,    &
                     iLatParams=iLatParams,LatParams=LatParams)
                 call writedynamicfunction(nFreq_Re,CorrFn_Re,'G_Lat_Re',tag=iter,   &
                     tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
+                call CheckGFsSame(nFreq_Re,Debug_Lat_CorrFn_Re,CorrFn_Re,1.0e-7_dp)
             endif
 
             if(iLatticeFitType.eq.2) then
@@ -206,7 +208,7 @@ module SelfConsistentLR2
         !    call WriteBandstructure(Couplings,iLatParams)
         !endif
         call writedynamicfunction(nFitPoints,CorrFn_Fit,'G_Lat_Fit_Final',      &
-            tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
+            tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
 
         deallocate(DiffImpCorrFn,AllDiffs,CorrFn_Fit_Old,CorrFn_Fit,CorrFn_HL_Old,dummy_Im,Debug_Lat_CorrFn_Fit)
         if(tCalcRealSpectrum) deallocate(dummy_Re,CorrFn_HL_Re,CorrFn_Re,Debug_Lat_CorrFn_Re)
@@ -606,7 +608,7 @@ module SelfConsistentLR2
         real(dp), allocatable :: Freqs_dum(:),Weights_dum(:),low(:),upp(:),grad(:),wa(:)
         integer, allocatable :: iwork(:),nbd(:),iwa(:)
         integer :: nop,i,maxf,iprint,nloop,iquad,ierr,nFuncs,j,ierr_tmp,corrs
-        real(dp) :: stopcr,simp,rhobeg,rhoend,InitErr,dsave(29),pgtol
+        real(dp) :: stopcr,simp,rhobeg,rhoend,InitErr,dsave(29),pgtol,FinalErr2
         logical :: tfirst,tOptEVals_,tNonStandardGrid
         complex(dp), allocatable :: PreSymCorr(:,:,:)
         character(len=60) :: task,csave
@@ -807,9 +809,11 @@ module SelfConsistentLR2
             endif
 
             !Calculate the new final residual
-            call CalcLatticeFitResidual_2(iCorrFnTag,CorrFn_HL,n,mu,iLatParams,vars,FinalErr,.true., &
+            call CalcLatticeFitResidual_2(iCorrFnTag,CorrFn_HL,n,mu,iLatParams,vars,FinalErr2,.true., &
                     FreqPoints=FreqPoints, Weights=Weights)
-            write(6,"(A,G20.10)") "Final residual after symmetrization of eigenvalues: ",FinalErr
+            write(6,"(A,G20.10)") "Final residual after symmetrization of lattice h: ",FinalErr2
+            write(6,"()") "Change in residual from symmetrizing variables: ",FinalErr2-FinalErr
+            FinalErr = FinalErr2
             write(6,"(A)") "Lattice after symmetrization of parameters: "
             write(6,*) vars(:)
         endif
