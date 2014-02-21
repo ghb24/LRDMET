@@ -175,6 +175,7 @@ module SelfConsistentUtils
             if(tImposephsym.or.tImposeKSym) then
                 call ImposeSym_2(iLatParams,LatParams,mu)
             endif
+            call LatParams_to_ham(iLatParams,LatParams,mu,ham)
         else
             !Just set to h0v
             ham = zzero
@@ -558,6 +559,16 @@ module SelfConsistentUtils
             do i = 1,nFreqPoints
                 write(6,"(I9,2G20.13)") i,FreqPoints(i),Weights(i)
             enddo
+            !Which axis do we want to do the fitting on?
+            if(tFitRealFreq) then
+                nFitPoints = nFreq_Re   
+                tCalcRealSpectrum = .false.
+                tFitMatAxis = .false.
+            else
+                nFitPoints = nFreq_Im
+                tFitMatAxis = .true.
+            endif
+        
         else
             nFreq_Im = 0
             OmegaVal = 0
@@ -566,21 +577,29 @@ module SelfConsistentUtils
                 if(OmegaVal.lt.0) exit
                 nFreq_Im = nFreq_Im + 1
             enddo
+            !Which axis do we want to do the fitting on?
+            if(tFitRealFreq) then
+                nFitPoints = nFreq_Re   
+                tCalcRealSpectrum = .false.
+                tFitMatAxis = .false.
+            else
+                nFitPoints = nFreq_Im
+                tFitMatAxis = .true.
+            endif
+            allocate(FreqPoints(nFitPoints))
+            allocate(Weights(nFitPoints))
+            OmegaVal = 0
+            do while(.true.)
+                call GetNextOmega(Omega,OmegaVal,tFitMatAxis)
+                if(OmegaVal.lt.0) exit
+                FreqPoints(OmegaVal) = Omega
+                Weights(OmegaVal) = one
+            enddo
         endif
-        call flush(6)
 
-        !Which axis do we want to do the fitting on?
-        if(tFitRealFreq) then
-            nFitPoints = nFreq_Re   
-            tCalcRealSpectrum = .false.
-            tFitMatAxis = .false.
-        else
-            nFitPoints = nFreq_Im
-            tFitMatAxis = .true.
-        endif
-        
         !Initially, just see if we can fit the two different Matsubara spectral functions
         write(6,*) "Number of frequency points to fit across: ",nFitPoints
+        call flush(6)
 
     end subroutine SetFreqPoints
 

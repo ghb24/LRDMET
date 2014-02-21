@@ -260,7 +260,7 @@ module SelfConsistentLR2
         real(dp) :: Omega
 !        complex(dp) :: compval
         complex(dp), allocatable :: KBlocks(:,:,:)!,EVecs(:,:,:),EVals(:)
-        complex(dp) :: InvMat(nImp,nImp),InvMat2(nImp,nImp),num(nImp,nImp)!,hamtmp(nSites,nSites)
+        complex(dp) :: InvMat(nImp,nImp),InvMat2(nImp,nImp),num(nImp,nImp),GFContrib(nImp,nImp)!,hamtmp(nSites,nSites)
         logical :: tMatbrAxis_
         character(len=*), parameter :: t_r='CalcLatticeSpectrum'
 
@@ -330,6 +330,8 @@ module SelfConsistentLR2
 
                 InvMat(:,:) = - KBlocks(:,:,k)
 
+!                write(6,"(A,I6,A,2G25.10)") "For kpoint: ",k," h Off diagonal matrix element: ",InvMat(1,2)
+!                write(6,"(A,I6,A,G25.10)") "For kpoint: ",k," h Off diagonal hermiticity: ",abs(InvMat(1,2)-dconjg(InvMat(2,1)))
                 if(iCorrFn.eq.1) then
                     !Greens function
                     do j = 1,nImp
@@ -346,7 +348,9 @@ module SelfConsistentLR2
                         endif
                     enddo
                     call mat_inv(InvMat,InvMat2)
-
+                
+!                    call writematrixcomp(InvMat2,'Inverse matrix from mat_inv',.true.)
+!                    write(6,"(A,I6,A,G25.10)") "For kpoint: ",k," (w-h)^-1 Off diagonal hermiticity: ",abs(InvMat2(1,2)-dconjg(InvMat2(2,1)))
 !                    do ii = 1,nImp
 !                        do jj = 1,nImp
 !                            if(ii.eq.jj) then
@@ -374,7 +378,11 @@ module SelfConsistentLR2
                     call ZGEMM('N','C',nImp,nImp,nImp,zone,InvMat2,nImp,InvMat,nImp,    &
                         zzero,num,nImp)
                     call ZGEMM('N','N',nImp,nImp,nImp,zone,InvMat,nImp,num,nImp,  &
-                        zone,CorrFn(:,:,i),nImp)
+                        zzero,GFContrib,nImp)
+                    
+!                    write(6,"(A,I6,A,2G25.10)") "For kpoint: ",k," G real space Off diagonal matrix element: ",GFContrib(1,2)
+!                    write(6,"(A,I6,A,G25.10)") "For kpoint: ",k," G real space Off diagonal hermiticity: ",abs(GFContrib(1,2)-dconjg(GFContrib(2,1)))
+                    CorrFn(:,:,i) = CorrFn(:,:,i) + GFContrib(:,:)
                         
                 else
                     call stop_all(t_r,'Cannot deal with non-greens functions right now')

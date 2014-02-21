@@ -13,7 +13,8 @@ MODULE matrixops
 
   INTERFACE mat_inv
     MODULE PROCEDURE d_inv
-    MODULE PROCEDURE z_inv
+    MODULE PROCEDURE z_inv2
+    !MODULE PROCEDURE z_inv
   END INTERFACE
 
   INTERFACE det
@@ -36,6 +37,42 @@ MODULE matrixops
   END INTERFACE
 
 CONTAINS
+
+  SUBROUTINE z_inv2(mat,matinv)
+    use const
+    complex(dp), intent(in) :: mat(:,:)
+    complex(dp), dimension(size(mat,1),size(mat,2)), intent(out) :: matinv
+    integer, dimension(size(mat,1)) :: ipiv
+    integer :: msize,nsize,lwork,info
+    complex(dp), allocatable :: cWork(:)
+
+    msize=size(mat,1)
+    nsize=size(mat,2)
+    if(msize.ne.nsize) stop 'error in z_inv2'
+    matinv = mat
+
+    info=0
+    call ZGETRF(msize,nsize,matinv,nsize,ipiv,info)
+    IF (INFO /= 0) then
+        write(6,*) "info: ",info
+        STOP 'Error with z_inv2 1'
+    endif
+    allocate(cWork(1))
+    lwork = -1
+    call ZGETRI(msize,matinv,msize,ipiv,cwork,lwork,info)
+    if(info.ne.0) stop 'error with workspace query in z_inv2'
+    lWork = int(real(cWork(1))) + 1
+    deallocate(cWork)
+    allocate(cWork(lWork))
+    call ZGETRI(msize,matinv,msize,ipiv,cwork,lwork,info)
+    if(info.ne.0) stop 'error with inversion in z_inv2'
+    deallocate(cWork)
+
+  end subroutine z_inv2
+
+
+
+
   SUBROUTINE z_inv (mat,matinv)
     use const
     
