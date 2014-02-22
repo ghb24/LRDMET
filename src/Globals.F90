@@ -228,6 +228,7 @@ module Globals
     logical :: tConstrainphsym      !Constrain ph sym in fit
     logical :: tImposeKSym          !Impose k symmetry on the fit
     logical :: tImposephSym         !Impose ph symmetry on the fit
+    logical :: tDiagonalSC          !Diagonal self-consistency residual
 
     !Debugging for Self-consistency
     logical :: tSE_Scan

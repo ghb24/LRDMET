@@ -151,6 +151,7 @@ Program RealHub
         tConstrainphSym = .false.   !Restrict the fit to conserve ph symmetry
         tImposeKSym = .false.       !Impose momentum symmetry on the fit values
         tImposephSym = .false.      !Impose ph symmetry on the fit values
+        tDiagonalSC = .false.       !Diagonal GF approx for residual
 
     end subroutine set_defaults
 
@@ -680,6 +681,8 @@ Program RealHub
                 call readf(Start_SE_Im)
                 call readf(End_SE_Im)
                 call readf(SE_Step_Im)
+            case("FIT_DIAGONALS")
+                tDiagonalSC = .true.
             case("SELF-CONSISTENCY")
                 if(item.lt.nitems) then
                     call readi(iGF_Fit)
@@ -703,6 +706,7 @@ Program RealHub
                 write(6,"(A)") "IMPOSE_PH_SYM"
                 write(6,"(A)") "CONSTRAIN_K_SYM"
                 write(6,"(A)") "CONSTRAIN_PH_SYM"
+                write(6,"(A)") "FIT_DIAGONALS"
                 write(6,"(A)") "FIT_REALFREQ"
                 write(6,"(A)") "MANYBODY_SELFENERGY"
                 write(6,"(A)") "MATSUBARA_FREQ"

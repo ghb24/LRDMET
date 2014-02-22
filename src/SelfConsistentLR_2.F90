@@ -30,11 +30,24 @@ module SelfConsistentLR2
         real(dp), parameter :: dDeltaImpThresh = 1.0e-4_dp 
         character(len=*), parameter :: t_r='SC_Spectrum_Opt'
 
+        write(6,"(A)") ""
+        write(6,"(A)") " *** Entering code of self-consistent optimizating of spectral functions ... ***"
+        write(6,"(A)") ""
+
+        iCorrFnTag = 1    !1 for greens function optimization
+        
+        if(iCorrFnTag.eq.1) then
+            write(6,"(A)") "Single particle greens functions to be optimized."
+            if(tDiagonalSC) then
+                write(6,"(A)") "Fitting only the diagonal impurity greens function contributions."
+            else
+                write(6,"(A)") "Fitting the entire impurity local greens function matrix."
+            endif
+        endif
+
         if(.not.tDiag_kSpace) then
             call stop_all(t_r,"Unfortunately, this is only for systems with a kspace representation currently")
         endif
-
-        iCorrFnTag = 1    !1 for greens function optimization
 
         !This will set FreqPoints and Weights. nFitPoints is the size of FreqPoints/Weights, 
         !and may refer to real or im axis based on the tFitRealFreq flag.
@@ -489,6 +502,7 @@ module SelfConsistentLR2
             !Now, sum the squares, with the appropriate weighting factor
             do j = 1,nImp
                 do k = 1,nImp
+                    if(tDiagonalSC.and.(j.ne.k)) cycle  !In the diagonal approximation, the off diagonal GFs are not included
                     if(iFitGFWeighting.eq.0) then
                         !Flat weighting
                         if(tNonStandardGrid) then
@@ -942,9 +956,13 @@ module SelfConsistentLR2
 
                         compval = zzero
                         do jj = 1,nImp
-                            do ii = 1,nImp
-                                compval = compval + ztmp2(ii,jj)
-                            enddo
+                            if(tDiagonalSC) then
+                                compval = compval + ztmp2(jj,jj)
+                            else
+                                do ii = 1,nImp
+                                    compval = compval + ztmp2(ii,jj)
+                                enddo
+                            endif
                         enddo
                         if(tNonStandardGrid) then
                             FullJac_Re(j,i,k) = FullJac_Re(j,i,k) + (compval * Weights(w))
@@ -992,9 +1010,13 @@ module SelfConsistentLR2
 
                             compval = zzero
                             do jj = 1,nImp
-                                do ii = 1,nImp
-                                    compval = compval + ztmp2(ii,jj)
-                                enddo
+                                if(tDiagonalSC) then
+                                    compval = compval + ztmp2(jj,jj)
+                                else
+                                    do ii = 1,nImp
+                                        compval = compval + ztmp2(ii,jj)
+                                    enddo
+                                endif
                             enddo
                             if(tNonStandardGrid) then
                                 FullJac_Im(j,i,k) = FullJac_Im(j,i,k) + (compval * Weights(w))
