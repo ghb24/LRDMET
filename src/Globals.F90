@@ -229,6 +229,7 @@ module Globals
     logical :: tImposeKSym          !Impose k symmetry on the fit
     logical :: tImposephSym         !Impose ph symmetry on the fit
     logical :: tDiagonalSC          !Diagonal self-consistency residual
+    real(dp) :: dFitTol_SC          !Tolerance on the gradient for convergence
 
     !Debugging for Self-consistency
     logical :: tSE_Scan

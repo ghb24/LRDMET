@@ -152,6 +152,7 @@ Program RealHub
         tImposeKSym = .false.       !Impose momentum symmetry on the fit values
         tImposephSym = .false.      !Impose ph symmetry on the fit values
         tDiagonalSC = .false.       !Diagonal GF approx for residual
+        dFitTol_SC = 1.0e-5_dp      !Tolerance on the gradient of the fits
 
     end subroutine set_defaults
 
@@ -613,6 +614,9 @@ Program RealHub
             case("FIT_ALGO")
                 !1 = simplex, 2 = powell
                 call readi(iFitAlgo)
+                if(item.lt.nitems) then
+                    call readf(dFitTol_SC)
+                endif
             case("MATSUBARA_FREQ")
                 call readf(Start_Omega_Im)
                 call readf(End_Omega_Im)

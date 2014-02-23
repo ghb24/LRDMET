@@ -649,7 +649,7 @@ module SelfConsistentLR2
             !rhoend = 1.0e12_dp  !Low accuracy
             !rhoend = 1.0e7_dp   !Mid accuracy
             rhoend = 10.0_dp    !High accuracy
-            pgtol = 1.0e-5_dp   !Maximum gradient exit criterion
+            pgtol = dFitTol_SC   !Maximum gradient exit criterion. Default=1E-5
 
             allocate(grad(iLatParams))
             
