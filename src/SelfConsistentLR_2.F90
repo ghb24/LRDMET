@@ -114,9 +114,9 @@ module SelfConsistentLR2
 !                call writematrixcomp(h_lat_fit,'real space matrix sent to LR',.true.)
                 call SchmidtGF_wSE(CorrFn_HL,GFChemPot,dummy_Im,nFitPoints,tMatbrAxis=tFitMatAxis,  &
                     cham=h_lat_fit,FreqPoints=FreqPoints,Lat_G_Mat=Debug_Lat_CorrFn_Fit)
-!                call writedynamicfunction(nFitPoints,Debug_Lat_CorrFn_Fit,'G_LatDebug_Fit',tag=iter,    &
-!                    tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
-                call CheckGFsSame(nFitPoints,Debug_Lat_CorrFn_Fit,CorrFn_Fit,1.0e-7_dp)
+                call writedynamicfunction(nFitPoints,Debug_Lat_CorrFn_Fit,'G_LatSchmidt_Fit',tag=iter,    &
+                    tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
+                !call CheckGFsSame(nFitPoints,Debug_Lat_CorrFn_Fit,CorrFn_Fit,1.0e-7_dp)
                 call writedynamicfunction(nFitPoints,CorrFn_HL,'G_Imp_Fit',tag=iter,    &
                     tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
             else
@@ -128,13 +128,13 @@ module SelfConsistentLR2
                     cham=h_lat_fit,Lat_G_Mat=Debug_Lat_CorrFn_Re)
                 call writedynamicfunction(nFreq_Re,CorrFn_HL_Re,'G_Imp_Re',tag=iter,    &
                     tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
-!                call writedynamicfunction(nFreq_Re,Debug_Lat_CorrFn_Re,'G_LatDebug_Re',tag=iter,    &
-!                    tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
+                call writedynamicfunction(nFreq_Re,Debug_Lat_CorrFn_Re,'G_LatSchmidt_Re',tag=iter,    &
+                    tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
                 call CalcLatticeSpectrum(iCorrFnTag,nFreq_Re,CorrFn_Re,GFChemPot,tMatbrAxis=.false.,    &
                     iLatParams=iLatParams,LatParams=LatParams)
                 call writedynamicfunction(nFreq_Re,CorrFn_Re,'G_Lat_Re',tag=iter,   &
                     tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
-                call CheckGFsSame(nFreq_Re,Debug_Lat_CorrFn_Re,CorrFn_Re,1.0e-7_dp)
+                !call CheckGFsSame(nFreq_Re,Debug_Lat_CorrFn_Re,CorrFn_Re,1.0e-7_dp)
             endif
 
             if(iLatticeFitType.eq.2) then

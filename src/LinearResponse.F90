@@ -18,7 +18,7 @@ module LinearResponse
         use mat_tools, only: add_localpot_comp_inplace
         use utils, only: get_free_unit,append_ext_real,append_ext
         use DetBitOps, only: DecodeBitDet,SQOperator,CountBits
-        use Davidson, only: Comp_NonDir_Davidson
+        use Davidson, only: Comp_NonDir_Davidson,DiagSubspaceMat_real,DiagSubspaceMat_comp
         use zminresqlpModule, only: MinresQLP  
         use DetToolsData
         use DetTools, only: tospat,umatind,gendets
@@ -58,6 +58,7 @@ module LinearResponse
         complex(dp) :: ResponseFn,tempel,ni_lr,ni_lr_p,ni_lr_h,AvResFn_p,AvResFn_h
         complex(dp) :: zdotc,VNorm,CNorm,SelfE(nImp,nImp)
         logical :: tParity,tFirst,tCompLatHam
+        logical, parameter :: tRemoveImpCouplings = .true. 
         character(64) :: filename,filename2
         character(len=*), parameter :: t_r='SchmidtGF_wSE'
 
@@ -176,7 +177,30 @@ module LinearResponse
             allocate(LatVecs_L(nSites,nSites))
             if(tCompLatHam) then
                 if(.not.present(ham_vals)) then
-                    call DiagNonHermLatticeHam(LatVals,LatVecs_R,LatVecs_L,cham=cham)
+                    if(tRemoveImpCouplings) then
+                        !Remove all the couplings from the impurity to the rest of the lattice *before* schmidt decomposition
+                        !The lattice hamiltonian from which the bath space is defined is still hermitian but lacks translational invariance
+                        allocate(ctemp(nSites,nSites))
+                        allocate(W(nSites))
+                        ctemp(:,:) = cham(:,:)
+                        do i = nImp+1,nSites
+                            do j = 1,nImp
+                                ctemp(j,i) = cmplx(h0(j,i),zero,dp)
+                                ctemp(i,j) = ctemp(j,i)
+                            enddo
+                        enddo
+                        !ctemp(1:nImp,nImp+1:nSites) = zzero
+                        !ctemp(nImp+1:nSites,1:nImp) = zzero
+                        call DiagSubspaceMat_comp(ctemp,nSites,W)
+                        do i = 1,nSites
+                            LatVals(i) = cmplx(W(i),zero,dp)
+                        enddo
+                        LatVecs_R(:,:) = ctemp(:,:)
+                        LatVecs_L(:,:) = ctemp(:,:)
+                        deallocate(W,ctemp)
+                    else
+                        call DiagNonHermLatticeHam(LatVals,LatVecs_R,LatVecs_L,cham=cham)
+                    endif
                 else
                     LatVals(:) = Ham_Vals(:)
                     LatVecs_R(:,:) = Ham_Vecs(:,:)
@@ -196,7 +220,24 @@ module LinearResponse
                 endif
             else
                 if(.not.present(ham_vals)) then
-                    call DiagNonHermLatticeHam(LatVals,LatVecs_R,LatVecs_L,ham=ham)
+                    if(tRemoveImpCouplings) then
+                        allocate(temp(nSites,nSites))
+                        allocate(W(nSites))
+                        temp(:,:) = ham(:,:)
+                        temp(1:nImp,nImp+1:nSites) = h0(1:nImp,nImp+1:nSites)
+                        temp(nImp+1:nSites,1:nImp) = h0(nImp+1:nSites,1:nImp)
+                        call DiagSubspaceMat_real(temp,nSites,W)
+                        do i = 1,nSites
+                            LatVals(i) = cmplx(W(i),zero,dp)
+                            do j = 1,nSites
+                                LatVecs_R(j,i) = cmplx(temp(j,i),zero,dp)
+                                LatVecs_L(j,i) = cmplx(temp(j,i),zero,dp)
+                            enddo
+                        enddo
+                        deallocate(W,temp)
+                    else
+                        call DiagNonHermLatticeHam(LatVals,LatVecs_R,LatVecs_L,ham=ham)
+                    endif
                 else
                     LatVals(:) = Ham_Vals(:)
                     LatVecs_R(:,:) = Ham_Vecs(:,:)
@@ -532,11 +573,11 @@ module LinearResponse
             call set_timer(LR_EC_GF_HBuild)
         
             if(tMatbrAxis_) then
-                write(6,*) "Calculating linear response for imaginary frequency: ",Omega
-                if(tMinRes_NonDir) write(minres_unit,*) "Iteratively solving for imaginary frequency: ",Omega
+                write(6,"(A,F12.6)") "Calculating linear response for imaginary frequency: ",Omega
+                if(tMinRes_NonDir) write(minres_unit,"(A,F12.6)") "Iteratively solving for imaginary frequency: ",Omega
             else
-                write(6,*) "Calculating linear response for frequency: ",Omega
-                if(tMinRes_NonDir) write(minres_unit,*) "Iteratively solving for frequency: ",Omega
+                write(6,"(A,F12.6)") "Calculating linear response for frequency: ",Omega
+                if(tMinRes_NonDir) write(minres_unit,"(A,F12.6)") "Iteratively solving for frequency: ",Omega
             endif
 !            call flush(6)
 

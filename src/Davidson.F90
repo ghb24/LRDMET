@@ -554,7 +554,7 @@ module Davidson
         complex(dp), allocatable :: Work(:)
         real(dp), allocatable :: RWork(:)
         integer :: lWork,info,ierr
-        character(len=*), parameter :: t_r='DiagSubspaceMat_real'
+        character(len=*), parameter :: t_r='DiagSubspaceMat_comp'
 
         allocate(Work(1),stat=ierr)
         allocate(RWork(max(1,3*iSize-2)),stat=ierr)
