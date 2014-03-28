@@ -9,6 +9,8 @@ program RealSpaceCoup
     complex(dp), parameter :: zone = cmplx(1.0_dp,0.0_dp,dp)
     real(dp), parameter :: pi = 3.1415926535897931_dp
 
+    integer, parameter :: nFreqPoints = 100
+
     integer :: nSites
 
     integer :: nImp,nKPnts
@@ -17,6 +19,8 @@ program RealSpaceCoup
     real(dp), allocatable :: h0(:,:),KPnts(:),RecipLattVecs(:)
     real(dp) :: PrimLattVec(1)
     complex(dp), allocatable :: RtoK_Rot(:,:)
+    complex(dp), allocatable :: FreqPoints(:)
+    complex(dp), allocatable :: Derivatives(:,:,:,:,:)
     save
 
     call main()
@@ -25,11 +29,14 @@ program RealSpaceCoup
 
     subroutine main()
         implicit none
-        integer :: i,j,k,ind_1,ind_2
-        real(dp) :: phase,r
+        integer :: i,j,k,ind_1,ind_2,w,ii,jj
+        real(dp) :: phase,r,diff,r2,err
         complex(dp), allocatable :: temp(:,:),ham_temp(:,:),Random_Corrpot(:,:)
         integer :: NonLocCoupLength
-        complex(dp), allocatable :: NonLocCoup(:,:)
+        complex(dp), allocatable :: NonLocCoup(:,:),ham_k(:,:)
+        complex(dp), allocatable :: GF_k(:,:,:),GF_r(:,:,:),InvHam(:,:),InvHam_2(:,:)
+        complex(dp), allocatable :: ham_temp_2(:,:),ham_temp_3(:,:),num(:,:)
+        complex(dp), allocatable :: NonLocCoup_tmp(:,:)
 
         write(6,*) "Enter total number of sites: "
         read(*,*) nSites
@@ -250,41 +257,238 @@ program RealSpaceCoup
         do j = 1,NonLocCoupLength
             do i = 1,nImp
                 call random_number(r)
-                NonLocCoup(i,j) = cmplx(r,zero,dp)
+                call random_number(r2)
+                if(r2.gt.0.5_dp) then
+                    NonLocCoup(i,j) = cmplx(-r,zero,dp)
+                else
+                    NonLocCoup(i,j) = cmplx(r,zero,dp)
+                endif
             enddo
         enddo
 
-        call WriteMatrixcomptoreal(ham_temp,'Before non-loc coups',.true.)
+        !call WriteMatrixcomptoreal(ham_temp,'Before non-loc coups',.true.)
 
         call Add_Nonlocal_comp_inplace(ham_temp,NonLocCoup,NonLocCoupLength,tAdd=.true.)
 
-        call WriteMatrixcomptoreal(ham_temp,'After non-loc coups',.true.)
+        !call WriteMatrixcomptoreal(ham_temp,'After non-loc coups',.true.)
 
         !Now, check whether it is still k-space kosher
         !Rotate ham_temp into k-space
         allocate(temp(nSites,nSites))
+        allocate(ham_k(nSites,nSites))
         call ZGEMM('C','N',nSites,nSites,nSites,zone,RtoK_Rot,nSites,ham_temp,nSites,zzero,temp,nSites)
-        call ZGEMM('N','N',nSites,nSites,nSites,zone,temp,nSites,RtoK_Rot,nSites,zzero,ham_temp,nSites)
+        call ZGEMM('N','N',nSites,nSites,nSites,zone,temp,nSites,RtoK_Rot,nSites,zzero,ham_k,nSites)
         !ham_temp is now in kspace
+        !call WriteMatrixcomp(ham_temp,'k-space ham after non-loc coups',.true.)
         !Zero the diagonal blocks
         do k = 1,nKPnts
             ind_1 = ((k-1)*nImp) + 1
             ind_2 = nImp*k
-            ham_temp(ind_1:ind_2,ind_1:ind_2) = zzero
+            ham_k(ind_1:ind_2,ind_1:ind_2) = zzero
         enddo
         !Now check to see if there are any non-zero elements. If so, the unitary rotation is not correct
         do i = 1,nSites
             do j = 1,nSites
-                if(abs(ham_temp(j,i)).gt.1.0e-7_dp) then
+                if(abs(ham_k(j,i)).gt.1.0e-7_dp) then
                     write(6,*) "i,j: ",j,i
-                    write(6,*) "ham in kspace: ",ham_temp(j,i)
+                    write(6,*) "ham in kspace: ",ham_k(j,i)
                     stop 'kspace rotations not correctly set up. ' &
                         //'One-electron hamiltonian is not block diagonal in kspace'
                 endif
             enddo
         enddo
-        deallocate(temp,Random_Corrpot,ham_temp)
         write(6,"(A)") "k-space rotations correctly block diagonalize one-electron matrix with non-local interactions"
+
+        write(6,*) ""
+
+        !Check real-space vs k-space definitions of the greens function
+        !First, stupidly remake k-space ham
+        call ZGEMM('C','N',nSites,nSites,nSites,zone,RtoK_Rot,nSites,ham_temp,nSites,zzero,temp,nSites)
+        call ZGEMM('N','N',nSites,nSites,nSites,zone,temp,nSites,RtoK_Rot,nSites,zzero,ham_k,nSites)
+        !Set frequency (imaginary) points
+        allocate(FreqPoints(nFreqPoints))
+        FreqPoints(:) = zzero
+        FreqPoints(1) = cmplx(0.0_dp,-2.0_dp,dp)
+        do i = 2,nFreqPoints
+            FreqPoints(i) = FreqPoints(i-1) + cmplx(0.0_dp,4.0_dp/nFreqPoints,dp)
+        enddo
+
+        allocate(GF_k(nImp,nImp,nFreqPoints))
+        allocate(GF_r(nImp,nImp,nFreqPoints))
+        GF_k(:,:,:) = zzero
+        GF_r(:,:,:) = zzero
+
+        allocate(InvHam(nImp,nImp))
+        allocate(InvHam_2(nImp,nImp))
+        allocate(num(nImp,nImp))
+
+        !k-space definition
+        do i = 1,nFreqPoints
+            do k = 1,nKPnts
+                ind_1 = ((k-1)*nImp) + 1
+                ind_2 = nImp*k
+
+                InvHam(:,:) = - ham_k(ind_1:ind_2,ind_1:ind_2)
+                do j = 1,nImp
+                    InvHam(j,j) = InvHam(j,j) + FreqPoints(i)
+                enddo
+                call mat_inv(InvHam,InvHam_2)
+                InvHam(:,:) = RtoK_Rot(1:nImp,ind_1:ind_2)
+                call ZGEMM('N','C',nImp,nImp,nImp,zone,InvHam_2,nImp,InvHam,nImp,zzero,num,nImp)
+                call ZGEMM('N','N',nImp,nImp,nImp,zone,InvHam,nImp,num,nImp,zone,GF_k(:,:,i),nImp)
+            enddo
+        enddo
+        deallocate(InvHam,InvHam_2,num)
+
+        !r-space definition
+        allocate(ham_temp_2(nSites,nSites))
+        allocate(ham_temp_3(nSites,nSites))
+        do i = 1,nFreqPoints
+
+            ham_temp_2(:,:) = - ham_temp(:,:)
+            do j = 1,nSites
+                ham_temp_2(j,j) = ham_temp_2(j,j) + FreqPoints(i)
+            enddo
+            call mat_inv(ham_temp_2,ham_temp_3)
+            GF_r(:,:,i) = ham_temp_3(1:nImp,1:nImp)
+        enddo
+            
+        !Are they the same?
+        call writeGF(GF_r,'RealSpace_GF')
+        call writeGF(GF_k,'KSpace_GF')
+
+        do i = 1,nFreqPoints
+            do j = 1,nImp
+                do k = 1,nImp
+                    if(abs(GF_k(k,j,i)-GF_r(k,j,i)).gt.1.0e-8_dp) then
+                        write(6,*) "R and k space greens functions not the same"
+                        write(6,*) "i: ",i,FreqPoints(i)
+                        write(6,*) "k-space: ",GF_k(k,j,i)
+                        write(6,*) "r-space: ",GF_r(k,j,i)
+                        stop 'greens functions not the same'
+                    endif
+                enddo
+            enddo
+        enddo
+
+        write(6,*) "r and k-space greens functions the same"
+
+        !Now find the derivative of the real-space greens function wrt changing the non-local coupling matrix elements
+        !Index 1 & 2 label the matrix
+        !Index 3 & 4 label the differential that we are taking
+        !Index 5 is the frequency
+        allocate(Derivatives(nImp,nImp,nImp,NonLocCoupLength,nFreqPoints))
+        Derivatives(:,:,:,:,:) = zzero
+
+        if(tAntiPeriodic) then
+            phase = -1.0_dp
+        elseif(tPeriodic) then
+            phase = 1.0_dp
+        endif
+
+        allocate(num(nSites,nSites))
+
+        do w = 1,nFreqPoints
+
+            !B is independent of the specific derivative. Therefore calculate it here.
+
+            ham_temp_2(:,:) = - ham_temp(:,:)
+            do j = 1,nSites
+                ham_temp_2(j,j) = ham_temp_2(j,j) + FreqPoints(w)
+            enddo
+            call mat_inv(ham_temp_2,ham_temp_3)
+            !ham_temp_3 is now the inverse of the greens function (we could do this with 2x k-space rotations instead?)
+            
+            do i = 1,NonLocCoupLength
+                do j = 1,nImp
+                    !Now, calculate the derivative of the inverse of the GF
+                    ham_temp_2(:,:) = zzero
+
+                    !Set up matrix with 1's or -1s for values of the coupling matrix element which we are differentiating wrt.
+                    do k = 1,nKPnts
+                        ind_1 = ((k-1)*nImp) + 1
+                        ind_2 = nImp*k
+
+                        !Coupling to the right
+                        if((ind_2+i).le.nSites) then
+                            ham_temp_2(ind_1+j-1,ind_2+i) = cmplx(-1.0_dp,0.0_dp,dp)
+                        else
+                            ham_temp_2(ind_1+j-1,ind_2+i-nSites) = cmplx(-phase,0.0_dp,dp)
+                        endif
+
+                        !Coupling to the left
+                        if((ind_1-i).ge.1) then
+                            ham_temp_2(ind_1+j-1,ind_1-i) = cmplx(-1.0_dp,0.0_dp,dp)
+                        else
+                            ham_temp_2(ind_1+j-1,ind_1-i+nSites) = cmplx(-phase,0.0_dp,dp)
+                        endif
+
+                    enddo
+!                    write(6,*) "imp: ",j
+!                    write(6,*) "CoupParam: ",i
+!                    call writematrixcomptoreal(ham_temp_2,'Deriv of B',.true.)
+
+                    !Right, now we can get the full derivative of the inverse of B (i.e. the greens function wrt changing the coefficients).
+                    !This currently does not use/require any periodicity. However, the matrix inverse could be improved with periodicity.
+
+                    !The operations below could *certainly* be sped up. Just for testing.
+                    call ZGEMM('N','N',nSites,nSites,nSites,zone,ham_temp_2,nSites,ham_temp_3,nSites,zzero,num,nSites)
+                    call ZGEMM('N','N',nSites,nSites,nSites,-zone,ham_temp_3,nSites,num,nSites,zzero,ham_temp_2,nSites)
+
+                    !ham_temp_2 is now the derivative of the *full* greens function wrt changing the coupling.
+                    !Seems a little profligate - I'm sure the local greens function could be done more efficiently.
+                    Derivatives(:,:,j,i,w) = ham_temp_2(1:nImp,1:nImp)
+                enddo
+            enddo
+        enddo
+        deallocate(num)
+
+        !Now we have all the derivatives, test if they are right or not!
+        allocate(NonLocCoup_tmp(nImp,NonLocCoupLength))
+        allocate(num(nImp,nImp))
+        open(78,file='DerivsTest',status='unknown')
+        do w = 1,nFreqPoints
+            do i = 1,NonLocCoupLength
+                do j = 1,nImp
+
+                    diff = 0.0001_dp
+                    do while(diff.gt.1.0e-12_dp)
+
+                        NonLocCoup_tmp(:,:) = NonLocCoup(:,:)
+                        NonLocCoup_tmp(j,i) = NonLocCoup_tmp(j,i) + diff
+
+                        !Calculate greens function for this frequency with new non-local coupling
+                        temp(:,:) = ham_temp(:,:)   !Real space hamiltonian
+                        call Add_Nonlocal_comp_inplace(temp,NonLocCoup_tmp,NonLocCoupLength,tAdd=.true.)
+                        ham_temp_2(:,:) = - temp(:,:)
+                        do jj = 1,nSites
+                            ham_temp_2(jj,jj) = ham_temp_2(jj,jj) + FreqPoints(w)
+                        enddo
+                        call mat_inv(ham_temp_2,ham_temp_3)
+
+                        !New greens function is now the 1:nImp block of ham_temp_3
+                        !Find the derivative of each element of the greens function
+                        num(:,:) = (ham_temp_3(1:nImp,1:nImp) - GF_r(:,:,w)) / diff
+                        !num is now the numerical gradient at each point
+                        !Find the difference as a single value over all the greens functions
+                        err = zero
+                        do ii = 1,nImp
+                            do jj = 1,nImp
+
+                                err = err + real((num(jj,ii)-Derivatives(jj,ii,j,i,w))*dconjg(num(jj,ii)-Derivatives(jj,ii,j,i,w)),dp)
+
+                            enddo
+                        enddo
+
+                        write(78,"(3I7,7G25.14)") w,i,j,diff,real(num(1,1)),aimag(num(1,1)),real(Derivatives(1,1,j,i,w)),aimag(Derivatives(1,1,j,i,w)),err,err/abs(Derivatives(1,1,j,i,w))
+
+                        diff = diff/2.0_dp
+                    enddo
+                    write(78,"(A)") ""
+                enddo
+            enddo
+        enddo
+        close(78)
 
     end subroutine main
 
@@ -398,6 +602,28 @@ program RealSpaceCoup
             enddo
         enddo
     end subroutine add_localpot_comp_inplace
+
+    subroutine WriteGF(gf,gfname)
+        implicit none
+        complex(dp), intent(in) :: gf(nImp,nImp,nFreqPoints)
+        character(len=*), intent(in) :: gfname
+        integer :: i,j,k
+
+        open(77,file=gfname,status='unknown')
+        do i = 1,nFreqPoints
+            write(77,"(F12.6)",advance='no') aimag(FreqPoints(i))
+            do j = 1,nImp
+                do k = 1,nImp
+                    if(k.eq.nImp.and.j.eq.nImp) cycle
+                    write(77,"(2F12.6)",advance='no') real(gf(k,j,i),dp),aimag(gf(k,j,i))
+                enddo
+            enddo
+            write(77,"(2F12.6)") real(gf(nImp,nImp,i),dp),aimag(gf(nImp,nImp,i))
+        enddo
+        close(77)
+
+    end subroutine WriteGF
+
     
     subroutine WriteMatrixcomp(mat,matname,tOneLine)
         implicit none
@@ -440,5 +666,36 @@ program RealSpaceCoup
             write(6,*)
         enddo
     end subroutine WriteMatrixcomptoreal
+  
+    SUBROUTINE mat_inv(mat,matinv)
+    complex(dp), intent(in) :: mat(:,:)
+    complex(dp), dimension(size(mat,1),size(mat,2)), intent(out) :: matinv
+    integer, dimension(size(mat,1)) :: ipiv
+    integer :: msize,nsize,lwork,info
+    complex(dp), allocatable :: cWork(:)
+
+    msize=size(mat,1)
+    nsize=size(mat,2)
+    if(msize.ne.nsize) stop 'error in z_inv2'
+    matinv = mat
+
+    info=0
+    call ZGETRF(msize,nsize,matinv,nsize,ipiv,info)
+    IF (INFO /= 0) then
+        write(6,*) "info: ",info
+        STOP 'Error with z_inv2 1'
+    endif
+    allocate(cWork(1))
+    lwork = -1
+    call ZGETRI(msize,matinv,msize,ipiv,cwork,lwork,info)
+    if(info.ne.0) stop 'error with workspace query in z_inv2'
+    lWork = int(real(cWork(1))) + 1
+    deallocate(cWork)
+    allocate(cWork(lWork))
+    call ZGETRI(msize,matinv,msize,ipiv,cwork,lwork,info)
+    if(info.ne.0) stop 'error with inversion in z_inv2'
+    deallocate(cWork)
+
+  end subroutine mat_inv
 
 end program RealSpaceCoup
