@@ -28,6 +28,8 @@ program RealSpaceCoup
         integer :: i,j,k,ind_1,ind_2
         real(dp) :: phase,r
         complex(dp), allocatable :: temp(:,:),ham_temp(:,:),Random_Corrpot(:,:)
+        integer :: NonLocCoupLength
+        complex(dp), allocatable :: NonLocCoup(:,:)
 
         write(6,*) "Enter total number of sites: "
         read(*,*) nSites
@@ -66,7 +68,6 @@ program RealSpaceCoup
         endif
 
         !Now, construct k-space
-        if(mod(nSites,nImp).ne.0) stop 'lattice dim not consistent'
         nKPnts = nSites/nImp
         write(6,*) "Number of kpoints: ",nKPnts
         allocate(KPnts(nKPnts))
@@ -209,6 +210,82 @@ program RealSpaceCoup
         enddo
         deallocate(temp,Random_Corrpot,ham_temp)
         write(6,"(A)") "k-space rotations correctly block diagonalize general one-electron matrix"
+
+        !Now, add arbitrary non-local couplings in real space
+        allocate(ham_temp(nSites,nSites))
+        do i = 1,nSites
+            do j = 1,nSites
+                ham_temp(j,i) = cmplx(h0(j,i),zero,dp)
+            enddo
+        enddo
+        !Add a random, real correlation potential
+        allocate(Random_Corrpot(nImp,nImp))
+        Random_CorrPot(:,:) = zzero
+        do i = 1,nImp
+            do j = i,nImp
+                if(i.eq.j) then
+                    call random_number(r)
+                    Random_CorrPot(j,i) = cmplx(r,zero,dp)
+                else
+                    call random_number(r)
+!                    call random_number(r2)
+                    Random_CorrPot(j,i) = cmplx(r,zero,dp)
+                endif
+            enddo
+        enddo
+        call MakeBlockHermitian(Random_CorrPot,nImp)
+        call add_localpot_comp_inplace(ham_temp,Random_CorrPot,tAdd=.true.)
+        
+        !Now, add non-local terms, which retain periodicity
+        if(mod(nSites-nImp,2).ne.0) then
+            NonLocCoupLength = (nSites-nImp-1)/2
+        else
+            NonLocCoupLength = (nSites-nImp)/2
+        endif
+
+        write(6,*) "Non local hamiltonian coupling length: ",NonLocCoupLength
+
+        allocate(NonLocCoup(nImp,NonLocCoupLength))
+        NonLocCoup(:,:) = zzero
+        do j = 1,NonLocCoupLength
+            do i = 1,nImp
+                call random_number(r)
+                NonLocCoup(i,j) = cmplx(r,zero,dp)
+            enddo
+        enddo
+
+        call WriteMatrixcomptoreal(ham_temp,'Before non-loc coups',.true.)
+
+        call Add_Nonlocal_comp_inplace(ham_temp,NonLocCoup,NonLocCoupLength,tAdd=.true.)
+
+        call WriteMatrixcomptoreal(ham_temp,'After non-loc coups',.true.)
+
+        !Now, check whether it is still k-space kosher
+        !Rotate ham_temp into k-space
+        allocate(temp(nSites,nSites))
+        call ZGEMM('C','N',nSites,nSites,nSites,zone,RtoK_Rot,nSites,ham_temp,nSites,zzero,temp,nSites)
+        call ZGEMM('N','N',nSites,nSites,nSites,zone,temp,nSites,RtoK_Rot,nSites,zzero,ham_temp,nSites)
+        !ham_temp is now in kspace
+        !Zero the diagonal blocks
+        do k = 1,nKPnts
+            ind_1 = ((k-1)*nImp) + 1
+            ind_2 = nImp*k
+            ham_temp(ind_1:ind_2,ind_1:ind_2) = zzero
+        enddo
+        !Now check to see if there are any non-zero elements. If so, the unitary rotation is not correct
+        do i = 1,nSites
+            do j = 1,nSites
+                if(abs(ham_temp(j,i)).gt.1.0e-7_dp) then
+                    write(6,*) "i,j: ",j,i
+                    write(6,*) "ham in kspace: ",ham_temp(j,i)
+                    stop 'kspace rotations not correctly set up. ' &
+                        //'One-electron hamiltonian is not block diagonal in kspace'
+                endif
+            enddo
+        enddo
+        deallocate(temp,Random_Corrpot,ham_temp)
+        write(6,"(A)") "k-space rotations correctly block diagonalize one-electron matrix with non-local interactions"
+
     end subroutine main
 
     !Given the lower triangle, make this matrix hermitian
@@ -225,6 +302,71 @@ program RealSpaceCoup
         enddo
 
     end subroutine MakeBlockHermitian
+
+    subroutine add_Nonlocal_comp_inplace(ham,NonLocCoup,NonLocCoupLength,tAdd)
+        implicit none
+        integer, intent(in) :: NonLocCoupLength
+        complex(dp), intent(inout) :: ham(nSites,nSites)
+        complex(dp), intent(in) :: NonLocCoup(nImp,NonLocCoupLength)
+        logical , intent(in), optional :: tAdd
+        real(dp) :: phase
+        integer :: k,i,j,ind_1,ind_2,ind
+            
+        if(tPeriodic) then
+            phase = 1.0_dp
+        elseif(tAntiPeriodic) then
+            phase = -1.0_dp
+        endif
+
+        do k = 1,nKPnts
+            ind_1 = ((k-1)*nImp) + 1
+            ind_2 = nImp*k
+
+!            write(6,*) "k: ",k
+!            write(6,*) "ind_1: ",ind_1
+!            write(6,*) "ind_2: ",ind_2
+            do i = 1,NonLocCoupLength
+
+                !Fill up coupling to the right
+                ind = 0
+                do j = ind_2+1,ind_2+NonLocCoupLength
+
+                    ind = ind + 1
+                    if(j.le.nSites) then
+                        ham(ind_1:ind_2,j) = NonLocCoup(:,ind)
+                    else
+                        !Wrap around matrix with appropriate boundary conditions
+                        ham(ind_1:ind_2,j-nSites) = NonLocCoup(:,ind)*phase
+                    endif
+
+                enddo
+                if(ind.ne.NonLocCoupLength) then
+                    write(6,*) "NonLocCoupLength: ",NonLocCoupLength
+                    write(6,*) "ind: ",ind
+                    stop 'error in indexing'
+                endif
+
+                !Fill up coupling to the left
+                ind = 0
+                do j = ind_1-1,ind_1-NonLocCoupLength,-1
+
+                    ind = ind + 1
+                    if(j.ge.1) then
+                        ham(ind_1:ind_2,j) = NonLocCoup(:,ind)
+                    else
+                        !Wrap around matrix with appropriate boundary conditions
+                        ham(ind_1:ind_2,j+nSites) = NonLocCoup(:,ind)*phase
+                    endif
+                enddo
+                if(ind.ne.NonLocCoupLength) then
+                    write(6,*) "NonLocCoupLength: ",NonLocCoupLength
+                    write(6,*) "ind: ",ind
+                    stop 'Error in indexing'
+                endif
+            enddo
+        enddo
+
+    end subroutine add_Nonlocal_comp_inplace
     
     !Add a *complex* local potential striped across a *real* hamiltonian 
     !(only possible with translational invariance)
@@ -278,5 +420,25 @@ program RealSpaceCoup
         enddo
     end subroutine WriteMatrixcomp
 
+    subroutine WriteMatrixcomptoreal(mat,matname,tOneLine)
+        implicit none
+        complex(dp), intent(in) :: mat(:,:)
+        character(len=*), intent(in) :: matname
+        integer :: i,j
+        logical :: tOneLine
+
+        write(6,*) "Writing out real part of matrix: ",trim(matname)
+        write(6,"(A,I7,A,I7)") "Size: ",size(mat,1)," by ",size(mat,2)
+        do i=1,size(mat,1)
+            do j=1,size(mat,2)
+                if(tOneLine) then
+                    write(6,"(G18.7)",advance='no') real(mat(i,j),dp)
+                else
+                    write(6,"(I6,2G18.7)") i,j,real(mat(i,j),dp)
+                endif
+            enddo
+            write(6,*)
+        enddo
+    end subroutine WriteMatrixcomptoreal
 
 end program RealSpaceCoup
