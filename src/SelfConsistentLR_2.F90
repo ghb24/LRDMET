@@ -1240,7 +1240,8 @@ module SelfConsistentLR2
                     compval = zzero
                     do ii = 1,nImp
                         do jj = 1,nImp
-                            compval = compval + ( ham_temp(jj,ii) * dconjg(DiffMat(jj,ii,w) )) + ( dconjg(ham_temp(jj,ii)) * DiffMat(jj,ii,w) )
+                            compval = compval + ( ham_temp(jj,ii) * dconjg(DiffMat(jj,ii,w) )) +    &
+                                ( dconjg(ham_temp(jj,ii)) * DiffMat(jj,ii,w) )
                         enddo
                     enddo
                     if(tNonStandardGrid) then

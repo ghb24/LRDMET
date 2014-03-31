@@ -1194,7 +1194,8 @@ module SelfConsistentUtils
             !For shifted meshes, this is easy.
             !For Gamma-centered meshes, two k-points are only singly degenerate
             !We should not be able to be constraining any syms
-            if(tRealSpaceSC) call stop_all(t_r,'K symmetry should be automatically conserved rather than imposed with real-space lattice opt')
+            if(tRealSpaceSC) call stop_all(t_r,'K symmetry should be automatically conserved rather '   &
+                &   //'than imposed with real-space lattice opt')
             if(tShift_Mesh) then
                 do i = 1,nKPnts/2
                     KBlock(:,:) = (KBlocks(:,:,i) + dconjg(KBlocks(:,:,nKPnts-i+1))) / 2.0_dp
