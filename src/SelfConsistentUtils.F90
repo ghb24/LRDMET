@@ -369,6 +369,7 @@ module SelfConsistentUtils
     end subroutine LatParams_to_ham
 
     subroutine KBlocks_to_LatParams(iLatParams,LatParams,KBlocks)
+        implicit none
         integer, intent(in) :: iLatParams
         real(dp), intent(out) :: LatParams(iLatParams)
         complex(dp), intent(in) :: KBlocks(nImp,nImp,nKPnts)
@@ -381,10 +382,27 @@ module SelfConsistentUtils
         LatParams(:) = zero
 
         if(tRealSpaceSC) then
-
+            
             allocate(LatticeCoups(nImp,iLatticeCoups))
-            LatticeCoups(:,:) = zero
+            LatticeCoups(:,:) = zzero
 
+            !For testing
+!            allocate(BlockTemp(nSites,nSites))
+!            allocate(BlockTemp_2(nSites,nSites))
+!            BlockTemp(:,:) = zzero
+!            do k = 1,nKPnts
+!                ind_1 = ((k-1)*nImp) + 1
+!                ind_2 = nImp*k
+!
+!                BlockTemp(ind_1:ind_2,ind_1:ind_2) = KBlocks(:,:,k)
+!            enddo
+!            call ZGEMM('N','C',nSites,nSites,nSites,zone,BlockTemp,nSites,RtoK_Rot,nSites,zzero,BlockTemp_2,nSites)
+!            call ZGEMM('N','N',nSites,nSites,nSites,zone,RtoK_Rot,nSites,BlockTemp_2,nSites,zzero,BlockTemp,nSites)
+!
+!            LatticeCoups(:,:) = BlockTemp(1:nImp,nImp+1:nImp+iLatticeCoups)
+!            deallocate(BlockTemp,BlockTemp_2)
+
+            !Below will be a faster way of doing this, but commented out for the moment to check it is working
             allocate(LattCoupTemp(nImp,nSites))
             LattCoupTemp(:,:) = zzero
             allocate(BlockTemp(nImp,nImp))
@@ -402,7 +420,11 @@ module SelfConsistentUtils
             enddo
             call ZGEMM('N','C',nImp,nSites,nSites,zone,LattCoupTemp,nImp,RtoK_Rot,nSites,zzero,LatticeCoups,nImp)
 
-            deallocate(BlockTemp,LattCoupTemp)
+            write(6,*) "Get here 1"
+            call flush(6)
+            deallocate(BlockTemp,BlockTemp_2,LattCoupTemp)
+            write(6,*) "Get here 2"
+            call flush(6)
 
             ind = 0
             do i = 1,nImp
@@ -411,13 +433,19 @@ module SelfConsistentUtils
                     if(ind.gt.iLatParams) call stop_all(t_r,'indexing error')
 
                     if(abs(aimag(LatticeCoups(i,j))).gt.1.0e-7_dp) then
-                        call stop_all(t_r,'Lattice couplings should not be complex')
+                        !call writematrixcomp(LatticeCoups,'Lattice Couplings',.true.)
+                        !call stop_all(t_r,'Lattice couplings should not be complex')
+                        write(6,"(A,I7,G17.10)") "Removing complex component of coupling: ",j,aimag(LatticeCoups(i,j))
                     endif
                     LatParams(ind) = real(LatticeCoups(i,j),dp)
 
                 enddo
             enddo
+            write(6,*) "Get here 3",allocated(LatticeCoups)
+            call flush(6)
             deallocate(LatticeCoups)
+            write(6,*) "Get here 4"
+            call flush(6)
         else
             
             if(tConstrainKSym) then
