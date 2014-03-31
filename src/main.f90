@@ -126,7 +126,7 @@ Program RealHub
         tRead_SelfEnergy = .false.
         tRandom_Init_SE = .false.
         tSE_Scan = .false.
-        tRealSpaceSC = .false.  !By default, attempt self-consistency on the matsubara axis
+        tRealSpaceSC = .true.   !By default, attempt self-consistency on the matsubara axis
         iLatticeFitType = 1     !By default, fit the greens functions (rather than inverses)
         iFitGFWeighting = 0     !By default, when doing lattice fits, fit to a flat model, rather than bias low weighted excitations
         iLatticeCoups = 0
@@ -648,6 +648,7 @@ Program RealHub
                 tEveryOtherCoup = .true.    !Every other lattice coupling constrained to be zero
             case("OPT_LATTICE_EVALS")
                 tOptGF_EVals = .true.
+                tRealSpaceSC = .false.
             case("USE_ANALYTIC_DERIVS")
                 tAnalyticDerivs = .true.    !Calculate analytic derivatives in fitting
             case("CONSTRAIN_K_SYM")
@@ -1052,6 +1053,12 @@ Program RealHub
 !        endif
         if(tConstrainphsym.and.(.not.tConstrainksym)) then
             call stop_all(t_r,'Sorry - you cant constrain ph sym without also constraining ksym')
+        endif
+        if(tRealSpaceSC.and.(tImposeksym.or.tConstrainksym)) then
+            call stop_all(t_r,'If doing real-space optimization, then k-symmetry is constrained automatically')
+        endif
+        if(tRealSpaceSC.and.(tConstrainphsym)) then
+            call stop_all(t_r,'Cannot constrain ph sym if doing real-space optimization')
         endif
 
     end subroutine check_input

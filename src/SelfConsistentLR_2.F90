@@ -59,6 +59,7 @@ module SelfConsistentLR2
 
         write(6,"(A,I7)") "Number of lattice hamiltonian parameters to optimize: ",iLatParams
         allocate(LatParams(iLatParams))
+        LatParams(:) = zero
         allocate(h_lat_fit(nSites,nSites))  !The real-space (complex) lattice hamiltonian
 
         !Initialize the lattice parameters to be those from the ground-state optimization,
@@ -896,6 +897,15 @@ module SelfConsistentLR2
             tNonStandardGrid = .false.
         endif
 
+        if(tRealSpaceSC) then
+            if(tNonStandardGrid) then
+                call CalcJacobian_RS(iCorrFnTag,n,iLatParams,DiffMat,Jacobian,LatParams,mu,tMatbrAxis,FreqPoints,Weights)
+            else
+                call CalcJacobian_RS(iCorrFnTag,n,iLatParams,DiffMat,Jacobian,LatParams,mu,tMatbrAxis)
+            endif
+            return
+        endif
+
         !Expand the k-space hamiltonians
         allocate(KBlocks(nImp,nImp,nKPnts))
         call LatParams_to_KBlocks(iLatParams,LatParams,mu,KBlocks)
@@ -1116,5 +1126,133 @@ module SelfConsistentLR2
         deallocate(FullJac_Re,FullJac_Im)
 
     end subroutine CalcJacobian_3
+    
+    !Find the jacobian matrix for the optimization in real space 
+    subroutine CalcJacobian_RS(iCorrFnTag,n,iLatParams,DiffMat,Jacobian,LatParams,mu,tMatbrAxis,FreqPoints,Weights)
+        implicit none
+        integer, intent(in) :: iCorrFnTag   !What spectrum are we considering
+        integer, intent(in) :: n    !Number of frequency points
+        integer, intent(in) :: iLatParams   !The number of variables
+        complex(dp), intent(in) :: DiffMat(nImp,nImp,n) !The (complex) difference between the greens functions
+        real(dp), intent(out) :: Jacobian(iLatParams) !The Jacobian
+        real(dp), intent(in) :: LatParams(iLatParams)
+        logical, intent(in) :: tMatbrAxis
+        real(dp), intent(in) :: mu
+        real(dp), intent(in), optional :: FreqPoints(n),Weights(n)
+
+        complex(dp), allocatable :: num(:,:),ham_temp(:,:),ham_temp_2(:,:),ham(:,:)
+        real(dp) :: Omega,phase
+        integer :: w,i,j,ii,jj,k,ind,ind_1,ind_2
+        complex(dp) :: compval
+        logical :: tNonStandardGrid
+        character(len=*), parameter :: t_r='CalcJacobian_RS'
+        
+        if(present(FreqPoints)) then
+            tNonStandardGrid = .true.
+            if(.not.(present(Weights))) then
+                call stop_all(t_r,"No Weights present")
+            endif
+        else
+            tNonStandardGrid = .false.
+        endif
+
+        if(tAntiPeriodic) then
+            phase = -1.0_dp
+        else
+            phase = 1.0_dp
+        endif
+
+        !Get the real-space hamiltonian
+        allocate(ham(nSites,nSites))
+        call LatParams_to_ham(iLatParams,LatParams,mu,ham)
+
+        allocate(num(nSites,nSites))
+        allocate(ham_temp(nSites,nSites))
+        allocate(ham_temp_2(nSites,nSites))
+
+        Jacobian(:) = zero
+
+        w = 0
+        do while(.true.)
+            if(tNonStandardGrid) then
+                call GetNextOmega(Omega,w,tMatbrAxis=tMatbrAxis,nFreqPoints=n,FreqPoints=FreqPoints)
+            else
+                call GetNextOmega(Omega,w,tMatbrAxis=tMatbrAxis)
+            endif
+            if(w.lt.0) exit
+            if(w.gt.n) call stop_all(t_r,'Error in running through freqs')
+
+            !Find all real-space local lattice greens functions
+            ham_temp(:,:) = - ham(:,:)
+
+            do j = 1,nSites
+                if(tMatbrAxis) then
+                    ham_temp(j,j) = ham_temp(j,j) + cmplx(mu,Omega,dp)
+                else
+                    ham_temp(j,j) = ham_temp(j,j) + cmplx(Omega + mu,dDelta,dp)
+                endif
+            enddo
+            call mat_inv(ham_temp,ham_temp_2)
+            !ham_temp_2 is now the inverse of the greens function (we could do this with 2x k-space rotations instead?)
+
+            ind = 0
+            do j = 1,nImp
+                do i = 1,iLatticeCoups
+                    !Now, calculate the derivative of the inverse of the GF
+                    ham_temp(:,:) = zzero
+
+                    !Set up matrix with 1's or -1s for values of the coupling matrix element which we are differentiating wrt.
+                    do k = 1,nKPnts
+                        ind_1 = ((k-1)*nImp) + 1
+                        ind_2 = nImp*k
+
+                        !Coupling to the right
+                        if((ind_2+i).le.nSites) then
+                            ham_temp(ind_1+j-1,ind_2+i) = cmplx(-1.0_dp,0.0_dp,dp)
+                        else
+                            ham_temp(ind_1+j-1,ind_2+i-nSites) = cmplx(-phase,0.0_dp,dp)
+                        endif
+
+                        !Coupling to the left
+                        if((ind_1-i).ge.1) then
+                            ham_temp(ind_1+j-1,ind_1-i) = cmplx(-1.0_dp,0.0_dp,dp)
+                        else
+                            ham_temp(ind_1+j-1,ind_1-i+nSites) = cmplx(-phase,0.0_dp,dp)
+                        endif
+
+                    enddo
+!                    write(6,*) "imp: ",j
+!                    write(6,*) "CoupParam: ",i
+!                    call writematrixcomptoreal(ham_temp,'Deriv of B',.true.)
+
+                    !Right, now we can get the full derivative of the inverse of B (i.e. the greens function wrt changing the coefficients).
+                    !This currently does not use/require any periodicity. However, the matrix inverse could be improved with periodicity.
+
+                    !The operations below could *certainly* be sped up. Just for testing.
+                    call ZGEMM('N','N',nSites,nSites,nSites,zone,ham_temp,nSites,ham_temp_2,nSites,zzero,num,nSites)
+                    call ZGEMM('N','N',nSites,nSites,nSites,-zone,ham_temp_2,nSites,num,nSites,zzero,ham_temp,nSites)
+
+                    !ham_temp is now the derivative of the *full* greens function wrt changing the coupling.
+                    !Seems a little profligate - I'm sure the local greens function could be done more efficiently.
+!                    Derivatives(:,:,j,i,w) = ham_temp(1:nImp,1:nImp)
+                    ind = ind + 1   !ind gives the element in LatParams that you are taking the derivative wrt for that frequency
+                    if(ind.gt.iLatParams) call stop_all(t_r,'Indexing error')
+                    compval = zzero
+                    do ii = 1,nImp
+                        do jj = 1,nImp
+                            compval = compval + ( ham_temp(jj,ii) * dconjg(DiffMat(jj,ii,w) )) + ( dconjg(ham_temp(jj,ii)) * DiffMat(jj,ii,w) )
+                        enddo
+                    enddo
+                    if(tNonStandardGrid) then
+                        Jacobian(ind) = Jacobian(ind) + real(compval,dp) * Weights(w)
+                    else
+                        Jacobian(ind) = Jacobian(ind) + real(compval,dp) 
+                    endif
+                enddo !i over iLatticeCoups
+            enddo   !j over nImp
+        enddo   !w over frequencies
+        deallocate(num,ham_temp,ham_temp_2,ham)
+
+    end subroutine CalcJacobian_RS
                 
 end module SelfConsistentLR2

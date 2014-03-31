@@ -14,24 +14,24 @@ module LRDriver
     subroutine SelfConsistent_MR_LR()
         implicit none
 
-        if(tRealSpaceSC) then
-            call SC_Mom_LR_NoDyson()
+!        if(tRealSpaceSC) then
+!            call SC_Mom_LR_NoDyson()
             !Old, real frequency self-consistent DMET implementations
             !call SC_Mom_LR()
             !call SC_Mom_LR_Z()
-        else
+!        else
             !Self-consistency on the imaginary axis
             !Direct application of Dysons equation on the Im axis
             !call SC_Imaginary_Dyson()
             !Fitting of a frequency independent lattice coupling
-            if(tOptGF_EVals) then
-                call SC_FitLatticeGF_Im()
-            else
+!            if(tOptGF_EVals) then
+!                call SC_FitLatticeGF_Im()
+!            else
                 call SC_Spectrum_Opt()
-            endif
+!            endif
             !DMFT-style fitting of a lattice & matsubara self-energy
             !call SC_FitLat_and_SE_Im() 
-        endif
+        !endif
 
     end subroutine SelfConsistent_MR_LR
     

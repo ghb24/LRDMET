@@ -5,6 +5,7 @@ module SelfConsistentUtils
     use utils, only: get_free_unit,append_ext
     use SC_Data
     use mat_tools, only: MakeBlockHermitian,writematrixcomp,writevector
+    use mat_tools, only: Add_Nonlocal_comp_inplace
     implicit none
 
     contains
@@ -87,34 +88,69 @@ module SelfConsistentUtils
         implicit none
         integer, intent(out) :: iLatParams
         integer :: ks,params_per_k,i
-            
-        if(tConstrainKSym) then
-            !e(k) = e(-k), and we are always using a uniform mesh
-            !If gamma-centered mesh, then have nSites/2 + 1 independent parameters (we are sampling k=0 and BZ boundary which dont pair)
-            !If Shifted mesh, then we have nSites/2 independent parameters
-            if(tShift_Mesh) then
-                ks = nKPnts/2
+        character(len=*), parameter :: t_r='SetLatticeParams'
+
+        if(tRealSpaceSC) then
+
+            if(iLatticeCoups.eq.0) then
+                !Include all possible couplings, without allowing modification of the impurity block of the hamiltonian
+                if(mod(nSites-nImp,2).ne.0) then
+                    iLatticeCoups = (nSites-nImp-1)/2
+                else
+                    iLatticeCoups = (nSites-nImp)/2
+                endif
             else
-                ks = (nKPnts/2) + 1
+                !iLatticeCoups is read in
+                if(mod(nSites-nImp,2).ne.0) then
+                    if(iLatticeCoups.gt.((nSites-nImp-1)/2)) then
+                        write(6,*) "Max allowed length of non-local coupling: ",(nSites-nImp-1)/2
+                        write(6,*) "Read in coupling length: ",iLatticeCoups
+                        call stop_all(t_r,'LatticeCoups read in as larger than max allowed value')
+                    endif
+                else
+                    if(iLatticeCoups.gt.((nSites-nImp)/2)) then
+                        write(6,*) "Max allowed length of non-local coupling: ",(nSites-nImp)/2
+                        write(6,*) "Read in coupling length: ",iLatticeCoups
+
+                        call stop_all(t_r,'LatticeCoups read in as larger than max allowed value')
+                    endif
+                endif
+
             endif
+            iLatParams = iLatticeCoups*nImp     !Package up the parameters into a 1D array
+            write(6,"(A,I8)") "Total number of (real) adjustable parameters in non-local couplings: ",iLatParams
+        
         else
-            ks = nKPnts
-        endif
+            
+            if(tConstrainKSym) then
+                !e(k) = e(-k), and we are always using a uniform mesh
+                !If gamma-centered mesh, then have nSites/2 + 1 independent parameters (we are sampling k=0 and BZ boundary which dont pair)
+                !If Shifted mesh, then we have nSites/2 independent parameters
+                if(tShift_Mesh) then
+                    ks = nKPnts/2
+                else
+                    ks = (nKPnts/2) + 1
+                endif
+            else
+                ks = nKPnts
+            endif
 
-        if(tConstrainphsym) then
-            !First nImp is the first column
-            !Second nImp-2 is the second column (taking into account herm)
-            !etc...
-            params_per_k = 0
-            do i = nImp,0,-2
-                params_per_k = params_per_k + i
-            enddo
-        else
-            !Still constrain hermiticity. Allow for complex off-diagonal matrix elements
-            params_per_k = (nImp*(nImp+1)/2) + (nImp*(nImp-1)/2)
-        endif
+            if(tConstrainphsym) then
+                !First nImp is the first column
+                !Second nImp-2 is the second column (taking into account herm)
+                !etc...
+                params_per_k = 0
+                do i = nImp,0,-2
+                    params_per_k = params_per_k + i
+                enddo
+            else
+                !Still constrain hermiticity. Allow for complex off-diagonal matrix elements
+                params_per_k = (nImp*(nImp+1)/2) + (nImp*(nImp-1)/2)
+            endif
 
-        iLatParams = params_per_k * ks
+            iLatParams = params_per_k * ks
+
+        endif
 
     end subroutine SetLatticeParams
 
@@ -147,6 +183,10 @@ module SelfConsistentUtils
 
         if(tReadCouplings) then
 
+            if(tRealSpaceSC) then
+                call stop_all(t_r,'Reading parameters not available for real-space opt yet')
+            endif
+
             write(6,"(A)") "Reading lattice k-space hamiltonian..."
             LatParams(:) = zero
 
@@ -178,7 +218,7 @@ module SelfConsistentUtils
             call LatParams_to_ham(iLatParams,LatParams,mu,ham)
         else
             !Just set to h0v
-            ham = zzero
+            ham(:,:) = zzero
             do i = 1,nSites
                 do j = 1,nSites
                     ham(j,i) = cmplx(h0v(j,i),zero,dp)
@@ -225,18 +265,41 @@ module SelfConsistentUtils
 
     end subroutine ham_to_KBlocks
 
+    !Real space hamiltonian to non-local lattice parameters
     subroutine ham_to_LatParams(iLatParams,LatParams,ham)
         integer, intent(in) :: iLatParams
         real(dp), intent(out) :: LatParams(iLatParams)
         complex(dp), intent(in) :: ham(nSites,nSites)
         complex(dp), allocatable :: KBlocks(:,:,:)
+        integer :: i,j,ind
+        character(len=*), parameter :: t_r='ham_to_LatParams'
 
-        !First, ham to k_blocks
-        allocate(KBlocks(nImp,nImp,nKPnts))
-        call ham_to_KBlocks(ham,KBlocks)
+        if(tRealSpaceSC) then
+            !Easier - just take the off block-diagonals of the first nImp rows
+            ind = 0
+            do i = 1,nImp
+                do j = 1,iLatticeCoups
+                    ind = ind + 1
+                    LatParams(ind) = real(ham(i,nImp+j),dp)
+                enddo
+            enddo
+            if(ind.ne.iLatParams) call stop_all(t_r,'Error filling real-space lattice parameters')
 
-        call KBlocks_to_LatParams(iLatParams,LatParams,KBlocks)
-        deallocate(KBlocks)
+            !Also, update the global array which gives the block diagonals of the lattice hamiltonian in real space
+            if(.not.allocated(LatDiagBlocks)) then
+                allocate(LatDiagBlocks(nImp,nImp))
+            endif
+            LatDiagBlocks(:,:) = ham(1:nImp,1:nImp)
+
+        else
+
+            !First, ham to k_blocks
+            allocate(KBlocks(nImp,nImp,nKPnts))
+            call ham_to_KBlocks(ham,KBlocks)
+
+            call KBlocks_to_LatParams(iLatParams,LatParams,KBlocks)
+            deallocate(KBlocks)
+        endif
 
     end subroutine ham_to_LatParams
 
@@ -248,34 +311,60 @@ module SelfConsistentUtils
         complex(dp), intent(out) :: ham(nSites,nSites)
         complex(dp), allocatable :: KBlocks(:,:,:)
         complex(dp), allocatable :: ctemp(:,:)
-        integer :: k,ind_1,ind_2
+        real(dp), allocatable :: LatticeCoups(:,:)
+        integer :: k,ind_1,ind_2,kPnt,ind,i,j
         character(len=*), parameter :: t_r='LatParams_to_ham'
+        
+        ham(:,:) = zzero
 
-        allocate(KBlocks(nImp,nImp,nKPnts))
-        call LatParams_to_KBlocks(iLatParams,LatParams,mu,KBlocks)
+        if(tRealSpaceSC) then
+            !From real space lattice couplings to a hamiltonian
 
-        ham = zzero
+            do kPnt = 1,nKPnts
+                ind_1 = ((kPnt-1)*nImp) + 1
+                ind_2 = nImp*kPnt
 
-        !Now, rotate back into real space from kspace
-        allocate(ctemp(nSites,nImp))
-        do k = 1,nKPnts
-            ind_1 = ((k-1)*nImp) + 1
-            ind_2 = nImp*k
-            call ZGEMM('N','N',nSites,nImp,nImp,zone,RtoK_Rot(:,ind_1:ind_2),nSites,KBlocks(:,:,k),nImp,zzero,ctemp,nSites)
-            call ZGEMM('N','C',nSites,nSites,nImp,zone,ctemp,nSites,RtoK_Rot(:,ind_1:ind_2),nSites,zone,ham,nSites)
-        enddo
-        deallocate(ctemp)
-        deallocate(KBlocks)
+                ham(ind_1:ind_2,ind_1:ind_2) = LatDiagBlocks(:,:)
+            enddo
+            allocate(LatticeCoups(nImp,iLatticeCoups))
+            LatticeCoups(:,:) = zero
+            ind = 0
+            do i = 1,nImp
+                do j = 1,iLatticeCoups
+                    ind = ind + 1
+                    LatticeCoups(i,j) = LatParams(ind)
+                enddo
+            enddo
+            call Add_Nonlocal_comp_inplace(ham,LatticeCoups,iLatticeCoups,tAdd=.true.)
+            deallocate(LatticeCoups)
 
-!        do i = 1,nKPnts
-!            ind_1 = (i-1)*nImp + 1
-!            ind_2 = i*nImp
-!            ham(ind_1:ind_2,ind_1:ind_2) = KBlocks(:,:,i)
-!        enddo
-!        allocate(ctemp(nSites,nSites))
-!        call ZGEMM('N','N',nSites,nSites,nSites,zone,RtoK_Rot,nSites,ham,nSites,zzero,ctemp,nSites)
-!        call ZGEMM('N','C',nSites,nSites,nSites,zone,ctemp,nSites,RtoK_Rot,nSites,zzero,ham,nSites)
-!        deallocate(ctemp)
+        else
+
+            allocate(KBlocks(nImp,nImp,nKPnts))
+            call LatParams_to_KBlocks(iLatParams,LatParams,mu,KBlocks)
+
+            !Now, rotate back into real space from kspace
+            allocate(ctemp(nSites,nImp))
+            do k = 1,nKPnts
+                ind_1 = ((k-1)*nImp) + 1
+                ind_2 = nImp*k
+                call ZGEMM('N','N',nSites,nImp,nImp,zone,RtoK_Rot(:,ind_1:ind_2),nSites,KBlocks(:,:,k),nImp,zzero,ctemp,nSites)
+                call ZGEMM('N','C',nSites,nSites,nImp,zone,ctemp,nSites,RtoK_Rot(:,ind_1:ind_2),nSites,zone,ham,nSites)
+            enddo
+            deallocate(ctemp)
+            deallocate(KBlocks)
+
+    !        do i = 1,nKPnts
+    !            ind_1 = (i-1)*nImp + 1
+    !            ind_2 = i*nImp
+    !            ham(ind_1:ind_2,ind_1:ind_2) = KBlocks(:,:,i)
+    !        enddo
+    !        allocate(ctemp(nSites,nSites))
+    !        call ZGEMM('N','N',nSites,nSites,nSites,zone,RtoK_Rot,nSites,ham,nSites,zzero,ctemp,nSites)
+    !        call ZGEMM('N','C',nSites,nSites,nSites,zone,ctemp,nSites,RtoK_Rot,nSites,zzero,ham,nSites)
+    !        deallocate(ctemp)
+
+        endif
 
     end subroutine LatParams_to_ham
 
@@ -283,60 +372,104 @@ module SelfConsistentUtils
         integer, intent(in) :: iLatParams
         real(dp), intent(out) :: LatParams(iLatParams)
         complex(dp), intent(in) :: KBlocks(nImp,nImp,nKPnts)
-        integer :: i,j,k,ind,ks
+
+        integer :: i,j,k,ind,ks,ind_1,ind_2
+        complex(dp), allocatable :: LatticeCoups(:,:),LattCoupTemp(:,:)
+        complex(dp), allocatable :: BlockTemp(:,:),BlockTemp_2(:,:) 
         character(len=*), parameter :: t_r='KBlocks_to_LatParams'
 
         LatParams(:) = zero
-        
-        if(tConstrainKSym) then
-            !e(k) = e(-k), and we are always using a uniform mesh
-            !If gamma-centered mesh, then have nSites/2 + 1 independent parameters (we are sampling k=0 and BZ boundary which dont pair)
-            !If Shifted mesh, then we have nSites/2 independent parameters
-            if(tShift_Mesh) then
-                ks = nKPnts/2
-            else
-                ks = (nKPnts/2) + 1
-            endif
-        else
-            ks = nKPnts
-        endif
 
-        ind = 1
-        do k = 1,ks
-            if(tConstrainphsym) then
-                do i = 1,nImp
-                    do j = i,nImp-i+1
-                        if(i.eq.j) then
-                            if(ind.gt.iLatParams) call stop_all(t_r,'Incorrect indexing')
-                            LatParams(ind) = real(KBlocks(j,i,k),dp)
-                            ind = ind + 1
-                        else
-                            if((ind+1).gt.iLatParams) call stop_all(t_r,'Incorrect indexing')
-                            LatParams(ind) = real(KBlocks(j,i,k),dp)
-                            LatParams(ind+1) = aimag(KBlocks(j,i,k))
-                            ind = ind + 2
-                        endif
-                    enddo
+        if(tRealSpaceSC) then
+
+            allocate(LatticeCoups(nImp,iLatticeCoups))
+            LatticeCoups(:,:) = zero
+
+            allocate(LattCoupTemp(nImp,nSites))
+            LattCoupTemp(:,:) = zzero
+            allocate(BlockTemp(nImp,nImp))
+            allocate(BlockTemp_2(nImp,nImp))
+
+            do k = 1,nKPnts
+                ind_1 = ((k-1)*nImp) + 1
+                ind_2 = nImp*k
+
+                BlockTemp_2(:,:) = RtoK_Rot(1:nImp,ind_1:ind_2)
+
+                call ZGEMM('N','N',nImp,nImp,nImp,zone,BlockTemp_2,nImp,KBlocks(:,:,k),nImp,zzero,BlockTemp,nImp)
+
+                LattCoupTemp(:,ind_1:ind_2) = BlockTemp(:,:)
+            enddo
+            call ZGEMM('N','C',nImp,nSites,nSites,zone,LattCoupTemp,nImp,RtoK_Rot,nSites,zzero,LatticeCoups,nImp)
+
+            deallocate(BlockTemp,LattCoupTemp)
+
+            ind = 0
+            do i = 1,nImp
+                do j = 1,iLatticeCoups
+                    ind = ind + 1
+                    if(ind.gt.iLatParams) call stop_all(t_r,'indexing error')
+
+                    if(abs(aimag(LatticeCoups(i,j))).gt.1.0e-7_dp) then
+                        call stop_all(t_r,'Lattice couplings should not be complex')
+                    endif
+                    LatParams(ind) = real(LatticeCoups(i,j),dp)
+
                 enddo
+            enddo
+            deallocate(LatticeCoups)
+        else
+            
+            if(tConstrainKSym) then
+                !e(k) = e(-k), and we are always using a uniform mesh
+                !If gamma-centered mesh, then have nSites/2 + 1 independent parameters (we are sampling k=0 and BZ boundary which dont pair)
+                !If Shifted mesh, then we have nSites/2 independent parameters
+                if(tShift_Mesh) then
+                    ks = nKPnts/2
+                else
+                    ks = (nKPnts/2) + 1
+                endif
             else
-                do i = 1,nImp
-                    !Run through columns
-                    do j = i,nImp
-                        !Run through rows
-                        if(i.eq.j) then
-                            if(ind.gt.iLatParams) call stop_all(t_r,'Incorrect indexing')
-                            LatParams(ind) = real(KBlocks(j,i,k),dp)
-                            ind = ind + 1
-                        else
-                            if((ind+1).gt.iLatParams) call stop_all(t_r,'Incorrect indexing')
-                            LatParams(ind) = real(KBlocks(j,i,k),dp)
-                            LatParams(ind+1) = aimag(KBlocks(j,i,k))
-                            ind = ind + 2
-                        endif
-                    enddo
-                enddo
+                ks = nKPnts
             endif
-        enddo
+
+            ind = 1
+            do k = 1,ks
+                if(tConstrainphsym) then
+                    do i = 1,nImp
+                        do j = i,nImp-i+1
+                            if(i.eq.j) then
+                                if(ind.gt.iLatParams) call stop_all(t_r,'Incorrect indexing')
+                                LatParams(ind) = real(KBlocks(j,i,k),dp)
+                                ind = ind + 1
+                            else
+                                if((ind+1).gt.iLatParams) call stop_all(t_r,'Incorrect indexing')
+                                LatParams(ind) = real(KBlocks(j,i,k),dp)
+                                LatParams(ind+1) = aimag(KBlocks(j,i,k))
+                                ind = ind + 2
+                            endif
+                        enddo
+                    enddo
+                else
+                    do i = 1,nImp
+                        !Run through columns
+                        do j = i,nImp
+                            !Run through rows
+                            if(i.eq.j) then
+                                if(ind.gt.iLatParams) call stop_all(t_r,'Incorrect indexing')
+                                LatParams(ind) = real(KBlocks(j,i,k),dp)
+                                ind = ind + 1
+                            else
+                                if((ind+1).gt.iLatParams) call stop_all(t_r,'Incorrect indexing')
+                                LatParams(ind) = real(KBlocks(j,i,k),dp)
+                                LatParams(ind+1) = aimag(KBlocks(j,i,k))
+                                ind = ind + 2
+                            endif
+                        enddo
+                    enddo
+                endif
+            enddo
+        endif
 
     end subroutine KBlocks_to_LatParams
 
@@ -397,7 +530,8 @@ module SelfConsistentUtils
         real(dp), intent(in) :: mu
         real(dp), intent(in) :: LatParams(iLatParams)
         complex(dp), intent(out) :: KBlocks(nImp,nImp,nKPnts)
-        integer :: ind,i,j,ks,k
+        complex(dp), allocatable :: ham(:,:),ztemp(:,:),ztemp_2(:,:)
+        integer :: ind,i,j,ks,k,ind_1,ind_2
         character(len=*), parameter :: t_r='LatParams_to_KBlocks'
 
         if((nImp.ne.1).and.(mod(nImp,2).ne.0)) then
@@ -405,88 +539,108 @@ module SelfConsistentUtils
         endif
 
         KBlocks(:,:,:) = zzero
-        
-        if(tConstrainKSym) then
-            !e(k) = e(-k), and we are always using a uniform mesh
-            !If gamma-centered mesh, then have nSites/2 + 1 independent parameters (we are sampling k=0 and BZ boundary which dont pair)
-            !If Shifted mesh, then we have nSites/2 independent parameters
-            if(tShift_Mesh) then
-                ks = nKPnts/2
-            else
-                ks = (nKPnts/2) + 1
-            endif
+
+        if(tRealSpaceSC) then
+            !Real-space optimization
+            allocate(ham(nSites,nSites))    !Temp storage of complex hamiltonian
+            call LatParams_to_ham(iLatParams,LatParams,mu,ham)
+            allocate(ztemp(nSites,nImp))
+            allocate(ztemp_2(nSites,nImp))
+            do k = 1,nKPnts
+                ind_1 = ((k-1)*nImp) + 1
+                ind_2 = nImp*k
+                ztemp_2(:,:) = RtoK_Rot(:,ind_1:ind_2)
+                call ZGEMM('N','N',nSites,nImp,nSites,zone,ham,nSites,ztemp_2,nSites,zzero,ztemp,nSites)
+                call ZGEMM('C','N',nImp,nImp,nSites,zone,ztemp_2,nSites,ztemp,nSites,zzero,KBlocks(:,:,k),nImp)
+            enddo
+            deallocate(ham,ztemp,ztemp_2)
+            !TODO: ph symmetry imposed?
         else
-            ks = nKPnts
-        endif
-
-        ind = 1
-        do k = 1,ks
-            if(tConstrainphsym) then
-                do i = 1,nImp
-                    do j = i,nImp-i+1
-                        if(i.eq.j) then
-                            if(ind.gt.iLatParams) call stop_all(t_r,'Incorrect indexing')
-                            KBlocks(j,i,k) = cmplx(LatParams(ind),zero,dp)
-                            ind = ind + 1
-                            !For the diagonals, we want to flip the energy about the chemical potential
-                            KBlocks((nImp-i)+1,(nImp-j)+1,k) = cmplx(2.0_dp*mu,zero,dp) - KBlocks(j,i,k)
-                        else
-                            if((ind+1).gt.iLatParams) call stop_all(t_r,'Incorrect indexing')
-                            KBlocks(j,i,k) = cmplx(LatParams(ind),LatParams(ind+1),dp)
-                            ind = ind + 2
-                            !Put in the same coupling
-                            !Swap indices & reverse order
-                            KBlocks((nImp-i)+1,(nImp-j)+1,k) = KBlocks(j,i,k)
-                        endif
-                    enddo
-                enddo
+            !k-space hamiltonian optimization
+            
+            if(tConstrainKSym) then
+                !e(k) = e(-k), and we are always using a uniform mesh
+                !If gamma-centered mesh, then have nSites/2 + 1 independent parameters (we are sampling k=0 and BZ boundary which dont pair)
+                !If Shifted mesh, then we have nSites/2 independent parameters
+                if(tShift_Mesh) then
+                    ks = nKPnts/2
+                else
+                    ks = (nKPnts/2) + 1
+                endif
             else
-                !The variables are the lower triangle of the matrix for this kpoint
-                do i = 1,nImp
-                    !Run through columns
-                    do j = i,nImp
-                        !Run through rows
-                        if(i.eq.j) then
-                            if(ind.gt.iLatParams) then
-                                write(6,*) "i,j,k: ",i,j,k
-                                write(6,*) "ind: ",ind
-                                write(6,*) "iLatParams: ",iLatParams
-                                call stop_all(t_r,'Incorrect indexing 1')
+                ks = nKPnts
+            endif
+
+            ind = 1
+            do k = 1,ks
+                if(tConstrainphsym) then
+                    do i = 1,nImp
+                        do j = i,nImp-i+1
+                            if(i.eq.j) then
+                                if(ind.gt.iLatParams) call stop_all(t_r,'Incorrect indexing')
+                                KBlocks(j,i,k) = cmplx(LatParams(ind),zero,dp)
+                                ind = ind + 1
+                                !For the diagonals, we want to flip the energy about the chemical potential
+                                KBlocks((nImp-i)+1,(nImp-j)+1,k) = cmplx(2.0_dp*mu,zero,dp) - KBlocks(j,i,k)
+                            else
+                                if((ind+1).gt.iLatParams) call stop_all(t_r,'Incorrect indexing')
+                                KBlocks(j,i,k) = cmplx(LatParams(ind),LatParams(ind+1),dp)
+                                ind = ind + 2
+                                !Put in the same coupling
+                                !Swap indices & reverse order
+                                KBlocks((nImp-i)+1,(nImp-j)+1,k) = KBlocks(j,i,k)
                             endif
-                            KBlocks(j,i,k) = cmplx(LatParams(ind),zero,dp)
-                            ind = ind + 1
-                        else
-                            if((ind+1).gt.iLatParams) call stop_all(t_r,'Incorrect indexing 2')
-                            KBlocks(j,i,k) = cmplx(LatParams(ind),LatParams(ind+1),dp)
-                            ind = ind + 2
-                        endif
+                        enddo
                     enddo
-                enddo
-            endif
-            call MakeBlockHermitian(KBlocks(:,:,k),nImp)
-        enddo
+                else
+                    !The variables are the lower triangle of the matrix for this kpoint
+                    do i = 1,nImp
+                        !Run through columns
+                        do j = i,nImp
+                            !Run through rows
+                            if(i.eq.j) then
+                                if(ind.gt.iLatParams) then
+                                    write(6,*) "i,j,k: ",i,j,k
+                                    write(6,*) "ind: ",ind
+                                    write(6,*) "iLatParams: ",iLatParams
+                                    call stop_all(t_r,'Incorrect indexing 1')
+                                endif
+                                KBlocks(j,i,k) = cmplx(LatParams(ind),zero,dp)
+                                ind = ind + 1
+                            else
+                                if((ind+1).gt.iLatParams) call stop_all(t_r,'Incorrect indexing 2')
+                                KBlocks(j,i,k) = cmplx(LatParams(ind),LatParams(ind+1),dp)
+                                ind = ind + 2
+                            endif
+                        enddo
+                    enddo
+                endif
+                call MakeBlockHermitian(KBlocks(:,:,k),nImp)
+            enddo
 
-        if(tConstrainKSym) then
-            !We have only filled up half the states. Fill the others.
-            !Update this so that it uses a function to map to equivalent kpoints
-            !Currently this is only going to work for 1D
+            if(tConstrainKSym) then
+                !We have only filled up half the states. Fill the others.
+                !Update this so that it uses a function to map to equivalent kpoints
+                !Currently this is only going to work for 1D
 
-            if(tShift_Mesh) then
-                !No gamma point sampled. All k-points symmetric.
-                !Mirror the k-space hamiltonian
-                do i = 1,ks
-                    KBlocks(:,:,i+ks) = dconjg(KBlocks(:,:,ks-i+1))
-                enddo
-            else
-                !Mirror the kpoints, but ignore the gamma point and BZ boundary
-                do i = 2,ks-1
-                    KBlocks(:,:,i+ks-1) = dconjg(KBlocks(:,:,ks-i+1))
-                enddo
+                if(tShift_Mesh) then
+                    !No gamma point sampled. All k-points symmetric.
+                    !Mirror the k-space hamiltonian
+                    do i = 1,ks
+                        KBlocks(:,:,i+ks) = dconjg(KBlocks(:,:,ks-i+1))
+                    enddo
+                else
+                    !Mirror the kpoints, but ignore the gamma point and BZ boundary
+                    do i = 2,ks-1
+                        KBlocks(:,:,i+ks-1) = dconjg(KBlocks(:,:,ks-i+1))
+                    enddo
+                endif
             endif
+
         endif
 
     end subroutine LatParams_to_KBlocks
-
+            
     !This will set FreqPoints and Weights. nFitPoints is the size of FreqPoints/Weights, 
     !and may refer to real or im axis based on the tFitRealFreq flag.
     subroutine SetFreqPoints(nFreq_Re,nFreq_Im,nFitPoints)
@@ -1012,6 +1166,7 @@ module SelfConsistentUtils
             !For shifted meshes, this is easy.
             !For Gamma-centered meshes, two k-points are only singly degenerate
             !We should not be able to be constraining any syms
+            if(tRealSpaceSC) call stop_all(t_r,'K symmetry should be automatically conserved rather than imposed with real-space lattice opt')
             if(tShift_Mesh) then
                 do i = 1,nKPnts/2
                     KBlock(:,:) = (KBlocks(:,:,i) + dconjg(KBlocks(:,:,nKPnts-i+1))) / 2.0_dp

@@ -1848,6 +1848,69 @@ module mat_tools
         enddo
 
     end subroutine MakeBlockHermitian
+    
+    !Add a non-local periodic set of real-space lattice parameters to a complex inplace hamiltonian
+    subroutine Add_Nonlocal_comp_inplace(ham,NonLocCoup,NonLocCoupLength,tAdd)
+        implicit none
+        integer, intent(in) :: NonLocCoupLength
+        complex(dp), intent(inout) :: ham(nSites,nSites)
+        real(dp), intent(in) :: NonLocCoup(nImp,NonLocCoupLength)
+        logical , intent(in), optional :: tAdd
+        real(dp) :: phase
+        integer :: k,i,j,ind_1,ind_2,ind
+            
+        if(tPeriodic) then
+            phase = 1.0_dp
+        elseif(tAntiPeriodic) then
+            phase = -1.0_dp
+        endif
+
+        do k = 1,nKPnts
+            ind_1 = ((k-1)*nImp) + 1
+            ind_2 = nImp*k
+
+            do i = 1,NonLocCoupLength
+
+                !Fill up coupling to the right
+                ind = 0
+                do j = ind_2+1,ind_2+NonLocCoupLength
+
+                    ind = ind + 1
+                    if(j.le.nSites) then
+                        ham(ind_1:ind_2,j) = cmplx(NonLocCoup(:,ind),zero,dp)
+                    else
+                        !Wrap around matrix with appropriate boundary conditions
+                        ham(ind_1:ind_2,j-nSites) = cmplx(NonLocCoup(:,ind)*phase,zero,dp)
+                    endif
+
+                enddo
+                if(ind.ne.NonLocCoupLength) then
+                    write(6,*) "NonLocCoupLength: ",NonLocCoupLength
+                    write(6,*) "ind: ",ind
+                    stop 'error in indexing'
+                endif
+
+                !Fill up coupling to the left
+                ind = 0
+                do j = ind_1-1,ind_1-NonLocCoupLength,-1
+
+                    ind = ind + 1
+                    if(j.ge.1) then
+                        ham(ind_1:ind_2,j) = cmplx(NonLocCoup(:,ind),zero,dp)
+                    else
+                        !Wrap around matrix with appropriate boundary conditions
+                        ham(ind_1:ind_2,j+nSites) = cmplx(NonLocCoup(:,ind)*phase,zero,dp)
+                    endif
+                enddo
+                if(ind.ne.NonLocCoupLength) then
+                    write(6,*) "NonLocCoupLength: ",NonLocCoupLength
+                    write(6,*) "ind: ",ind
+                    stop 'Error in indexing'
+                endif
+            enddo
+        enddo
+
+    end subroutine add_Nonlocal_comp_inplace
 
     !Add coupling from the impurity sites to the other sites in the lattice
     !This is done to maintain the translational symmetry of the original impurity unit cell

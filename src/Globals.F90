@@ -230,6 +230,7 @@ module Globals
     logical :: tImposephSym         !Impose ph symmetry on the fit
     logical :: tDiagonalSC          !Diagonal self-consistency residual
     real(dp) :: dFitTol_SC          !Tolerance on the gradient for convergence
+    complex(dp), allocatable :: LatDiagBlocks(:,:)  !The impurtiy blocks of the lattice hamiltonian in real space
 
     !Debugging for Self-consistency
     logical :: tSE_Scan
