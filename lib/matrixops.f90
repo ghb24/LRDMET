@@ -38,18 +38,19 @@ MODULE matrixops
 
 CONTAINS
 
-  SUBROUTINE z_inv2(mat,matinv)
+  SUBROUTINE z_inv2(mat,matinv,dimen)
     use const
-    complex(dp), intent(in) :: mat(:,:)
-    complex(dp), dimension(size(mat,1),size(mat,2)), intent(out) :: matinv
-    integer, dimension(size(mat,1)) :: ipiv
+    integer, intent(in) :: dimen
+    complex(dp), intent(in) :: mat(dimen,dimen)
+    complex(dp), dimension(dimen,dimen), intent(out) :: matinv
+    integer, dimension(dimen) :: ipiv
     integer :: msize,nsize,lwork,info
     complex(dp), allocatable :: cWork(:)
 
-    msize=size(mat,1)
-    nsize=size(mat,2)
+    msize=dimen
+    nsize=dimen
     if(msize.ne.nsize) stop 'error in z_inv2'
-    matinv = mat
+    matinv(:,:) = mat(:,:)
 
     info=0
     call ZGETRF(msize,nsize,matinv,nsize,ipiv,info)
@@ -104,20 +105,21 @@ CONTAINS
     
   END SUBROUTINE z_inv
 
-  SUBROUTINE d_inv (mat,matinv)
+  SUBROUTINE d_inv (mat,matinv,dimen)
     
     use const
     implicit none
+    integer, intent(in) :: dimen
     CHARACTER,PARAMETER :: trans='N'
-    REAL(KIND=KIND(1.0_dp)), INTENT(IN) :: mat(:,:)
+    REAL(dp), INTENT(IN) :: mat(dimen,dimen)
 !    REAL(KIND=KIND(1.d0)), DIMENSION(SIZE(mat(:,1)),SIZE(mat(1,:))) ::&
-    REAL(KIND=KIND(1.0_dp)), DIMENSION(SIZE(mat,1),SIZE(mat,2)) ::&
+    REAL(dp), DIMENSION(dimen,dimen) ::&
         & matinv, matdum
-    INTEGER, DIMENSION(SIZE(mat,1)) :: IPIV
+    INTEGER, DIMENSION(dimen) :: IPIV
     INTEGER :: nsize,msize,i,INFO
 
-    msize=SIZE(mat,1)
-    nsize=SIZE(mat,2)
+    msize=dimen
+    nsize=dimen
     matdum=mat
     matinv=zero
     DO i=1,msize

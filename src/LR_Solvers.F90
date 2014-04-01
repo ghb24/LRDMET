@@ -180,7 +180,7 @@ module LRSolvers
     !RHS is overwritten with the solution
     !LHS is destroyed
     subroutine SolveCompLinearSystem(LHS,RHS,nLinearSystem,info)
-        use matrixops, only: z_inv 
+        use matrixops, only: mat_inv 
         implicit none
         integer, intent(in) :: nLinearSystem
         integer, intent(out) :: info
@@ -217,7 +217,7 @@ module LRSolvers
             allocate(tempc(nLinearSystem,nLinearSystem))    !The inverse of the hamiltonian system. May fail to invert at/close to poles where eigenvalues -> 0
             tempc(:,:) = dcmplx(0.0_dp,0.0_dp)
             !Directly invert the LHS
-            call z_inv(LHS,tempc)
+            call mat_inv(LHS,tempc,nLinearSystem)
 
             !Multiply the inverse by the RHS of equations
             allocate(cWork(nLinearSystem))

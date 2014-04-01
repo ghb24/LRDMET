@@ -6,6 +6,7 @@ module SelfConsistentUtils
     use SC_Data
     use mat_tools, only: MakeBlockHermitian,writematrixcomp,writevector
     use mat_tools, only: Add_Nonlocal_comp_inplace
+    use matrixops, only: mat_inv
     implicit none
 
     contains
@@ -266,15 +267,24 @@ module SelfConsistentUtils
     end subroutine ham_to_KBlocks
 
     !Real space hamiltonian to non-local lattice parameters
-    subroutine ham_to_LatParams(iLatParams,LatParams,ham)
+    subroutine ham_to_LatParams(iLatParams,LatParams,ham,tUpdateLocalHam)
         integer, intent(in) :: iLatParams
         real(dp), intent(out) :: LatParams(iLatParams)
         complex(dp), intent(in) :: ham(nSites,nSites)
+        logical, intent(in), optional :: tUpdateLocalHam
         complex(dp), allocatable :: KBlocks(:,:,:)
         integer :: i,j,ind
+        logical :: tUpdateLocalHam_
         character(len=*), parameter :: t_r='ham_to_LatParams'
 
         if(tRealSpaceSC) then
+
+            if(present(tUpdateLocalHam)) then
+                tUpdateLocalHam_ = tUpdateLocalHam
+            else
+                tUpdateLocalHam_ = .true.
+            endif
+
             !Easier - just take the off block-diagonals of the first nImp rows
             ind = 0
             do i = 1,nImp
@@ -285,11 +295,13 @@ module SelfConsistentUtils
             enddo
             if(ind.ne.iLatParams) call stop_all(t_r,'Error filling real-space lattice parameters')
 
-            !Also, update the global array which gives the block diagonals of the lattice hamiltonian in real space
-            if(.not.allocated(LatDiagBlocks)) then
-                allocate(LatDiagBlocks(nImp,nImp))
+            if(tUpdateLocalHam_) then
+                !Also, update the global array which gives the block diagonals of the lattice hamiltonian in real space
+                if(.not.allocated(LatDiagBlocks)) then
+                    allocate(LatDiagBlocks(nImp,nImp))
+                endif
+                LatDiagBlocks(:,:) = ham(1:nImp,1:nImp)
             endif
-            LatDiagBlocks(:,:) = ham(1:nImp,1:nImp)
 
         else
 
@@ -375,16 +387,16 @@ module SelfConsistentUtils
         complex(dp), intent(in) :: KBlocks(nImp,nImp,nKPnts)
 
         integer :: i,j,k,ind,ks,ind_1,ind_2
-        complex(dp), allocatable :: LatticeCoups(:,:),LattCoupTemp(:,:)
-        complex(dp), allocatable :: BlockTemp(:,:),BlockTemp_2(:,:) 
+        complex(dp), allocatable :: LatticeCoups_(:,:),LattCoupTemp(:,:)
+        complex(dp), allocatable :: BlockTemp(:,:),BlockTemp_2(:,:),BlockTemp_3(:,:)
         character(len=*), parameter :: t_r='KBlocks_to_LatParams'
 
         LatParams(:) = zero
 
         if(tRealSpaceSC) then
             
-            allocate(LatticeCoups(nImp,iLatticeCoups))
-            LatticeCoups(:,:) = zzero
+            allocate(LatticeCoups_(nImp,nSites))
+            LatticeCoups_(:,:) = zzero
 
             !For testing
 !            allocate(BlockTemp(nSites,nSites))
@@ -399,7 +411,7 @@ module SelfConsistentUtils
 !            call ZGEMM('N','C',nSites,nSites,nSites,zone,BlockTemp,nSites,RtoK_Rot,nSites,zzero,BlockTemp_2,nSites)
 !            call ZGEMM('N','N',nSites,nSites,nSites,zone,RtoK_Rot,nSites,BlockTemp_2,nSites,zzero,BlockTemp,nSites)
 !
-!            LatticeCoups(:,:) = BlockTemp(1:nImp,nImp+1:nImp+iLatticeCoups)
+!            LatticeCoups_(:,:) = BlockTemp(1:nImp,nImp+1:nImp+iLatticeCoups)
 !            deallocate(BlockTemp,BlockTemp_2)
 
             !Below will be a faster way of doing this, but commented out for the moment to check it is working
@@ -407,24 +419,22 @@ module SelfConsistentUtils
             LattCoupTemp(:,:) = zzero
             allocate(BlockTemp(nImp,nImp))
             allocate(BlockTemp_2(nImp,nImp))
+            allocate(BlockTemp_3(nImp,nImp))
 
             do k = 1,nKPnts
                 ind_1 = ((k-1)*nImp) + 1
                 ind_2 = nImp*k
 
                 BlockTemp_2(:,:) = RtoK_Rot(1:nImp,ind_1:ind_2)
+                BlockTemp_3(:,:) = KBlocks(:,:,k)
 
-                call ZGEMM('N','N',nImp,nImp,nImp,zone,BlockTemp_2,nImp,KBlocks(:,:,k),nImp,zzero,BlockTemp,nImp)
+                call ZGEMM('N','N',nImp,nImp,nImp,zone,BlockTemp_2,nImp,BlockTemp_3,nImp,zzero,BlockTemp,nImp)
 
                 LattCoupTemp(:,ind_1:ind_2) = BlockTemp(:,:)
             enddo
-            call ZGEMM('N','C',nImp,nSites,nSites,zone,LattCoupTemp,nImp,RtoK_Rot,nSites,zzero,LatticeCoups,nImp)
+            call ZGEMM('N','C',nImp,nSites,nSites,zone,LattCoupTemp,nImp,RtoK_Rot,nSites,zzero,LatticeCoups_,nImp)
 
-            write(6,*) "Get here 1"
-            call flush(6)
-            deallocate(BlockTemp,BlockTemp_2,LattCoupTemp)
-            write(6,*) "Get here 2"
-            call flush(6)
+            deallocate(BlockTemp,BlockTemp_2,BlockTemp_3,LattCoupTemp)
 
             ind = 0
             do i = 1,nImp
@@ -432,20 +442,16 @@ module SelfConsistentUtils
                     ind = ind + 1
                     if(ind.gt.iLatParams) call stop_all(t_r,'indexing error')
 
-                    if(abs(aimag(LatticeCoups(i,j))).gt.1.0e-7_dp) then
-                        !call writematrixcomp(LatticeCoups,'Lattice Couplings',.true.)
+                    if(abs(aimag(LatticeCoups_(i,nImp+j))).gt.1.0e-7_dp) then
+                        !call writematrixcomp(LatticeCoups_,'Lattice Couplings',.true.)
                         !call stop_all(t_r,'Lattice couplings should not be complex')
-                        write(6,"(A,I7,G17.10)") "Removing complex component of coupling: ",j,aimag(LatticeCoups(i,j))
+                        write(6,"(A,I7,G17.10)") "Removing complex component of coupling: ",j,aimag(LatticeCoups_(i,j+nImp))
                     endif
-                    LatParams(ind) = real(LatticeCoups(i,j),dp)
+                    LatParams(ind) = real(LatticeCoups_(i,j+nImp),dp)
 
                 enddo
             enddo
-            write(6,*) "Get here 3",allocated(LatticeCoups)
-            call flush(6)
-            deallocate(LatticeCoups)
-            write(6,*) "Get here 4"
-            call flush(6)
+            deallocate(LatticeCoups_)
         else
             
             if(tConstrainKSym) then
@@ -558,7 +564,7 @@ module SelfConsistentUtils
         real(dp), intent(in) :: mu
         real(dp), intent(in) :: LatParams(iLatParams)
         complex(dp), intent(out) :: KBlocks(nImp,nImp,nKPnts)
-        complex(dp), allocatable :: ham(:,:),ztemp(:,:),ztemp_2(:,:)
+        complex(dp), allocatable :: ham(:,:),ztemp(:,:),ztemp_2(:,:),temp_block(:,:)
         integer :: ind,i,j,ks,k,ind_1,ind_2
         character(len=*), parameter :: t_r='LatParams_to_KBlocks'
 
@@ -574,14 +580,16 @@ module SelfConsistentUtils
             call LatParams_to_ham(iLatParams,LatParams,mu,ham)
             allocate(ztemp(nSites,nImp))
             allocate(ztemp_2(nSites,nImp))
+            allocate(temp_block(nImp,nImp))
             do k = 1,nKPnts
                 ind_1 = ((k-1)*nImp) + 1
                 ind_2 = nImp*k
                 ztemp_2(:,:) = RtoK_Rot(:,ind_1:ind_2)
                 call ZGEMM('N','N',nSites,nImp,nSites,zone,ham,nSites,ztemp_2,nSites,zzero,ztemp,nSites)
-                call ZGEMM('C','N',nImp,nImp,nSites,zone,ztemp_2,nSites,ztemp,nSites,zzero,KBlocks(:,:,k),nImp)
+                call ZGEMM('C','N',nImp,nImp,nSites,zone,ztemp_2,nSites,ztemp,nSites,zzero,temp_block,nImp)
+                KBlocks(:,:,k) = temp_block(:,:)
             enddo
-            deallocate(ham,ztemp,ztemp_2)
+            deallocate(ham,ztemp,ztemp_2,temp_block)
             !TODO: ph symmetry imposed?
         else
             !k-space hamiltonian optimization
@@ -948,7 +956,6 @@ module SelfConsistentUtils
     subroutine InvertLocalNonHermFunc(n,InvGF)
         use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
         use sort_mod, only: Orthonorm_zgeev_vecs
-        use matrixops, only: mat_inv
         implicit none
         integer, intent(in) :: n
         complex(dp), intent(inout) :: InvGF(nImp,nImp,n)
@@ -960,7 +967,7 @@ module SelfConsistentUtils
 
         if(.true.) then
             do i = 1,n
-                call mat_inv(InvGF(:,:,i),IGF)
+                call mat_inv(InvGF(:,:,i),IGF,nImp)
                 InvGF(:,:,i) = IGF(:,:)
             enddo
         else
@@ -1178,6 +1185,13 @@ module SelfConsistentUtils
         complex(dp) :: KBlock(nImp,nImp),KBlock2(nImp,nImp),cTemp(nImp,nImp)
         complex(dp), allocatable :: KBlocks(:,:,:),cWork(:)
         character(len=*), parameter :: t_r='Imposesym_2'
+
+        if(tRealSpaceSC) then
+            !The code will work if it goes through the other bit, but it will
+            !have to throw away the complex coefficients at the end...
+            call Imposesym_RS(iLatParams,vars,mu)
+            return
+        endif
             
         allocate(KBlocks(nImp,nImp,nKPnts))
         call LatParams_to_KBlocks(iLatParams,vars,mu,KBlocks)
@@ -1213,7 +1227,7 @@ module SelfConsistentUtils
 
         if(tImposephsym) then
         
-            !write(6,*) "*** IMPOSING PH SYMMETRY ***",mu
+!            write(6,*) "*** IMPOSING PH SYMMETRY ***",mu
             if(mod(nImp,2).eq.0) then
                 !Multiple of two bands per kpoint. Constrain them so that they are in pairs
                 allocate(rWork(max(1,3*nImp-2)))
@@ -1293,5 +1307,77 @@ module SelfConsistentUtils
         deallocate(KBlocks)
 
     end subroutine Imposesym_2
+            
+    !Do diag in real space to avoid getting a complex hamiltonian on back rotation
+    !Diagonalize real-space hamiltonian
+    subroutine Imposesym_RS(iLatParams,vars,mu)
+        integer, intent(in) :: iLatParams
+        real(dp), intent(inout) :: vars(iLatParams)
+        real(dp), intent(in) :: mu
+        complex(dp), allocatable :: ham_comp(:,:)
+        real(dp), allocatable :: ham_real(:,:),vals(:),work(:),ham_real_2(:,:),temp(:,:)
+        integer :: i,j,info,lWork
+        real(dp) :: DistFromMu
+        character(len=*), parameter :: t_r='Imposesym_RS'
+
+        allocate(ham_comp(nSites,nSites))
+
+        call LatParams_to_ham(iLatParams,vars,mu,ham_comp)
+
+        allocate(ham_real(nSites,nSites))
+        do i = 1,nSites
+            do j = 1,nSites
+                ham_real(j,i) = real(ham_comp(j,i),dp)
+            enddo
+        enddo
+
+        !Diagonalize
+        allocate(vals(nSites))
+        vals(:) = zero
+        allocate(work(1))
+        lWork = -1
+        info = 0
+        call dsyev('V','L',nSites,ham_real,nSites,vals,work,lwork,info)
+        if(info.ne.0) call stop_all(t_r,'Workspace query failed')
+        lwork=int(work(1))+1
+        deallocate(work)
+        allocate(work(lwork))
+        call dsyev('V','L',nSites,ham_real,nSites,vals,work,lwork,info)
+        if(info.ne.0) call stop_all(t_r,'Diag failed')
+        deallocate(work)
+
+        !Organise pairs of orbitals
+        do i = 1,nSites/2
+            DistFromMu = 0.5_dp * (- vals(i) + vals(nSites-i+1) )
+            !write(6,*) "Dist from mu: ",DistFromMu 
+            vals(i) = mu - DistFromMu
+            vals(nSites-i+1) = mu + DistFromMu
+        enddo
+
+        !Now, rotate the block back into real space using the same eigenvectors
+        allocate(ham_real_2(nSites,nSites))
+        ham_real_2(:,:) = zzero
+        do i = 1,nSites
+            ham_real_2(i,i) = vals(i)
+        enddo
+        deallocate(vals)
+        allocate(temp(nSites,nSites))
+        call DGEMM('N','N',nSites,nSites,nSites,one,ham_real,nSites,ham_real_2,nSites,zero,temp,nSites)
+        call DGEMM('N','T',nSites,nSites,nSites,one,temp,nSites,ham_real,nSites,zero,ham_real_2,nSites)
+        deallocate(temp,ham_real)
+        !ham_real_2 now contains the new hamiltonian
+
+        !Do not update the local part of the hamiltonians if it has changed
+        !Wants to take a complex hamiltonian
+        ham_comp(:,:) = zzero
+        do i = 1,nSites
+            do j = 1,nSites
+                ham_comp(j,i) = cmplx(ham_real_2(j,i),zero,dp)
+            enddo
+        enddo
+        call ham_to_LatParams(iLatParams,vars,ham_comp,tUpdateLocalHam=.false.)
+        deallocate(ham_real_2,ham_comp)
+
+    end subroutine Imposesym_RS
 
 end module SelfConsistentUtils

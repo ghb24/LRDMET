@@ -4,7 +4,7 @@ module fitting
     use globals
     use mat_tools, only: GFErr,RDMErr,FromTriangularPacked,ToTriangularPacked,FromCompPacked,ToCompPacked,znrm2,mkgf
     use mat_tools, only: WriteMatrixcomp,add_localpot_comp_inplace
-    use matrixops, only: z_inv
+    use matrixops, only: mat_inv
     implicit none
 
     contains
@@ -40,7 +40,7 @@ module fitting
             allocate(NI_GF(nImp,nImp))
             allocate(HL_GF_Inv(nImp,nImp))
             HL_GF_Inv(:,:) = zzero
-            call z_inv(HL_GF,HL_GF_Inv)
+            call mat_inv(HL_GF,HL_GF_Inv,nImp)
 !            HL_GF_Inv(:,:) = 1.0_dp/HL_GF(:,:)
             !call writematrixcomp(HL_GF_Inv,'Inverse of high-level GF',.true.)
 
@@ -84,7 +84,7 @@ module fitting
                 endif
 
                 !Invert non-interacting greens functions
-                call z_inv(NI_GF,NI_GF_Inv)
+                call mat_inv(NI_GF,NI_GF_Inv,nImp)
 !                NI_GF_Inv(:,:) = 1.0_dp/NI_GF(:,:)
                 !call writematrixcomp(NI_GF_Inv,'Inverse of NI GF',.true.)
 

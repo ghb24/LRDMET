@@ -7,6 +7,7 @@ module SelfConsistentLR
     use Continuation
     use utils, only: get_free_unit,append_ext_real,append_ext
     use mat_tools, only: AddPeriodicImpCoupling_RealSpace 
+    use matrixops, only: mat_inv
     use SelfConsistentUtils
     implicit none
 
@@ -3211,7 +3212,6 @@ module SelfConsistentLR
     !Via a NR algorithm, iteratively converge the global coupling (Z) of the cluster to the lattice
     !LocalCoupFunc is X'(omega)
     subroutine ConvergeGlobalCoupling(n,LocalCoupFunc,GlobalCoup,mu,dFuncTol,dConvTol,tOmegaConv,tSuccess,iMaxIter)
-        use matrixops, only: mat_inv
         implicit none
         integer, intent(in) :: n
         complex(dp), intent(in) :: LocalCoupFunc(nImp,nImp,n)
@@ -3285,7 +3285,7 @@ module SelfConsistentLR
                     do j = 1,nImp
                         ChangeZ(j,j) = ChangeZ(j,j) + dcmplx(Omega + mu,dDelta)
                     enddo
-                    call mat_inv(ChangeZ,InvMat)
+                    call mat_inv(ChangeZ,InvMat,nImp)
                     !Sum this into the *local* greens function (i.e. a fourier transform of r=0 component)
                     Fn(:,:,i) = Fn(:,:,i) + InvMat(:,:)
                     Omega = Omega + Omega_Step
@@ -3316,7 +3316,6 @@ module SelfConsistentLR
     end subroutine ConvergeGlobalCoupling
                 
     subroutine FindChangeZ(Omega,mu,X_prime,Z,k_Hams,Grad,Func,ChangeZ,AbsChange,tConv,dFuncTol,dChangeTol)
-        use matrixops, only: mat_inv
         implicit none
         real(dp), intent(in) :: Omega,mu
         complex(dp), intent(in) :: X_prime(nImp,nImp)
@@ -3390,7 +3389,7 @@ module SelfConsistentLR
                     do j = 1,nImp
                         Fn(j,j) = Fn(j,j) + dcmplx(Omega + mu,dDelta)
                     enddo
-                    call mat_inv(Fn,InvMat)
+                    call mat_inv(Fn,InvMat,nImp)
                     NewFn(:,:) = NewFn(:,:) + InvMat(:,:)
                 enddo
                 NewFn(:,:) = NewFn(:,:) / real(nKPnts,dp)
@@ -3700,7 +3699,6 @@ module SelfConsistentLR
     !LocalCoupFunc is the X'(omega) function with the local GF - local hybridization
     !GlobalCoup is the striped coupling function through k-space
     subroutine GetFuncValsandGrads(n,mu,LocalCoupFunc,GlobalCoup,k_Hams,FuncVal,Grad)
-        use matrixops, only: mat_inv
         implicit none
         integer, intent(in) :: n
         real(dp), intent(in) :: mu
@@ -3746,7 +3744,7 @@ module SelfConsistentLR
         
                 !3) Invert A_k(omega)
                 A_Inv(:,:) = zzero
-                call mat_inv(A,A_Inv)
+                call mat_inv(A,A_Inv,nImp)
 
                 !4) Sum into function evaluation for this frequency
                 FuncVal(:,:,i) = FuncVal(:,:,i) + A_Inv(:,:)
@@ -4434,7 +4432,6 @@ module SelfConsistentLR
     !Can optionally take a periodic lattice hamiltonian on which to calculate greens function (will then not use self-energy)
     !Can optionally take a coupling length for the non-local terms of the matrix, which should speed up the FT to k-space
     subroutine FindLocalMomGF(n,SE,LocalMomGF,tMatbrAxis,ham,CouplingLength,evals,FreqPoints)
-        use matrixops, only: mat_inv
         implicit none
         integer, intent(in) :: n
         complex(dp), intent(in) :: SE(nImp,nImp,n)
@@ -4672,7 +4669,7 @@ module SelfConsistentLR
 !                call zGEMM('N','C',SS_Period,SS_Period,SS_Period,zone,ztemp2,SS_Period,LVec,SS_Period,zzero,InvMat,SS_Period)
 
                 !Instead of explicit diagonalization, we can just invert
-                call mat_inv(InvMat,ztemp2)
+                call mat_inv(InvMat,ztemp2,SS_Period)
 
                 !InvMat is now the non-interacting greens function for this k: TEST THIS!
                 !Sum this into the *local* greens function (i.e. a fourier transform of r=0 component)

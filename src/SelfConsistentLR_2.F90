@@ -363,7 +363,7 @@ module SelfConsistentLR2
 !                            endif
                         endif
                     enddo
-                    call mat_inv(InvMat,InvMat2)
+                    call mat_inv(InvMat,InvMat2,nImp)
                 
 !                    call writematrixcomp(InvMat2,'Inverse matrix from mat_inv',.true.)
 !                    write(6,"(A,I6,A,G25.10)") "For kpoint: ",k," (w-h)^-1 Off diagonal hermiticity: ",abs(InvMat2(1,2)-dconjg(InvMat2(2,1)))
@@ -674,8 +674,10 @@ module SelfConsistentLR2
                     !Request the function (FinalErr), and the gradient (grad) at the current parameters (vars)
 
                     !Compute function and gradient
+                    !write(6,*) "Calling CalcLatticeFitResidual_2",isave(34)
                     call CalcLatticeFitResidual_2(iCorrFnTag,CorrFn_HL,n,mu,iLatParams,vars,FinalErr,  &
                         tMatbrAxis,FreqPoints=FreqPoints,Weights=Weights,dJacobian=grad)
+                    !write(6,*) "Residual: ",FinalErr,sum(grad)
                 elseif(task(1:5).eq.'NEW_X') then
                     !Returned with a new iterate
                     !Have we already been through more iterations than we want?
@@ -949,7 +951,7 @@ module SelfConsistentLR2
                             endif
                         enddo
                         InvMat = zzero
-                        call mat_inv(Mat,InvMat)
+                        call mat_inv(Mat,InvMat,nImp)
 
                         call ZGEMM('N','N',nImp,nImp,nImp,zone,ExtractMat,nImp,InvMat,nImp,zzero,ztmp,nImp)
                         call ZGEMM('N','N',nImp,nImp,nImp,zone,InvMat,nImp,ztmp,nImp,zzero,ztmp2,nImp)
@@ -1004,7 +1006,7 @@ module SelfConsistentLR2
                                 endif
                             enddo
                             InvMat = zzero
-                            call mat_inv(Mat,InvMat)
+                            call mat_inv(Mat,InvMat,nImp)
 
                             call ZGEMM('N','N',nImp,nImp,nImp,zone,ExtractMat,nImp,InvMat,nImp,zzero,ztmp,nImp)
                             call ZGEMM('N','N',nImp,nImp,nImp,zone,InvMat,nImp,ztmp,nImp,zzero,ztmp2,nImp)
@@ -1192,7 +1194,7 @@ module SelfConsistentLR2
                     ham_temp(j,j) = ham_temp(j,j) + cmplx(Omega + mu,dDelta,dp)
                 endif
             enddo
-            call mat_inv(ham_temp,ham_temp_2)
+            call mat_inv(ham_temp,ham_temp_2,nSites)
             !ham_temp_2 is now the inverse of the greens function (we could do this with 2x k-space rotations instead?)
 
             ind = 0

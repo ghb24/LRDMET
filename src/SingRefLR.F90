@@ -3,7 +3,6 @@ module SingRefLR
     use timing
     use errors, only: stop_all,warning
     use mat_tools, only: WriteVector,WriteMatrix,WriteVectorInt,WriteMatrixComp,WriteVectorComp,znrm2
-    use matrixops, only: z_inv
     use globals
 
     contains
@@ -730,7 +729,7 @@ module SingRefLR
     !This is done in the spin-orbital space
     subroutine RPA_LR()
         use utils, only: get_free_unit,append_ext_real,append_ext
-        use matrixops, only: d_inv
+        use matrixops, only: mat_inv
         use DetTools, only: tospat,GetHFAntisymInt_spinorb
         implicit none
         integer :: ov_space,virt_start,ierr,j,ex(2,2),ex2(2,2),n,i,m,nj_ind,mi_ind,info,lwork
@@ -1091,7 +1090,7 @@ module SingRefLR
         allocate(temp2(ov_space,ov_space))
         temp2(:,:) = 0.0_dp
         !Find X^-1 
-        call d_inv(X_stab,temp2)
+        call mat_inv(X_stab,temp2,ov_space)
 !            call writematrix(temp2,'X^-1',.true.)
         allocate(temp(ov_space,ov_space))
         !Find Z (temp)
