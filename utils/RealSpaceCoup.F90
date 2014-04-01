@@ -202,6 +202,19 @@ program RealSpaceCoup
         do k = 1,nKPnts
             ind_1 = ((k-1)*nImp) + 1
             ind_2 = nImp*k
+            do i = ind_1,ind_2
+                do j = ind_1,ind_2
+                    if((i.eq.j).and.(abs(aimag(ham_temp(i,j))).gt.1.0e-8_dp)) then
+                        write(6,*) "kblock: ",k
+                        call writematrixcomp(ham_temp(ind_1:ind_2,ind_1:ind_2),'kblock',.true.)
+                        stop 'k-block not diagonal real'
+                    elseif((i.ne.j).and.(abs(aimag(ham_temp(i,j)+ham_temp(j,i))).gt.1.0e-8_dp)) then
+                        write(6,*) "kblock: ",k
+                        call writematrixcomp(ham_temp(ind_1:ind_2,ind_1:ind_2),'kblock',.true.)
+                        stop 'k-block not off-diagonal hermitian'
+                    endif
+                enddo
+            enddo
             ham_temp(ind_1:ind_2,ind_1:ind_2) = zzero
         enddo
         !Now check to see if there are any non-zero elements. If so, the unitary rotation is not correct
@@ -216,7 +229,7 @@ program RealSpaceCoup
             enddo
         enddo
         deallocate(temp,Random_Corrpot,ham_temp)
-        write(6,"(A)") "k-space rotations correctly block diagonalize general one-electron matrix"
+        write(6,"(A)") "k-space rotations correctly block diagonalize general one-electron matrix with local interactions"
 
         !Now, add arbitrary non-local couplings in real space
         allocate(ham_temp(nSites,nSites))
@@ -266,11 +279,11 @@ program RealSpaceCoup
             enddo
         enddo
 
-        !call WriteMatrixcomptoreal(ham_temp,'Before non-loc coups',.true.)
+        call WriteMatrixcomptoreal(ham_temp,'Before non-loc coups',.true.)
 
         call Add_Nonlocal_comp_inplace(ham_temp,NonLocCoup,NonLocCoupLength,tAdd=.true.)
 
-        !call WriteMatrixcomptoreal(ham_temp,'After non-loc coups',.true.)
+        call WriteMatrixcomptoreal(ham_temp,'After non-loc coups',.true.)
 
         !Now, check whether it is still k-space kosher
         !Rotate ham_temp into k-space
@@ -281,9 +294,26 @@ program RealSpaceCoup
         !ham_temp is now in kspace
         !call WriteMatrixcomp(ham_temp,'k-space ham after non-loc coups',.true.)
         !Zero the diagonal blocks
+        !write(6,*) "K-blocks:"
         do k = 1,nKPnts
             ind_1 = ((k-1)*nImp) + 1
             ind_2 = nImp*k
+            write(6,*) "kblock: ",k
+            call writematrixcomp(ham_k(ind_1:ind_2,ind_1:ind_2),'kblock',.true.)
+            do i = ind_1,ind_2
+                do j = ind_1,ind_2
+                    if((i.eq.j).and.(abs(aimag(ham_k(i,j))).gt.1.0e-8_dp)) then
+                        write(6,*) "kblock: ",k
+                        call writematrixcomp(ham_k(ind_1:ind_2,ind_1:ind_2),'kblock',.true.)
+                        write(6,*) "*** k-block not diagonal real ***"
+            !            stop 'k-block not diagonal real'
+                    elseif((i.ne.j).and.(abs(aimag(ham_k(i,j)+ham_k(j,i))).gt.1.0e-8_dp)) then
+                        write(6,*) "kblock: ",k
+                        call writematrixcomp(ham_k(ind_1:ind_2,ind_1:ind_2),'kblock',.true.)
+                        stop 'k-block not off-diagonal hermitian'
+                    endif
+                enddo
+            enddo
             ham_k(ind_1:ind_2,ind_1:ind_2) = zzero
         enddo
         !Now check to see if there are any non-zero elements. If so, the unitary rotation is not correct
@@ -514,7 +544,7 @@ program RealSpaceCoup
         complex(dp), intent(in) :: NonLocCoup(nImp,NonLocCoupLength)
         logical , intent(in), optional :: tAdd
         real(dp) :: phase
-        integer :: k,i,j,ind_1,ind_2,ind
+        integer :: k,i,j,ind_1,ind_2,ind,ii,ind_v
             
         if(tPeriodic) then
             phase = 1.0_dp
@@ -551,15 +581,26 @@ program RealSpaceCoup
                 endif
 
                 !Fill up coupling to the left
+                !For multiple impurities, we want to flip the order it is applied for PBCs
                 ind = 0
                 do j = ind_1-1,ind_1-NonLocCoupLength,-1
 
                     ind = ind + 1
                     if(j.ge.1) then
-                        ham(ind_1:ind_2,j) = NonLocCoup(:,ind)
+                        !Also flip the order in which the non local interactions are applied row-wise
+                        ind_v = 0
+                        do ii = ind_2,ind_1,-1
+                            ind_v = ind_v + 1
+                            ham(ii,j) = NonLocCoup(ind_v,ind)
+                        enddo
                     else
                         !Wrap around matrix with appropriate boundary conditions
-                        ham(ind_1:ind_2,j+nSites) = NonLocCoup(:,ind)*phase
+                        !Also flip the order in which the non local interactions are applied row-wise
+                        ind_v = 0
+                        do ii = ind_2,ind_1,-1
+                            ind_v = ind_v +1
+                            ham(ii,j+nSites) = NonLocCoup(ind_v,ind)*phase
+                        enddo
                     endif
                 enddo
                 if(ind.ne.NonLocCoupLength) then

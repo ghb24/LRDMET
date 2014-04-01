@@ -159,15 +159,47 @@ module SelfConsistentUtils
         implicit none
         integer, intent(in) :: iLatParams
         real(dp), intent(in) :: LatParams(iLatParams)
-        integer :: iunit,i
+        integer :: iunit,i,j,k,ks,kspace_params
+        complex(dp), allocatable :: KBlocks(:,:,:)
             
         write(6,"(A)") "Writing lattice k-space hamiltonian..."
         iunit = get_free_unit()
+
         open(unit=iunit,file='LatkBlocks',status='unknown')
-        write(iunit,*) iLatParams
-        do i = 1,iLatParams
-            write(iunit,*) LatParams(i)
-        enddo
+        if(tRealSpaceSC) then
+            !Convert to k-space... HACK
+            !TODO: In the future, just write out real space coupling
+            allocate(KBlocks(nImp,nImp,nKPnts))
+            call LatParams_to_KBlocks(iLatParams,LatParams,U/2.0_dp,KBlocks)
+            if(tShift_Mesh) then
+                ks = nKPnts/2
+            else
+                ks = (nKPnts/2) + 1
+            endif
+            !because they're complex
+            kspace_params = ((nImp*(nImp+1)/2) + (nImp*(nImp-1)/2)) * ks
+            write(iunit,*) kspace_params
+            do k = 1,ks
+                do i = 1,nImp
+                    !Run through columns
+                    do j = i,nImp
+                        !Run through rows
+                        if(i.eq.j) then
+                            write(iunit,*) real(KBlocks(j,i,k),dp)
+                        else
+                            write(iunit,*) real(KBlocks(j,i,k),dp)
+                            write(iunit,*) aimag(KBlocks(j,i,k))
+                        endif
+                    enddo
+                enddo
+            enddo
+            deallocate(KBlocks)
+        else
+            write(iunit,*) iLatParams
+            do i = 1,iLatParams
+                write(iunit,*) LatParams(i)
+            enddo
+        endif
         close(iunit)
 
     end subroutine WriteLatticeParams
