@@ -285,6 +285,8 @@ program RealSpaceCoup
 
         call WriteMatrixcomptoreal(ham_temp,'After non-loc coups',.true.)
 
+        call writematrixcomp(ham_temp,'Full H',.true.)
+
         !Now, check whether it is still k-space kosher
         !Rotate ham_temp into k-space
         allocate(temp(nSites,nSites))
@@ -505,12 +507,14 @@ program RealSpaceCoup
                         do ii = 1,nImp
                             do jj = 1,nImp
 
-                                err = err + real((num(jj,ii)-Derivatives(jj,ii,j,i,w))*dconjg(num(jj,ii)-Derivatives(jj,ii,j,i,w)),dp)
+                                err = err + real((num(jj,ii)-Derivatives(jj,ii,j,i,w))  &
+                                    *dconjg(num(jj,ii)-Derivatives(jj,ii,j,i,w)),dp)
 
                             enddo
                         enddo
 
-                        write(78,"(3I7,7G25.14)") w,i,j,diff,real(num(1,1)),aimag(num(1,1)),real(Derivatives(1,1,j,i,w)),aimag(Derivatives(1,1,j,i,w)),err,err/abs(Derivatives(1,1,j,i,w))
+                        write(78,"(3I7,7G25.14)") w,i,j,diff,real(num(1,1)),aimag(num(1,1)),    &
+                            real(Derivatives(1,1,j,i,w)),aimag(Derivatives(1,1,j,i,w)),err,err/abs(Derivatives(1,1,j,i,w))
 
                         diff = diff/2.0_dp
                     enddo
