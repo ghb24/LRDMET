@@ -2060,6 +2060,30 @@ module mat_tools
         endif
 
     end subroutine var_to_couplingind
+    
+  !Find the index of the coupling vector from the block, column and row in the block
+    subroutine couplingind_to_var(ind_r,ind_c,ind_block,blocksize,ind)
+        implicit none
+        integer, intent(in) :: ind_r,ind_c,ind_block,blocksize
+        integer, intent(out) :: ind
+
+        if(tOddFullNonlocCoups) then
+            if(ind_block.gt.(((nSites/nImp)-2)/2)) then
+                !ind_block > iFullBlocks
+                !We now need to consider the special block.
+                if(ind_c.ge.ind_r) stop 'Sending in wrong half indices for half-block'
+                ind = (ind_block-1)*(nImp**2) + (nImp*(nImp-1))/2 -   &
+                    ((nImp-ind_c)*(nImp-ind_c+1))/2 + ind_r - ind_c
+            else
+                ind = (ind_block-1)*(nImp**2) + (nImp*(ind_c-1)) + ind_r
+            endif
+        else
+            !simples
+            ind = (ind_block-1)*(nImp**2) + (nImp*(ind_c-1)) + ind_r
+        endif
+
+    end subroutine couplingind_to_var
+
 
     !Add coupling from the impurity sites to the other sites in the lattice
     !This is done to maintain the translational symmetry of the original impurity unit cell
