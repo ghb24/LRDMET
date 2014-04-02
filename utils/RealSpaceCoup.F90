@@ -13,14 +13,15 @@ program RealSpaceCoup
 
     integer :: nSites
 
-    integer :: nImp,nKPnts
+    integer :: nImp,nKPnts,iNonLocCoupBlocks
     logical :: tAntiPeriodic,tPeriodic,tShift_Mesh
     real(dp) :: BZVol,r2
     real(dp), allocatable :: h0(:,:),KPnts(:),RecipLattVecs(:)
     real(dp) :: PrimLattVec(1)
     complex(dp), allocatable :: RtoK_Rot(:,:)
     complex(dp), allocatable :: FreqPoints(:)
-    complex(dp), allocatable :: Derivatives(:,:,:,:,:)
+    complex(dp), allocatable :: Derivatives(:,:,:,:)
+    logical :: tOddFullNonlocCoups
     save
 
     call main()
@@ -29,14 +30,15 @@ program RealSpaceCoup
 
     subroutine main()
         implicit none
-        integer :: i,j,k,ind_1,ind_2,w,ii,jj
-        real(dp) :: phase,r,diff,r2,err
+        integer :: i,j,k,ind_1,ind_2,w,ii,jj,ind_r,ind_c
+        real(dp) :: phase,r,diff,r2,err,r3,r4
         complex(dp), allocatable :: temp(:,:),ham_temp(:,:),Random_Corrpot(:,:)
-        integer :: NonLocCoupLength
-        complex(dp), allocatable :: NonLocCoup(:,:),ham_k(:,:)
+        integer :: NonLocCoupLength,MaxBlocks,iFullBlocks,ind_block
+        logical :: tFound
+        complex(dp), allocatable :: NonLocCoup(:),ham_k(:,:),KBlocks(:,:,:)
         complex(dp), allocatable :: GF_k(:,:,:),GF_r(:,:,:),InvHam(:,:),InvHam_2(:,:)
         complex(dp), allocatable :: ham_temp_2(:,:),ham_temp_3(:,:),num(:,:)
-        complex(dp), allocatable :: NonLocCoup_tmp(:,:)
+        complex(dp), allocatable :: NonLocCoup_tmp(:)
 
         write(6,*) "Enter total number of sites: "
         read(*,*) nSites
@@ -45,6 +47,14 @@ program RealSpaceCoup
         write(6,*) "Enter number of impurity sites: "
         read(*,*) nImp
         write(6,*) "Number of impurity sites: ",nImp
+
+        write(6,*) "Enter number of non-local coupling blocks (0=full): "
+        read(*,*) iNonLocCoupBlocks
+        if(iNonLocCoupBlocks.eq.0) then
+            write(6,*) "All possible non-local couplings will be used in the lattice."
+        else
+            write(6,*) "Number of non-local coupling blocks: ",iNonLocCoupBlocks
+        endif
 
         if(mod(nSites,2).ne.0) stop 'must have even number of sites'
         if(mod(nSites,nImp).ne.0) stop 'must have an integer number of impurity replicas through space'
@@ -110,12 +120,14 @@ program RealSpaceCoup
 
         RecipLattVecs(1) = 2.0_dp*pi/real(nImp,dp)
         !Just use equally spaced mesh starting at -pi/SS_Period, and working our way across
+        write(6,*) "KPoints: "
         do k = 1,nKPnts
             KPnts(k) = -RecipLattVecs(1)/2.0_dp + (k-1)*RecipLattVecs(1)/nKPnts
             if(tShift_Mesh) then
                 !Shift kpoint mesh by half the kpoint spacing
                 KPnts(k) = KPnts(k) + RecipLattVecs(1)/(2.0_dp*real(nKPnts,dp))
             endif
+            write(6,*) k,KPnts(k)
         enddo
             
         !Setup rotation matrix from site basis to k-space
@@ -231,7 +243,85 @@ program RealSpaceCoup
         deallocate(temp,Random_Corrpot,ham_temp)
         write(6,"(A)") "k-space rotations correctly block diagonalize general one-electron matrix with local interactions"
 
-        !Now, add arbitrary non-local couplings in real space
+        !Create arbitrary k-space blocks, which nevertheless obey the symmetry that h_{k}=h_{-k}*
+        allocate(KBlocks(nImp,nImp,nKPnts))
+        KBlocks(:,:,:) = zzero
+        do k = 1,nKPnts
+            tFound = .false.
+            do i = 1,k-1
+                !Search if minus this kpoint has already been created
+                if(abs(KPnts(i)+KPnts(k)).lt.1.0e-8_dp) then
+                    !This already has another kpoint
+                    KBlocks(:,:,k) = dconjg(KBlocks(:,:,i))
+                    tFound = .true.
+                endif
+            enddo
+            if(.not.tFound) then
+                !Create arbitrary hermitian complex hamiltonian for this kpoint
+                do i = 1,nImp
+                    do j = i,nImp
+                        if(i.eq.j) then
+                            call random_number(r)
+                            call random_number(r2)
+                            if(r2.lt.0.5_dp) then
+                                KBlocks(j,i,k) = cmplx(r,zero,dp)
+                            else
+                                KBlocks(j,i,k) = cmplx(-r,zero,dp)
+                            endif
+                        else
+                            call random_number(r)
+                            call random_number(r2)
+                            call random_number(r3)
+                            call random_number(r4)
+                            KBlocks(j,i,k) = cmplx(r,r2,dp)
+                            if(r3.lt.0.5_dp) then
+                                KBlocks(j,i,k) = dconjg(KBlocks(j,i,k))
+                            endif
+                            if(r4.lt.0.5_dp) then
+                                KBlocks(j,i,k) = cmplx(-real(KBlocks(j,i,k),dp),aimag(KBlocks(j,i,k)),dp)
+                            endif
+                        endif
+                    enddo
+                enddo
+                call MakeBlockHermitian(KBlocks(:,:,k),nImp)
+            endif
+!            write(6,*) "For kblock: ",k
+!            call writematrixcomp(KBlocks(:,:,k),'kblock ham',.true.)
+        enddo
+
+        !Now, rotate back into real space from kspace
+        allocate(temp(nSites,nImp))
+        allocate(ham_k(nSites,nSites))
+        ham_k(:,:) = zzero
+        do k = 1,nKPnts
+            ind_1 = ((k-1)*nImp) + 1
+            ind_2 = nImp*k
+            call ZGEMM('N','N',nSites,nImp,nImp,zone,RtoK_Rot(:,ind_1:ind_2),nSites,KBlocks(:,:,k),nImp,zzero,temp,nSites)
+            call ZGEMM('N','C',nSites,nSites,nImp,zone,temp,nSites,RtoK_Rot(:,ind_1:ind_2),nSites,zone,ham_k,nSites)
+        enddo
+        deallocate(temp)
+        deallocate(KBlocks)
+!        write(6,*) "Writing out matrix: ",'real-space ham from arbitrary kblocks'
+!        write(6,"(A,I7,A,I7)") "Size: ",size(mat,1)," by ",size(mat,2)
+!        do i=1,nSites
+!            do j=1,nSites
+!                write(6,"(2F7.3)",advance='no') ham_k(i,j)
+!            enddo
+!            write(6,*)
+!        enddo
+        !call writematrixcomp(ham_k,'real-space ham from arbitrary kblocks',.true.)
+
+        !Check for hermiticity
+        do i = 1,nSites
+            do j = 1,nSites
+                if(abs(ham_k(i,j)-dconjg(ham_k(j,i))).gt.1.0e-8_dp) then
+                    stop 'hermiticity broken'
+                endif
+            enddo
+        enddo
+        deallocate(ham_k)
+
+        !Now, add arbitrary local couplings in real space
         allocate(ham_temp(nSites,nSites))
         do i = 1,nSites
             do j = 1,nSites
@@ -257,26 +347,43 @@ program RealSpaceCoup
         call add_localpot_comp_inplace(ham_temp,Random_CorrPot,tAdd=.true.)
         
         !Now, add non-local terms, which retain periodicity
-        if(mod(nSites-nImp,2).ne.0) then
-            NonLocCoupLength = (nSites-nImp-1)/2
+        if(mod((nSites-nImp)/nImp,2).ne.0) then
+            !Even number of kpoints overall (Odd number of nonlocal coupling blocks)
+            MaxBlocks = (nSites/nImp)/2
         else
-            NonLocCoupLength = (nSites-nImp)/2
+            !Odd number of kpoints overall (Even number of nonlocal coupling blocks)
+            MaxBlocks = (nSites/nImp - 1)/2
+        endif
+        if((iNonLocCoupBlocks.eq.0).or.(iNonLocCoupBlocks.ge.MaxBlocks)) then
+            iNonLocCoupBlocks = 0
+            !We want all the blocks
+            if(mod((nSites-nImp)/nImp,2).ne.0) then
+                !Even number of kpoints overall (Odd number of nonlocal coupling blocks)
+                tOddFullNonlocCoups = .true.
+                NonLocCoupLength = nImp*((nSites-(2*nImp))/2) + (nImp*(nImp-1)/2)
+            else
+                !Odd number of kpoints overall (Even number of nonlocal coupling blocks)
+                tOddFullNonlocCoups = .false.
+                NonLocCoupLength = nImp*((nSites-nImp)/2)
+            endif
+        else
+            tOddFullNonlocCoups = .false.
+            NonLocCoupLength = iNonLocCoupBlocks*nImp*nImp
         endif
 
-        write(6,*) "Non local hamiltonian coupling length: ",NonLocCoupLength
+        write(6,*) "Number of independent Non local hamiltonian couplings: ",NonLocCoupLength
+        if(tOddFullNonlocCoups) write(6,*) "Partial block included"
 
-        allocate(NonLocCoup(nImp,NonLocCoupLength))
-        NonLocCoup(:,:) = zzero
+        allocate(NonLocCoup(NonLocCoupLength))
+        NonLocCoup(:) = zzero
         do j = 1,NonLocCoupLength
-            do i = 1,nImp
-                call random_number(r)
-                call random_number(r2)
-                if(r2.gt.0.5_dp) then
-                    NonLocCoup(i,j) = cmplx(-r,zero,dp)
-                else
-                    NonLocCoup(i,j) = cmplx(r,zero,dp)
-                endif
-            enddo
+            call random_number(r)
+            call random_number(r2)
+            if(r2.gt.0.5_dp) then
+                NonLocCoup(j) = cmplx(-r,zero,dp)
+            else
+                NonLocCoup(j) = cmplx(r,zero,dp)
+            endif
         enddo
 
         call WriteMatrixcomptoreal(ham_temp,'Before non-loc coups',.true.)
@@ -285,7 +392,18 @@ program RealSpaceCoup
 
         call WriteMatrixcomptoreal(ham_temp,'After non-loc coups',.true.)
 
-        call writematrixcomp(ham_temp,'Full H',.true.)
+        !call writematrixcomp(ham_temp,'Full H',.true.)
+        do i = 1,nSites
+            do j = 1,nSites
+                if(abs(aimag(ham_temp(j,i))).gt.1.0e-8_dp) then
+                    stop 'Lattice hamiltonian not real'
+                endif
+                if(i.ne.j.and.(abs(ham_temp(j,i)-dconjg(ham_temp(i,j))).gt.1.0e-8_dp)) then
+                    write(6,*) "i, j",i,j,ham_temp(j,i),ham_temp(i,j),abs(ham_temp(j,i)-dconjg(ham_temp(i,j)))
+                    stop 'Lattice hamiltonian not hermitian'
+                endif
+            enddo
+        enddo
 
         !Now, check whether it is still k-space kosher
         !Rotate ham_temp into k-space
@@ -308,7 +426,7 @@ program RealSpaceCoup
                         write(6,*) "kblock: ",k
                         call writematrixcomp(ham_k(ind_1:ind_2,ind_1:ind_2),'kblock',.true.)
                         write(6,*) "*** k-block not diagonal real ***"
-            !            stop 'k-block not diagonal real'
+                        stop 'k-block not diagonal real'
                     elseif((i.ne.j).and.(abs(aimag(ham_k(i,j)+ham_k(j,i))).gt.1.0e-8_dp)) then
                         write(6,*) "kblock: ",k
                         call writematrixcomp(ham_k(ind_1:ind_2,ind_1:ind_2),'kblock',.true.)
@@ -405,12 +523,16 @@ program RealSpaceCoup
 
         write(6,*) "r and k-space greens functions the same"
 
+
+        write(6,*) ""
+        write(6,*) "Calculating derivatives..."
+
         !Now find the derivative of the real-space greens function wrt changing the non-local coupling matrix elements
         !Index 1 & 2 label the matrix
-        !Index 3 & 4 label the differential that we are taking
-        !Index 5 is the frequency
-        allocate(Derivatives(nImp,nImp,nImp,NonLocCoupLength,nFreqPoints))
-        Derivatives(:,:,:,:,:) = zzero
+        !Index 3 label the differential that we are taking
+        !Index 4 is the frequency
+        allocate(Derivatives(nImp,nImp,NonLocCoupLength,nFreqPoints))
+        Derivatives(:,:,:,:) = zzero
 
         if(tAntiPeriodic) then
             phase = -1.0_dp
@@ -419,11 +541,21 @@ program RealSpaceCoup
         endif
 
         allocate(num(nSites,nSites))
+        
+        if(iNonLocCoupBlocks.eq.0) then
+            !Use all blocks
+            if(tOddFullNonlocCoups) then
+                iFullBlocks = ((nSites/nImp)-2)/2
+            else
+                iFullBlocks = ((nSites/nImp)-1)/2
+            endif
+        else
+            iFullBlocks = iNonLocCoupBlocks
+        endif
 
         do w = 1,nFreqPoints
 
             !B is independent of the specific derivative. Therefore calculate it here.
-
             ham_temp_2(:,:) = - ham_temp(:,:)
             do j = 1,nSites
                 ham_temp_2(j,j) = ham_temp_2(j,j) + FreqPoints(w)
@@ -432,94 +564,103 @@ program RealSpaceCoup
             !ham_temp_3 is now the inverse of the greens function (we could do this with 2x k-space rotations instead?)
             
             do i = 1,NonLocCoupLength
-                do j = 1,nImp
-                    !Now, calculate the derivative of the inverse of the GF
-                    ham_temp_2(:,:) = zzero
+                !Now, calculate the derivative of the inverse of the GF
+                ham_temp_2(:,:) = zzero
 
-                    !Set up matrix with 1's or -1s for values of the coupling matrix element which we are differentiating wrt.
-                    do k = 1,nKPnts
-                        ind_1 = ((k-1)*nImp) + 1
-                        ind_2 = nImp*k
+                !Set up matrix with 1's or -1s for values of the coupling matrix element which we are differentiating wrt.
+                call var_to_couplingind(i,nImp,ind_r,ind_c,ind_block)
 
-                        !Coupling to the right
-                        if((ind_2+i).le.nSites) then
-                            ham_temp_2(ind_1+j-1,ind_2+i) = cmplx(-1.0_dp,0.0_dp,dp)
+                do k = 1,nKPnts
+                    ind_1 = ((k-1)*nImp) + 1
+                    ind_2 = nImp*k
+
+                    !Coupling to the right
+                    if(ind_2+ind_c+((ind_block-1)*nImp).le.nSites) then
+                        ham_temp_2(ind_1+ind_r-1,ind_2+ind_c+((ind_block-1)*nImp)) = cmplx(-1.0_dp,0.0_dp,dp)
+                    else
+                        ham_temp_2(ind_1+ind_r-1,ind_2+ind_c+((ind_block-1)*nImp)-nSites) = cmplx(-phase,0.0_dp,dp)
+                    endif
+
+                    if(ind_block.gt.iFullBlocks) then
+                        if(.not.tOddFullNonlocCoups) stop 'error here'
+                        !Fill in other triangle of mid-way coupling block
+                        if(ind_2+ind_c+((ind_block-1)*nImp).le.nSites) then
+                            ham_temp_2(ind_1+ind_c-1,ind_2+ind_r+((ind_block-1)*nImp)) = cmplx(1.0_dp,0.0_dp,dp)
                         else
-                            ham_temp_2(ind_1+j-1,ind_2+i-nSites) = cmplx(-phase,0.0_dp,dp)
+                            ham_temp_2(ind_1+ind_c-1,ind_2+ind_r+((ind_block-1)*nImp)-nSites) = cmplx(phase,0.0_dp,dp)
                         endif
+                    else
 
-                        !Coupling to the left
-                        if((ind_1-i).ge.1) then
-                            ham_temp_2(ind_1+j-1,ind_1-i) = cmplx(-1.0_dp,0.0_dp,dp)
+                        !Coupling to the left - remember, this is transposed
+                        if(ind_1-(nImp*ind_block)+ind_r-1.ge.1) then
+                            ham_temp_2(ind_1+ind_c-1,ind_1-(nImp*ind_block)+ind_r-1) = cmplx(-1.0_dp,0.0_dp,dp)
                         else
-                            ham_temp_2(ind_1+j-1,ind_1-i+nSites) = cmplx(-phase,0.0_dp,dp)
+                            ham_temp_2(ind_1+ind_c-1,ind_1-(nImp*ind_block)+ind_r-1+nSites) = cmplx(-phase,0.0_dp,dp)
                         endif
+                    endif
 
-                    enddo
-!                    write(6,*) "imp: ",j
-!                    write(6,*) "CoupParam: ",i
-!                    call writematrixcomptoreal(ham_temp_2,'Deriv of B',.true.)
-
-                    !Right, now we can get the full derivative of the inverse of B (i.e. the greens function wrt changing the coefficients).
-                    !This currently does not use/require any periodicity. However, the matrix inverse could be improved with periodicity.
-
-                    !The operations below could *certainly* be sped up. Just for testing.
-                    call ZGEMM('N','N',nSites,nSites,nSites,zone,ham_temp_2,nSites,ham_temp_3,nSites,zzero,num,nSites)
-                    call ZGEMM('N','N',nSites,nSites,nSites,-zone,ham_temp_3,nSites,num,nSites,zzero,ham_temp_2,nSites)
-
-                    !ham_temp_2 is now the derivative of the *full* greens function wrt changing the coupling.
-                    !Seems a little profligate - I'm sure the local greens function could be done more efficiently.
-                    Derivatives(:,:,j,i,w) = ham_temp_2(1:nImp,1:nImp)
                 enddo
+!                write(6,*) "imp: ",j
+!                write(6,*) "CoupParam: ",i
+!                call writematrixcomptoreal(ham_temp_2,'Deriv of B',.true.)
+
+                !Right, now we can get the full derivative of the inverse of B (i.e. the greens function wrt changing the coefficients).
+                !This currently does not use/require any periodicity. However, the matrix inverse could be improved with periodicity.
+
+                !The operations below could *certainly* be sped up. Just for testing.
+                call ZGEMM('N','N',nSites,nSites,nSites,zone,ham_temp_2,nSites,ham_temp_3,nSites,zzero,num,nSites)
+                call ZGEMM('N','N',nSites,nSites,nSites,-zone,ham_temp_3,nSites,num,nSites,zzero,ham_temp_2,nSites)
+
+                !ham_temp_2 is now the derivative of the *full* greens function wrt changing the coupling.
+                !Seems a little profligate - I'm sure the local greens function could be done more efficiently.
+                Derivatives(:,:,i,w) = ham_temp_2(1:nImp,1:nImp)
             enddo
         enddo
         deallocate(num)
 
         !Now we have all the derivatives, test if they are right or not!
-        allocate(NonLocCoup_tmp(nImp,NonLocCoupLength))
+        allocate(NonLocCoup_tmp(NonLocCoupLength))
         allocate(num(nImp,nImp))
         open(78,file='DerivsTest',status='unknown')
         do w = 1,nFreqPoints
             do i = 1,NonLocCoupLength
-                do j = 1,nImp
 
-                    diff = 0.0001_dp
-                    do while(diff.gt.1.0e-12_dp)
+                diff = 0.0001_dp
+                do while(diff.gt.1.0e-12_dp)
 
-                        NonLocCoup_tmp(:,:) = NonLocCoup(:,:)
-                        NonLocCoup_tmp(j,i) = NonLocCoup_tmp(j,i) + diff
+                    NonLocCoup_tmp(:) = NonLocCoup(:)
+                    NonLocCoup_tmp(i) = NonLocCoup_tmp(i) + diff
 
-                        !Calculate greens function for this frequency with new non-local coupling
-                        temp(:,:) = ham_temp(:,:)   !Real space hamiltonian
-                        call Add_Nonlocal_comp_inplace(temp,NonLocCoup_tmp,NonLocCoupLength,tAdd=.true.)
-                        ham_temp_2(:,:) = - temp(:,:)
-                        do jj = 1,nSites
-                            ham_temp_2(jj,jj) = ham_temp_2(jj,jj) + FreqPoints(w)
-                        enddo
-                        call mat_inv(ham_temp_2,ham_temp_3)
-
-                        !New greens function is now the 1:nImp block of ham_temp_3
-                        !Find the derivative of each element of the greens function
-                        num(:,:) = (ham_temp_3(1:nImp,1:nImp) - GF_r(:,:,w)) / diff
-                        !num is now the numerical gradient at each point
-                        !Find the difference as a single value over all the greens functions
-                        err = zero
-                        do ii = 1,nImp
-                            do jj = 1,nImp
-
-                                err = err + real((num(jj,ii)-Derivatives(jj,ii,j,i,w))  &
-                                    *dconjg(num(jj,ii)-Derivatives(jj,ii,j,i,w)),dp)
-
-                            enddo
-                        enddo
-
-                        write(78,"(3I7,7G25.14)") w,i,j,diff,real(num(1,1)),aimag(num(1,1)),    &
-                            real(Derivatives(1,1,j,i,w)),aimag(Derivatives(1,1,j,i,w)),err,err/abs(Derivatives(1,1,j,i,w))
-
-                        diff = diff/2.0_dp
+                    !Calculate greens function for this frequency with new non-local coupling
+                    temp(:,:) = ham_temp(:,:)   !Real space hamiltonian
+                    call Add_Nonlocal_comp_inplace(temp,NonLocCoup_tmp,NonLocCoupLength,tAdd=.true.)
+                    ham_temp_2(:,:) = - temp(:,:)
+                    do jj = 1,nSites
+                        ham_temp_2(jj,jj) = ham_temp_2(jj,jj) + FreqPoints(w)
                     enddo
-                    write(78,"(A)") ""
+                    call mat_inv(ham_temp_2,ham_temp_3)
+
+                    !New greens function is now the 1:nImp block of ham_temp_3
+                    !Find the derivative of each element of the greens function
+                    num(:,:) = (ham_temp_3(1:nImp,1:nImp) - GF_r(:,:,w)) / diff
+                    !num is now the numerical gradient at each point
+                    !Find the difference as a single value over all the greens functions
+                    err = zero
+                    do ii = 1,nImp
+                        do jj = 1,nImp
+
+                            err = err + real((num(jj,ii)-Derivatives(jj,ii,i,w))  &
+                                *dconjg(num(jj,ii)-Derivatives(jj,ii,i,w)),dp)
+
+                        enddo
+                    enddo
+
+                    write(78,"(2I7,7G25.14)") w,i,diff,real(num(1,1)),aimag(num(1,1)),    &
+                        real(Derivatives(1,1,i,w)),aimag(Derivatives(1,1,i,w)),err,err/abs(Derivatives(1,1,i,w))
+
+                    diff = diff/2.0_dp
                 enddo
+                write(78,"(A)") ""
             enddo
         enddo
         close(78)
@@ -545,10 +686,11 @@ program RealSpaceCoup
         implicit none
         integer, intent(in) :: NonLocCoupLength
         complex(dp), intent(inout) :: ham(nSites,nSites)
-        complex(dp), intent(in) :: NonLocCoup(nImp,NonLocCoupLength)
+        complex(dp), intent(in) :: NonLocCoup(NonLocCoupLength)
         logical , intent(in), optional :: tAdd
+        complex(dp), allocatable :: PartialBlock(:,:),FullBlocks(:,:,:),Block_T(:,:)
         real(dp) :: phase
-        integer :: k,i,j,ind_1,ind_2,ind,ii,ind_v
+        integer :: k,i,j,ind_1,ind_2,ind,ii,ind_v,iFullBlocks,ind_r,ind_c,ind_block
             
         if(tPeriodic) then
             phase = 1.0_dp
@@ -556,64 +698,120 @@ program RealSpaceCoup
             phase = -1.0_dp
         endif
 
+        if(iNonLocCoupBlocks.eq.0) then
+            !Use all blocks
+            if(tOddFullNonlocCoups) then
+                iFullBlocks = ((nSites/nImp)-2)/2
+            else
+                iFullBlocks = ((nSites/nImp)-1)/2
+            endif
+        else
+            iFullBlocks = iNonLocCoupBlocks
+        endif
+        allocate(FullBlocks(nImp,nImp,iFullBlocks))
+        FullBlocks(:,:,:) = zzero
+        if(tOddFullNonlocCoups) then
+            allocate(PartialBlock(nImp,nImp))
+            PartialBlock(:,:) = zzero
+        endif
+
+        ind = 0
+        do k = 1,iFullBlocks
+            do i = 1,nImp
+                do j = 1,nImp
+                    ind = ind + 1
+                    if(ind.gt.NonLocCoupLength) then
+                        write(6,*) "i,j,k: ",i,j,k
+                        write(6,*) "ind: ",ind
+                        stop 'Indexing error'
+                    endif
+                    call var_to_couplingind(ind,nImp,ind_r,ind_c,ind_block)
+                    if(ind_block.ne.k) then
+                        write(6,*) "k,i,j: ",k,i,j
+                        write(6,*) "ind: ",ind
+                        write(6,*) "ind_block, ind_r,ind_c: ",ind_block,ind_r,ind_c
+                        stop 'error here: ind_block wrong'
+                    endif
+                    if(ind_r.ne.j) then
+                        write(6,*) "k,i,j: ",k,i,j
+                        write(6,*) "ind: ",ind
+                        write(6,*) "ind_block, ind_r,ind_c: ",ind_block,ind_r,ind_c
+                        stop 'error here 2: ind_r wrong'
+                    endif
+                    if(ind_c.ne.i) then
+                        write(6,*) "k,i,j: ",k,i,j
+                        write(6,*) "ind: ",ind
+                        write(6,*) "ind_block, ind_r,ind_c: ",ind_block,ind_r,ind_c
+                        stop 'error here 3: ind_c wrong'
+                    endif
+                    FullBlocks(j,i,k) = NonLocCoup(ind)
+                enddo
+            enddo
+        enddo
+
+        if(tOddFullNonlocCoups) then
+            do i = 1,nImp
+                do j = i+1,nImp
+                    ind = ind + 1
+                    if(ind.gt.NonLocCoupLength) stop 'Indexing error'
+                    call var_to_couplingind(ind,nImp,ind_r,ind_c,ind_block)
+                    if(ind_block.ne.iFullBlocks+1) then
+                        write(6,*) "k,i,j: ",k,i,j
+                        write(6,*) "ind: ",ind
+                        write(6,*) "ind_block, ind_r,ind_c: ",ind_block,ind_r,ind_c
+                        stop 'error here 4: ind_block special wrong'
+                    endif
+                    if(ind_r.ne.j) then
+                        write(6,*) "k,i,j: ",k,i,j
+                        write(6,*) "ind: ",ind
+                        write(6,*) "ind_block, ind_r,ind_c: ",ind_block,ind_r,ind_c
+                        stop 'error here 5: ind_r special wrong'
+                    endif
+                    if(ind_c.ne.i) then
+                        write(6,*) "k,i,j: ",k,i,j
+                        write(6,*) "ind: ",ind
+                        write(6,*) "ind_block, ind_r,ind_c: ",ind_block,ind_r,ind_c
+                        stop 'error here 6: ind_c special wrong'
+                    endif
+                    PartialBlock(j,i) = NonLocCoup(ind)
+                    PartialBlock(i,j) = -NonLocCoup(ind)
+                enddo
+            enddo
+        endif
+
+        allocate(Block_T(nImp,nImp))
         do k = 1,nKPnts
             ind_1 = ((k-1)*nImp) + 1
             ind_2 = nImp*k
 
-!            write(6,*) "k: ",k
-!            write(6,*) "ind_1: ",ind_1
-!            write(6,*) "ind_2: ",ind_2
-            do i = 1,NonLocCoupLength
-
-                !Fill up coupling to the right
-                ind = 0
-                do j = ind_2+1,ind_2+NonLocCoupLength
-
-                    ind = ind + 1
-                    if(j.le.nSites) then
-                        ham(ind_1:ind_2,j) = NonLocCoup(:,ind)
-                    else
-                        !Wrap around matrix with appropriate boundary conditions
-                        ham(ind_1:ind_2,j-nSites) = NonLocCoup(:,ind)*phase
-                    endif
-
-                enddo
-                if(ind.ne.NonLocCoupLength) then
-                    write(6,*) "NonLocCoupLength: ",NonLocCoupLength
-                    write(6,*) "ind: ",ind
-                    stop 'error in indexing'
+            do i = 1,iFullBlocks
+                !Blocks to the right
+                if(ind_1+(i*nImp).le.nSites) then
+                    ham(ind_1:ind_2,ind_1+(i*nImp):ind_2+(i*nImp)) = FullBlocks(:,:,i)
+                else
+                    ham(ind_1:ind_2,ind_1+(i*nImp)-nSites:ind_2+(i*nImp)-nSites) = phase*FullBlocks(:,:,i)
                 endif
 
-                !Fill up coupling to the left
-                !For multiple impurities, we want to flip the order it is applied for PBCs
-                ind = 0
-                do j = ind_1-1,ind_1-NonLocCoupLength,-1
-
-                    ind = ind + 1
-                    if(j.ge.1) then
-                        !Also flip the order in which the non local interactions are applied row-wise
-                        ind_v = 0
-                        do ii = ind_2,ind_1,-1
-                            ind_v = ind_v + 1
-                            ham(ii,j) = NonLocCoup(ind_v,ind)
-                        enddo
-                    else
-                        !Wrap around matrix with appropriate boundary conditions
-                        !Also flip the order in which the non local interactions are applied row-wise
-                        ind_v = 0
-                        do ii = ind_2,ind_1,-1
-                            ind_v = ind_v +1
-                            ham(ii,j+nSites) = NonLocCoup(ind_v,ind)*phase
-                        enddo
-                    endif
-                enddo
-                if(ind.ne.NonLocCoupLength) then
-                    write(6,*) "NonLocCoupLength: ",NonLocCoupLength
-                    write(6,*) "ind: ",ind
-                    stop 'Error in indexing'
+                !Blocks to the left are flipped
+                call FlipBlock_z(FullBlocks(:,:,i),Block_T(:,:),nImp)
+                if(ind_1-(i*nImp).ge.1) then
+                    ham(ind_1:ind_2,ind_1-(i*nImp):ind_2-(i*nImp)) = Block_T(:,:)
+                else
+                    ham(ind_1:ind_2,ind_1-(i*nImp)+nSites:ind_2-(i*nImp)+nSites) = phase*Block_T(:,:)
                 endif
             enddo
+
+            if(tOddFullNonlocCoups) then
+                !Add in the partial block. This is only used once.
+                if(ind_1+((iFullBlocks+1)*nImp).le.nSites) then
+                    ham(ind_1:ind_2,ind_1+((iFullBlocks+1)*nImp):ind_2+((iFullBlocks+1)*nImp)) = PartialBlock(:,:)
+                else
+                    ham(ind_1:ind_2,ind_1+((iFullBlocks+1)*nImp)-nSites:ind_2+((iFullBlocks+1)*nImp)-nSites) = phase*PartialBlock(:,:)
+                endif
+            endif
         enddo
+        deallocate(Block_T,FullBlocks)
+        if(tOddFullNonlocCoups) deallocate(PartialBlock)
 
     end subroutine add_Nonlocal_comp_inplace
     
@@ -742,5 +940,80 @@ program RealSpaceCoup
     deallocate(cWork)
 
   end subroutine mat_inv
+                
+  !swap the off-diagonal matrix elements (and cc if necessary)
+  subroutine FlipBlock_z(Block,BlockT,nSize)
+    implicit none
+    integer, intent(in) :: nSize
+    complex(dp), intent(in) :: Block(nSize,nSize)
+    complex(dp), intent(out) :: BlockT(nSize,nSize)
+    integer :: i,j
+
+    BlockT(:,:) = zzero
+    do i = 1,nSize
+        do j = 1,nSize
+            if(i.eq.j) then
+                !Leave diagonals alone
+                BlockT(i,j) = Block(i,j)
+            else
+                BlockT(i,j) = dconjg(Block(j,i))
+            endif
+        enddo
+    enddo
+
+  end subroutine FlipBlock_z
+
+    !Given a variable i, find the block, row and column within the block it corresponds to, in the first blocked row of the matrix
+    subroutine var_to_couplingind(i,blocksize,ind_r,ind_c,ind_block)
+        implicit none
+        integer, intent(in) :: i,blocksize
+        integer, intent(out) :: ind_r,ind_c,ind_block
+        integer :: j,k,l,ind
+        logical :: tFound
+
+        if(tOddFullNonlocCoups.and.(i.gt.(((nSites/blocksize)-2)/2)*(blocksize**2))) then
+            ind_block = ((nSites/blocksize)-2)/2 + 1
+            j = i - (((nSites/blocksize)-2)/2)*(blocksize**2)
+            ind = 0
+            tFound = .false.
+            loop: do k = 1,blocksize
+                do l = k+1,nImp
+                    ind = ind + 1
+                    if(ind.eq.j) then
+                        ind_r = l
+                        ind_c = k
+                        tFound = .true.
+                        exit loop
+                    endif
+                enddo
+            enddo loop
+            if(.not.tFound) then
+                write(6,*) "i: ",i
+                write(6,*) "j: ",j
+                write(6,*) "previous elements: ",(((nSites/blocksize)-2)/2)*(blocksize**2)
+                stop 'error in indexing'
+            endif
+        else
+            !This should be easier.
+            ind_block = (i-1)/(blocksize**2) + 1
+            j = mod(i,blocksize**2)
+            k = mod(j,blocksize)
+            if(k.eq.0) then
+                ind_r = blocksize
+            else
+                ind_r = k
+            endif
+            if(j.eq.0) then
+                !end element of block
+                ind_c = blocksize
+            else
+!                write(6,*) "j: ",j
+!                write(6,*) "mod(blocksize-j,blocksize): ",mod(blocksize-j,blocksize)
+                ind_c = (j-1)/blocksize + 1
+!                ind_c = (j+mod(blocksize-j,blocksize))/blocksize
+            endif
+        endif
+
+    end subroutine var_to_couplingind
 
 end program RealSpaceCoup
