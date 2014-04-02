@@ -1850,14 +1850,15 @@ module mat_tools
     end subroutine MakeBlockHermitian
     
     !Add a non-local periodic set of real-space lattice parameters to a complex inplace hamiltonian
-    subroutine Add_Nonlocal_comp_inplace(ham,NonLocCoup,NonLocCoupLength,tAdd)
+    subroutine add_Nonlocal_comp_inplace(ham,NonLocCoup,NonLocCoupLength,tAdd)
         implicit none
         integer, intent(in) :: NonLocCoupLength
         complex(dp), intent(inout) :: ham(nSites,nSites)
-        real(dp), intent(in) :: NonLocCoup(nImp,NonLocCoupLength)
+        complex(dp), intent(in) :: NonLocCoup(NonLocCoupLength)
         logical , intent(in), optional :: tAdd
+        complex(dp), allocatable :: PartialBlock(:,:),FullBlocks(:,:,:),Block_T(:,:)
         real(dp) :: phase
-        integer :: k,i,j,ind_1,ind_2,ind
+        integer :: k,i,j,ind_1,ind_2,ind,ii,ind_v,iFullBlocks,ind_r,ind_c,ind_block
             
         if(tPeriodic) then
             phase = 1.0_dp
@@ -1865,52 +1866,200 @@ module mat_tools
             phase = -1.0_dp
         endif
 
+        if(iNonLocCoupBlocks.eq.0) then
+            !Use all blocks
+            if(tOddFullNonlocCoups) then
+                !iFullBlocks gives the number of full coupling unit cells, without the potentially special one which isn't repeated
+                iFullBlocks = ((nSites/nImp)-2)/2
+            else
+                iFullBlocks = ((nSites/nImp)-1)/2
+            endif
+        else
+            iFullBlocks = iNonLocBlocks
+        endif
+        allocate(FullBlocks(nImp,nImp,iFullBlocks))
+        FullBlocks(:,:,:) = zzero
+        if(tOddFullNonlocCoups) then
+            !PartialBlock is the skew-symmetric block which is the furthest coupling if optimizing all, and there are an even number of kpoints
+            allocate(PartialBlock(nImp,nImp))
+            PartialBlock(:,:) = zzero
+        endif
+
+        !TODO: In the future, this can just use the var_to_couplingind routine
+        ind = 0
+        do k = 1,iFullBlocks
+            do i = 1,nImp
+                do j = 1,nImp
+                    ind = ind + 1
+                    if(ind.gt.NonLocCoupLength) then
+                        write(6,*) "i,j,k: ",i,j,k
+                        write(6,*) "ind: ",ind
+                        stop 'Indexing error'
+                    endif
+                    call var_to_couplingind(ind,nImp,ind_r,ind_c,ind_block)
+                    if(ind_block.ne.k) then
+                        write(6,*) "k,i,j: ",k,i,j
+                        write(6,*) "ind: ",ind
+                        write(6,*) "ind_block, ind_r,ind_c: ",ind_block,ind_r,ind_c
+                        stop 'error here: ind_block wrong'
+                    endif
+                    if(ind_r.ne.j) then
+                        write(6,*) "k,i,j: ",k,i,j
+                        write(6,*) "ind: ",ind
+                        write(6,*) "ind_block, ind_r,ind_c: ",ind_block,ind_r,ind_c
+                        stop 'error here 2: ind_r wrong'
+                    endif
+                    if(ind_c.ne.i) then
+                        write(6,*) "k,i,j: ",k,i,j
+                        write(6,*) "ind: ",ind
+                        write(6,*) "ind_block, ind_r,ind_c: ",ind_block,ind_r,ind_c
+                        stop 'error here 3: ind_c wrong'
+                    endif
+                    FullBlocks(j,i,k) = NonLocCoup(ind)
+                enddo
+            enddo
+        enddo
+
+        if(tOddFullNonlocCoups) then
+            do i = 1,nImp
+                do j = i+1,nImp
+                    ind = ind + 1
+                    if(ind.gt.NonLocCoupLength) stop 'Indexing error'
+                    call var_to_couplingind(ind,nImp,ind_r,ind_c,ind_block)
+                    if(ind_block.ne.iFullBlocks+1) then
+                        write(6,*) "k,i,j: ",k,i,j
+                        write(6,*) "ind: ",ind
+                        write(6,*) "ind_block, ind_r,ind_c: ",ind_block,ind_r,ind_c
+                        stop 'error here 4: ind_block special wrong'
+                    endif
+                    if(ind_r.ne.j) then
+                        write(6,*) "k,i,j: ",k,i,j
+                        write(6,*) "ind: ",ind
+                        write(6,*) "ind_block, ind_r,ind_c: ",ind_block,ind_r,ind_c
+                        stop 'error here 5: ind_r special wrong'
+                    endif
+                    if(ind_c.ne.i) then
+                        write(6,*) "k,i,j: ",k,i,j
+                        write(6,*) "ind: ",ind
+                        write(6,*) "ind_block, ind_r,ind_c: ",ind_block,ind_r,ind_c
+                        stop 'error here 6: ind_c special wrong'
+                    endif
+                    PartialBlock(j,i) = NonLocCoup(ind)
+                    PartialBlock(i,j) = -NonLocCoup(ind)
+                enddo
+            enddo
+        endif
+
+        allocate(Block_T(nImp,nImp))
         do k = 1,nKPnts
             ind_1 = ((k-1)*nImp) + 1
             ind_2 = nImp*k
 
-            do i = 1,NonLocCoupLength
-
-                !Fill up coupling to the right
-                ind = 0
-                do j = ind_2+1,ind_2+NonLocCoupLength
-
-                    ind = ind + 1
-                    if(j.le.nSites) then
-                        ham(ind_1:ind_2,j) = cmplx(NonLocCoup(:,ind),zero,dp)
-                    else
-                        !Wrap around matrix with appropriate boundary conditions
-                        ham(ind_1:ind_2,j-nSites) = cmplx(NonLocCoup(:,ind)*phase,zero,dp)
-                    endif
-
-                enddo
-                if(ind.ne.NonLocCoupLength) then
-                    write(6,*) "NonLocCoupLength: ",NonLocCoupLength
-                    write(6,*) "ind: ",ind
-                    stop 'error in indexing'
+            do i = 1,iFullBlocks
+                !Blocks to the right
+                if(ind_1+(i*nImp).le.nSites) then
+                    ham(ind_1:ind_2,ind_1+(i*nImp):ind_2+(i*nImp)) = FullBlocks(:,:,i)
+                else
+                    ham(ind_1:ind_2,ind_1+(i*nImp)-nSites:ind_2+(i*nImp)-nSites) = phase*FullBlocks(:,:,i)
                 endif
 
-                !Fill up coupling to the left
-                ind = 0
-                do j = ind_1-1,ind_1-NonLocCoupLength,-1
+                !Blocks to the left are flipped
+                call TransposeBlock_z(FullBlocks(:,:,i),Block_T(:,:),nImp)
+                if(ind_1-(i*nImp).ge.1) then
+                    ham(ind_1:ind_2,ind_1-(i*nImp):ind_2-(i*nImp)) = Block_T(:,:)
+                else
+                    ham(ind_1:ind_2,ind_1-(i*nImp)+nSites:ind_2-(i*nImp)+nSites) = phase*Block_T(:,:)
+                endif
+            enddo
 
-                    ind = ind + 1
-                    if(j.ge.1) then
-                        ham(ind_1:ind_2,j) = cmplx(NonLocCoup(:,ind),zero,dp)
-                    else
-                        !Wrap around matrix with appropriate boundary conditions
-                        ham(ind_1:ind_2,j+nSites) = cmplx(NonLocCoup(:,ind)*phase,zero,dp)
-                    endif
-                enddo
-                if(ind.ne.NonLocCoupLength) then
-                    write(6,*) "NonLocCoupLength: ",NonLocCoupLength
-                    write(6,*) "ind: ",ind
-                    stop 'Error in indexing'
+            if(tOddFullNonlocCoups) then
+                !Add in the partial block. This is only used once.
+                if(ind_1+((iFullBlocks+1)*nImp).le.nSites) then
+                    ham(ind_1:ind_2,ind_1+((iFullBlocks+1)*nImp):ind_2+((iFullBlocks+1)*nImp)) = PartialBlock(:,:)
+                else
+                    ham(ind_1:ind_2,ind_1+((iFullBlocks+1)*nImp)-nSites:ind_2+((iFullBlocks+1)*nImp)-nSites) = phase*PartialBlock(:,:)
+                endif
+            endif
+        enddo
+        deallocate(Block_T,FullBlocks)
+        if(tOddFullNonlocCoups) deallocate(PartialBlock)
+
+    end subroutine add_Nonlocal_comp_inplace
+
+    !swap the off-diagonal matrix elements (and cc if necessary)
+    subroutine TransposeBlock_z(Block,BlockT,nSize)
+        implicit none
+        integer, intent(in) :: nSize
+        complex(dp), intent(in) :: Block(nSize,nSize)
+        complex(dp), intent(out) :: BlockT(nSize,nSize)
+        integer :: i,j
+
+        BlockT(:,:) = zzero
+        do i = 1,nSize
+            do j = 1,nSize
+                if(i.eq.j) then
+                    !Leave diagonals alone
+                    BlockT(i,j) = Block(i,j)
+                else
+                    BlockT(i,j) = dconjg(Block(j,i))
                 endif
             enddo
         enddo
 
-    end subroutine add_Nonlocal_comp_inplace
+    end subroutine TransposeBlock_z
+
+    !Given a variable i, find the block, row and column within the block it corresponds to, in the first blocked row of the matrix
+    subroutine var_to_couplingind(i,blocksize,ind_r,ind_c,ind_block)
+        implicit none
+        integer, intent(in) :: i,blocksize
+        integer, intent(out) :: ind_r,ind_c,ind_block
+        integer :: j,k,l,ind
+        logical :: tFound
+
+        if(tOddFullNonlocCoups.and.(i.gt.(((nSites/blocksize)-2)/2)*(blocksize**2))) then
+            ind_block = ((nSites/blocksize)-2)/2 + 1
+            j = i - (((nSites/blocksize)-2)/2)*(blocksize**2)
+            ind = 0
+            tFound = .false.
+            loop: do k = 1,blocksize
+                do l = k+1,nImp
+                    ind = ind + 1
+                    if(ind.eq.j) then
+                        ind_r = l
+                        ind_c = k
+                        tFound = .true.
+                        exit loop
+                    endif
+                enddo
+            enddo loop
+            if(.not.tFound) then
+                write(6,*) "i: ",i
+                write(6,*) "j: ",j
+                write(6,*) "previous elements: ",(((nSites/blocksize)-2)/2)*(blocksize**2)
+                stop 'error in indexing'
+            endif
+        else
+            !This should be easier.
+            ind_block = (i-1)/(blocksize**2) + 1
+            j = mod(i,blocksize**2)
+            k = mod(j,blocksize)
+            if(k.eq.0) then
+                ind_r = blocksize
+            else
+                ind_r = k
+            endif
+            if(j.eq.0) then
+                !end element of block
+                ind_c = blocksize
+            else
+!                write(6,*) "j: ",j
+!                write(6,*) "mod(blocksize-j,blocksize): ",mod(blocksize-j,blocksize)
+                ind_c = (j-1)/blocksize + 1
+!                ind_c = (j+mod(blocksize-j,blocksize))/blocksize
+            endif
+        endif
+
+    end subroutine var_to_couplingind
 
     !Add coupling from the impurity sites to the other sites in the lattice
     !This is done to maintain the translational symmetry of the original impurity unit cell

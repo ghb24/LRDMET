@@ -210,7 +210,7 @@ module Globals
     integer :: iLatticeFitType  !When fitting lattice coupling, this defines whether to match the greens functions, or inverse greens functions
     integer :: iFitAlgo         !The fitting algorithm to use. 1 = simplex, 2 = Powell
     integer :: iFitGFWeighting  !When fitting lattice couplings, this defines whether to weight the residual (0=flat,1=1/w,2=1/w^2)
-    integer :: iLatticeCoups    !The number of lattice couplings to the impurity site
+!    integer :: iLatticeCoups    !The number of lattice couplings to the impurity site
     integer :: iMaxFitMicroIter !The number of microiterations to use to try and fit the lattice couplings
     logical :: tReadCouplings   !Whether to read in the initial lattice couplings for the im axis fit
     logical :: tSkip_Lattice_Fit    !Whether to skip the fitting of the lattice
@@ -231,6 +231,8 @@ module Globals
     logical :: tDiagonalSC          !Diagonal self-consistency residual
     real(dp) :: dFitTol_SC          !Tolerance on the gradient for convergence
     complex(dp), allocatable :: LatDiagBlocks(:,:)  !The impurtiy blocks of the lattice hamiltonian in real space
+    integer :: iNonLocBlocks            !The number of unit cells worth of coupling to each impurity
+    logical :: tOddFullNonlocCoups      !Is there a special coupling block (only for full optimization) which is only included once? 
 
     !Debugging for Self-consistency
     logical :: tSE_Scan

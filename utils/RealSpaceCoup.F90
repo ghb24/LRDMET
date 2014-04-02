@@ -963,6 +963,14 @@ program RealSpaceCoup
 
   end subroutine FlipBlock_z
 
+  !Find the index of the coupling vector from the block, column and row in the block
+  subroutine couplingind_to_var(ind_r,ind_c,ind_block,blocksize,ind)
+      implicit none
+      integer, intent(in) :: ind_r,ind_c,ind_block,blocksize
+      integer, intent(out) :: ind
+
+  end subroutine couplingind_to_var
+
     !Given a variable i, find the block, row and column within the block it corresponds to, in the first blocked row of the matrix
     subroutine var_to_couplingind(i,blocksize,ind_r,ind_c,ind_block)
         implicit none

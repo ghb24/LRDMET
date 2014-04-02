@@ -88,39 +88,41 @@ module SelfConsistentUtils
     subroutine SetLatticeParams(iLatParams)
         implicit none
         integer, intent(out) :: iLatParams
-        integer :: ks,params_per_k,i
+        integer :: ks,params_per_k,i,MaxBlocks
         character(len=*), parameter :: t_r='SetLatticeParams'
 
         if(tRealSpaceSC) then
 
-            if(iLatticeCoups.eq.0) then
-                !Include all possible couplings, without allowing modification of the impurity block of the hamiltonian
-                if(mod(nSites-nImp,2).ne.0) then
-                    iLatticeCoups = (nSites-nImp-1)/2
-                else
-                    iLatticeCoups = (nSites-nImp)/2
-                endif
+            !Now, add non-local terms, which retain periodicity
+            if(mod(nKPnts,2).eq.0) then
+                !Even number of kpoints overall (Odd number of nonlocal coupling blocks)
+                MaxBlocks = (nSites/nImp)/2
             else
-                !iLatticeCoups is read in
-                if(mod(nSites-nImp,2).ne.0) then
-                    if(iLatticeCoups.gt.((nSites-nImp-1)/2)) then
-                        write(6,*) "Max allowed length of non-local coupling: ",(nSites-nImp-1)/2
-                        write(6,*) "Read in coupling length: ",iLatticeCoups
-                        call stop_all(t_r,'LatticeCoups read in as larger than max allowed value')
-                    endif
-                else
-                    if(iLatticeCoups.gt.((nSites-nImp)/2)) then
-                        write(6,*) "Max allowed length of non-local coupling: ",(nSites-nImp)/2
-                        write(6,*) "Read in coupling length: ",iLatticeCoups
-
-                        call stop_all(t_r,'LatticeCoups read in as larger than max allowed value')
-                    endif
-                endif
-
+                !Odd number of kpoints overall (Even number of nonlocal coupling blocks)
+                MaxBlocks = (nSites/nImp - 1)/2
             endif
-            iLatParams = iLatticeCoups*nImp     !Package up the parameters into a 1D array
+            write(6,"(A,I8)") "Maximum possible number of non-local real-space coupling unit cells: ",MaxBlocks
+            if((iNonLocBlocks.eq.0).or.(iNonLocBlocks.ge.MaxBlocks)) then
+                !We want all the possible non-redundant couplings blocks
+                iNonLocBlocks = 0
+                if(mod((nSites-nImp)/nImp,2).ne.0) then
+                    !Even number of kpoints overall (Odd number of nonlocal coupling blocks)
+                    tOddFullNonlocCoups = .true.    !We have one coupling block which has only one copy. This has special properties (only triangular number of independent variables)
+                    iLatParams = nImp*((nSites-(2*nImp))/2) + (nImp*(nImp-1)/2)
+                else
+                    !Odd number of kpoints overall (Even number of nonlocal coupling blocks)
+                    tOddFullNonlocCoups = .false.
+                    iLatParams = nImp*((nSites-nImp)/2)
+                endif
+                write(6,"(A,I8)") "All non-local couplings will be optimized."
+            else
+                write(6,"(A,I8)") "Truncated real-space coupling. Number of unit cells: ",iNonLocBlocks
+                tOddFullNonlocCoups = .false.
+                iLatParams = iNonLocBlocks*nImp*nImp
+            endif
+
             write(6,"(A,I8)") "Total number of (real) adjustable parameters in non-local couplings: ",iLatParams
-        
+
         else
             
             if(tConstrainKSym) then
