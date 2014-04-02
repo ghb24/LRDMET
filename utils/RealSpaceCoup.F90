@@ -690,7 +690,7 @@ program RealSpaceCoup
         logical , intent(in), optional :: tAdd
         complex(dp), allocatable :: PartialBlock(:,:),FullBlocks(:,:,:),Block_T(:,:)
         real(dp) :: phase
-        integer :: k,i,j,ind_1,ind_2,ind,ii,ind_v,iFullBlocks,ind_r,ind_c,ind_block
+        integer :: k,i,j,ind_1,ind_2,ind,ii,ind_v,iFullBlocks,ind_r,ind_c,ind_block,ind_temp
             
         if(tPeriodic) then
             phase = 1.0_dp
@@ -744,6 +744,13 @@ program RealSpaceCoup
                         write(6,*) "ind_block, ind_r,ind_c: ",ind_block,ind_r,ind_c
                         stop 'error here 3: ind_c wrong'
                     endif
+                    call couplingind_to_var(j,i,k,nImp,ind_temp)
+                    if(ind_temp.ne.ind) then
+                        write(6,*) "k,i,j: ",k,i,j
+                        write(6,*) "ind: ",ind
+                        write(6,*) "ind_temp: ",ind_temp
+                        stop 'reverse error'
+                    endif
                     FullBlocks(j,i,k) = NonLocCoup(ind)
                 enddo
             enddo
@@ -772,6 +779,13 @@ program RealSpaceCoup
                         write(6,*) "ind: ",ind
                         write(6,*) "ind_block, ind_r,ind_c: ",ind_block,ind_r,ind_c
                         stop 'error here 6: ind_c special wrong'
+                    endif
+                    call couplingind_to_var(j,i,ind_block,nImp,ind_temp)
+                    if(ind_temp.ne.ind) then
+                        write(6,*) "k,i,j: ",k,i,j
+                        write(6,*) "ind: ",ind
+                        write(6,*) "ind_temp: ",ind_temp
+                        stop 'reverse error'
                     endif
                     PartialBlock(j,i) = NonLocCoup(ind)
                     PartialBlock(i,j) = -NonLocCoup(ind)
@@ -806,7 +820,8 @@ program RealSpaceCoup
                 if(ind_1+((iFullBlocks+1)*nImp).le.nSites) then
                     ham(ind_1:ind_2,ind_1+((iFullBlocks+1)*nImp):ind_2+((iFullBlocks+1)*nImp)) = PartialBlock(:,:)
                 else
-                    ham(ind_1:ind_2,ind_1+((iFullBlocks+1)*nImp)-nSites:ind_2+((iFullBlocks+1)*nImp)-nSites) = phase*PartialBlock(:,:)
+                    ham(ind_1:ind_2,ind_1+((iFullBlocks+1)*nImp)-nSites:ind_2+((iFullBlocks+1)*nImp)-nSites)    &
+                        = phase*PartialBlock(:,:)
                 endif
             endif
         enddo
@@ -968,6 +983,21 @@ program RealSpaceCoup
       implicit none
       integer, intent(in) :: ind_r,ind_c,ind_block,blocksize
       integer, intent(out) :: ind
+
+      if(tOddFullNonlocCoups) then
+          if(ind_block.gt.(((nSites/nImp)-2)/2)) then
+              !ind_block > iFullBlocks
+              !We now need to consider the special block.
+              if(ind_c.ge.ind_r) stop 'Sending in wrong half indices for half-block'
+              ind = (ind_block-1)*(nImp**2) + (nImp*(nImp-1))/2 -   &
+                ((nImp-ind_c)*(nImp-ind_c+1))/2 + ind_r - ind_c
+          else
+              ind = (ind_block-1)*(nImp**2) + (nImp*(ind_c-1)) + ind_r
+          endif
+      else
+          !simples
+          ind = (ind_block-1)*(nImp**2) + (nImp*(ind_c-1)) + ind_r
+      endif
 
   end subroutine couplingind_to_var
 
