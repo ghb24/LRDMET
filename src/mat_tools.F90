@@ -1977,7 +1977,8 @@ module mat_tools
                 if(ind_1+((iFullBlocks+1)*nImp).le.nSites) then
                     ham(ind_1:ind_2,ind_1+((iFullBlocks+1)*nImp):ind_2+((iFullBlocks+1)*nImp)) = PartialBlock(:,:)
                 else
-                    ham(ind_1:ind_2,ind_1+((iFullBlocks+1)*nImp)-nSites:ind_2+((iFullBlocks+1)*nImp)-nSites) = phase*PartialBlock(:,:)
+                    call TransposeBlock_z(PartialBlock(:,:),Block_T(:,:),nImp)
+                    ham(ind_1:ind_2,ind_1+((iFullBlocks+1)*nImp)-nSites:ind_2+((iFullBlocks+1)*nImp)-nSites) = phase*Block_T(:,:)
                 endif
             endif
         enddo
