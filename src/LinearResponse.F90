@@ -58,7 +58,6 @@ module LinearResponse
         complex(dp) :: ResponseFn,tempel,ni_lr,ni_lr_p,ni_lr_h,AvResFn_p,AvResFn_h
         complex(dp) :: zdotc,VNorm,CNorm,SelfE(nImp,nImp)
         logical :: tParity,tFirst,tCompLatHam
-        logical, parameter :: tRemoveImpCouplings = .true. 
         character(64) :: filename,filename2
         character(len=*), parameter :: t_r='SchmidtGF_wSE'
 
@@ -183,7 +182,7 @@ module LinearResponse
             allocate(LatVecs_L(nSites,nSites))
             if(tCompLatHam) then
                 if(.not.present(ham_vals)) then
-                    if(tRemoveImpCouplings) then
+                    if(tRemoveImpCoupsPreSchmidt) then
                         !Remove all the couplings from the impurity to the rest of the lattice *before* schmidt decomposition
                         !The lattice hamiltonian from which the bath space is defined is still hermitian but lacks translational invariance
                         allocate(ctemp(nSites,nSites))
@@ -226,7 +225,7 @@ module LinearResponse
                 endif
             else
                 if(.not.present(ham_vals)) then
-                    if(tRemoveImpCouplings) then
+                    if(tRemoveImpCoupsPreSchmidt) then
                         allocate(temp(nSites,nSites))
                         allocate(W(nSites))
                         temp(:,:) = ham(:,:)

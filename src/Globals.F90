@@ -233,6 +233,7 @@ module Globals
     complex(dp), allocatable :: LatDiagBlocks(:,:)  !The impurtiy blocks of the lattice hamiltonian in real space
     integer :: iNonLocBlocks            !The number of unit cells worth of coupling to each impurity
     logical :: tOddFullNonlocCoups      !Is there a special coupling block (only for full optimization) which is only included once? 
+    logical :: tRemoveImpCoupsPreSchmidt    !Do we want to remove the impurity coupling blocks before we schmidt decompose for the external space?
 
     !Debugging for Self-consistency
     logical :: tSE_Scan

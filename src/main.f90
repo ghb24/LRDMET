@@ -154,6 +154,7 @@ Program RealHub
         tImposephSym = .false.      !Impose ph symmetry on the fit values
         tDiagonalSC = .false.       !Diagonal GF approx for residual
         dFitTol_SC = 1.0e-5_dp      !Tolerance on the gradient of the fits
+        tRemoveImpCoupsPreSchmidt = .false. !Do we want to remove impurity couplings pre schmidt decomp.?
 
     end subroutine set_defaults
 
@@ -630,6 +631,8 @@ Program RealHub
             case("LATTICE_OFFDIAG_COUPBLOCKS")
 !                call readi(iLatticeCoups)
                 call readi(iNonLocBlocks)
+            case("REMOVE_COUPS_PRESCHMIDT")
+                tRemoveImpCoupsPreSchmidt = .true. !Do we want to remove impurity couplings pre schmidt decomp.?
             case("MAXITER_LATTICEFIT")
                 call readi(iMaxFitMicroIter)
             case("MAXITER_MACROFIT")
