@@ -2,6 +2,7 @@ module Davidson
     use const
     use errors, only: stop_all,warning
     use mat_tools, only: WriteVector,WriteMatrix,WriteVectorComp,WriteMatrixComp,znrm2
+    use Globals, only: tCheck
     implicit none
 
     contains
@@ -33,7 +34,7 @@ module Davidson
         complex(dp), pointer :: SubspaceMat(:,:)
         real(dp), allocatable :: Eigenvals(:)
         complex(dp), allocatable :: Eigenvecs(:,:)
-        integer :: ierr,iter,i
+        integer :: ierr,iter,i,j
         complex(dp) :: zdotc
         real(dp) :: dConv
         real(dp), parameter :: kappa = 0.25     !Tolerance for orthogonalization procedure
@@ -55,6 +56,25 @@ module Davidson
             tLowestVal_ = .true.   !Whether to compute the largest or smallest eigenvalue. Currently, it is always the lowest
         else
             tLowestVal_ = tLowestVal
+        endif
+
+        if(tCheck) then
+            !Check it is hermitian
+            do i = 1,nSize 
+                if(abs(aimag(Mat(i,i))).gt.1.0e-8_dp) then
+                    write(6,*) "i: ",i
+                    write(6,*) "Mat(i,i): ",Mat(i,i)
+                    call stop_all(t_r,'matrix not diagonal real')
+                endif
+                do j = i+1,nSize
+                    if(abs(Mat(i,j)-dconjg(Mat(j,i))).gt.1.0e-8_dp) then
+                        write(6,*) "i,j: ",i,j
+                        write(6,*) "Mat(i,j): ",Mat(i,j)
+                        write(6,*) "Mat(j,i): ",Mat(j,i)
+                        call stop_all(t_r,'matrix not off-diagonal hermitian')
+                    endif
+                enddo
+            enddo
         endif
             
 !        allocate(Eigenvecs(nSize,nSize))
@@ -99,6 +119,11 @@ module Davidson
         endif
 
         do iter = 1,max_iter_
+            
+            if(mod(iter,10).eq.0) then
+                write(6,*) "Starting Davidson iteration: ",iter,dConv
+                call flush(6)
+            endif
 
             !First, orthogonalize current vector against previous vectors, using a modified Gram-Schmidt
             !Returns normalized trial vector

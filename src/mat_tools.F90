@@ -1859,6 +1859,7 @@ module mat_tools
         complex(dp), allocatable :: PartialBlock(:,:),FullBlocks(:,:,:),Block_T(:,:)
         real(dp) :: phase
         integer :: k,i,j,ind_1,ind_2,ind,ii,ind_v,iFullBlocks,ind_r,ind_c,ind_block
+        character(len=*), parameter :: t_r='add_Nonlocal_comp_inplace'
             
         if(tPeriodic) then
             phase = 1.0_dp
@@ -1973,17 +1974,32 @@ module mat_tools
             enddo
 
             if(tOddFullNonlocCoups) then
-                !Add in the partial block. This is only used once.
+                !Add in the partial block. This is only used once. This should only really occur with APBCs.
+                !...otherwise block would be symmetric?
                 if(ind_1+((iFullBlocks+1)*nImp).le.nSites) then
                     ham(ind_1:ind_2,ind_1+((iFullBlocks+1)*nImp):ind_2+((iFullBlocks+1)*nImp)) = PartialBlock(:,:)
                 else
                     call TransposeBlock_z(PartialBlock(:,:),Block_T(:,:),nImp)
-                    ham(ind_1:ind_2,ind_1+((iFullBlocks+1)*nImp)-nSites:ind_2+((iFullBlocks+1)*nImp)-nSites) = phase*Block_T(:,:)
+                    ham(ind_1:ind_2,ind_1+((iFullBlocks+1)*nImp)-nSites:ind_2+((iFullBlocks+1)*nImp)-nSites) = Block_T(:,:)
                 endif
             endif
         enddo
         deallocate(Block_T,FullBlocks)
         if(tOddFullNonlocCoups) deallocate(PartialBlock)
+
+        if(tCheck) then
+            !Check for hermiticity
+            do i = 1,nSites
+                do j = i+1,nSites
+                    if(abs(ham(i,j)-dconjg(ham(j,i))).gt.1.0e-8_dp) then
+                        write(6,*) "i,j: ",i,j
+                        write(6,*) "ham(i,j): ",ham(i,j)
+                        write(6,*) "ham(j,i): ",ham(j,i)
+                        call stop_all(t_r,'hamiltonian not hermitian')
+                    endif
+                enddo
+            enddo
+        endif
 
     end subroutine add_Nonlocal_comp_inplace
 
