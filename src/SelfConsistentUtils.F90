@@ -464,7 +464,8 @@ module SelfConsistentUtils
             do i = 1,iLatParams
                 call var_to_couplingind(i,nImp,ind_r,ind_c,ind_block)
                 if(abs(aimag(LatticeCoups_(ind_r,ind_c+(ind_block*nImp)))).gt.1.0e-7_dp) then
-                    write(6,"(A,I7,G17.10)") "Removing complex component of coupling: ",i,abs(aimag(LatticeCoups_(ind_r,ind_c+(ind_block*nImp))))
+                    write(6,"(A,I7,G17.10)") "Removing complex component of coupling: ",    &
+                        i,abs(aimag(LatticeCoups_(ind_r,ind_c+(ind_block*nImp))))
                 endif
                 LatParams(i) = real(LatticeCoups_(ind_r,ind_c+(ind_block*nImp)),dp)
             enddo
