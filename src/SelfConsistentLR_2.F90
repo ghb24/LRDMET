@@ -451,7 +451,7 @@ module SelfConsistentLR2
         logical :: tNonStandardGrid
         integer :: i,j,k
         integer, parameter :: iNormPower = 2    !The power of the matrix norm for the residual
-        logical, parameter :: tTestDerivs = .true. 
+        logical, parameter :: tTestDerivs = .false.
         character(len=*), parameter :: t_r='CalcLatticeFitResidual_2'
 
         !TODO: Fix this, so that the self-energy is an optional argument

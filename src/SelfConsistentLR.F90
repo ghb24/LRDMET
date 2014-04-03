@@ -26,7 +26,7 @@ module SelfConsistentLR
         real(dp), allocatable :: AllDiffs(:,:),FreqPoints(:),IntWeights(:)
         complex(dp), allocatable :: DiffImpGF(:,:,:),G_Mat_Fit_Old(:,:,:)
         real(dp) :: FinalDist,LowFreq,HighFreq
-        integer :: i,iter,iLatParams,j
+        integer :: i,iter,iLatParams,j,iLatticeCoups
         logical :: tFitMatAxis,tCalcRealSpectrum
         real(dp), parameter :: dDeltaImpThresh = 1.0e-4_dp 
         logical, parameter :: tUsePoswFreqPoints = .true. !For ph symmetric systems, this seems to make no difference (but is faster!)
@@ -128,6 +128,7 @@ module SelfConsistentLR
         endif
 
         !Initially, just see if we can fit the two different Matsubara spectral functions
+        call stop_all(t_r,'This wont work because iLatticeCoups has been depreciated as an input. Need to reset it')
         write(6,*) "Number of frequency points to fit across: ",nFitPoints
         if(tOptGF_EVals) then
             if(tConstrainKSym) then
@@ -147,12 +148,12 @@ module SelfConsistentLR
                 !We can optimize only the virtual states
                 iLatParams = iLatParams / 2
             endif
-!            if(iLatticeCoups.ne.0) then
-!                call stop_all(t_r,'iLatticeCoups set, but expecting to optimize eigenvalues')
-!            endif
+            if(iLatticeCoups.ne.0) then
+                call stop_all(t_r,'iLatticeCoups set, but expecting to optimize eigenvalues')
+            endif
         else
             !Should we do including the inpurity space in these lattice couplings?
-!            iLatParams = iLatticeCoups
+            iLatParams = iLatticeCoups
         endif
 
         allocate(SE_Fit(nImp,nImp,nFitPoints))
@@ -370,7 +371,7 @@ module SelfConsistentLR
     subroutine SC_FitLat_and_SE_Im()
         implicit none
         real(dp) :: GFChemPot,FinalDist,Omega
-        integer :: nESteps_Im,nESteps_Re,OmegaVal,iter,i,iLatParams
+        integer :: nESteps_Im,nESteps_Re,OmegaVal,iter,i,iLatParams,iLatticeCoups
         complex(dp), allocatable :: SE_Im(:,:,:),G_Mat_Im(:,:,:),Lattice_GF(:,:,:)
         complex(dp), allocatable :: Bath_GF(:,:,:),zero_GF(:,:,:),Cluster_GF(:,:,:)
         complex(dp), allocatable :: DeltaSE(:,:,:),DiffImpGF(:,:,:),G_Mat_Re(:,:,:)
@@ -414,8 +415,9 @@ module SelfConsistentLR
         allocate(DeltaSE(nImp,nImp,nESteps_Im))
         
         !Lattice fitting
+        call stop_all(t_r,'This wont work because iLatticeCoups has been depreciated as an input. Need to reset it')
         allocate(h_lat_fit(nSites,nSites))
-!        iLatParams = iLatticeCoups
+        iLatParams = iLatticeCoups
         allocate(Couplings(iLatParams,nImp))
 
         !Misc/convergences
