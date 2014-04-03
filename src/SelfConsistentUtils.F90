@@ -5,7 +5,7 @@ module SelfConsistentUtils
     use utils, only: get_free_unit,append_ext
     use SC_Data
     use mat_tools, only: MakeBlockHermitian,writematrixcomp,writevector
-    use mat_tools, only: Add_Nonlocal_comp_inplace
+    use mat_tools, only: Add_Nonlocal_comp_inplace,var_to_couplingind
     use matrixops, only: mat_inv
     implicit none
 
@@ -307,7 +307,7 @@ module SelfConsistentUtils
         complex(dp), intent(in) :: ham(nSites,nSites)
         logical, intent(in), optional :: tUpdateLocalHam
         complex(dp), allocatable :: KBlocks(:,:,:)
-        integer :: i,j,ind
+        integer :: i,j,ind,ind_r,ind_c,ind_block
         logical :: tUpdateLocalHam_
         character(len=*), parameter :: t_r='ham_to_LatParams'
 
@@ -319,15 +319,10 @@ module SelfConsistentUtils
                 tUpdateLocalHam_ = .true.
             endif
 
-            !Easier - just take the off block-diagonals of the first nImp rows
-            ind = 0
-            do i = 1,nImp
-                do j = 1,iLatticeCoups
-                    ind = ind + 1
-                    LatParams(ind) = real(ham(i,nImp+j),dp)
-                enddo
+            do i = 1,iLatParams
+                call var_to_couplingind(i,nImp,ind_r,ind_c,ind_block)
+                LatParams(i) = real(ham(ind_r,ind_c+(ind_block*nImp)),dp)
             enddo
-            if(ind.ne.iLatParams) call stop_all(t_r,'Error filling real-space lattice parameters')
 
             if(tUpdateLocalHam_) then
                 !Also, update the global array which gives the block diagonals of the lattice hamiltonian in real space
@@ -356,8 +351,7 @@ module SelfConsistentUtils
         real(dp), intent(in) :: LatParams(iLatParams)
         complex(dp), intent(out) :: ham(nSites,nSites)
         complex(dp), allocatable :: KBlocks(:,:,:)
-        complex(dp), allocatable :: ctemp(:,:)
-        real(dp), allocatable :: LatticeCoups(:,:)
+        complex(dp), allocatable :: ctemp(:,:),vars(:)
         integer :: k,ind_1,ind_2,kPnt,ind,i,j
         character(len=*), parameter :: t_r='LatParams_to_ham'
         
@@ -366,23 +360,21 @@ module SelfConsistentUtils
         if(tRealSpaceSC) then
             !From real space lattice couplings to a hamiltonian
 
+            !Put in diagonals
             do kPnt = 1,nKPnts
                 ind_1 = ((kPnt-1)*nImp) + 1
                 ind_2 = nImp*kPnt
 
                 ham(ind_1:ind_2,ind_1:ind_2) = LatDiagBlocks(:,:)
             enddo
-            allocate(LatticeCoups(nImp,iLatticeCoups))
-            LatticeCoups(:,:) = zero
-            ind = 0
-            do i = 1,nImp
-                do j = 1,iLatticeCoups
-                    ind = ind + 1
-                    LatticeCoups(i,j) = LatParams(ind)
-                enddo
+            !ham is complex, so unfortunately, we have to transfer variables to complex array
+            allocate(vars(iLatParams))
+            vars(:) = zzero
+            do i = 1,iLatParams
+                vars(i) = cmplx(LatParams(i),zero,dp)
             enddo
-            call Add_Nonlocal_comp_inplace(ham,LatticeCoups,iLatticeCoups,tAdd=.true.)
-            deallocate(LatticeCoups)
+            call Add_Nonlocal_comp_inplace(ham,vars,iLatParams,tAdd=.true.)
+            deallocate(vars)
 
         else
 
@@ -420,7 +412,7 @@ module SelfConsistentUtils
         real(dp), intent(out) :: LatParams(iLatParams)
         complex(dp), intent(in) :: KBlocks(nImp,nImp,nKPnts)
 
-        integer :: i,j,k,ind,ks,ind_1,ind_2
+        integer :: i,j,k,ind,ks,ind_1,ind_2,ind_r,ind_c,ind_block
         complex(dp), allocatable :: LatticeCoups_(:,:),LattCoupTemp(:,:)
         complex(dp), allocatable :: BlockTemp(:,:),BlockTemp_2(:,:),BlockTemp_3(:,:)
         character(len=*), parameter :: t_r='KBlocks_to_LatParams'
@@ -448,7 +440,6 @@ module SelfConsistentUtils
 !            LatticeCoups_(:,:) = BlockTemp(1:nImp,nImp+1:nImp+iLatticeCoups)
 !            deallocate(BlockTemp,BlockTemp_2)
 
-            !Below will be a faster way of doing this, but commented out for the moment to check it is working
             allocate(LattCoupTemp(nImp,nSites))
             LattCoupTemp(:,:) = zzero
             allocate(BlockTemp(nImp,nImp))
@@ -469,21 +460,13 @@ module SelfConsistentUtils
             call ZGEMM('N','C',nImp,nSites,nSites,zone,LattCoupTemp,nImp,RtoK_Rot,nSites,zzero,LatticeCoups_,nImp)
 
             deallocate(BlockTemp,BlockTemp_2,BlockTemp_3,LattCoupTemp)
-
-            ind = 0
-            do i = 1,nImp
-                do j = 1,iLatticeCoups
-                    ind = ind + 1
-                    if(ind.gt.iLatParams) call stop_all(t_r,'indexing error')
-
-                    if(abs(aimag(LatticeCoups_(i,nImp+j))).gt.1.0e-7_dp) then
-                        !call writematrixcomp(LatticeCoups_,'Lattice Couplings',.true.)
-                        !call stop_all(t_r,'Lattice couplings should not be complex')
-                        write(6,"(A,I7,G17.10)") "Removing complex component of coupling: ",j,aimag(LatticeCoups_(i,j+nImp))
-                    endif
-                    LatParams(ind) = real(LatticeCoups_(i,j+nImp),dp)
-
-                enddo
+            
+            do i = 1,iLatParams
+                call var_to_couplingind(i,nImp,ind_r,ind_c,ind_block)
+                if(abs(aimag(LatticeCoups_(ind_r,ind_c+(ind_block*nImp)))).gt.1.0e-7_dp) then
+                    write(6,"(A,I7,G17.10)") "Removing complex component of coupling: ",i,abs(aimag(LatticeCoups_(ind_r,ind_c+(ind_block*nImp))))
+                endif
+                LatParams(i) = real(LatticeCoups_(ind_r,ind_c+(ind_block*nImp)),dp)
             enddo
             deallocate(LatticeCoups_)
         else

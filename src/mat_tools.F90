@@ -1866,7 +1866,7 @@ module mat_tools
             phase = -1.0_dp
         endif
 
-        if(iNonLocCoupBlocks.eq.0) then
+        if(iNonLocBlocks.eq.0) then
             !Use all blocks
             if(tOddFullNonlocCoups) then
                 !iFullBlocks gives the number of full coupling unit cells, without the potentially special one which isn't repeated

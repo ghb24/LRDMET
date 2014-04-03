@@ -129,7 +129,8 @@ Program RealHub
         tRealSpaceSC = .true.   !By default, attempt self-consistency on the matsubara axis
         iLatticeFitType = 1     !By default, fit the greens functions (rather than inverses)
         iFitGFWeighting = 0     !By default, when doing lattice fits, fit to a flat model, rather than bias low weighted excitations
-        iLatticeCoups = 0
+!        iLatticeCoups = 0
+        iNonLocBlocks = 0
         iMaxFitMicroIter = 0
         iFitAlgo = 1            !Which fitting algorithm to use. 1 = simplex, 2 = Powell
         tReadCouplings = .false.    !Whether to read in previous lattice couplings fits
@@ -626,8 +627,9 @@ Program RealHub
                 call readi(iLatticeFitType) 
             case("LATTICE_FIT_WEIGHTING")
                 call readi(iFitGFWeighting)
-            case("LATTICE_COUPLINGS")
-                call readi(iLatticeCoups)
+            case("LATTICE_OFFDIAG_COUPBLOCKS")
+!                call readi(iLatticeCoups)
+                call readi(iNonLocBlocks)
             case("MAXITER_LATTICEFIT")
                 call readi(iMaxFitMicroIter)
             case("MAXITER_MACROFIT")
@@ -1026,13 +1028,13 @@ Program RealHub
         if(tDiag_KSpace.and.LatticeDim.eq.2) then
             call stop_all(t_r,'Cannot currently do k-space diagonalizations for 2D models. Fix me!')
         endif
-!        if(tSC_LR.and.(.not.tRealSpaceSC).and.(.not.tOptGF_EVals).and.(iLatticeCoups.eq.0)) then
-!            call stop_all(t_r,'Matsubara lattice couplings self-consistency, '  &
-!                //'but no number of lattice coupling parameters specified')
-!        endif
-        if(tSC_LR.and.tOptGF_EVals.and.(iLatticeCoups.ne.0)) then
-            call stop_all(t_r,'Lattice eigenvalues self-consistency cannot do a smaller number of lattice sites')
+        if(tSC_LR.and.(.not.tRealSpaceSC).and.(iNonLocBlocks.ne.0)) then
+            call stop_all(t_r,'Off-diagonal lattice coupling length specified, '  &
+                //'but not optimizing real space ham')
         endif
+!        if(tSC_LR.and.tOptGF_EVals.and.(iLatticeCoups.ne.0)) then
+!            call stop_all(t_r,'Lattice eigenvalues self-consistency cannot do a smaller number of lattice sites')
+!        endif
         if(tImposephsym.and.(.not.tHalfFill)) then
             call stop_all(t_r,'Can only impose ph sym if we are at half-filling')
         endif

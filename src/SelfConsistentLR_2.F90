@@ -451,7 +451,7 @@ module SelfConsistentLR2
         logical :: tNonStandardGrid
         integer :: i,j,k
         integer, parameter :: iNormPower = 2    !The power of the matrix norm for the residual
-        logical, parameter :: tTestDerivs = .false.
+        logical, parameter :: tTestDerivs = .true. 
         character(len=*), parameter :: t_r='CalcLatticeFitResidual_2'
 
         !TODO: Fix this, so that the self-energy is an optional argument
@@ -1150,7 +1150,7 @@ module SelfConsistentLR2
 
         complex(dp), allocatable :: num(:,:),ham_temp(:,:),ham_temp_2(:,:),ham(:,:)
         real(dp) :: Omega,phase
-        integer :: w,i,j,ii,jj,k,ind,ind_1,ind_2
+        integer :: w,i,j,ii,jj,k,ind,ind_1,ind_2,iFullBlocks,ind_c,ind_r,ind_block
         complex(dp) :: compval
         logical :: tNonStandardGrid
         character(len=*), parameter :: t_r='CalcJacobian_RS'
@@ -1178,6 +1178,17 @@ module SelfConsistentLR2
         allocate(ham_temp(nSites,nSites))
         allocate(ham_temp_2(nSites,nSites))
 
+        if(iNonLocBlocks.eq.0) then
+            !Use all blocks
+            if(tOddFullNonlocCoups) then
+                iFullBlocks = ((nSites/nImp)-2)/2
+            else
+                iFullBlocks = ((nSites/nImp)-1)/2
+            endif
+        else
+            iFullBlocks = iNonLocBlocks
+        endif
+
         Jacobian(:) = zero
 
         w = 0
@@ -1204,61 +1215,69 @@ module SelfConsistentLR2
             !ham_temp_2 is now the inverse of the greens function (we could do this with 2x k-space rotations instead?)
 
             ind = 0
-            do j = 1,nImp
-                do i = 1,iLatticeCoups
-                    !Now, calculate the derivative of the inverse of the GF
-                    ham_temp(:,:) = zzero
+            do i = 1,iLatParams   
+                !Now, calculate the derivative of the inverse of the GF
+                ham_temp(:,:) = zzero
 
-                    !Set up matrix with 1's or -1s for values of the coupling matrix element which we are differentiating wrt.
-                    do k = 1,nKPnts
-                        ind_1 = ((k-1)*nImp) + 1
-                        ind_2 = nImp*k
+                !Set up matrix with 1's or -1s for values of the coupling matrix element which we are differentiating wrt.
+                !What are the indices in the first row?
+                call var_to_couplingind(i,nImp,ind_r,ind_c,ind_block)
+                do k = 1,nKPnts
+                    ind_1 = ((k-1)*nImp) + 1
+                    ind_2 = nImp*k
 
                         !Coupling to the right
-                        if((ind_2+i).le.nSites) then
-                            ham_temp(ind_1+j-1,ind_2+i) = cmplx(-1.0_dp,0.0_dp,dp)
-                        else
-                            ham_temp(ind_1+j-1,ind_2+i-nSites) = cmplx(-phase,0.0_dp,dp)
-                        endif
-
-                        !Coupling to the left
-                        if((ind_1-i).ge.1) then
-                            ham_temp(ind_1+j-1,ind_1-i) = cmplx(-1.0_dp,0.0_dp,dp)
-                        else
-                            ham_temp(ind_1+j-1,ind_1-i+nSites) = cmplx(-phase,0.0_dp,dp)
-                        endif
-
-                    enddo
-!                    write(6,*) "imp: ",j
-!                    write(6,*) "CoupParam: ",i
-!                    call writematrixcomptoreal(ham_temp,'Deriv of B',.true.)
-
-                    !Right, now we can get the full derivative of the inverse of B (i.e. the greens function wrt changing the coefficients).
-                    !This currently does not use/require any periodicity. However, the matrix inverse could be improved with periodicity.
-
-                    !The operations below could *certainly* be sped up. Just for testing.
-                    call ZGEMM('N','N',nSites,nSites,nSites,zone,ham_temp,nSites,ham_temp_2,nSites,zzero,num,nSites)
-                    call ZGEMM('N','N',nSites,nSites,nSites,-zone,ham_temp_2,nSites,num,nSites,zzero,ham_temp,nSites)
-
-                    !ham_temp is now the derivative of the *full* greens function wrt changing the coupling.
-                    !Seems a little profligate - I'm sure the local greens function could be done more efficiently.
-!                    Derivatives(:,:,j,i,w) = ham_temp(1:nImp,1:nImp)
-                    ind = ind + 1   !ind gives the element in LatParams that you are taking the derivative wrt for that frequency
-                    if(ind.gt.iLatParams) call stop_all(t_r,'Indexing error')
-                    compval = zzero
-                    do ii = 1,nImp
-                        do jj = 1,nImp
-                            compval = compval + ( ham_temp(jj,ii) * dconjg(DiffMat(jj,ii,w) )) +    &
-                                ( dconjg(ham_temp(jj,ii)) * DiffMat(jj,ii,w) )
-                        enddo
-                    enddo
-                    if(tNonStandardGrid) then
-                        Jacobian(ind) = Jacobian(ind) + real(compval,dp) * Weights(w)
+                    if(ind_2+ind_c+((ind_block-1)*nImp).le.nSites) then
+                        ham_temp(ind_1+ind_r-1,ind_2+ind_c+((ind_block-1)*nImp)) = cmplx(-1.0_dp,0.0_dp,dp)
                     else
-                        Jacobian(ind) = Jacobian(ind) + real(compval,dp) 
+                        ham_temp(ind_1+ind_r-1,ind_2+ind_c+((ind_block-1)*nImp)-nSites) = cmplx(-phase,0.0_dp,dp)
                     endif
-                enddo !i over iLatticeCoups
-            enddo   !j over nImp
+
+                    if(ind_block.gt.iFullBlocks) then
+                        if(.not.tOddFullNonlocCoups) stop 'error here'
+                        !Fill in other triangle of mid-way coupling block
+                        if(ind_2+ind_c+((ind_block-1)*nImp).le.nSites) then
+                            ham_temp(ind_1+ind_c-1,ind_2+ind_r+((ind_block-1)*nImp)) = cmplx(1.0_dp,0.0_dp,dp)
+                        else
+                            ham_temp(ind_1+ind_c-1,ind_2+ind_r+((ind_block-1)*nImp)-nSites) = cmplx(phase,0.0_dp,dp)
+                        endif
+                    else
+
+                        !Coupling to the left - remember, this is transposed
+                        if(ind_1-(nImp*ind_block)+ind_r-1.ge.1) then
+                            ham_temp(ind_1+ind_c-1,ind_1-(nImp*ind_block)+ind_r-1) = cmplx(-1.0_dp,0.0_dp,dp)
+                        else
+                            ham_temp(ind_1+ind_c-1,ind_1-(nImp*ind_block)+ind_r-1+nSites) = cmplx(-phase,0.0_dp,dp)
+                        endif
+                    endif
+
+                enddo
+!                write(6,*) "imp: ",j
+!                write(6,*) "CoupParam: ",i
+!                call writematrixcomptoreal(ham_temp,'Deriv of B',.true.)
+
+                !Right, now we can get the full derivative of the inverse of B (i.e. the greens function wrt changing the coefficients).
+                !This currently does not use/require any periodicity. However, the matrix inverse could be improved with periodicity.
+
+                !The operations below could *certainly* be sped up. Just for testing.
+                call ZGEMM('N','N',nSites,nSites,nSites,zone,ham_temp,nSites,ham_temp_2,nSites,zzero,num,nSites)
+                call ZGEMM('N','N',nSites,nSites,nSites,-zone,ham_temp_2,nSites,num,nSites,zzero,ham_temp,nSites)
+
+                !ham_temp is now the derivative of the *full* greens function wrt changing the coupling.
+                !Seems a little profligate - I'm sure the local greens function could be done more efficiently.
+                compval = zzero
+                do ii = 1,nImp
+                    do jj = 1,nImp
+                        compval = compval + ( ham_temp(jj,ii) * dconjg(DiffMat(jj,ii,w) )) +    &
+                            ( dconjg(ham_temp(jj,ii)) * DiffMat(jj,ii,w) )
+                    enddo
+                enddo
+                if(tNonStandardGrid) then
+                    Jacobian(i) = Jacobian(i) + real(compval,dp) * Weights(w)
+                else
+                    Jacobian(i) = Jacobian(i) + real(compval,dp) 
+                endif
+            enddo   !i over elements of the hamiltonian you are taking the derivative wrt.
         enddo   !w over frequencies
         deallocate(num,ham_temp,ham_temp_2,ham)
 

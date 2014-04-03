@@ -147,12 +147,12 @@ module SelfConsistentLR
                 !We can optimize only the virtual states
                 iLatParams = iLatParams / 2
             endif
-            if(iLatticeCoups.ne.0) then
-                call stop_all(t_r,'iLatticeCoups set, but expecting to optimize eigenvalues')
-            endif
+!            if(iLatticeCoups.ne.0) then
+!                call stop_all(t_r,'iLatticeCoups set, but expecting to optimize eigenvalues')
+!            endif
         else
             !Should we do including the inpurity space in these lattice couplings?
-            iLatParams = iLatticeCoups
+!            iLatParams = iLatticeCoups
         endif
 
         allocate(SE_Fit(nImp,nImp,nFitPoints))
@@ -415,7 +415,7 @@ module SelfConsistentLR
         
         !Lattice fitting
         allocate(h_lat_fit(nSites,nSites))
-        iLatParams = iLatticeCoups
+!        iLatParams = iLatticeCoups
         allocate(Couplings(iLatParams,nImp))
 
         !Misc/convergences
