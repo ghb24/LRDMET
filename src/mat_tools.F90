@@ -5,6 +5,11 @@ module mat_tools
     use globals
     implicit none
 
+    interface DiagOneEOp
+        module procedure DiagOneEOp_r
+        module procedure DiagOneEOp_z
+    end interface
+
     contains
 
     !Find the indices for any diagonal operator, and the matrices for ...
@@ -2359,7 +2364,7 @@ module mat_tools
     !the SS_Period is the size of the supercell repeating unit (e.g. the coupling correlation potential)
     !This will be equivalent to the number of bands per kpoint
     !Ham returns the eigenvectors (in real space).
-    subroutine DiagOneEOp(Ham,Vals,SS_Period,nLat,tKSpace_Diag)
+    subroutine DiagOneEOp_r(Ham,Vals,SS_Period,nLat,tKSpace_Diag)
         use sort_mod, only: sort_d_a_c
         implicit none
         integer, intent(in) :: nLat
@@ -2376,7 +2381,9 @@ module mat_tools
         integer :: ii,jj,xb,yb,impy,impx,impsite,MappedInd,MappedInd2
         real(dp), allocatable :: Couplings(:,:)
         logical :: tWrapped
-        character(len=*), parameter :: t_r='DiagOneEOp'
+        character(len=*), parameter :: t_r='DiagOneEOp_r'
+        
+        write(6,*) "Entered DiagOneEOp_r..."
 
         if(tKSpace_Diag) then
             if(LatticeDim.eq.2) then
@@ -2916,7 +2923,263 @@ module mat_tools
 !            call writevector(Vals,'Eigenvalues')
         endif
 
-    end subroutine DiagOneEOp
+    end subroutine DiagOneEOp_r
+    
+    !Routine to diagonalize a 1-electron, complex operator, with the lattice periodicity.
+    !the SS_Period is the size of the supercell repeating unit (e.g. the coupling correlation potential)
+    !This will be equivalent to the number of bands per kpoint
+    !Ham returns the eigenvectors (in real space).
+    subroutine DiagOneEOp_z(Ham,Vals,SS_Period,nLat,tKSpace_Diag)
+        use sort_mod, only: sort_d_a_c
+        implicit none
+        integer, intent(in) :: nLat
+        logical, intent(in) :: tKSpace_Diag
+        integer, intent(in) :: SS_Period
+        complex(dp), intent(inout) :: Ham(nLat,nLat)
+        real(dp), intent(out) :: Vals(nLat)
+        real(dp), allocatable :: Work(:),r_vecs_real(:,:)
+        real(dp) :: phase
+        complex(dp), allocatable :: RotMat(:,:),CompHam(:,:),cWork(:),vec_temp(:)
+        complex(dp), allocatable :: ztemp(:,:),k_Ham(:,:),k_vecs(:,:),vec_temp2(:)
+        complex(dp), allocatable :: r_vecs(:,:)
+        integer :: lWork,info,i,j,k,kSpace_ind,ind_1,ind_2
+        character(len=*), parameter :: t_r='DiagOneEOp_z'
+
+        write(6,*) "Entered DiagOneEOp_z..."
+
+        if(tKSpace_Diag) then
+            if(LatticeDim.eq.2) then
+                call stop_all(t_r,'Cannot do k-space diagonalizations - impurity site tiling is not same as direct lattice')
+            endif
+
+            if(tCheck.and.LatticeDim.eq.1) then
+                !Check for translational invariance of the system
+                !That is: is each supercell row equivalent when translated to the supercell ajacent to it?
+                do j = 1,nLat
+                    do i = 1,nLat
+                        ind_1 = i
+                        ind_2 = j
+                        !Translate a supercell down
+                        ind_1 = i + SS_Period
+                        ind_2 = j + SS_Period
+                        phase = 1
+                        if(ind_1.gt.nLat) then
+                            ind_1 = ind_1 - nLat
+                            if(tAntiPeriodic) phase = -1 * phase
+                        endif
+                        if(ind_2.gt.nLat) then
+                            ind_2 = ind_2 - nLat
+                            if(tAntiPeriodic) phase = -1 * phase
+                        endif
+                        if(abs(ham(i,j)-(phase*ham(ind_1,ind_2))).gt.1.0e-7_dp) then
+                            write(6,"(2I6,A,2I6)") i,j," -> ",ind_1,ind_2
+                            write(6,*) "Phase change: ",phase
+                            write(6,*) ham(i,j),phase*ham(ind_1,ind_2)
+                            call writematrixcomp(ham,'real space ham',.true.)
+                            call stop_all(t_r,'Translational symmetry not maintained in real-space hamiltonian')
+                        endif
+                    enddo
+                enddo
+                write(6,"(A)") "Lattice system appropriately periodic in real space"
+            endif
+
+            allocate(CompHam(nLat,nLat))
+            CompHam(:,:) = Ham(:,:)
+
+            allocate(RotMat(nLat,SS_Period))
+            allocate(k_Ham(SS_Period,SS_Period))
+            allocate(ztemp(nLat,SS_Period))
+            allocate(k_vecs(SS_Period,nLat))
+            k_vecs(:,:) = zzero
+            
+            !Space for diagonalization
+            lwork = max(1,2*SS_Period-1)
+            allocate(cWork(lWork))
+            allocate(Work(max(1,3*SS_Period-2)))
+
+            !Run though all kpoints
+            do k = 1,nKPnts
+                RotMat(:,:) = zzero     !Rot mat will be the rotation into the specfic kpoint of interest
+                ind_1 = ((k-1)*SS_Period) + 1
+                ind_2 = SS_Period*k
+                RotMat(:,:) = RtoK_Rot(:,ind_1:ind_2)
+                !We now have the rotation matrix for the bands on this kpoint.
+                !Rotate the hamiltonian into this basis
+                call ZGEMM('N','N',nLat,SS_Period,nLat,zone,CompHam,nLat,RotMat,nLat,zzero,ztemp,nLat)
+                call ZGEMM('C','N',SS_Period,SS_Period,nLat,zone,RotMat,nLat,ztemp,nLat,zzero,k_Ham,SS_Period)
+
+                !Diagonalize this k-pure hamiltonian
+                info = 0
+                call ZHEEV('V','U',SS_Period,k_Ham,SS_Period,Vals(ind_1:ind_2),cWork,lWork,Work,info)
+                if(info.ne.0) call stop_all(t_r,'Diag failed')
+
+                if(tWriteOut) then
+                    write(6,*) "For kpoint: ",k," Eigenvalues are:"
+                    do i = 0,SS_Period-1
+                        write(6,*) Vals(ind_1+i)
+                    enddo
+                    write(6,*) "Eigenvectors: "
+                    call writematrixcomp(k_Ham,'Eigenvec',.true.)
+                endif
+
+                k_vecs(:,ind_1:ind_2) = k_Ham(:,:)
+            enddo
+            
+            deallocate(RotMat,k_Ham,ztemp,cWork,Work)
+
+            !Now, rotate the k-space vectors back into r-space
+            allocate(r_vecs(nLat,nLat))
+            r_vecs(:,:) = zzero
+            do k = 1,nKPnts
+                ind_1 = ((k-1)*SS_Period) + 1
+                ind_2 = SS_Period*k
+                call ZGEMM('N','N',nLat,SS_Period,SS_Period,zone,RtoK_Rot(:,ind_1:ind_2),nLat,  &
+                    k_vecs(:,ind_1:ind_2),SS_Period,zzero,r_vecs(:,ind_1:ind_2),nLat)
+            enddo
+            if(tWriteOut) call writematrixcomp(r_vecs,'r_vecs',.true.)
+
+            if(tCheck) then
+                !Do these satisfy the original eigenvalue problem?
+                allocate(cWork(nLat))
+                do i = 1,nLat
+!                    write(6,*) "Checking eigenvector: ",i
+                    call ZGEMV('N',nLat,nLat,zone,CompHam,nLat,r_vecs(:,i),1,zzero,cWork,1)
+                    do j = 1,nLat
+                        if(abs(cWork(j)-(Vals(i)*r_vecs(j,i))).gt.1.0e-8_dp) then
+                            call stop_all(t_r,'Eigensystem not computed correctly in real basis')
+                        endif
+                    enddo
+                enddo
+                deallocate(cWork)
+                !write(6,*) "Eigensystem correctly computed and transformed to real space"
+            endif
+
+!            write(6,*) "Before sorting..."
+!            call writevector(Vals,'Vals')
+!            call writematrixcomp(r_vecs,'r_vecs',.true.)
+            
+            !Order the vectors, such that the are in order of increasing eigenvalue
+            call sort_d_a_c(Vals,r_vecs,nSites,nSites)
+            
+            !write(6,*) "After sorting..."
+            !call writevector(Vals,'Vals')
+            !call writematrixcomp(r_vecs,'r_vecs',.true.)
+            
+            if(tCheck) then
+                !Do these satisfy the original eigenvalue problem?
+                allocate(cWork(nLat))
+                do i = 1,nLat
+                    call ZGEMV('N',nLat,nLat,zone,CompHam,nLat,r_vecs(:,i),1,zzero,cWork,1)
+                    do j = 1,nLat
+                        if(abs(cWork(j)-(Vals(i)*r_vecs(j,i))).gt.1.0e-8_dp) then
+                            call stop_all(t_r,'Eigensystem not computed correctly in real basis')
+                        endif
+                    enddo
+                enddo
+                deallocate(cWork)
+                !write(6,*) "Eigensystem correctly computed and transformed to real space"
+            endif
+            
+            !Degenerate sets?
+            !It is *impossible* to have non-complex k-pure eigenvectors in the presence of degeneracies.
+            !Within the degenerate set, we must rotate them together, losing the k-label. Boo.
+            !HACK!!
+            !Just rotate them together in equal quantities. We should only ever have mixtures of +-K, which should
+            !be taken as the positive and negative LC. e^ik.r = cos k.r + i sin k.r     We want these trig functions
+            allocate(Vec_temp(nLat))
+            allocate(Vec_temp2(nLat))
+            i = 1
+            do while(i.le.(nLat-1))
+                j = i + 1
+                do while(abs(Vals(i)-Vals(j)).lt.1.0e-8)
+                    j = j + 1
+                    if(j.gt.nLat) exit
+                enddo
+                if((j-i).gt.1) then
+                    !Degeneracy
+                    if((j-i).gt.2) then
+                        !More than two fold degenerate. How do we rotate these??
+                        call stop_all(t_r,'Cannot handle more than 2x degeneracy in the k-space hamiltonian')
+                    endif
+                    !Degeneracy is between i and i + 1 (or i and j - 1)
+                    if((i+1).ne.(j-1)) call stop_all(t_r,'Indexing error')
+                    !Rotate these vectors together in positive and negative linear combinations
+                    Vec_temp(:) = (r_vecs(:,i) + r_vecs(:,i+1)) / sqrt(2.0_dp)
+                    Vec_temp2(:) = (r_vecs(:,i) - r_vecs(:,i+1)) / sqrt(2.0_dp)
+                    r_vecs(:,i) = Vec_temp(:)
+                    r_vecs(:,i+1) = Vec_temp2(:)
+                endif
+                i = j 
+            enddo
+            deallocate(Vec_temp,Vec_temp2)
+
+            allocate(r_vecs_real(nLat,nLat))
+            r_vecs_real(:,:) = zero
+            !Now, find the appropriate phase, such that the rotation will make the r_vecs real.
+            !Apply the inverse of this rotation to the k_vecs, such that we end up with a complex set of
+            !k-vectors (ordered by k-point), and real set of r_vecs (Ordered by energy).
+            do i = 1,nLat   !Run through eigenvectors
+                phase = zero
+                if(tWriteOut) write(6,*) "Rotating eigenvector : ",i
+                do j = 1,nLat
+                    if((abs(aimag(r_vecs(j,i))).gt.1.0e-9_dp).and.(abs(r_vecs(j,i)).gt.1.0e-7_dp)) then
+                        !Find the phase factor for this eigenvector
+                        phase = atan(aimag(r_vecs(j,i))/real(r_vecs(j,i)))
+                        if(tWriteOut) write(6,*) "Eigenvector: ",i,j,phase,r_vecs(j,i) * exp(dcmplx(0.0_dp,-phase))
+                        exit
+                    endif
+                enddo
+                !The phase should be the same for all components of the eigenvector
+                r_vecs(:,i) = r_vecs(:,i) * exp(dcmplx(zero,-phase))
+                do j = 1,nLat
+                    if(abs(aimag(r_vecs(j,i))).gt.1.0e-6) then
+                        write(6,*) "Error rotating component: ",j
+                        write(6,*) phase,r_vecs(j,i)
+                        call stop_all(t_r,'Eigenvectors not rotated correctly - degeneracies?')
+                    endif
+                    r_vecs_real(j,i) = real(r_vecs(j,i),dp)
+                enddo
+            enddo
+
+            !Check again that these rotated r_vecs are correct eigenfunctions...
+!            if(tCheck) then
+!                !Do these satisfy the original eigenvalue problem?
+!                allocate(Work(nLat))
+!                do i = 1,nLat
+!                    call DGEMV('N',nLat,nLat,one,Ham,nLat,r_vecs_real(:,i),1,zero,Work,1)
+!                    do j = 1,nLat
+!                        if(abs(Work(j)-(Vals(i)*r_vecs_real(j,i))).gt.1.0e-8_dp) then
+!                            call stop_all(t_r,'Eigensystem not computed correctly in real real basis')
+!                        endif
+!                    enddo
+!                enddo
+!                deallocate(Work)
+!                !write(6,*) "Eigensystem correctly computed and transformed to real real space"
+!            endif
+
+            Ham(:,:) = cmplx(r_vecs_real(:,:),zero,dp)
+            deallocate(CompHam,r_vecs_real,r_vecs)
+            
+!            Ham(:,:) = r_vecs(:,:)
+        else
+            !Normal real space diagonalization
+            Vals(:) = 0.0_dp
+            allocate(cWork(1))
+            allocate(Work(max(1,3*nLat-2)))
+            lWork = -1
+            info = 0
+            call zheev('V','L',nLat,Ham,nLat,Vals,cWork,lWork,Work,info)
+            if(info.ne.0) call stop_all(t_r,'Workspace queiry failed')
+            lwork=int(abs(work(1)))+1
+            deallocate(cwork)
+            allocate(cwork(lwork))
+            call zheev('V','L',nLat,Ham,nLat,Vals,cWork,lWork,Work,info)
+            if(info.ne.0) call stop_all(t_r,'Diag failed')
+            deallocate(work,cwork)
+!            call writevector(Vals,'Eigenvalues')
+        endif
+
+    end subroutine DiagOneEOp_z
 
     !Diagonalize a lattice matrix, with optional k-independent additional terms,
     !in kspace or real space.

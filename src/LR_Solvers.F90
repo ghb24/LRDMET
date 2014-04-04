@@ -173,6 +173,34 @@ module LRSolvers
                     enddo
                 enddo
             endif
+            if(tCheck) then
+                do i = 1,nFCIDet
+                    do j = i+1,nFCIDet
+                        if(abs(NHam(i,j)-dconjg(NHam(j,i))).gt.1.0e-8_dp) then
+                            call stop_all(t_r,'N-electron hamiltonian not hermitian. Should it be?')
+                        endif
+                    enddo
+                    if(abs(aimag(NHam(i,i))).gt.1.0e-8_dp) then
+                        call stop_all(t_r,'N-electron hamiltonian not diagonal real')
+                    endif
+                enddo
+                do i = 1,nNp1FCIDet
+                    do j = i+1,nNp1FCIDet
+                        if(abs(Np1Ham(i,j)-dconjg(Np1Ham(j,i))).gt.1.0e-8_dp) then
+                            call stop_all(t_r,'N+1-electron ham not hermitian. Should it be?')
+                        endif
+                        if(abs(Nm1Ham(i,j)-dconjg(Nm1Ham(j,i))).gt.1.0e-8_dp) then
+                            call stop_all(t_r,'N-1 electron ham not hermitian. Should it be?')
+                        endif
+                    enddo
+                    if(abs(aimag(Np1Ham(i,i))).gt.1.0e-8_dp) then
+                        call stop_all(t_r,'N+1-electron ham not diagonal real')
+                    endif
+                    if(abs(aimag(Nm1Ham(i,i))).gt.1.0e-8_dp) then
+                        call stop_all(t_r,'N-1 electron ham not diagonal real')
+                    endif
+                enddo
+            endif
         endif
 
     end subroutine Fill_N_Np1_Nm1b_FCIHam

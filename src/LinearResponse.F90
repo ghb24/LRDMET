@@ -45,7 +45,7 @@ module LinearResponse
         complex(dp), allocatable :: Psi1_p(:),Psi1_h(:),Ga_i_F_xi_Bra(:,:),Ga_i_F_ij(:,:),ni_lr_Mat(:,:)
         complex(dp), allocatable :: temp_vecc(:),Work(:),Psi_0(:),RHS(:)
         complex(dp), allocatable :: NI_LRMat_Cre(:,:),NI_LRMat_Ann(:,:),GSHam(:,:)
-        complex(dp), allocatable :: LatVals(:),LatVecs_R(:,:),LatVecs_L(:,:)
+        complex(dp), allocatable :: LatVals(:),LatVecs_R(:,:),LatVecs_L(:,:),h0_schmidt(:,:)
         complex(dp), allocatable :: ctemp(:,:),cham_schmidt(:,:),cFullSchmidtBasis(:,:),cEmb_h_fit(:,:)
         integer, allocatable :: Coup_Ann_alpha(:,:,:),Coup_Create_alpha(:,:,:)
         integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,ierr,info,iunit,nCore
@@ -144,7 +144,7 @@ module LinearResponse
             !if(nImp.gt.1) call stop_all(t_r,'Still some (conceptial) problems with reoptimizing ground state with > 1 impurity.')
 !            write(6,"(A)") "Reoptimizing the ground state for each frequency. " &
 !     &          //"This will make all calculations more expensive (and not necessarily better?)"
-            write(6,"(A)") "Reoptimizing the ground state in the presence of the non-local coupling terms (not its bath space)."
+            write(6,"(A)") "Reoptimizing the ground state in the presence of the non-local coupling terms."
         endif
         if(tLatHamProvided_) then
             write(6,"(A)") "Non-standard Lattice hamiltonian to be used for calculation of greens function"
@@ -182,6 +182,18 @@ module LinearResponse
             allocate(LatVecs_L(nSites,nSites))
             if(tCompLatHam) then
                 if(.not.present(ham_vals)) then
+                    if(tCheck) then
+                        do i = 1,nSites
+                            do j = i+1,nSites
+                                if(abs(cham(i,j)-dconjg(cham(j,i))).gt.1.0e-8_dp) then
+                                    call stop_all(t_r,'Passed in ham not hermitian')
+                                endif
+                            enddo
+                            if(abs(aimag(cham(i,i))).gt.1.0e-8_dp) then
+                                call stop_all(t_r,'Passed in ham not diagonal real')
+                            endif
+                        enddo
+                    endif
                     if(tRemoveImpCoupsPreSchmidt) then
                         !Remove all the couplings from the impurity to the rest of the lattice *before* schmidt decomposition
                         !The lattice hamiltonian from which the bath space is defined is still hermitian but lacks translational invariance
@@ -217,11 +229,25 @@ module LinearResponse
                     allocate(cham_schmidt(nSites,nSites))
                     allocate(cFullSchmidtBasis(nSites,nSites))
                     cFullSchmidtBasis(:,:) = zzero
-                    cFullSchmidtBasis(:,:) = dcmplx(FullSchmidtBasis(:,:),zero)
+                    if(allocated(FullSchmidtBasis_c)) then
+                        cFullSchmidtBasis(:,:) = FullSchmidtBasis_c(:,:)
+                    else
+                        cFullSchmidtBasis(:,:) = dcmplx(FullSchmidtBasis(:,:),zero)
+                    endif
                     call ZGEMM('C','N',nSites,nSites,nSites,zone,cFullSchmidtBasis,nSites,cham,nSites,zzero,ctemp,nSites)
                     call ZGEMM('N','N',nSites,nSites,nSites,zone,ctemp,nSites,cFullSchmidtBasis,nSites,zzero,cham_schmidt,nSites)
                     !Order of ham_schmidt = core, imp, bath, virt
-                    deallocate(ctemp,cFullSchmidtBasis)
+                    allocate(h0_schmidt(nSites,nSites))
+                    h0_schmidt(:,:) = zzero
+                    do i = 1,nSites
+                        do j = 1,nSites
+                            h0_schmidt(j,i) = cmplx(h0(j,i),zero,dp)
+                        enddo
+                    enddo
+                    call ZGEMM('C','N',nSites,nSites,nSites,zone,cFullSchmidtBasis,nSites,h0_schmidt,nSites,zzero,ctemp,nSites)
+                    call ZGEMM('N','N',nSites,nSites,nSites,zone,ctemp,nSites,cFullSchmidtBasis,nSites,zzero,h0_schmidt,nSites)
+                    deallocate(ctemp)
+                    deallocate(cFullSchmidtBasis)
                 endif
             else
                 if(.not.present(ham_vals)) then
@@ -250,6 +276,7 @@ module LinearResponse
                 endif
                 if(tEnvLatHam) then
                     !Construct the environment lattice contributions
+                    if(allocated(FullSchmidtBasis_c)) call stop_all(t_r,'Cannot do this here with real orbitals')
                     allocate(temp(nSites,nSites))
                     allocate(ham_schmidt(nSites,nSites))
                     call DGEMM('T','N',nSites,nSites,nSites,one,FullSchmidtBasis,nSites,ham,nSites,zero,temp,nSites)
@@ -270,6 +297,7 @@ module LinearResponse
         !umat and tmat for the active space
         if(tStaticBathFitLat) then
             if(.not.tCompLatHam) then
+                if(allocated(Emb_h0_c)) call stop_all(t_r,'Cannot reoptimize static basis with real orbitals')
                 allocate(Emb_h_fit(EmbSize,EmbSize))
                 Emb_h_fit(:,:) = zero
                 !For the uncontracted space, we want to use the bare 1e hamiltonian over the impurity (and impurity-bath coupling?)
@@ -288,9 +316,14 @@ module LinearResponse
                 cEmb_h_fit(:,:) = zzero
                 !For the uncontracted space, we want to use the bare 1e hamiltonian over the impurity and impurity-bath coupling
                 !Fot the uncontracted, static bath space, use the fit hamiltonian
-                if(.not.allocated(Emb_h0)) call stop_all(t_r,'Error here')
-                cEmb_h_fit(:,1:nImp) = dcmplx(Emb_h0(:,1:nImp),zero)
-                cEmb_h_fit(1:nImp,:) = dcmplx(Emb_h0(1:nImp,:),zero)
+                if(allocated(Emb_h0_c)) then
+                    cEmb_h_fit(:,1:nImp) = Emb_h0_c(:,1:nImp)
+                    cEmb_h_fit(1:nImp,:) = Emb_h0_c(1:nImp,:)
+                else
+                    if(.not.allocated(Emb_h0)) call stop_all(t_r,'Error here')
+                    cEmb_h_fit(:,1:nImp) = dcmplx(Emb_h0(:,1:nImp),zero)
+                    cEmb_h_fit(1:nImp,:) = dcmplx(Emb_h0(1:nImp,:),zero)
+                endif
                 cEmb_h_fit(nImp+1:EmbSize,nImp+1:EmbSize) = cham_schmidt(nOcc+1:nOcc+nImp,nOcc+1:nOcc+nImp)
                 call CreateIntMats(tComp=.true.,tTwoElecBath=.false.,cbathham=cEmb_h_fit)
                 deallocate(cEmb_h_fit)
@@ -413,7 +446,9 @@ module LinearResponse
         !Since this does not depend at all on the new basis, since the ground state has a completely
         !disjoint basis to |1>, the RHS of the equations can be precomputed
         Psi_0(:) = zzero 
-        Psi_0(1:nFCIDet) = HL_Vec(:)    
+        do i = 1,nFCIDet
+            Psi_0(i) = cmplx(HL_Vec(i),zero,dp)
+        enddo
         GSEnergy = HL_Energy
         if(tLR_ReoptGS) then
             !We only reoptimize here in the static bath space, with the *new* hamiltonian projected into it.
@@ -437,7 +472,7 @@ module LinearResponse
         write(6,"(A,F12.5,A)") "Memory required for fock matrix: ", &
             (((2.0_dp*real(nSites,dp))**2)+(real(nOcc,dp)**2)+(real(nSites-nOcc,dp)**2))*ComptoMb, " Mb"
         if(ierr.ne.0) call stop_all(t_r,'Error allocating')
-        
+
         !Set the impurity parts to the correct values (even though we don't access them from FockSchmidt)
         !They are different since the correlation potential is not defined over the impurity sites.
         FockSchmidt(nOcc-nImp+1:nOcc+nImp,nOcc-nImp+1:nOcc+nImp) = Emb_h0v(:,:)     !Defining the impurity & bath space of the FockSchmidt array (corrpot defined only over bath-bath space)
@@ -455,12 +490,12 @@ module LinearResponse
             endif
             if(tStaticBathFitLat) then
                 !Ensure that the impurity part is not from the fit lattice hamiltonian, but rather the plain h 
-                do i = nOcc-nImp+1,nOcc
+                do i = nOcc-nImp+1,nOcc     !Impurity space
                     !We want the coupling to the impurity to be *just* from the h0 matrix rotated into the schmidt basis.
                     !However, this wants to be extended to the whole impurity-lattice coupling too
                     do j = 1,nSites
-                        FockSchmidt_SE(j,i) = dcmplx(FockSchmidt(j,i),zero)
-                        FockSchmidt_SE(i,j) = FockSchmidt_SE(j,i) 
+                        FockSchmidt_SE(j,i) = h0_schmidt(j,i)   !      dcmplx(FockSchmidt(j,i),zero)
+                        FockSchmidt_SE(i,j) = h0_schmidt(i,j)   !       FockSchmidt_SE(j,i) 
                     enddo
                 enddo
             else
@@ -480,12 +515,27 @@ module LinearResponse
                 enddo
             enddo
         endif
+        deallocate(h0_schmidt)
         FockSchmidt_SE_CC(1:CoreEnd,1:CoreEnd) = FockSchmidt_SE(1:CoreEnd,1:CoreEnd)
         FockSchmidt_SE_VV(VirtStart:nSites,VirtStart:nSites) = FockSchmidt_SE(VirtStart:nSites,VirtStart:nSites)
         FockSchmidt_SE_VX(VirtStart:VirtEnd,ActiveStart:ActiveEnd) = FockSchmidt_SE(VirtStart:VirtEnd,ActiveStart:ActiveEnd)
         FockSchmidt_SE_CX(1:CoreEnd,ActiveStart:ActiveEnd) = FockSchmidt_SE(1:CoreEnd,ActiveStart:ActiveEnd)
         FockSchmidt_SE_XV(ActiveStart:ActiveEnd,VirtStart:VirtEnd) = FockSchmidt_SE(ActiveStart:ActiveEnd,VirtStart:VirtEnd)
         FockSchmidt_SE_XC(ActiveStart:ActiveEnd,1:CoreEnd) = FockSchmidt_SE(ActiveStart:ActiveEnd,1:CoreEnd)
+
+        if(tCheck) then
+            !Is FockSchmidt_SE hermitian?
+            do i = 1,nSites
+                do j = i+1,nSites
+                    if(abs(FockSchmidt_SE(i,j)-dconjg(FockSchmidt_SE(j,i))).gt.1.0e-8_dp) then
+                        call stop_all(t_r,'FockSchmidt_SE not hermitian')
+                    endif
+                enddo
+                if(abs(aimag(FockSchmidt_SE(i,i))).gt.1.0e-8_dp) then
+                    call stop_all(t_r,'FockSchmidt_SE not hermitian')
+                endif
+            enddo
+        endif
 
         !Space for useful intermediates
         !For particle addition
@@ -711,6 +761,10 @@ module LinearResponse
                             !LinearSystem_p(J,K+VIndex-1) = conjg(LinearSystem_p(K+VIndex-1,J))
                             LinearSystem_p(J,K+VIndex-1) = Gc_a_F_ax_Ket(Coup_Ann_alpha(1,K,J),pertsite)    &
                                 *Coup_Ann_alpha(2,K,J)/sqrt(VNorm)
+!                            write(6,*) "K+VIndex-1, J: ",K+VIndex-1,J,Coup_Ann_alpha(2,K,J), sqrt(VNorm)
+!                            write(6,*) "Gc_a_F_ax_Bra(Coup_Ann_alpha(1,K,J),pertsite): ",Gc_a_F_ax_Bra(Coup_Ann_alpha(1,K,J),pertsite)
+!                            write(6,*) "Gc_a_F_ax_Ket(Coup_Ann_alpha(1,K,J),pertsite): ",Gc_a_F_ax_Ket(Coup_Ann_alpha(1,K,J),pertsite)
+!                            write(6,*) "val: ",Gc_a_F_ax_Ket(Coup_Ann_alpha(1,K,J),pertsite)*Coup_Ann_alpha(2,K,J)/sqrt(VNorm)
 !                            if(tLR_ReoptGS) then
 !                                !Block 3 contribution
 !                                !Assume that all the matrices are hermitian as we shouldn't be reoptimizing the GS with self-energy
@@ -721,6 +775,8 @@ module LinearResponse
                         endif
                     enddo
                 enddo
+
+!                call writematrixcomp(LinearSystem_p(1:nNp1FCIDet,VIndex:nLinearSystem),'OffDiagBlock',.true.)
 
                 !Block 3 for hole hamiltonian
                 do J = 1,nNm1bFCIDet
@@ -8968,11 +9024,16 @@ module LinearResponse
         !We want to rotate the vectors, expressed in the 'right' basis (the kets), back into that AO basis.
         !If we can do that, we can easily rotate into the Schmidt basis.
         allocate(FullSchmidtTrans_C(nSites,nSites))
-        do i = 1,nSites
-            do j = 1,nSites
-                FullSchmidtTrans_C(j,i) = dcmplx(FullSchmidtBasis(j,i),0.0_dp)  !(ao,schmidt)
+        if(allocated(FullSchmidtBasis_c)) then
+            FullSchmidtTrans_C(:,:) = FullSchmidtBasis_C(:,:)
+!            write(6,*) "Using correct transformation matrix"
+        else
+            do i = 1,nSites
+                do j = 1,nSites
+                    FullSchmidtTrans_C(j,i) = dcmplx(FullSchmidtBasis(j,i),0.0_dp)  !(ao,schmidt)
+                enddo
             enddo
-        enddo
+        endif
 
         allocate(temp(nSites,nImp))
         call ZGEMM('N','N',nSites,nImp,nOcc,zone,RVec_R(:,1:nOcc),nSites,HFPertBasis_Ann_Ket(1:nOcc,:),nOcc,zzero,  &
@@ -9015,6 +9076,26 @@ module LinearResponse
         deallocate(temp,temp2)
         
         !TODO: Check that in the absence of a self-energy, the Bra and Ket are complex conjugates of each other.
+        if(tCheck) then
+            !This should only be true if there is no self-energy
+            do i = VirtStart,nSites
+                if(abs(SchmidtPertGF_Cre_Bra(i,1)-dconjg(SchmidtPertGF_Cre_Ket(i,1))).gt.1.0e-7_dp) then
+                    write(6,*) "i: ",i,VirtStart,nSites
+                    write(6,*) "Cre Bra: ",SchmidtPertGF_Cre_Bra(i,1)
+                    write(6,*) "Cre Ket: ",SchmidtPertGF_Cre_Ket(i,1)
+                    call stop_all(t_r,'Bra and Ket are not cc')
+                endif
+            enddo
+            do i = 1,CoreEnd
+                if(abs(SchmidtPertGF_Ann_Bra(i,1)-dconjg(SchmidtPertGF_Ann_Ket(i,1))).gt.1.0e-7_dp) then
+                    write(6,*) "i: ",i,1,CoreEnd
+                    write(6,*) "Ann Bra: ",SchmidtPertGF_Ann_Bra(i,1)
+                    write(6,*) "Ann Ket: ",SchmidtPertGF_Ann_Ket(i,1)
+                    call stop_all(t_r,'Bra and Ket are not cc')
+                endif
+            enddo
+
+        endif
 
         !Potentially here, if we want to include the self-energy in the hamiltonian for the bath states, then this should be done here.
 !        if(.not.tNoHL_SE) then

@@ -8,6 +8,376 @@ module SchmidtDecomp
 
     contains
 
+    !Schmidt decompose a determinant resulting from a complex one-electron hamiltonian passed in, including virtual and core spaces.
+    subroutine SchmidtDecompose_C(matc)
+        use mat_tools, only: DiagOneeOp
+        implicit none
+        complex(dp), intent(in) :: matc(nSites,nSites)
+
+        complex(dp), allocatable :: orbs(:,:),ProjOverlap(:,:),cWork(:)
+        complex(dp), allocatable :: RotOccOrbs(:,:),ImpurityOrbs(:,:),temp(:,:)
+        complex(dp), allocatable :: ProjOverlapVirt(:,:),OverlapVirt(:,:)
+        complex(dp), allocatable :: VirtSpace(:,:),HFtoSchmidtTransform_c(:,:)
+        complex(dp), allocatable :: EmbeddedBasis_c(:,:),h0_c(:,:)
+        complex(dp) :: normc,ZDOTC,Overlap
+        real(dp) :: norm
+        real(dp), allocatable :: energies(:),ProjOverlapEVals(:),rWork(:)
+        integer :: i,j,lWork,info,nbath,nVirt
+        character(len=*), parameter :: t_r='SchmidtDecompose_C'
+
+        write(6,"(A)") "Schmidt decomposing new complex matrix..."
+
+        if(tUHF) call stop_all(t_r,'Cannot currently deal with UHF')
+
+        !First, diagonalize the hamiltonian for a set of orbitals.
+        if(tSCFHF) then
+            call stop_all(t_r,'Not currently set up for HF-SCF')
+        endif
+        if(tChempot.or.tAnderson) call stop_all(t_r,'Cannot deal with anderson models')
+
+        if(tCheck) then
+            !Check matrix is hermitian
+            do i = 1,nSites
+                do j = i+1,nSites
+                    if(abs(matc(i,j)-dconjg(matc(j,i))).gt.1.0e-8_dp) then
+                        call writematrixcomp(matc,'matrix',.true.)
+                        call stop_all(t_r,'matrix not hermitian')
+                    endif
+                enddo
+                if(abs(aimag(matc(i,i))).gt.1.0e-8_dp) then
+                    call stop_all(t_r,'matrix not diagonal real')
+                endif
+            enddo
+        endif
+
+        allocate(orbs(nSites,nSites))
+        allocate(energies(nSites))
+        orbs(:,:) = matc(:,:)
+        energies(:) = zero
+        if(tDiag_kspace) then
+            call DiagOneEOp(Orbs,Energies,nImp,nSites,tDiag_kspace)
+        else
+            call DiagOneEOp(Orbs,Energies,nImp,nSites,.false.)
+        endif
+
+        write(6,*) "nOCC", nOcc
+        write(6,*) "Fock eigenvalues around fermi level: "
+        do i=max(1,nOcc-7),nOcc
+            write(6,*) Energies(i),"*"
+        enddo
+        do i=nOcc+1,min(nSites,nOcc+7)
+            write(6,*) Energies(i)
+        enddo
+
+        write(6,"(A,F20.10)") "Chemical potential is: ",(Energies(nOcc) + Energies(nOcc+1))/2.0_dp
+        write(6,"(A,F20.10)") "HL Gap is: ",Energies(nOcc+1)-Energies(nOcc)
+
+        !Now we have (complex) orbitals, lets calculate the overlap matrix
+        allocate(ProjOverlap(nOcc,nOcc))
+        call ZGEMM('C','N',nOcc,nOcc,nImp,zone,Orbs(1:nImp,1:nOcc),nImp,Orbs(1:nImp,1:nOcc),nImp,zzero,ProjOverlap,nOcc)
+        
+        if(tCheck) then
+            !Check overlap matrix is hermitian
+            do i = 1,nOcc
+                do j = i+1,nOcc
+                    if(abs(ProjOverlap(i,j)-dconjg(ProjOverlap(j,i))).gt.1.0e-8_dp) then
+                        call writematrixcomp(ProjOverlap,'projected overlap matrix for occupied orbitals',.true.)
+                        write(6,*) "i,j: ",i,j
+                        write(6,*) "ProjOverlap(i,j): ",ProjOverlap(i,j)
+                        write(6,*) "ProjOverlap(j,i): ",ProjOverlap(j,i)
+                        call stop_all(t_r,'matrix not hermitian')
+                    endif
+                enddo
+                if(abs(aimag(ProjOverlap(i,i))).gt.1.0e-8_dp) then
+                    call stop_all(t_r,'matrix not diagonal real')
+                endif
+            enddo
+        endif
+
+        !Diagonalize this overlap matrix
+        allocate(ProjOverlapEVals(nOcc))
+        ProjOverlapEVals(:) = zero
+        allocate(cWork(1))
+        allocate(rWork(max(1, 3*nOcc-2)))
+        lWork=-1
+        info=0
+        call zheev('V','U',nOcc,ProjOverlap,nOcc,ProjOverlapEVals,cWork,lWork,rWork,info)
+        if(info.ne.0) call stop_all(t_r,'Workspace query failed')
+        lwork=int(abs(cwork(1)))+1
+        deallocate(cwork)
+        allocate(cwork(lwork))
+        call zheev('V','U',nOcc,ProjOverlap,nOcc,ProjOverlapEVals,cWork,lWork,rWork,info)
+        if(info.ne.0) call stop_all(t_r,'Diag failed')
+        deallocate(cWork,rWork)
+
+        if(tWriteout) then
+            call writevector(ProjOverlapEVals,'Projected overlap eigenvalues')
+        endif
+
+        !We should only have nImp non-zero evals
+        nbath = 0
+        do i = 1,nOcc
+            if(abs(ProjOverlapEVals(i)).gt.1.0e-7_dp) then
+                nbath = nbath + 1
+            endif
+        enddo
+        if(nbath.ne.nImp) call stop_all(t_r,'error here')
+
+        !Now rotate original occ space into new entangled basis
+        allocate(RotOccOrbs(nSites,nOcc))
+        call ZGEMM('N','N',nSites,nOcc,nOcc,zone,Orbs(1:nSites,1:nOcc),nSites,ProjOverlap,nOcc,zzero,RotOccOrbs,nSites)
+
+        !Construct bath by projecting out impurity and renormalizing
+        do i = nOcc,nOcc-nImp+1,-1
+            RotOccOrbs(1:nImp,i) = zzero
+            normc = ZDOTC(nSites,RotOccOrbs(:,i),1,RotOccOrbs(:,i),1)
+            if(abs(aimag(normc)).gt.1.0e-8_dp) then
+                call stop_all(t_r,'complex norm?')
+            endif
+            norm = sqrt(real(normc,dp))
+            RotOccOrbs(:,i) = RotOccOrbs(:,i)/norm
+        enddo
+
+        !These states are now the bath states
+!        call writematrixcomp(RotOccOrbs(:,nOcc-nImp+1:nOcc),'Bath orbitals',.true.)
+        
+        allocate(ImpurityOrbs(nSites,nImp))
+        ImpurityOrbs(:,:) = zzero
+        do i = 1,nImp
+            ImpurityOrbs(i,i) = zone
+        enddo
+
+        !We now have all the orbitals. Which are orthogonal to which?
+        do i = nOcc,nOcc-nImp+1,-1
+            do j = nOcc,nOcc-nImp+1,-1
+                Overlap = ZDOTC(nSites,RotOccOrbs(:,i),1,RotOccOrbs(:,j),1)
+                if(i.eq.j) then
+                    if(abs(Overlap-zone).gt.1.0e-7_dp) then
+                        call stop_all(t_r,'Bath orbitals not normalized set')
+                    endif
+                else
+                    if(abs(Overlap).gt.1.0e-7_dp) then
+                        call stop_all(t_r,'Bath orbitals not orthogonal set')
+                    endif
+                endif
+            enddo
+        enddo
+
+        !Now onto 'core' orbitals
+        do i = 1,nOcc-nImp
+            do j = nOcc,nOcc-nImp+1,-1
+                !Overlap of core (i) with bath (j)
+                Overlap = ZDOTC(nSites,RotOccOrbs(:,i),1,RotOccOrbs(:,j),1)
+                if(abs(Overlap).gt.1.0e-7_dp) then
+                    call stop_all(t_r,'bath orbitals with core not orthogonal set')
+                endif
+            enddo
+        enddo
+
+        !Need to sort virtual space, and remove redundancy
+        nVirt = nSites-nOcc
+        allocate(ProjOverlapVirt(nVirt,nVirt))
+        
+        !This array is used to calculate the overlap of each virtual space function with each impurity
+        !function
+        allocate(OverlapVirt(2*nImp,nVirt))
+        !The first nImp correspond to the impurity orbital, and the next two correspond to the bath orbitals
+        OverlapVirt(:,:) = zzero 
+        do i = nOcc+1,nSites  !run through virtual space
+            do j = 1,nImp     !run through impurity orbitals
+                OverlapVirt(j,i-nOcc) = Orbs(j,i)
+            enddo
+        enddo
+        
+        call ZGEMM('C','N',nImp,nVirt,nSites,zone,RotOccOrbs(:,nOcc-nImp+1:nOcc),nSites,Orbs(:,nOcc+1:nSites), &
+            nSites,zzero,OverlapVirt(nImp+1:2*nImp,1:nVirt),2*nImp-nImp)
+
+        !Combine overlaps to get full projected overlap matrix
+        call ZGEMM('C','N',nVirt,nVirt,2*nImp,zone,OverlapVirt,2*nImp,OverlapVirt,2*nImp,zzero,ProjOverlapVirt,nVirt)
+
+        !Diagonalize virtual projected overlap matrix
+        deallocate(ProjOverlapEVals)
+        allocate(ProjOverlapEVals(nVirt))
+        ProjOverlapEVals(:) = zero
+        allocate(cWork(1))
+        allocate(rWork(max(1, 3*nOcc-2)))
+        lWork=-1
+        info=0
+        call zheev('V','U',nVirt,ProjOverlapVirt,nVirt,ProjOverlapEVals,cWork,lWork,rWork,info)
+        if(info.ne.0) call stop_all(t_r,'Workspace query failed')
+        lwork=int(abs(cwork(1)))+1
+        deallocate(cwork)
+        allocate(cwork(lwork))
+        call zheev('V','U',nVirt,ProjOverlapVirt,nVirt,ProjOverlapEVals,cWork,lWork,rWork,info)
+        if(info.ne.0) call stop_all(t_r,'Diag failed')
+        deallocate(cWork,rWork)
+
+        nbath = 0   !Count the number of virtual functions which span the space of the embedded system
+        do i=1,nVirt
+            if(abs(ProjOverlapEVals(i)).gt.1.0e-7_dp) then
+                nbath = nbath + 1
+            endif
+        enddo
+        if(nbath.ne.nImp) then
+            call stop_all(t_r,'Virtual space redundancy not as expected')
+        endif
+        
+        !Now rotate orbitals such that they are orthogonal, while deleting the redundant ones
+        !Assume the last nImp are redundant
+        allocate(VirtSpace(nSites,nVirt-nImp))
+        call ZGEMM('N','N',nSites,nVirt-nImp,nVirt,zone,Orbs(:,nOcc+1:nSites),nSites,   &
+            ProjOverlapVirt(1:nVirt,1:nVirt-nImp),nVirt,zzero,VirtSpace,nSites)
+
+        !Check now that the virtual space is now orthogonal to all occupied HF orbitals, as well as the impurity and bath sites
+
+        !First against the impurity sites
+        do i=1,nImp
+            do j=1,nVirt-nImp
+                Overlap = ZDOTC(nSites,ImpurityOrbs(:,i),1,VirtSpace(:,j),1)
+                if(abs(Overlap).gt.1.0e-7_dp) then
+                    call stop_all(t_r,'virtual orbitals not orthogonal to impurity orbitals')
+                endif
+            enddo
+        enddo
+
+        do i=1,nOcc
+            do j=1,nVirt-nImp
+                Overlap = ZDOTC(nSites,RotOccOrbs(:,i),1,VirtSpace(:,j),1)
+                if(abs(Overlap).gt.1.0e-7_dp) then
+                    if(i.gt.(nOcc-nImp)) then
+                        call stop_all(t_r,'virtual orbitals not orthogonal to bath orbitals')
+                    else
+                        call stop_all(t_r,'virtual orbitals not orthogonal to core orbitals')
+                    endif
+                endif
+            enddo
+        enddo
+
+        if(allocated(FullSchmidtBasis_c)) deallocate(FullSchmidtBasis_c)
+        allocate(FullSchmidtBasis_c(nSites,nSites))   ! (Atomicbasis,SchmidtBasis)
+        FullSchmidtBasis_c(:,:) = zzero
+        FullSchmidtBasis_c(:,1:nOcc-nImp) = RotOccOrbs(:,1:nOcc-nImp)    !The first orbitals consist of core  
+        FullSchmidtBasis_c(:,nOcc-nImp+1:nOcc) = ImpurityOrbs(:,:)    !Impurity Orbs
+        FullSchmidtBasis_c(:,nOcc+1:nOcc+nImp) = RotOccOrbs(:,nOcc-nImp+1:nOcc)   !Bath
+        FullSchmidtBasis_c(:,nOcc+nImp+1:nSites) = VirtSpace(:,:)     !Virtual space
+        
+        allocate(EmbeddedBasis_c(nSites,2*nImp))
+        EmbeddedBasis_c(:,:) = zzero  
+        EmbeddedBasis_c(:,1:nImp) = ImpurityOrbs(:,:)
+        EmbeddedBasis_c(:,nImp+1:2*nImp) = FullSchmidtBasis_c(:,nOcc+1:nOcc+nImp)
+
+        !call writematrix(FullSchmidtBasis,'FullSchmidtBasis',.true.)
+
+        !Construct unitary basis transformation matrix from HF to embedded basis
+        allocate(HFtoSchmidtTransform_c(nSites,nSites))
+        call ZGEMM('C','N',nSites,nSites,nSites,zone,Orbs,nSites,FullSchmidtBasis_c,nSites,zzero,HFtoSchmidtTransform_c,nSites)
+
+        allocate(temp(nSites,nSites))
+        !Check that this operator is unitary
+        !call DGEMM('N','T',nSites,nSites,nSites,1.0_dp,HFtoSchmidtTransform,nSites,HFtoSchmidtTransform,nSites,0.0_dp,temp,nSites)
+        !call writematrix(temp,'Test of unitarity of HF to Schmidt Transform',.true.)
+        !do i=1,nSites
+        !    do j=1,nSites
+        !        if((i.ne.j).and.(abs(temp(i,j)).gt.1.0e-7_dp)) then
+        !            call stop_all(t_r,'Transformation matrix not unitary')
+        !        elseif((i.eq.j).and.(abs(temp(i,j)-1.0_dp).gt.1.0e-7)) then
+        !            call stop_all(t_r,'Transformation matrix not unitary')
+        !        endif
+        !    enddo
+        !enddo
+
+        !Use this to rotate the fock operator into this new basis
+        if(allocated(FockSchmidt_c)) deallocate(FockSchmidt_c)
+        allocate(FockSchmidt_c(nSites,nSites))
+        !Set up FockSchmidt to temporarily to be the HF basis fock operator (i.e. diagonal)
+        FockSchmidt_c(:,:) = zero
+        do i=1,nSites
+            FockSchmidt_c(i,i) = cmplx(Energies(i),zero,dp)
+        enddo
+        call ZGEMM('C','N',nSites,nSites,nSites,zone,HFtoSchmidtTransform_c,nSites,FockSchmidt_c,nSites,zzero,temp,nSites)
+        call ZGEMM('N','N',nSites,nSites,nSites,zone,temp,nSites,HFtoSchmidtTransform_c,nSites,zzero,FockSchmidt_c,nSites)
+            
+        deallocate(temp)
+
+        !do i=1,nSites
+        !    write(6,*) "FOCKSCHMIDT: ",i,FockSchmidt(i,i)
+        !enddo
+        !FockSchmidt has been overwritten with the fock matrix in the schmidt basis
+!        call writematrix(FockSchmidt,'Fock in schmidt basis',.true.)
+
+!       Calculate the non-interacting core energy of the DMET wavefunction
+        CoreEnergy = zero
+        do i = 1,nOcc-nImp
+            if(abs(aimag(FockSchmidt_c(i,i))).gt.1.0e-7_dp) then
+                write(6,*) "i: ",i
+                write(6,*) "FockSchmidt_c(i,i): ",FockSchmidt_c(i,i)
+                call writematrixcomp(FockSchmidt_c,'FockSchmidt',.true.)
+                call stop_all(t_r,'complex energies')
+            endif
+            CoreEnergy = CoreEnergy + real(FockSchmidt(i,i),dp)
+        enddo
+        write(6,*) "Non-interacting core energy for DMET ground state wavefunction is: ",CoreEnergy
+
+
+        !Now to also calculate Emb_h0_c and Emb_h0v_c
+        if(allocated(Emb_h0_c)) deallocate(Emb_h0_c)
+        if(allocated(Emb_h0v_c)) deallocate(Emb_h0v_c)
+        allocate(Emb_h0_c(EmbSize,EmbSize))
+        allocate(Emb_h0v_c(EmbSize,EmbSize))
+
+        allocate(h0_c(nSites,nSites))
+        do i = 1,nSites
+            do j = 1,nSites
+                h0_c(j,i) = cmplx(h0(j,i),zero,dp)
+            enddo
+        enddo
+        
+        allocate(temp(EmbSize,nSites))
+        !Core hamiltonian
+        call ZGEMM('C','N',EmbSize,nSites,nSites,zone,EmbeddedBasis_c,nSites,h0_c,nSites,zzero,temp,EmbSize)
+        call ZGEMM('N','N',EmbSize,EmbSize,nSites,zone,temp,EmbSize,EmbeddedBasis_c,nSites,zzero,Emb_h0_c,EmbSize)
+
+        !Embedded hamiltonian. Just h0 over impurity and its coupling to bath.
+        call ZGEMM('C','N',EmbSize,nSites,nSites,zone,EmbeddedBasis_c,nSites,matc,nSites,zzero,temp,EmbSize)
+        call ZGEMM('N','N',EmbSize,EmbSize,nSites,zone,temp,EmbSize,EmbeddedBasis_c,nSites,zzero,Emb_h0v_c,EmbSize)
+
+        !Remove fit hamiltonian from impurity space and couplings
+        Emb_h0v_c(1:nImp,1:EmbSize) = Emb_h0_c(1:nImp,1:EmbSize)
+        Emb_h0v_c(nImp+1:EmbSize,1:nImp) = Emb_h0_c(nImp+1:EmbSize,1:nImp)
+        
+        deallocate(orbs,energies,ProjOverlap,ProjOverlapEVals,RotOccOrbs,ImpurityOrbs)
+        deallocate(ProjOverlapVirt,OverlapVirt,VirtSpace,HFtoSchmidtTransform_c)
+        deallocate(h0_c,temp,EmbeddedBasis_c)
+
+        if(tCheck) then
+            !Is the full schmidt basis a unitary transformation?
+            !Is the FockSchmidt_c a hermitian operator
+            allocate(temp(nSites,nSites))
+            call ZGEMM('C','N',nSites,nSites,nSites,zone,FullSchmidtBasis_c,nSites,FullSchmidtBasis_c,nSites,zzero,temp,nSites)
+
+            do i = 1,nSites
+                do j = i+1,nSites
+                    if(abs(temp(i,j)).gt.1.0e-8_dp) then
+                        call stop_all(t_r,'Schmidt transform not unitary')
+                    elseif(abs(temp(j,i)).gt.1.0e-8_dp) then
+                        call stop_all(t_r,'Schmidt transform not unitary 2')
+                    endif
+                    if(abs(FockSchmidt_c(i,j)-dconjg(FockSchmidt_c(j,i))).gt.1.0e-8_dp) then
+                        call stop_all(t_r,'FockSchmidt_c not hermitian')
+                    endif
+                enddo
+                if(abs(aimag(FockSchmidt_c(i,i))).gt.1.0e-8_dp) then
+                    call stop_all(t_r,'FockSchmidt_c not diagonal real')
+                endif
+                if(abs(temp(i,i)-zone).gt.1.0e-8_dp) then
+                    call stop_all(t_r,'Schmidt transform not unitary')
+                endif
+            enddo
+            deallocate(temp)
+        endif
+
+    end subroutine SchmidtDecompose_C
+
     !Construct full embedding basis, along with orthogonal core and virtual set, and check orthonormality of orbital space
     subroutine ConstructFullSchmidtBasis()
         implicit none
@@ -84,7 +454,7 @@ module SchmidtDecomp
         enddo
 
         !We now have all the orbitals. Which are orthogonal to which?
-        write(6,*) "All alpha impurity/bath orbitals orthogonal by construction"
+!        write(6,*) "All alpha impurity/bath orbitals orthogonal by construction"
         do i=nOcc,nOcc-nImp+1,-1
             do j=nOcc,nOcc-nImp+1,-1
                 Overlap = DDOT(nSites,RotOccOrbs(:,i),1,RotOccOrbs(:,j),1)
@@ -99,7 +469,7 @@ module SchmidtDecomp
                 endif
             enddo
         enddo
-        write(6,*) "All alpha bath/bath orbitals orthonormal"
+!        write(6,*) "All alpha bath/bath orbitals orthonormal"
 
         !Now, consider the rotated core orbitals
         !Are they orthonormal to the bath orbitals (they are othogonal to impurity, since they have no component on them)

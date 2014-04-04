@@ -155,6 +155,7 @@ Program RealHub
         tDiagonalSC = .false.       !Diagonal GF approx for residual
         dFitTol_SC = 1.0e-5_dp      !Tolerance on the gradient of the fits
         tRemoveImpCoupsPreSchmidt = .false. !Do we want to remove impurity couplings pre schmidt decomp.?
+        tRemakeStaticBath = .false.
 
     end subroutine set_defaults
 
@@ -633,6 +634,8 @@ Program RealHub
                 call readi(iNonLocBlocks)
             case("REMOVE_COUPS_PRESCHMIDT")
                 tRemoveImpCoupsPreSchmidt = .true. !Do we want to remove impurity couplings pre schmidt decomp.?
+            case("REMAKE_STATIC_BATH")
+                tRemakeStaticBath = .true.
             case("MAXITER_LATTICEFIT")
                 call readi(iMaxFitMicroIter)
             case("MAXITER_MACROFIT")

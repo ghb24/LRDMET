@@ -7,6 +7,7 @@ module SelfConsistentLR2
     use SC_Data                  
     use SelfConsistentUtils
     use matrixops, only: mat_inv
+    use SchmidtDecomp, only: SchmidtDecompose_C
     implicit none
 
     contains
@@ -104,16 +105,9 @@ module SelfConsistentLR2
             call writedynamicfunction(nFitPoints,CorrFn_Fit,'G_Lat_Fit',tag=iter,tCheckCausal=.true.,   &
                 tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
 
-!            write(6,*) "For iteration ",iter
-!            write(6,*) "First nImp rows of the lattice hamiltonian: "
-!            do i = 1,nImp
-!                write(6,*) h_lat_fit(i,:)
-!                write(6,*) "***"
-!            enddo
-
-!            if(tRemakeStaticBath) then
-!                call xxx cham=h_lat_fit
-!            endif
+            if(tRemakeStaticBath) then
+                call SchmidtDecompose_C(h_lat_fit)
+            endif
 
             CorrFn_HL_Old(:,:,:) = CorrFn_HL(:,:,:)
             if(iCorrFnTag.eq.1) then
@@ -237,9 +231,9 @@ module SelfConsistentLR2
         deallocate(DiffImpCorrFn,AllDiffs,CorrFn_Fit_Old,CorrFn_Fit,CorrFn_HL_Old,dummy_Im,Debug_Lat_CorrFn_Fit)
         if(tCalcRealSpectrum) deallocate(dummy_Re,CorrFn_HL_Re,CorrFn_Re,Debug_Lat_CorrFn_Re)
             
-!        if(tRemakeStaticBath) then
-!            call xxx cham=h_lat_fit
-!        endif
+        if(tRemakeStaticBath) then
+            call SchmidtDecompose_C(h_lat_fit)
+        endif
 
         if(tFitMatAxis) then
             allocate(CorrFn_Fit(nImp,nImp,nFreq_Re))
