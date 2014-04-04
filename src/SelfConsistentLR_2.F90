@@ -111,6 +111,10 @@ module SelfConsistentLR2
 !                write(6,*) "***"
 !            enddo
 
+!            if(tRemakeStaticBath) then
+!                call xxx cham=h_lat_fit
+!            endif
+
             CorrFn_HL_Old(:,:,:) = CorrFn_HL(:,:,:)
             if(iCorrFnTag.eq.1) then
 !                call writematrixcomp(h_lat_fit,'real space matrix sent to LR',.true.)
@@ -232,6 +236,10 @@ module SelfConsistentLR2
 
         deallocate(DiffImpCorrFn,AllDiffs,CorrFn_Fit_Old,CorrFn_Fit,CorrFn_HL_Old,dummy_Im,Debug_Lat_CorrFn_Fit)
         if(tCalcRealSpectrum) deallocate(dummy_Re,CorrFn_HL_Re,CorrFn_Re,Debug_Lat_CorrFn_Re)
+            
+!        if(tRemakeStaticBath) then
+!            call xxx cham=h_lat_fit
+!        endif
 
         if(tFitMatAxis) then
             allocate(CorrFn_Fit(nImp,nImp,nFreq_Re))

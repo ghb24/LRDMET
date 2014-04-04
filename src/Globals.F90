@@ -4,6 +4,7 @@ module Globals
     implicit none
     save
 
+    logical, parameter :: tDebug = .false.
     integer :: LatticeDim   !Dimensionality
     integer :: N_occs   !Number of CS orbital occupations to loop over
     integer :: nSites   !The number of sites in the full system
@@ -234,6 +235,7 @@ module Globals
     integer :: iNonLocBlocks            !The number of unit cells worth of coupling to each impurity
     logical :: tOddFullNonlocCoups      !Is there a special coupling block (only for full optimization) which is only included once? 
     logical :: tRemoveImpCoupsPreSchmidt    !Do we want to remove the impurity coupling blocks before we schmidt decompose for the external space?
+    logical :: tRemakeStaticBath        !Whether to remake the static bath space in the self-consistency
 
     !Debugging for Self-consistency
     logical :: tSE_Scan
