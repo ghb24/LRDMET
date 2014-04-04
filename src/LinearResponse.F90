@@ -455,6 +455,7 @@ module LinearResponse
             call Comp_NonDir_Davidson(nFCIDet,NFCIHam,GSEnergy,Psi_0(1:nFCIDet),.true.)
             write(6,"(A,G20.10,A,G20.10,A)") "Reoptimized ground state energy is: ",GSEnergy, &  
                 " (old = ",HL_Energy,")"
+            call flush(6)
         endif
         do i = 1,nImp
             call ApplySP_PertGS_EC(Psi_0,nFCIDet,Cre_0(:,i),Ann_0(:,i),nLinearSystem,i)

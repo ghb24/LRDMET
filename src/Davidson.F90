@@ -35,7 +35,7 @@ module Davidson
         real(dp), allocatable :: Eigenvals(:)
         complex(dp), allocatable :: Eigenvecs(:,:)
         integer :: ierr,iter,i,j
-        complex(dp) :: zdotc
+!        complex(dp) :: zdotc
         real(dp) :: dConv
         real(dp), parameter :: kappa = 0.25     !Tolerance for orthogonalization procedure
         character(len=*), parameter :: t_r='Comp_NonDir_Davidson'
@@ -156,7 +156,11 @@ module Davidson
             endif
             !Compute final column coming from new subspace vector
             do i = 1,iter
-                SubspaceMat(i,iter) = zdotc(nSize,SubspaceVecs(:,i),1,HSubspace(:,iter),1)
+                SubspaceMat(i,iter) = zzero
+                do j = 1,nSize
+                    SubspaceMat(i,iter) = SubspaceMat(i,iter) + dconjg(SubspaceVecs(j,i))*HSubspace(j,iter)
+                enddo
+                !SubspaceMat(i,iter) = zdotc(nSize,SubspaceVecs(:,i),1,HSubspace(:,iter),1)
                 SubspaceMat(iter,i) = dconjg(SubspaceMat(i,iter))
 !                write(6,*) i,SubspaceMat(i,iter)
             enddo
@@ -707,8 +711,8 @@ module Davidson
         complex(dp), intent(in) :: Subspace(nSize,nSubspace)
         real(dp), intent(in) :: kappa
 
-        complex(dp) :: Overlap,zdotc
-        integer :: i
+        complex(dp) :: Overlap!,zdotc
+        integer :: i,j
         real(dp) :: Norm_out,Norm_in
 !        character(len=*), parameter :: t_r='ModGramSchmidt_comp'
 
@@ -724,7 +728,11 @@ module Davidson
 
         do i = 1,nSubspace
             !Project out each component of the subspace
-            Overlap = zdotc(nSize,Subspace(:,i),1,Vec,1)
+            Overlap = zzero
+            do j = 1,nSize
+                Overlap = Overlap + dconjg(Subspace(j,i))*Vec(j)
+            enddo
+            !Overlap = zdotc(nSize,Subspace(:,i),1,Vec,1)
             Vec(:) = Vec(:) - Overlap*Subspace(:,i)     !Remove component
         enddo
 
@@ -734,7 +742,11 @@ module Davidson
         if((Norm_out/Norm_in).le.kappa) then
             !Orthogonalize again!
             do i = 1,nSubspace 
-                Overlap = zdotc(nSize,Subspace(:,i),1,Vec,1)
+                Overlap = zzero
+                do j = 1,nSize
+                    Overlap = Overlap + dconjg(Subspace(j,i))*Vec(j)
+                enddo
+                !Overlap = zdotc(nSize,Subspace(:,i),1,Vec,1)
                 Vec(:) = Vec(:) - Overlap*Subspace(:,i)     !Remove component
             enddo
             Norm_out = znrm2(nSize,Vec,1)

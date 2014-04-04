@@ -19,10 +19,10 @@ module SchmidtDecomp
         complex(dp), allocatable :: ProjOverlapVirt(:,:),OverlapVirt(:,:)
         complex(dp), allocatable :: VirtSpace(:,:),HFtoSchmidtTransform_c(:,:)
         complex(dp), allocatable :: EmbeddedBasis_c(:,:),h0_c(:,:)
-        complex(dp) :: normc,ZDOTC,Overlap
+        complex(dp) :: normc,Overlap
         real(dp) :: norm
         real(dp), allocatable :: energies(:),ProjOverlapEVals(:),rWork(:)
-        integer :: i,j,lWork,info,nbath,nVirt
+        integer :: i,j,k,lWork,info,nbath,nVirt
         character(len=*), parameter :: t_r='SchmidtDecompose_C'
 
         write(6,"(A)") "Schmidt decomposing new complex matrix..."
@@ -130,8 +130,12 @@ module SchmidtDecomp
         !Construct bath by projecting out impurity and renormalizing
         do i = nOcc,nOcc-nImp+1,-1
             RotOccOrbs(1:nImp,i) = zzero
-            normc = ZDOTC(nSites,RotOccOrbs(:,i),1,RotOccOrbs(:,i),1)
+            normc = zzero
+            do j = 1,nSites
+                normc = normc + dconjg(RotOccOrbs(j,i))*RotOccOrbs(j,i)
+            enddo
             if(abs(aimag(normc)).gt.1.0e-8_dp) then
+                write(6,*) "norm for bath orbitals: ",normc
                 call stop_all(t_r,'complex norm?')
             endif
             norm = sqrt(real(normc,dp))
@@ -150,7 +154,11 @@ module SchmidtDecomp
         !We now have all the orbitals. Which are orthogonal to which?
         do i = nOcc,nOcc-nImp+1,-1
             do j = nOcc,nOcc-nImp+1,-1
-                Overlap = ZDOTC(nSites,RotOccOrbs(:,i),1,RotOccOrbs(:,j),1)
+                Overlap = zzero
+                do k = 1,nSites
+                    Overlap = Overlap + dconjg(RotOccOrbs(k,i))*RotOccOrbs(k,j)
+                enddo
+!                Overlap = ZDOTC(nSites,RotOccOrbs(:,i),1,RotOccOrbs(:,j),1)
                 if(i.eq.j) then
                     if(abs(Overlap-zone).gt.1.0e-7_dp) then
                         call stop_all(t_r,'Bath orbitals not normalized set')
@@ -167,7 +175,11 @@ module SchmidtDecomp
         do i = 1,nOcc-nImp
             do j = nOcc,nOcc-nImp+1,-1
                 !Overlap of core (i) with bath (j)
-                Overlap = ZDOTC(nSites,RotOccOrbs(:,i),1,RotOccOrbs(:,j),1)
+                Overlap = zzero
+                do k = 1,nSites
+                    Overlap = Overlap + dconjg(RotOccOrbs(k,i))*RotOccOrbs(k,j)
+                enddo
+!                Overlap = ZDOTC(nSites,RotOccOrbs(:,i),1,RotOccOrbs(:,j),1)
                 if(abs(Overlap).gt.1.0e-7_dp) then
                     call stop_all(t_r,'bath orbitals with core not orthogonal set')
                 endif
@@ -233,7 +245,11 @@ module SchmidtDecomp
         !First against the impurity sites
         do i=1,nImp
             do j=1,nVirt-nImp
-                Overlap = ZDOTC(nSites,ImpurityOrbs(:,i),1,VirtSpace(:,j),1)
+                Overlap = zzero
+                do k = 1,nSites
+                    Overlap = Overlap + dconjg(ImpurityOrbs(k,i))*VirtSpace(k,j)
+                enddo
+!                Overlap = ZDOTC(nSites,ImpurityOrbs(:,i),1,VirtSpace(:,j),1)
                 if(abs(Overlap).gt.1.0e-7_dp) then
                     call stop_all(t_r,'virtual orbitals not orthogonal to impurity orbitals')
                 endif
@@ -242,7 +258,11 @@ module SchmidtDecomp
 
         do i=1,nOcc
             do j=1,nVirt-nImp
-                Overlap = ZDOTC(nSites,RotOccOrbs(:,i),1,VirtSpace(:,j),1)
+                Overlap = zzero
+                do k = 1,nSites
+                    Overlap = Overlap + dconjg(RotOccOrbs(k,i))*VirtSpace(k,j)
+                enddo
+!                Overlap = ZDOTC(nSites,RotOccOrbs(:,i),1,VirtSpace(:,j),1)
                 if(abs(Overlap).gt.1.0e-7_dp) then
                     if(i.gt.(nOcc-nImp)) then
                         call stop_all(t_r,'virtual orbitals not orthogonal to bath orbitals')
