@@ -236,10 +236,13 @@ module Globals
     logical :: tOddFullNonlocCoups      !Is there a special coupling block (only for full optimization) which is only included once? 
     logical :: tRemoveImpCoupsPreSchmidt    !Do we want to remove the impurity coupling blocks before we schmidt decompose for the external space?
     logical :: tRemakeStaticBath        !Whether to remake the static bath space in the self-consistency
+    logical :: tFullReoptGS             !Whether to reoptimize the ground state in the static + dynamic space
     complex(dp), allocatable :: FullSchmidtBasis_c(:,:) !For when we decomposed complex orbtials
     complex(dp), allocatable :: FockSchmidt_c(:,:)
     complex(dp), allocatable :: Emb_h0_c(:,:)
     complex(dp), allocatable :: Emb_h0v_c(:,:)
+    complex(dp), allocatable :: Prev_HL_Vec(:)
+    real(dp) :: Prev_HL_Energy
 
     !Debugging for Self-consistency
     logical :: tSE_Scan

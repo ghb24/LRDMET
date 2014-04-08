@@ -3,7 +3,7 @@ module LinearResponse
     use timing
     use errors, only: stop_all,warning
     use mat_tools, only: WriteVector,WriteMatrix,WriteVectorInt,WriteMatrixComp,WriteVectorComp,znrm2
-    use mat_tools, only: DiagNonHermLatticeHam
+    use mat_tools, only: DiagNonHermLatticeHam,DiagOneeOp
     use globals
     use LRSolvers
     use SelfConsistentUtils 
@@ -12,6 +12,814 @@ module LinearResponse
     
     contains
     
+    !Calculate linear response for charged excitations - add the hole creation to particle creation
+    !This is a routine to accept a complex hermitian lattice matrix, and construct the appropriate basis to work in. 
+    !The hamiltonian will necessarily be fit across all the parts of the lattice apart from impurity & its coupling
+    subroutine SchmidtGF_FromLat(G_Mat,GFChemPot,nESteps,tMatbrAxis,cham,FreqPoints,Lat_G_Mat)
+        use utils, only: get_free_unit,append_ext_real,append_ext
+        use Davidson, only: Comp_NonDir_Davidson,DiagSubspaceMat_real,DiagSubspaceMat_comp
+        use DetToolsData
+        use DetTools, only: tospat,umatind,gendets
+        use solvers, only: CreateIntMats
+        use SchmidtDecomp, only: SchmidtDecompose_C
+        implicit none
+        integer, intent(in) :: nESteps
+        real(dp), intent(in) :: GFChemPot
+        complex(dp), intent(out) :: G_Mat(nImp,nImp,nESteps)
+        logical, intent(in) :: tMatbrAxis
+        complex(dp), intent(in) :: cham(nSites,nSites)    !A complex (hermitian) lattice hamiltonian
+        real(dp), intent(in), optional :: FreqPoints(nESteps)
+        complex(dp), intent(out), optional :: Lat_G_Mat(nImp,nImp,nESteps)  !An optional lattice greens function calculated in this routine
+
+        real(dp), allocatable :: LatVals(:)
+        complex(dp), allocatable :: LatVecs(:,:)
+        complex(dp), allocatable :: NFCIHam(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
+        real(dp), allocatable :: dNorm_p(:),dNorm_h(:),W(:),temp(:,:)
+        complex(dp), allocatable , target :: LinearSystem_p(:,:),LinearSystem_h(:,:)
+        complex(dp), allocatable :: Cre_0(:,:),Ann_0(:,:),ResponseFn_p(:,:),ResponseFn_h(:,:)
+        complex(dp), allocatable :: Gc_a_F_ax_Bra(:,:),Gc_a_F_ax_Ket(:,:),Gc_b_F_ab(:,:)
+        complex(dp), allocatable :: ResponseFn_Mat(:,:),Ga_i_F_xi_Ket(:,:)
+        complex(dp), allocatable :: Psi1_p(:),Psi1_h(:),Ga_i_F_xi_Bra(:,:),Ga_i_F_ij(:,:),ni_lr_Mat(:,:)
+        complex(dp), allocatable :: temp_vecc(:),Work(:),Psi_0(:),RHS(:)
+        complex(dp), allocatable :: NI_LRMat_Cre(:,:),NI_LRMat_Ann(:,:),GSHam(:,:)
+        complex(dp), allocatable :: h0_schmidt(:,:)
+        complex(dp), allocatable :: ctemp(:,:),cEmb_h_fit(:,:)
+        integer, allocatable :: Coup_Ann_alpha(:,:,:),Coup_Create_alpha(:,:,:)
+        integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,ierr,info,iunit,nCore
+        integer :: nLinearSystem,nOrbs,nVirt,tempK,VIndex,VirtStart,VirtEnd
+        integer :: orbdum(1),nLinearSystem_h,Np1GSInd,Nm1GSInd,lWork
+        integer :: pertsite,OmegaVal,nGSSpace,iters_p,iters_h
+        real(dp) :: Omega,mu,SpectralWeight,Prev_Spec,AvdNorm_p,AvdNorm_h,Error_GF
+        real(dp) :: Diff_GF,GSEnergy
+        complex(dp) :: ResponseFn,tempel,ni_lr,ni_lr_p,ni_lr_h,AvResFn_p,AvResFn_h
+        complex(dp) :: zdotc,VNorm,CNorm,SelfE(nImp,nImp)
+        logical :: tParity,tFirst,tCompLatHam
+        character(64) :: filename,filename2
+        character(len=*), parameter :: t_r='SchmidtGF_FromLat'
+        
+        call set_timer(LR_EC_GF_Precom)
+
+        G_Mat(:,:,:) = zzero
+        if(present(Lat_G_Mat)) Lat_G_Mat(:,:,:) = zzero
+        SpectralWeight = 0.0_dp
+        Prev_Spec = 0.0_dp
+        tFirst = .true.
+        iters_p = 0
+        iters_h = 0
+
+        write(6,"(A)") "Calculating non-interacting EC MR-TDA LR system for *hole* & *particle* alpha spin-orbital perturbations..."
+        if(.not.tConstructFullSchmidtBasis) call stop_all(t_r,'To solve LR, must construct full schmidt basis')
+        if(tMinRes_NonDir) then
+            call stop_all(t_r,'MINRES deprecated in this routine. Use GMRES')
+        else
+            if(iSolveLR.eq.1) then
+                write(6,"(A)") "Solving linear system with standard ZGESV linear solver"
+            elseif(iSolveLR.eq.2) then
+                write(6,"(A)") "Solving linear system with advanced ZGELS linear solver"
+            elseif(iSolveLR.eq.3) then
+                write(6,"(A)") "Solving linear system with direct inversion of hamiltonian"
+            elseif(iSolveLR.eq.4) then
+                write(6,"(A)") "Solving linear system via complete diagonalization of hamiltonian"
+            elseif(iSolveLR.eq.5) then
+                write(6,"(A)") "Solving linear system via complete diagonalization of hermitian hamiltonian"
+            else
+                call stop_all(t_r,"Linear equation solver unknown")
+            endif
+        endif
+        if(mod(nOcc,nImp).ne.0) then
+            ! This criteria must be satisfied, because otherwise, the orbitals resulting from the diagonalization of
+            ! h + Self_energy will mix the occupied and virtual spaces. This will result in the NI greens function
+            ! spanning a different space to previous iterations
+            call stop_all(t_r,'Cannot tile the impurity couplings through the occupied and virtual space seperately without mixing them')
+        endif
+        !There are some worrying issues regarding reoptimizing the GS within this scheme. 
+        !1) The ground state then becomes a function of frequency! Not ideal?
+        !2) It might potentially (for nImp > 1) mean that the ground state is also a function of which perturbation is applied first.
+        !   This would break hermiticity of the greens functions, unless we do N^2 reoptimizations of the wavefunction. Even so, this may still 
+        !   break hermiticity, since the bra and ket may now actually be different (for the off diagonal greens functions).
+        if(tLR_ReoptGS) write(6,"(A)") "Reoptimizing the ground state in the presence of the non-local coupling terms."
+        if(tRemoveImpCoupsPreSchmidt) call stop_all(t_r,'Removing impurity coupling before schmidt decomposition not available in this routine')
+
+        !Lets diagonalize the lattice hamiltonian. It is frequency independent, and complex hermitian
+        allocate(LatVals(nSites))
+        allocate(LatVecs(nSites,nSites))
+        LatVecs(:,:) = cham(:,:)
+        LatVals(:) = zero
+        call DiagOneEOp(LatVecs,LatVals,nImp,nSites,tDiag_kspace)
+
+        allocate(ctemp(nSites,nSites))
+        if(tRemakeStaticBath) then
+            !This will construct a complex rotation matrix from AO -> Schmidt basis called FullSchmidtBasis_c
+            !In addition, it will create a matrix, FockSchmidt_c, which is the full lattice h in the schmidt basis
+            call SchmidtDecompose_C(cham,LatVals,LatVecs)
+        else
+            !If we don't remake the static bath space, lets still create the operators
+            if(.not.allocated(FullSchmidtBasis_c)) allocate(FullSchmidtBasis_c(nSites,nSites))
+            do i = 1,nSites
+                do j = 1,nSites
+                    FullSchmidtBasis_c(j,i) = cmplx(FullSchmidtBasis(j,i),zero,dp)  !The other rotation is real
+                enddo
+            enddo
+            if(.not.allocated(FockSchmidt_c)) allocate(FockSchmidt_c(nSites,nSites))
+            FockSchmidt_c(:,:) = cham(:,:)
+            call ZGEMM('C','N',nSites,nSites,nSites,zone,FullSchmidtBasis_c,nSites,FockSchmidt_c,nSites,zzero,ctemp,nSites)
+            call ZGEMM('N','N',nSites,nSites,nSites,zone,ctemp,nSites,FullSchmidtBasis_c,nSites,zzero,FockSchmidt_c,nSites)
+        endif
+
+        !In addition, lets calculate the bare 1-electron operator in the schmidt basis
+        !Order of ham_schmidt = core, imp, bath, virt
+        allocate(h0_schmidt(nSites,nSites))
+        h0_schmidt(:,:) = zzero
+        do i = 1,nSites
+            do j = 1,nSites
+                h0_schmidt(j,i) = cmplx(h0(j,i),zero,dp)
+            enddo
+        enddo
+        call ZGEMM('C','N',nSites,nSites,nSites,zone,FullSchmidtBasis_c,nSites,h0_schmidt,nSites,zzero,ctemp,nSites)
+        call ZGEMM('N','N',nSites,nSites,nSites,zone,ctemp,nSites,FullSchmidtBasis_c,nSites,zzero,h0_schmidt,nSites)
+        deallocate(ctemp)
+
+        !Now, create the integrals for the active space of impurity + bath
+        allocate(cEmb_h_fit(EmbSize,EmbSize))
+        cEmb_h_fit(:,:) = zzero
+        !Set it to be the space of the lattice hamiltonian in the schmidt basis
+        cEmb_h_fit(:,:) = FockSchmidt_c(nOcc-nImp+1:nOcc+nImp,nOcc-nImp+1:nOcc+nImp)
+        !Remove the impurity:impurty block, and its coupling. Just use h0 projected into the schmidt basis.
+        cEmb_h_fit(1:nImp,:) = h0_schmidt(nOcc-nImp+1:nOcc,nOcc-nImp+1:nOcc+nImp)
+        cEmb_h_fit(:,1:nImp) = h0_schmidt(nOcc-nImp+1:nOcc+nImp,nOcc-nImp+1:nOcc)
+
+        !CreateIntMats will use the cEmb_h_fit over the whole space for the 1-electron component
+        call CreateIntMats(tComp=.true.,tTwoElecBath=.false.,cbathham=cEmb_h_fit)
+        deallocate(cEmb_h_fit)
+
+        !Enumerate excitations for fully coupled space
+        !Seperate the lists into different Ms sectors in the N+- lists
+        call GenDets(Elec,EmbSize,.true.,.true.,.true.) 
+        write(6,*) "Number of determinants in {N,N+1,N-1} FCI space: ",ECoupledSpace
+        write(6,"(A,F12.5,A)") "Memory required for det list storage: ",DetListStorage*RealtoMb, " Mb"
+
+        !We are going to choose the uncontracted particle space to have an Ms of 1 (i.e. alpha spin)
+        !Construct FCI hamiltonians for the N, N+1_alpha and N-1_beta spaces
+        if(nNp1FCIDet.ne.nNm1FCIDet) call stop_all(t_r,'Active space not half-filled')
+        if(nNp1FCIDet.ne.nNp1bFCIDet) call stop_all(t_r,'Cannot deal with open shell systems')
+        write(6,"(A,F12.5,A)") "Memory required for N-electron hamil: ",(real(nFCIDet,dp)**2)*ComptoMb, " Mb"
+        write(6,"(A,F12.5,A)") "Memory required for N+1-electron hamil: ",(real(nNp1FCIDet,dp)**2)*ComptoMb, " Mb"
+        write(6,"(A,F12.5,A)") "Memory required for N-1-electron hamil: ",(real(nNm1bFCIDet,dp)**2)*ComptoMb, " Mb"
+        allocate(NFCIHam(nFCIDet,nFCIDet))
+        allocate(Np1FCIHam_alpha(nNp1FCIDet,nNp1FCIDet))
+        allocate(Nm1FCIHam_beta(nNm1bFCIDet,nNm1bFCIDet))
+        call Fill_N_Np1_Nm1b_FCIHam(Elec,1,1,1,NHam=NFCIHam,Np1Ham=Np1FCIHam_alpha,Nm1Ham=Nm1FCIHam_beta)
+
+        nLinearSystem = nNp1FCIDet + nFCIDet
+        nLinearSystem_h = nNm1bFCIDet + nFCIDet
+        nGSSpace = nFCIDet + nNp1FCIDet + nNm1bFCIDet
+        Np1GSInd = nFCIDet + 1
+        Nm1GSInd = Np1GSInd + nNp1FCIDet
+        if(tLR_ReoptGS) then
+            write(6,"(A,I9)") "Size of reoptimized ground state basis: ",nGSSpace
+            write(6,"(A,F14.6,A)") "Memory required for reoptimization of GS: ",(real(nGSSpace,dp)**2)*ComptoMb," Mb"
+        endif
+        if(nLinearSystem.ne.nLinearSystem_h) then
+            call stop_all(t_r,'Should change restriction on the Linear system size being the same for particle/hole addition')
+        endif
+        
+        write(6,"(A,F14.6,A)") "Memory required for the LR system: ",2*(real(nLinearSystem,dp)**2)*16/1048576.0_dp," Mb"
+
+        !Set up orbital indices for SCHMIDT basis
+        CoreEnd = nOcc-nImp
+        VirtStart = nOcc+nImp+1
+        VirtEnd = nSites
+        ActiveStart = nOcc-nImp+1
+        ActiveEnd = nOcc+nImp
+        nCore = nOcc-nImp
+        nVirt = nSites-nOcc-nImp   
+        if(tHalfFill.and.(nCore.ne.nVirt)) then
+            call stop_all(t_r,'Error in setting up half filled lattice')
+        endif
+
+        !Set up indices for the block of the linear system
+        VIndex = nNp1FCIDet + 1   !Beginning of EC virtual excitations
+        if(VIndex+nFCIDet-1.ne.nLinearSystem) call stop_all(t_r,'Indexing error')
+
+!        write(6,*) "External indices start from: ",VIndex
+        write(6,*) "Total size of linear sys: ",nLinearSystem
+        
+        iunit = get_free_unit()
+        if(tMatbrAxis) then
+            call append_ext_real('EC-TDA_GFResponse_Matsub',U,filename)
+        else
+            call append_ext_real('EC-TDA_GFResponse',U,filename)
+        endif
+        if(.not.tHalfFill) then
+            !Also append occupation of lattice to the filename
+            call append_ext(filename,nOcc,filename2)
+        else
+            filename2 = filename
+        endif
+        open(unit=iunit,file=filename2,status='unknown')
+        write(iunit,"(A)") "# 1.Frequency     2.GF_LinearResponse(Re)    3.GF_LinearResponse(Im)    " &
+            & //"4.ParticleGF(Re)   5.ParticleGF(Im)   6.HoleGF(Re)   7.HoleGF(Im)    8.Old_GS    9.New_GS   " &
+            & //"10.Particle_Norm  11.Hole_Norm   12.NI_GF(Re)   13.NI_GF(Im)  14.NI_GF_Part(Re)   15.NI_GF_Part(Im)   " &
+            & //"16.NI_GF_Hole(Re)   17.NI_GF_Hole(Im)  18.SpectralWeight  19.Iters_p   20.Iters_h    " 
+                
+        allocate(SchmidtPertGF_Cre_Ket(VirtStart:nSites,nImp))
+        allocate(SchmidtPertGF_Cre_Bra(VirtStart:nSites,nImp))
+        allocate(SchmidtPertGF_Ann_Ket(1:CoreEnd,nImp))
+        allocate(SchmidtPertGF_Ann_Bra(1:CoreEnd,nImp))
+        allocate(NI_LRMat_Cre(nImp,nImp))
+        allocate(NI_LRMat_Ann(nImp,nImp))
+        allocate(ni_lr_Mat(nImp,nImp))
+        allocate(ResponseFn_p(nImp,nImp))
+        allocate(ResponseFn_h(nImp,nImp))
+        allocate(ResponseFn_Mat(nImp,nImp))
+        allocate(dNorm_p(nImp))
+        allocate(dNorm_h(nImp))
+        
+        !Allocate memory for hamiltonian in this system:
+        allocate(LinearSystem_p(nLinearSystem,nLinearSystem),stat=ierr)
+        allocate(LinearSystem_h(nLinearSystem,nLinearSystem),stat=ierr)
+        allocate(Psi_0(nGSSpace),stat=ierr)   !If tFullReoptGS = .F. , then only the first nFCIDet elements will be used
+        if(tFullReoptGS) then
+            allocate(GSHam(nGSSpace,nGSSpace),stat=ierr)
+            allocate(W(nGSSpace),stat=ierr)
+        endif
+        allocate(Psi1_p(nLinearSystem),stat=ierr)
+        allocate(Psi1_h(nLinearSystem),stat=ierr)
+        Psi1_p = zzero
+        Psi1_h = zzero
+        if(ierr.ne.0) call stop_all(t_r,'Error allocating')
+        i = nFCIDet*3 + nLinearSystem*5
+        write(6,"(A,F12.5,A)") "Memory required for wavefunctions: ",real(i,dp)*ComptoMb, " Mb"
+        
+        !What ground state are we using?
+        Psi_0(:) = zzero 
+        if(.not.tLR_ReoptGS) then
+            allocate(Cre_0(nLinearSystem,nImp))
+            allocate(Ann_0(nLinearSystem,nImp))
+            if(tRemakeStaticBath) call stop_all(t_r,'Cannot remake static bath without at least partially reoptimizing the ground state')
+            !The bath space is the same as the GS.
+            do i = 1,nFCIDet
+                Psi_0(i) = cmplx(HL_Vec(i),zero,dp)
+            enddo
+            GSEnergy = HL_Energy
+            !Now, calculate the perturbed ground states
+            do i = 1,nImp
+                call ApplySP_PertGS_EC(Psi_0,nFCIDet,Cre_0(:,i),Ann_0(:,i),nLinearSystem,i)
+            enddo
+        elseif(tLR_ReoptGS.and.(.not.tFullReoptGS)) then
+            !We are remaking the ground state in the impurty + (presumably) new bath space
+            !Since this does not depend at all on the new basis, the RHS of the equations can be precomputed
+            allocate(Cre_0(nLinearSystem,nImp))
+            allocate(Ann_0(nLinearSystem,nImp))
+            if(.not.allocated(Prev_HL_Vec)) then
+                allocate(Prev_HL_Vec(nFCIDet))
+                !Start off with the original high-level vector
+                do i = 1,nFCIDet
+                    Psi_0(i) = cmplx(HL_Vec(i),zero,dp)
+                enddo
+                Prev_HL_Energy = HL_Energy
+            else
+                Psi_0(1:nFCIDet) = Prev_HL_Vec(:)
+            endif
+            call Comp_NonDir_Davidson(nFCIDet,NFCIHam,GSEnergy,Psi_0(1:nFCIDet),.true.)
+            write(6,"(A,G20.10,A,G20.10,A)") "Reoptimized ground state energy is: ",GSEnergy, &  
+                " (old = ",Prev_HL_Energy,")"
+            Prev_HL_Vec(:) = Psi_0(1:nFCIDet)
+            Prev_HL_Energy = GSEnergy
+        else
+            !We cannot construct the ground state yet, since we haven't constructed the hamiltonian for it yet.
+            !This will be done later on.
+            continue
+        endif
+
+        !Store the fock matrix in complex form, so that we can ZGEMM easily
+        !Also allocate the subblocks seperately. More memory, but will ensure we don't get stack overflow problems
+        allocate(FockSchmidt_SE(nSites,nSites),stat=ierr)
+        allocate(FockSchmidt_SE_VV(VirtStart:VirtEnd,VirtStart:VirtEnd),stat=ierr)    !Just defined over core-core blocks
+        allocate(FockSchmidt_SE_CC(1:CoreEnd,1:CoreEnd),stat=ierr)    !Just defined over virtual-virtual blocks
+        allocate(FockSchmidt_SE_VX(VirtStart:VirtEnd,ActiveStart:ActiveEnd),stat=ierr)
+        allocate(FockSchmidt_SE_XV(ActiveStart:ActiveEnd,VirtStart:VirtEnd),stat=ierr)
+        allocate(FockSchmidt_SE_CX(1:CoreEnd,ActiveStart:ActiveEnd),stat=ierr)
+        allocate(FockSchmidt_SE_XC(ActiveStart:ActiveEnd,1:CoreEnd),stat=ierr)
+        write(6,"(A,F12.5,A)") "Memory required for fock matrix: ", &
+            (((2.0_dp*real(nSites,dp))**2)+(real(nOcc,dp)**2)+(real(nSites-nOcc,dp)**2))*ComptoMb, " Mb"
+        if(ierr.ne.0) call stop_all(t_r,'Error allocating')
+
+        !FockSchmidt_SE is the matrix that we use for the decomposed space. i.e. it has had the impurity coupling removed
+        !This is the matrix which should be accessed in the construction of the Hessians
+        FockSchmidt_SE(:,:) = FockSchmidt_c(:,:)
+        !Remove impurty coupling
+        FockSchmidt_SE(nOcc-nImp+1:nOcc,:) = h0_schmidt(nOcc-nImp+1:nOcc,:)
+        FockSchmidt_SE(:,nOcc-nImp+1:nOcc) = h0_schmidt(:,nOcc-nImp+1:nOcc)
+
+        !Fill seperate blocks, for ease of ZGEMM'ing, and avoidance of stack overflows
+        FockSchmidt_SE_CC(1:CoreEnd,1:CoreEnd) = FockSchmidt_SE(1:CoreEnd,1:CoreEnd)
+        FockSchmidt_SE_VV(VirtStart:nSites,VirtStart:nSites) = FockSchmidt_SE(VirtStart:nSites,VirtStart:nSites)
+        FockSchmidt_SE_VX(VirtStart:VirtEnd,ActiveStart:ActiveEnd) = FockSchmidt_SE(VirtStart:VirtEnd,ActiveStart:ActiveEnd)
+        FockSchmidt_SE_CX(1:CoreEnd,ActiveStart:ActiveEnd) = FockSchmidt_SE(1:CoreEnd,ActiveStart:ActiveEnd)
+        FockSchmidt_SE_XV(ActiveStart:ActiveEnd,VirtStart:VirtEnd) = FockSchmidt_SE(ActiveStart:ActiveEnd,VirtStart:VirtEnd)
+        FockSchmidt_SE_XC(ActiveStart:ActiveEnd,1:CoreEnd) = FockSchmidt_SE(ActiveStart:ActiveEnd,1:CoreEnd)
+
+        !Is FockSchmidt_SE hermitian?
+        do i = 1,nSites
+            do j = i+1,nSites
+                if(abs(FockSchmidt_SE(i,j)-dconjg(FockSchmidt_SE(j,i))).gt.1.0e-8_dp) then
+                    call stop_all(t_r,'FockSchmidt_SE not hermitian')
+                endif
+            enddo
+            if(abs(aimag(FockSchmidt_SE(i,i))).gt.1.0e-8_dp) then
+                call stop_all(t_r,'FockSchmidt_SE not hermitian')
+            endif
+        enddo
+
+        !Space for useful intermediates
+        !For particle addition
+        allocate(Gc_a_F_ax_Bra(ActiveStart:ActiveEnd,nImp),stat=ierr)
+        allocate(Gc_a_F_ax_Ket(ActiveStart:ActiveEnd,nImp),stat=ierr)
+        allocate(Gc_b_F_ab(VirtStart:VirtEnd,nImp),stat=ierr)
+        !For hole addition
+        allocate(Ga_i_F_xi_Bra(ActiveStart:ActiveEnd,nImp),stat=ierr)
+        allocate(Ga_i_F_xi_Ket(ActiveStart:ActiveEnd,nImp),stat=ierr)
+        allocate(Ga_i_F_ij(1:nCore,nImp),stat=ierr)
+            
+        !Allocate and precompute 1-operator coupling coefficients between the different sized spaces.
+        !First number is the index of operator, and the second is the parity change when applying the operator
+        allocate(Coup_Create_alpha(2,nFCIDet,nNm1bFCIDet))
+        allocate(Coup_Ann_alpha(2,nFCIDet,nNp1FCIDet))
+
+        call SetupNumberCouplingOps(Coup_Create_alpha,Coup_Ann_alpha)
+
+        call halt_timer(LR_EC_GF_Precom)
+
+        OmegaVal = 0
+        do while(.true.)
+            if(present(FreqPoints)) then
+                call GetNextOmega(Omega,OmegaVal,tMatbrAxis,nFreqPoints=nESteps,FreqPoints=FreqPoints)
+            else
+                call GetNextOmega(Omega,OmegaVal,tMatbrAxis)
+            endif
+            if(OmegaVal.lt.0) exit
+            if(OmegaVal.gt.nESteps) call stop_all(t_r,'More frequency points than anticipated')
+
+            call set_timer(LR_EC_GF_HBuild)
+        
+            if(tMatbrAxis) then
+                write(6,"(A,F12.6)") "Calculating linear response for imaginary frequency: ",Omega
+            else
+                write(6,"(A,F12.6)") "Calculating linear response for frequency: ",Omega
+            endif
+        
+            !Schmidt decompose the response vector
+            call FindNI_Charged_FitLat(Omega,GFChemPot,NI_LRMat_Cre,NI_LRMat_Ann,tMatbrAxis,cham,LatVals,LatVecs)
+            
+            !Construct useful intermediates, using zgemm
+            !sum_a Gc_a^* F_ax (Creation)
+            call ZGEMM('T','N',EmbSize,nImp,nVirt,zone,FockSchmidt_SE_VX(VirtStart:VirtEnd,ActiveStart:ActiveEnd),  &
+                nVirt,SchmidtPertGF_Cre_Bra(VirtStart:VirtEnd,:),nVirt,zzero,Gc_a_F_ax_Bra,EmbSize)
+            call ZGEMM('N','N',EmbSize,nImp,nVirt,zone,FockSchmidt_SE_XV(ActiveStart:ActiveEnd,VirtStart:VirtEnd),  &
+                EmbSize,SchmidtPertGF_Cre_Ket(VirtStart:VirtEnd,:),nVirt,zzero,Gc_a_F_ax_Ket,EmbSize)
+            !sum_b Gc_b F_ab  (Creation)
+            call ZGEMM('N','N',nVirt,nImp,nVirt,zone,FockSchmidt_SE_VV(VirtStart:VirtEnd,VirtStart:VirtEnd),    &
+                nVirt,SchmidtPertGF_Cre_Ket(VirtStart:VirtEnd,:),nVirt,zzero,Gc_b_F_ab,nVirt)
+
+            !sum_i Ga_i^bra F_xi (Annihilation)
+            call ZGEMM('N','N',EmbSize,nImp,nCore,zone,FockSchmidt_SE_XC(ActiveStart:ActiveEnd,1:CoreEnd),EmbSize,    &
+                SchmidtPertGF_Ann_Bra(1:nCore,:),nCore,zzero,Ga_i_F_xi_Bra,EmbSize)
+            call ZGEMM('T','N',EmbSize,nImp,nCore,zone,FockSchmidt_SE_CX(1:CoreEnd,ActiveStart:ActiveEnd),nCore,    &
+                SchmidtPertGF_Ann_Ket(1:nCore,:),nCore,zzero,Ga_i_F_xi_Ket,EmbSize)
+            !sum_i Ga_i F_ij (Annihilation)
+            call ZGEMM('T','N',nCore,nImp,nCore,zone,FockSchmidt_SE_CC(:,:),nCore,SchmidtPertGF_Ann_Ket(:,:),nCore,zzero, &
+                Ga_i_F_ij,nCore)
+
+            !Find the first-order wavefunction in the interacting picture for all impurity sites 
+            do pertsite = 1,nImp
+
+                if(tFullReoptGS) GSHam(:,:) = zzero
+                LinearSystem_p(:,:) = zzero 
+                LinearSystem_h(:,:) = zzero 
+
+                !Block 1 for particle hamiltonian
+                !First, construct n + 1 (alpha) FCI space, in determinant basis
+                LinearSystem_p(1:nNp1FCIDet,1:nNp1FCIDet) = Np1FCIHam_alpha(:,:)
+                !Block 1 for hole hamiltonian
+                LinearSystem_h(1:nNm1bFCIDet,1:nNm1bFCIDet) = Nm1FCIHam_beta(:,:)
+                if(tFullReoptGS) then
+                    !Block 1 for GS
+                    GSHam(1:nFCIDet,1:nFCIDet) = nFCIHam(:,:)
+                    !Block 2 (diagonal part to come)
+                    GSHam(Np1GSInd:Nm1GSInd-1,Np1GSInd:Nm1GSInd-1) = Np1FCIHam_alpha(:,:)
+                    !Block 4 (diagonal part to come)
+                    GSHam(Nm1GSInd:nGSSpace,Nm1GSInd:nGSSpace) = Nm1FCIHam_beta(:,:)
+                endif
+
+                !Block 2 for particle hamiltonian
+                !Copy the N electron FCI hamiltonian to this diagonal block
+                LinearSystem_p(VIndex:nLinearSystem,VIndex:nLinearSystem) = nFCIHam(:,:)
+        
+                VNorm = zzero
+                tempel = zzero 
+                do a = VirtStart,VirtEnd
+                    !Calc normalization for the CV block
+                    VNorm = VNorm + SchmidtPertGF_Cre_Bra(a,pertsite)*SchmidtPertGF_Cre_Ket(a,pertsite) 
+                    !VNorm = VNorm + real(SchmidtPertGF_Cre(a,pertsite))**2 + aimag(SchmidtPertGF_Cre(a,pertsite))**2
+                    !Calculate the diagonal correction
+                    !tempel = tempel + conjg(SchmidtPertGF_Cre(a,pertsite))*Gc_b_F_ab(a,pertsite)
+                    tempel = tempel + SchmidtPertGF_Cre_Bra(a,pertsite)*Gc_b_F_ab(a,pertsite)
+                enddo
+                tempel = tempel / VNorm
+                !Add diagonal virtual correction
+                do i = VIndex,nLinearSystem
+                    LinearSystem_p(i,i) = LinearSystem_p(i,i) + tempel
+                enddo
+                if(tFullReoptGS) then
+                    !Diagonal part of block 4
+                    do i = Nm1GSInd,nGSSpace
+                        GSHam(i,i) = GSHam(i,i) + tempel
+                    enddo
+                endif
+
+                !Block 2 for the hole hamiltonian
+                !Copy the N electron FCI hamiltonian to this diagonal blockk
+                LinearSystem_h(VIndex:nLinearSystem,VIndex:nLinearSystem) = nFCIHam(:,:)
+
+                CNorm = zzero
+                tempel = zzero 
+                do i = 1,CoreEnd
+                    !Calc normalization
+                    !CNorm = CNorm + real(SchmidtPertGF_Ann(i,pertsite))**2 + aimag(SchmidtPertGF_Ann(i,pertsite))**2
+                    CNorm = CNorm + SchmidtPertGF_Ann_Bra(i,pertsite)*SchmidtPertGF_Ann_Ket(i,pertsite)
+                    !Calc diagonal correction
+                    tempel = tempel + SchmidtPertGF_Ann_Bra(i,pertsite)*Ga_i_F_ij(i,pertsite)
+                enddo
+                tempel = -tempel / CNorm
+                !Add diagonal correction
+                do i = VIndex,nLinearSystem
+                    LinearSystem_h(i,i) = LinearSystem_h(i,i) + tempel
+                enddo
+                if(tFullReoptGS) then
+                    !Diagonal part of block 2
+                    do i = Np1GSInd,Nm1GSInd-1
+                        GSHam(i,i) = GSHam(i,i) + tempel
+                    enddo
+                endif
+            
+                !Block 3 for particle hamiltonian
+                do J = 1,nNp1FCIDet
+                    do K = 1,nFCIDet    !VIndex,nLinearSystem
+                        if(Coup_Ann_alpha(1,K,J).ne.0) then
+                            !Determinants are connected via a single SQ operator
+                            !First index is the spatial index, second is parity 
+                            !Matrices not necessarily hermitian with self-energy term, so need to construct them seperately
+                            LinearSystem_p(K+VIndex-1,J) = Gc_a_F_ax_Bra(Coup_Ann_alpha(1,K,J),pertsite)    &
+                                *Coup_Ann_alpha(2,K,J)/sqrt(VNorm)
+                            !LinearSystem_p(J,K+VIndex-1) = conjg(LinearSystem_p(K+VIndex-1,J))
+                            LinearSystem_p(J,K+VIndex-1) = Gc_a_F_ax_Ket(Coup_Ann_alpha(1,K,J),pertsite)    &
+                                *Coup_Ann_alpha(2,K,J)/sqrt(VNorm)
+                            if(tFullReoptGS) then
+                                !Block 3 contribution
+                                !Assume that all the matrices are hermitian as we shouldn't be reoptimizing the GS with self-energy
+                                GSHam(K,Np1GSInd+J-1) = -Ga_i_F_xi_Ket(Coup_Ann_alpha(1,K,J),pertsite)  &
+                                    *Coup_Ann_alpha(2,K,J)/sqrt(CNorm)
+                                GSHam(Np1GSInd+J-1,K) = conjg(GSHam(K,Np1GSInd+J-1))
+                            endif
+                        endif
+                    enddo
+                enddo
+
+!                call writematrixcomp(LinearSystem_p(1:nNp1FCIDet,VIndex:nLinearSystem),'OffDiagBlock',.true.)
+
+                !Block 3 for hole hamiltonian
+                do J = 1,nNm1bFCIDet
+                    do K = 1,nFCIDet
+                        if(Coup_Create_alpha(1,K,J).ne.0) then
+                            !Determinants are connected via a single SQ operator
+                            LinearSystem_h(K+VIndex-1,J) = - Ga_i_F_xi_Bra(Coup_Create_alpha(1,K,J),pertsite)   &
+                                *Coup_Create_alpha(2,K,J)/sqrt(CNorm)
+                            LinearSystem_h(J,K+VIndex-1) = - Ga_i_F_xi_Ket(Coup_Create_alpha(1,K,J),pertsite)   &
+                                *Coup_Create_alpha(2,K,J)/sqrt(CNorm)
+                            if(tFullReoptGS) then
+                                !Block 6 contribution
+                                GSHam(K,Nm1GSInd+J-1) = Gc_a_F_ax_Ket(Coup_Create_alpha(1,K,J),pertsite) &
+                                    *Coup_Create_alpha(2,K,J)/sqrt(VNorm)
+                                GSHam(Nm1GSInd+J-1,K) = conjg(GSHam(K,Nm1GSInd+J-1))
+                            endif
+                        endif
+                    enddo
+                enddo
+
+                !Now, check hessian is hermitian
+                do i = 1,nLinearSystem
+                    do j=i,nLinearSystem
+                        if(abs(LinearSystem_p(i,j)-conjg(LinearSystem_p(j,i))).gt.1.0e-8_dp) then
+                            write(6,*) "i, j: ",i,j
+                            write(6,*) "LinearSystem_p(i,j): ",LinearSystem_p(i,j)
+                            write(6,*) "LinearSystem_p(j,i): ",LinearSystem_p(j,i)
+                            call stop_all(t_r,'Particle hessian for EC-LR not hermitian')
+                        endif
+                        if(abs(LinearSystem_h(i,j)-conjg(LinearSystem_h(j,i))).gt.1.0e-8_dp) then
+                            write(6,*) "i, j: ",i,j
+                            write(6,*) "LinearSystem_h(i,j): ",LinearSystem_h(i,j)
+                            write(6,*) "LinearSystem_h(j,i): ",LinearSystem_h(j,i)
+                            call stop_all(t_r,'Hole hessian for EC-LR not hermitian')
+                        endif
+                    enddo
+                    if(abs(aimag(LinearSystem_p(i,i))).gt.1.0e-8_dp) then
+                        call stop_all(t_r,'Diagonal element complex in particle hessian. Not hermitian')
+                    endif
+                    if(abs(aimag(LinearSystem_h(i,i))).gt.1.0e-8_dp) then
+                        call stop_all(t_r,'Diagonal element complex in hole hessian. Not hermitian')
+                    endif
+                enddo
+                if(tFullReoptGS) then
+                    !Check GS hamiltonian is hermitian
+                    do i = 1,nGSSpace
+                        do j = i,nGSSpace
+                            if(abs(GSHam(j,i)-conjg(GSHam(i,j))).gt.1.0e-8_dp) then
+                                call stop_all(t_r,'Reoptimized ground state hamiltonian is not hermitian')
+                            endif
+                        enddo
+                    enddo
+                endif
+
+                !write(6,*) "Hessian constructed successfully...",Omega
+                call halt_timer(LR_EC_GF_HBuild)
+                call set_timer(LR_EC_GF_SolveLR)
+
+                if(tFullReoptGS) then
+                    !Reoptimize the ground state wavefunction in the full static + dynamic space.
+                    if(.not.tNonDirDavidson) call stop_all(t_r,'Cannot do this optimization without davidson')
+                    Psi_0(:) = zzero
+                    if(.not.allocated(Prev_HL_Vec)) then
+                        allocate(Prev_HL_Vec((nGSSpace)))
+                        Prev_HL_Energy = HL_Energy
+                        do i = 1,nFCIDet
+                            Psi_0(i) = cmplx(HL_Vec(i),zero,dp)
+                        enddo
+                    else
+                        Psi_0(:) = Prev_HL_Vec(:)
+                    endif
+                    call Comp_NonDir_Davidson(nGSSpace,GSHam,GSEnergy,Psi_0,.true.)
+                    Prev_HL_Vec(:) = Psi_0(:)
+                    Prev_HL_Energy = GSEnergy
+                    write(6,"(A,G20.10,A,G20.10,A)") "Reoptimized ground state energy is: ",GSEnergy, &  
+                        " (old = ",Prev_HL_Energy,")"
+
+                    !Calculate the perturbed ground state
+                    do i = 1,nImp
+                        call ApplySP_PertGS_EC(Psi_0,nGSSpace,Cre_0(:,i),Ann_0(:,i),nLinearSystem,i)
+                    enddo
+                endif
+
+                !Solve particle GF to start
+                !The V|0> for particle and hole perturbations are held in Cre_0 and Ann_0
+                LinearSystem_p(:,:) = -LinearSystem_p(:,:)
+                !Offset matrix
+                do i = 1,nLinearSystem
+                    if(tMatbrAxis) then
+                        LinearSystem_p(i,i) = LinearSystem_p(i,i) + dcmplx(GFChemPot+GSEnergy,Omega)
+                    else
+                        LinearSystem_p(i,i) = LinearSystem_p(i,i) + dcmplx(Omega+GFChemPot+GSEnergy,dDelta)
+                    endif
+                enddo
+!                call writematrixcomp(LinearSystem_p,'LinearSystem_p',.false.)
+                !Now solve these linear equations
+                !Copy V|0> to another array, since if we are not reoptimizing the GS, we want to keep them.
+                !Minres removed
+                Psi1_p(:) = Cre_0(:,pertsite)
+                !Psi1_p will be overwritten with the solution
+                call SolveCompLinearSystem(LinearSystem_p,Psi1_p,nLinearSystem,info)
+                if(info.ne.0) then 
+                    write(6,*) "INFO: ",info
+                    call warning(t_r,'Solving linear system failed for particle hamiltonian - skipping this frequency')
+                    call halt_timer(LR_EC_GF_SolveLR)
+                    cycle
+                endif
+                !call writevectorcomp(Psi1_p,'Psi1_p')
+
+                !Now solve the LR for the hole addition
+                do i = 1,nLinearSystem
+                    if(tMatbrAxis) then
+                        LinearSystem_h(i,i) = dcmplx(GFChemPot-GSEnergy,Omega) + LinearSystem_h(i,i)
+                    else
+                        LinearSystem_h(i,i) = dcmplx(Omega+GFChemPot-GSEnergy,dDelta) + LinearSystem_h(i,i)
+                    endif
+                enddo
+!                call writematrixcomp(LinearSystem_h,'LinearSystem_h',.false.)
+                Psi1_h(:) = Ann_0(:,pertsite)
+                call SolveCompLinearSystem(LinearSystem_h,Psi1_h,nLinearSystem,info)
+                if(info.ne.0) then 
+                    write(6,*) "INFO: ",info
+                    call warning(t_r,'Solving linear system failed for hole hamiltonian - skipping this frequency')
+                    call halt_timer(LR_EC_GF_SolveLR)
+                    cycle
+                endif
+        
+                !Find normalization of first-order wavefunctions
+                dNorm_p(pertsite) = znrm2(nLinearSystem,Psi1_p,1)
+                dNorm_h(pertsite) = znrm2(nLinearSystem,Psi1_h,1)
+                !write(6,*) "Normalization of first-order wavefunction: ",dNorm_p,dNorm_h
+                
+                !Now, calculate all interacting greens funtions that we want, by dotting in the first-order space
+                do j = 1,nImp
+                    ResponseFn_p(j,pertsite) = zzero
+                    ResponseFn_h(pertsite,j) = zzero
+                    do k = 1,nLinearSystem
+                        ResponseFn_p(j,pertsite) = ResponseFn_p(j,pertsite) + dconjg(Cre_0(k,j))*Psi1_p(k)
+                        ResponseFn_h(pertsite,j) = ResponseFn_h(pertsite,j) + dconjg(Ann_0(k,j))*Psi1_h(k)
+                    enddo
+                enddo
+            enddo   !End do over pertsite. We now have all the greens funtions 
+            !call writevectorcomp(Cre_0(:,1),'Cre_0')
+
+            !Sum them
+            ResponseFn_Mat(:,:) = ResponseFn_p(:,:) + ResponseFn_h(:,:)
+            ni_lr_Mat(:,:) = NI_LRMat_Cre(:,:) + NI_LRMat_Ann(:,:)
+            G_Mat(:,:,OmegaVal) = ResponseFn_Mat(:,:)
+            if(present(Lat_G_Mat)) then
+                Lat_G_Mat(:,:,OmegaVal) = ni_lr_Mat(:,:)
+            endif
+
+            !Now, calculate NI and interacting response function as trace over diagonal parts of the local greens functions
+            !This is the isotropic average of the local greens function
+            ni_lr = zzero
+            ResponseFn = zzero
+            AvResFn_p = zzero
+            AvResFn_h = zzero
+            ni_lr_p = zzero
+            ni_lr_h = zzero
+            AvdNorm_p = zero
+            AvdNorm_h = zero
+            do i = 1,nImp
+                ni_lr = ni_lr + ni_lr_Mat(i,i)
+                ResponseFn = ResponseFn + ResponseFn_Mat(i,i)
+                AvResFn_p = AvResFn_p + ResponseFn_p(i,i)
+                AvResFn_h = AvResFn_h + ResponseFn_h(i,i)
+                ni_lr_p = ni_lr_p + NI_LRMat_Cre(i,i)
+                ni_lr_h = ni_lr_h + NI_LRMat_Ann(i,i)
+                AvdNorm_p = AvdNorm_p + dNorm_p(i)
+                AvdNorm_h = AvdNorm_h + dNorm_h(i)
+            enddo
+            ni_lr = ni_lr/real(nImp,dp)
+            ni_lr_p = ni_lr_p/real(nImp,dp)
+            ni_lr_h = ni_lr_h/real(nImp,dp)
+            ResponseFn = ResponseFn/real(nImp,dp)
+            AvResFn_p = AvResFn_p/real(nImp,dp)
+            AvResFn_h = AvResFn_h/real(nImp,dp)
+            AvdNorm_p = AvdNorm_p/real(nImp,dp)
+            AvdNorm_h = AvdNorm_h/real(nImp,dp)
+            write(6,"(A,F13.7)") "Response function value: ",-aimag(ResponseFn)
+
+            Diff_GF = zero  !real(abs(ResponseFn - ni_lr))
+            do i=1,nImp
+                do j=1,nImp
+                    Diff_GF = Diff_GF + real((ni_lr_Mat(j,i)-ResponseFn_Mat(j,i))*dconjg(ni_lr_Mat(j,i)-ResponseFn_Mat(j,i)))
+                enddo
+            enddo
+        
+            call halt_timer(LR_EC_GF_SolveLR)
+
+            if(.not.tFirst) then
+                if(tMatbrAxis) then
+                    SpectralWeight = SpectralWeight + Omega_Step_Im*(Prev_Spec-aimag(ResponseFn))/(2.0_dp*pi)
+                else
+                    SpectralWeight = SpectralWeight + Omega_Step*(Prev_Spec-aimag(ResponseFn))/(2.0_dp*pi)
+                endif
+                Prev_Spec = -aimag(ResponseFn)
+            endif
+
+            write(iunit,"(18G22.10,2I7)") Omega,real(ResponseFn),-aimag(ResponseFn), &
+                real(AvResFn_p),-aimag(AvResFn_p),real(AvResFn_h),-aimag(AvResFn_h),    &
+                HL_Energy,GSEnergy,abs(AvdNorm_p),abs(AvdNorm_h),real(ni_lr),-aimag(ni_lr),real(ni_lr_p),    &
+                -aimag(ni_lr_p),real(ni_lr_h),-aimag(ni_lr_h),SpectralWeight,iters_p,iters_h!,real(ni_lr_Mat(1,2)),aimag(ni_lr_Mat(1,2))
+            call flush(iunit)
+            call flush(6)
+
+            if(tFirst) tFirst = .false.
+
+        enddo   !End loop over omega
+
+        write(6,"(A,G22.10)") "Total integrated spectral weight: ",SpectralWeight
+
+        deallocate(LinearSystem_p,LinearSystem_h,Psi1_p,Psi1_h)
+        deallocate(Cre_0,Ann_0,Psi_0,SchmidtPertGF_Cre_Ket,SchmidtPertGF_Ann_Ket)
+        deallocate(NI_LRMat_Cre,NI_LRMat_Ann,ResponseFn_p,ResponseFn_h,ResponseFn_Mat)
+        deallocate(ni_lr_Mat,SchmidtPertGF_Cre_Bra,SchmidtPertGF_Ann_Bra)
+        close(iunit)
+        if(tFullReoptGS) then
+            deallocate(GSHam)
+        endif
+
+        !Deallocate determinant lists
+        if(allocated(FCIDetList)) deallocate(FCIDetList)
+        if(allocated(FCIBitList)) deallocate(FCIBitList)
+        if(allocated(UMat)) deallocate(UMat)
+        if(allocated(TMat)) deallocate(TMat)
+        if(allocated(TMat_Comp)) deallocate(TMat_Comp)
+        if(allocated(Nm1FCIDetList)) deallocate(Nm1FCIDetList)
+        if(allocated(Nm1BitList)) deallocate(Nm1BitList)
+        if(allocated(Np1FCIDetList)) deallocate(Np1FCIDetList)
+        if(allocated(Np1BitList)) deallocate(Np1BitList)
+        if(allocated(Nm1bFCIDetList)) deallocate(Nm1bFCIDetList)
+        if(allocated(Nm1bBitList)) deallocate(Nm1bBitList)
+        if(allocated(Np1bFCIDetList)) deallocate(Np1bFCIDetList)
+        if(allocated(Np1bBitList)) deallocate(Np1bBitList)
+
+        !Stored intermediates
+        deallocate(NFCIHam,Nm1FCIHam_beta,Np1FCIHam_alpha)
+        deallocate(Coup_Create_alpha,Coup_Ann_alpha)
+        deallocate(FockSchmidt_SE,FockSchmidt_SE_VV,FockSchmidt_SE_CC)
+        deallocate(FockSchmidt_SE_VX,FockSchmidt_SE_CX,FockSchmidt_SE_XV,FockSchmidt_SE_XC)
+        deallocate(Gc_a_F_ax_Bra,Gc_a_F_ax_Ket,Gc_b_F_ab,Ga_i_F_xi_Bra,Ga_i_F_xi_Ket,Ga_i_F_ij)
+
+        if(allocated(LatVals)) deallocate(LatVals)
+        if(allocated(LatVecs)) deallocate(LatVecs)
+        if(allocated(h0_schmidt)) deallocate(h0_schmidt)
+
+    end subroutine SchmidtGF_FromLat
+
+    subroutine SetupNumberCouplingOps(Coup_Create_alpha,Coup_Ann_alpha)
+        use DetBitOps, only: DecodeBitDet,SQOperator,CountBits
+        use DetToolsData
+        use DetTools, only: tospat
+        implicit none
+        integer, intent(out) :: Coup_Create_alpha(2,nFCIDet,nNm1bFCIDet)
+        integer, intent(out) :: Coup_Ann_alpha(2,nFCIDet,nNp1FCIDet)
+
+        integer :: i,J,K,DiffOrb,nOrbs,gam,tempK,orbdum(1),CoreEnd
+        logical :: tParity
+        character(len=*), parameter :: t_r='SetupNumberCouplingOps'
+        
+        CoreEnd = nOcc-nImp
+    
+        Coup_Create_alpha(:,:,:) = 0
+        Coup_Ann_alpha(:,:,:) = 0
+        !TODO: This can be largly sped up by considering single excitations in isolation, rather than running through all elements
+        !   This will result in an N_FCI * n_imp scaling, rather than N_FCI^2
+        do J = 1,nFCIDet
+            !Start with the creation of an alpha orbital
+            do K = 1,nNm1bFCIDet
+                DiffOrb = ieor(Nm1bBitList(K),FCIBitList(J))
+                nOrbs = CountBits(DiffOrb)
+                if(mod(nOrbs,2).ne.1) then 
+                    !There must be an odd number of orbital differences between the determinants
+                    !since they are of different electron number by one
+                    call stop_all(t_r,'Not odd number of electrons')
+                endif
+                if(nOrbs.ne.1) then
+                    !We only want one orbital different
+                    cycle
+                endif
+                !Now, find out what SPINorbital this one is from the bit number set
+                call DecodeBitDet(orbdum,1,DiffOrb)
+                gam = orbdum(1)
+                if(mod(gam,2).ne.1) then
+                    call stop_all(t_r,'differing orbital should be an alpha spin orbital')
+                endif
+                !Now find out the parity change when applying this creation operator to the original determinant
+                tempK = Nm1bBitList(K)
+                call SQOperator(tempK,gam,tParity,.false.)
+                Coup_Create_alpha(1,J,K) = tospat(gam)+CoreEnd
+                if(tParity) then
+                    Coup_Create_alpha(2,J,K) = -1
+                else
+                    Coup_Create_alpha(2,J,K) = 1
+                endif
+            enddo
+            !Now, annihilation of an alpha orbital
+            do K = 1,nNp1FCIDet
+                DiffOrb = ieor(Np1BitList(K),FCIBitList(J))
+                nOrbs = CountBits(DiffOrb)
+                if(mod(nOrbs,2).ne.1) then 
+                    !There must be an odd number of orbital differences between the determinants
+                    !since they are of different electron number by one
+                    call stop_all(t_r,'Not odd number of electrons 3')
+                endif
+                if(nOrbs.ne.1) then
+                    !We only want one orbital different
+                    cycle
+                endif
+                !Now, find out what SPINorbital this one is from the bit number set
+                call DecodeBitDet(orbdum,1,DiffOrb)
+                gam = orbdum(1)
+                if(mod(gam,2).ne.1) then
+                    call stop_all(t_r,'differing orbital should be an alpha spin orbital')
+                endif
+                !Now find out the parity change when applying this creation operator to the original determinant
+                tempK = Np1BitList(K)
+                call SQOperator(tempK,gam,tParity,.true.)
+                Coup_Ann_alpha(1,J,K) = tospat(gam)+CoreEnd
+                if(tParity) then
+                    Coup_Ann_alpha(2,J,K) = -1
+                else
+                    Coup_Ann_alpha(2,J,K) = 1
+                endif
+            enddo
+        enddo
+        i = 2*nFCIDet*nNm1bFCIDet + 2*nFCIDet*nNp1FCIDet
+        write(6,"(A,F12.5,A)") "Memory required for coupling coefficient matrices: ",real(i,dp)*RealtoMb, " Mb"
+
+    end subroutine SetupNumberCouplingOps
+
     !Calculate linear response for charged excitations - add the hole creation to particle creation
     !This is a tester routine to calculate the whole GF matrix, and include an optional self-energy in the bath construction
     subroutine SchmidtGF_wSE(G_Mat,GFChemPot,SE,nESteps,tMatbrAxis,ham,cham,ham_vals,ham_vecs,FreqPoints,Lat_G_Mat)
@@ -5814,8 +6622,10 @@ module LinearResponse
         V0_Ann(:) = zzero
         V0_Cre(:) = zzero 
 
-        !if(tLR_ReoptGS.and.(SizeGS.ne.(nFCIDet+nNp1FCIDet+nNm1bFCIDet))) then
-        if(tLR_ReoptGS.and.(SizeGS.ne.nFCIDet)) then
+        if(tFullReoptGS.and.(SizeGS.ne.(nFCIDet+nNp1FCIDet+nNm1bFCIDet))) then
+            call stop_all(t_r,'Zeroth order wavefunction not expected size')
+        endif
+        if(.not.tFullReoptGS.and.(SizeGS.ne.nFCIDet)) then
             call stop_all(t_r,'Zeroth order wavefunction not expected size')
         endif
         if(nSizeLR.ne.(nFCIDet+nNp1FCIDet)) then
@@ -5909,10 +6719,10 @@ module LinearResponse
             endif
         enddo
 
-!        if(.not.tLR_ReoptGS) then
+        if(.not.tFullReoptGS) then
             !We do not have GS in other parts of the space
             return
-!        endif
+        endif
 
         if(tSwapExcits_) then
             !This is part of the GS which will contribute to the particle removal (V0_Ann) wavefunction
@@ -8597,6 +9407,155 @@ module LinearResponse
         endif
 
     end subroutine setup_RHS
+    
+    !Calculate the non-interacting greens functions for the lattice hamiltonian ham
+    !This is then Schmidt decomposed to find the contraction coefficients for the 
+    !environment blocks of the hamiltonians.
+    !The NI_LRMat_Cre and NI_LRMat_Ann matrices are returned as the non-interacting LR
+    !The global matrices SchmidtPertGF_Cre and SchmidtPertGF_Ann are filled
+    subroutine FindNI_Charged_FitLat(Omega,GFChemPot,NI_LRMat_Cre,NI_LRMat_Ann,tMatbrAxis,ham,latvals,latvecs)
+        implicit none
+        real(dp), intent(in) :: Omega,GFChemPot
+        complex(dp), intent(out) :: NI_LRMat_Cre(nImp,nImp),NI_LRMat_Ann(nImp,nImp)
+        logical, intent(in) :: tMatbrAxis
+        complex(dp), intent(in) :: ham(nSites,nSites)
+        real(dp), intent(in) :: latvals(nSites)
+        complex(dp), intent(in) :: latvecs(nSites,nSites)
+
+        complex(dp), allocatable :: HFPertBasis_Ann_Ket(:,:),HFPertBasis_Cre_Ket(:,:),temp(:,:),temp2(:,:)
+        complex(dp), allocatable :: HFPertBasis_Ann_Bra(:,:),HFPertBasis_Cre_Bra(:,:)
+        integer :: i,a,pertBra,j,pertsite,nVirt,CoreEnd,VirtStart,ActiveStart,ActiveEnd,nCore
+        character(len=*), parameter :: t_r='FindNI_Charged_FitLat'
+
+        !Memory to temperarily store the first order wavefunctions of each impurity site, in the right MO basis (For the Kets)
+        !and the left MO space (for the Bras)
+        allocate(HFPertBasis_Ann_Bra(1:nOcc,nImp))
+        allocate(HFPertBasis_Cre_Bra(nOcc+1:nSites,nImp))
+        allocate(HFPertBasis_Ann_Ket(1:nOcc,nImp))
+        allocate(HFPertBasis_Cre_Ket(nOcc+1:nSites,nImp))
+        HFPertBasis_Ann_Bra(:,:) = zzero
+        HFPertBasis_Cre_Bra(:,:) = zzero
+        HFPertBasis_Ann_Ket(:,:) = zzero
+        HFPertBasis_Cre_Ket(:,:) = zzero
+        
+        NI_LRMat_Cre(:,:) = zzero
+        NI_LRMat_Ann(:,:) = zzero 
+
+        !Now, form the non-interacting greens functions (but with u *and* self-energy)
+        do pertsite = 1,nImp
+            !Form the set of non-interacting first order wavefunctions from the new one-electron h for both Bra and Ket versions
+            do i = 1,nOcc
+                if(tMatbrAxis) then
+                    HFPertBasis_Ann_Ket(i,pertsite) = dconjg(latvecs(pertsite,i)) / cmplx(GFChemPot-latvals(i),Omega,dp)
+                    HFPertBasis_Ann_Bra(i,pertsite) = latvecs(pertsite,i) / cmplx(GFChemPot-latvals(i),-Omega,dp)
+                else
+                    HFPertBasis_Ann_Ket(i,pertsite) = dconjg(latvecs(pertsite,i)) / cmplx(Omega+GFChemPot-latvals(i),dDelta,dp)
+                    HFPertBasis_Ann_Bra(i,pertsite) = latvecs(pertsite,i) / cmplx(Omega+GFChemPot-latvals(i),-dDelta,dp)
+                endif
+            enddo
+            do a = nOcc+1,nSites
+                if(tMatbrAxis) then
+                    HFPertBasis_Cre_Ket(a,pertsite) = dconjg(latvecs(pertsite,a)) / cmplx(GFChemPot-latvals(a),Omega,dp)
+                    HFPertBasis_Cre_Bra(a,pertsite) = latvecs(pertsite,a) / cmplx(GFChemPot-latvals(a),-Omega,dp)
+                else
+                    HFPertBasis_Cre_Ket(a,pertsite) = dconjg(latvecs(pertsite,a)) / cmplx(Omega+GFChemPot-latvals(a),dDelta,dp)
+                    HFPertBasis_Cre_Bra(a,pertsite) = latvecs(pertsite,a) / cmplx(Omega+GFChemPot-latvals(a),-dDelta,dp)
+                endif
+            enddo
+
+            !Run over operators acting in the Bra in the impurity space
+            do pertBra = 1,nImp
+                !Now perform the set of dot products of <0|V* with |1> for all combinations of sites
+                do i = 1,nOcc
+                    NI_LRMat_Ann(pertsite,pertBra) = NI_LRMat_Ann(pertsite,pertBra) +   &
+                        latvecs(pertBra,i)*HFPertBasis_Ann_Ket(i,pertsite)
+                enddo
+                do a = nOcc+1,nSites
+                    NI_LRMat_Cre(pertBra,pertsite) = NI_LRMat_Cre(pertBra,pertsite) +   &
+                        latvecs(pertBra,a)*HFPertBasis_Cre_Ket(a,pertsite)
+                enddo
+            enddo
+        enddo
+        
+        !Schmidt basis bounds
+        nVirt = nSites-nOcc-nImp   
+        nCore = nOcc-nImp
+        CoreEnd = nOcc-nImp
+        VirtStart = nOcc+nImp+1
+        ActiveStart = nOcc-nImp+1
+        ActiveEnd = nOcc+nImp
+
+        !Now, we need to project these NI wavefunctions into the schmidt basis
+        !We want to rotate the vectors, expressed in the 'right' basis (the kets), back into that AO basis.
+        !If we can do that, we can easily rotate into the Schmidt basis.
+        !The AO to schmidt decomposition is found in FullSchmidtBasis_c 
+        if(.not.allocated(FullSchmidtBasis_c)) call stop_all(t_r,'Error here')
+
+        !First, rotate into the AO basis
+        allocate(temp(nSites,nImp))
+        call ZGEMM('N','N',nSites,nImp,nOcc,zone,latvecs(:,1:nOcc),nSites,HFPertBasis_Ann_Ket(1:nOcc,:),nOcc,zzero,  &
+            temp,nSites)
+            !temp is now the (nSites,nImp) rotated HFPertBasis_Ann into the AO basis
+            !Now rotate this into the occupied schmidt basis
+        call ZGEMM('C','N',nCore,nImp,nSites,zone,FullSchmidtBasis_C(:,1:CoreEnd),nSites,temp,nSites,zzero,   &
+            SchmidtPertGF_Ann_Ket(1:CoreEnd,:),nCore)
+        !Now do the same for the bra contraction coefficients, which are expressed as Bras
+        allocate(temp2(nSites,1:nOcc))
+        do i=1,nOcc
+            do j=1,nSites
+                temp2(j,i) = dconjg(latvecs(j,i))
+            enddo
+        enddo
+        call ZGEMM('N','N',nSites,nImp,nOcc,zone,temp2(:,1:nOcc),nSites,HFPertBasis_Ann_Bra(1:nOcc,:),nOcc,zzero,    &
+            temp,nSites)
+        deallocate(temp2)
+        call ZGEMM('C','N',nCore,nImp,nSites,zone,FullSchmidtBasis_C(:,1:CoreEnd),nSites,temp,nSites,zzero,   &
+            SchmidtPertGF_Ann_Bra(1:CoreEnd,:),nCore)
+
+        !Do the same with the particle NI GF
+        call ZGEMM('N','N',nSites,nImp,nSites-nOcc,zone,latvecs(:,nOcc+1:nSites),nSites,  &
+            HFPertBasis_Cre_Ket,nSites-nOcc,zzero,temp,nSites)
+        !Now rotate into schmidt basis
+        call ZGEMM('C','N',nVirt,nImp,nSites,zone,FullSchmidtBasis_C(:,VirtStart:nSites),nSites,temp,nSites,zzero,    &
+            SchmidtPertGF_Cre_Ket(VirtStart:nSites,:),nVirt)
+        !Now for the Bra version of the particle NI GF
+        allocate(temp2(nSites,nOcc+1:nSites))
+        do i = nOcc+1,nSites
+            do j = 1,nSites
+                temp2(j,i) = dconjg(latvecs(j,i))
+            enddo
+        enddo
+        call ZGEMM('N','N',nSites,nImp,nSites-nOcc,zone,temp2(:,nOcc+1:nSites),nSites,  &
+            HFPertBasis_Cre_Bra,nSites-nOcc,zzero,temp,nSites)
+        !Now rotate into schmidt basis
+        call ZGEMM('C','N',nVirt,nImp,nSites,zone,FullSchmidtBasis_C(:,VirtStart:nSites),nSites,temp,nSites,zzero,    &
+            SchmidtPertGF_Cre_Bra(VirtStart:nSites,:),nVirt)
+        deallocate(temp,temp2)
+        
+        !Check that in the absence of a self-energy, the Bra and Ket are complex conjugates of each other.
+        do j = 1,nImp
+            do i = VirtStart,nSites
+                if(abs(SchmidtPertGF_Cre_Bra(i,j)-dconjg(SchmidtPertGF_Cre_Ket(i,j))).gt.1.0e-7_dp) then
+                    write(6,*) "i: ",i,VirtStart,nSites,j
+                    write(6,*) "Cre Bra: ",SchmidtPertGF_Cre_Bra(i,j)
+                    write(6,*) "Cre Ket: ",SchmidtPertGF_Cre_Ket(i,j)
+                    call stop_all(t_r,'Bra and Ket are not cc')
+                endif
+            enddo
+            do i = 1,CoreEnd
+                if(abs(SchmidtPertGF_Ann_Bra(i,j)-dconjg(SchmidtPertGF_Ann_Ket(i,j))).gt.1.0e-7_dp) then
+                    write(6,*) "i: ",i,1,CoreEnd,j
+                    write(6,*) "Ann Bra: ",SchmidtPertGF_Ann_Bra(i,j)
+                    write(6,*) "Ann Ket: ",SchmidtPertGF_Ann_Ket(i,j)
+                    call stop_all(t_r,'Bra and Ket are not cc')
+                endif
+            enddo
+        enddo
+
+        deallocate(HFPertBasis_Ann_Bra,HFPertBasis_Cre_Bra)
+        deallocate(HFPertBasis_Ann_Ket,HFPertBasis_Cre_Ket)
+
+    end subroutine FindNI_Charged_FitLat
     
 !    !Calculate the non-interacting greens functions, with empirical self-energy correction
 !    !Also, find the contraction coefficients for all impurity-impurity greens functions

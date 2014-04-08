@@ -7,7 +7,6 @@ module SelfConsistentLR2
     use SC_Data                  
     use SelfConsistentUtils
     use matrixops, only: mat_inv
-    use SchmidtDecomp, only: SchmidtDecompose_C
     implicit none
 
     contains
@@ -22,7 +21,7 @@ module SelfConsistentLR2
         real(dp), allocatable :: LatParams(:)
         complex(dp), allocatable :: CorrFn_Fit(:,:,:),CorrFn_HL(:,:,:),CorrFn_HL_Old(:,:,:)
         complex(dp), allocatable :: CorrFn_Fit_Old(:,:,:),DiffImpCorrFn(:,:,:)
-        complex(dp), allocatable :: dummy_Im(:,:,:),dummy_Re(:,:,:),CorrFn_HL_Re(:,:,:),CorrFn_Re(:,:,:)
+        complex(dp), allocatable :: CorrFn_HL_Re(:,:,:),CorrFn_Re(:,:,:)
         complex(dp), allocatable :: Debug_Lat_CorrFn_Re(:,:,:),Debug_Lat_CorrFn_Fit(:,:,:)
         real(dp), allocatable :: AllDiffs(:,:)
 
@@ -78,16 +77,12 @@ module SelfConsistentLR2
         allocate(CorrFn_HL(nImp,nImp,nFitPoints))
         allocate(CorrFn_HL_Old(nImp,nImp,nFitPoints))
         allocate(DiffImpCorrFn(nImp,nImp,nFitPoints))
-        allocate(dummy_Im(nImp,nImp,nFitPoints))
         allocate(Debug_Lat_CorrFn_Fit(nImp,nImp,nFitPoints))
-        dummy_Im(:,:,:) = zzero
         CorrFn_HL(:,:,:) = zzero
         if(tCalcRealSpectrum) then
-            allocate(dummy_Re(nImp,nImp,nFreq_Re))
             allocate(CorrFn_HL_Re(nImp,nImp,nFreq_Re))
             allocate(CorrFn_Re(nImp,nImp,nFreq_Re))
             allocate(Debug_Lat_CorrFn_Re(nImp,nImp,nFreq_Re))
-            dummy_Re(:,:,:) = zzero
         endif
 
 !        call writematrixcomp(h_lat_fit,'Initial real space matrix',.true.)
@@ -105,15 +100,11 @@ module SelfConsistentLR2
             call writedynamicfunction(nFitPoints,CorrFn_Fit,'G_Lat_Fit',tag=iter,tCheckCausal=.true.,   &
                 tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
 
-            if(tRemakeStaticBath) then
-                call SchmidtDecompose_C(h_lat_fit)
-            endif
-
             CorrFn_HL_Old(:,:,:) = CorrFn_HL(:,:,:)
             if(iCorrFnTag.eq.1) then
 !                call writematrixcomp(h_lat_fit,'real space matrix sent to LR',.true.)
-                call SchmidtGF_wSE(CorrFn_HL,GFChemPot,dummy_Im,nFitPoints,tMatbrAxis=tFitMatAxis,  &
-                    cham=h_lat_fit,FreqPoints=FreqPoints,Lat_G_Mat=Debug_Lat_CorrFn_Fit)
+                call SchmidtGF_FromLat(CorrFn_HL,GFChemPot,nFitPoints,tFitMatAxis,  &
+                    h_lat_fit,FreqPoints,Lat_G_Mat=Debug_Lat_CorrFn_Fit)
                 write(6,*) "For Schmidt-decomposed function on the fitting axis: "
                 call writedynamicfunction(nFitPoints,Debug_Lat_CorrFn_Fit,'G_LatSchmidt_Fit',tag=iter,    &
                     tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
@@ -126,8 +117,8 @@ module SelfConsistentLR2
             endif
 
             if(tCalcRealSpectrum) then
-                call SchmidtGF_wSE(CorrFn_HL_Re,GFChemPot,dummy_Re,nFreq_Re,tMatbrAxis=.false., &
-                    cham=h_lat_fit,Lat_G_Mat=Debug_Lat_CorrFn_Re)
+                call SchmidtGF_FromLat(CorrFn_HL_Re,GFChemPot,nFreq_Re,.false., &
+                    h_lat_fit,Lat_G_Mat=Debug_Lat_CorrFn_Re)
                 write(6,*) "For high-level function on the real axis: "
                 call writedynamicfunction(nFreq_Re,CorrFn_HL_Re,'G_Imp_Re',tag=iter,    &
                     tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
@@ -228,18 +219,12 @@ module SelfConsistentLR2
         call writedynamicfunction(nFitPoints,CorrFn_Fit,'G_Lat_Fit_Final',      &
             tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
 
-        deallocate(DiffImpCorrFn,AllDiffs,CorrFn_Fit_Old,CorrFn_Fit,CorrFn_HL_Old,dummy_Im,Debug_Lat_CorrFn_Fit)
-        if(tCalcRealSpectrum) deallocate(dummy_Re,CorrFn_HL_Re,CorrFn_Re,Debug_Lat_CorrFn_Re)
+        deallocate(DiffImpCorrFn,AllDiffs,CorrFn_Fit_Old,CorrFn_Fit,CorrFn_HL_Old,Debug_Lat_CorrFn_Fit)
+        if(tCalcRealSpectrum) deallocate(CorrFn_HL_Re,CorrFn_Re,Debug_Lat_CorrFn_Re)
             
-        if(tRemakeStaticBath) then
-            call SchmidtDecompose_C(h_lat_fit)
-        endif
-
         if(tFitMatAxis) then
             allocate(CorrFn_Fit(nImp,nImp,nFreq_Re))
-            allocate(dummy_Re(nImp,nImp,nFreq_Re))
             allocate(CorrFn_HL_Re(nImp,nImp,nFreq_Re))
-            dummy_Re = zzero
                 
             write(6,"(A)") "Now calculating spectral functions on the REAL axis"
             call flush(6)
@@ -252,10 +237,10 @@ module SelfConsistentLR2
                 tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
 
             !Finally, calculate the greens function in real-frequency space.
-            call SchmidtGF_wSE(CorrFn_HL_Re,GFChemPot,dummy_Re,nFreq_Re,tMatbrAxis=.false.,cham=h_lat_fit)
+            call SchmidtGF_FromLat(CorrFn_HL_Re,GFChemPot,nFreq_Re,.false.,h_lat_fit)
             call writedynamicfunction(nFreq_Re,CorrFn_HL_Re,'G_Imp_Re_Final',   &
                 tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
-            deallocate(CorrFn_HL_Re,CorrFn_Fit,dummy_Re)
+            deallocate(CorrFn_HL_Re,CorrFn_Fit)
         else
             call writedynamicfunction(nFreq_Re,CorrFn_HL,'G_Imp_Fit_Final',     &
                 tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
@@ -612,7 +597,6 @@ module SelfConsistentLR2
     !Use a minimization routine to fit the greens functions by adjusting the lattice coupling
     subroutine FitLatParams(iCorrFnTag,CorrFn_HL,n,mu,iLatParams,LatParams,FinalErr,tMatbrAxis,FreqPoints,Weights,iter)
         use MinAlgos
-        use Levenberg_Marquardt
         use lbfgs
         use sort_mod, only: sort_real
         implicit none
@@ -1269,10 +1253,16 @@ module SelfConsistentLR2
                 !Seems a little profligate - I'm sure the local greens function could be done more efficiently.
                 compval = zzero
                 do ii = 1,nImp
-                    do jj = 1,nImp
-                        compval = compval + ( ham_temp(jj,ii) * dconjg(DiffMat(jj,ii,w) )) +    &
-                            ( dconjg(ham_temp(jj,ii)) * DiffMat(jj,ii,w) )
-                    enddo
+                    if(tDiagonalSC) then
+                        !Diagonals only
+                        compval = compval + ( ham_temp(ii,ii) * dconjg(DiffMat(ii,ii,w) )) +    &
+                            ( dconjg(ham_temp(ii,ii)) * DiffMat(ii,ii,w) )
+                    else
+                        do jj = 1,nImp
+                            compval = compval + ( ham_temp(jj,ii) * dconjg(DiffMat(jj,ii,w) )) +    &
+                                ( dconjg(ham_temp(jj,ii)) * DiffMat(jj,ii,w) )
+                        enddo
+                    endif
                 enddo
                 if(tNonStandardGrid) then
                     Jacobian(i) = Jacobian(i) + real(compval,dp) * Weights(w)

@@ -156,6 +156,7 @@ Program RealHub
         dFitTol_SC = 1.0e-5_dp      !Tolerance on the gradient of the fits
         tRemoveImpCoupsPreSchmidt = .false. !Do we want to remove impurity couplings pre schmidt decomp.?
         tRemakeStaticBath = .false.
+        tFullReoptGS = .false.      !Whether to reoptimize the ground state in the static + dynamic bath space
 
     end subroutine set_defaults
 

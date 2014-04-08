@@ -9,10 +9,12 @@ module SchmidtDecomp
     contains
 
     !Schmidt decompose a determinant resulting from a complex one-electron hamiltonian passed in, including virtual and core spaces.
-    subroutine SchmidtDecompose_C(matc)
+    subroutine SchmidtDecompose_C(matc,vals,vecs)
         use mat_tools, only: DiagOneeOp
         implicit none
         complex(dp), intent(in) :: matc(nSites,nSites)
+        real(dp), intent(in), optional :: vals(nSites)
+        complex(dp), intent(in), optional :: vecs(nSites,nSites)
 
         complex(dp), allocatable :: orbs(:,:),ProjOverlap(:,:),cWork(:)
         complex(dp), allocatable :: RotOccOrbs(:,:),ImpurityOrbs(:,:),temp(:,:)
@@ -34,8 +36,7 @@ module SchmidtDecomp
             call stop_all(t_r,'Not currently set up for HF-SCF')
         endif
         if(tChempot.or.tAnderson) call stop_all(t_r,'Cannot deal with anderson models')
-
-        if(tCheck) then
+!        if(tCheck) then
             !Check matrix is hermitian
             do i = 1,nSites
                 do j = i+1,nSites
@@ -48,16 +49,18 @@ module SchmidtDecomp
                     call stop_all(t_r,'matrix not diagonal real')
                 endif
             enddo
-        endif
+!        endif
 
         allocate(orbs(nSites,nSites))
         allocate(energies(nSites))
-        orbs(:,:) = matc(:,:)
-        energies(:) = zero
-        if(tDiag_kspace) then
-            call DiagOneEOp(Orbs,Energies,nImp,nSites,tDiag_kspace)
+        if(present(vals)) then
+            !Lattice matrix has already been diagonalized
+            energies(:) = vals(:)
+            orbs(:,:) = vecs(:,:)
         else
-            call DiagOneEOp(Orbs,Energies,nImp,nSites,.false.)
+            orbs(:,:) = matc(:,:)
+            energies(:) = zero
+            call DiagOneEOp(Orbs,Energies,nImp,nSites,tDiag_kspace)
         endif
 
         write(6,*) "nOCC", nOcc
@@ -76,7 +79,7 @@ module SchmidtDecomp
         allocate(ProjOverlap(nOcc,nOcc))
         call ZGEMM('C','N',nOcc,nOcc,nImp,zone,Orbs(1:nImp,1:nOcc),nImp,Orbs(1:nImp,1:nOcc),nImp,zzero,ProjOverlap,nOcc)
         
-        if(tCheck) then
+!        if(tCheck) then
             !Check overlap matrix is hermitian
             do i = 1,nOcc
                 do j = i+1,nOcc
@@ -92,7 +95,7 @@ module SchmidtDecomp
                     call stop_all(t_r,'matrix not diagonal real')
                 endif
             enddo
-        endif
+!        endif
 
         !Diagonalize this overlap matrix
         allocate(ProjOverlapEVals(nOcc))
