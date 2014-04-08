@@ -121,7 +121,7 @@ module SelfConsistentLR2
                     h_lat_fit,Lat_G_Mat=Debug_Lat_CorrFn_Re)
                 write(6,*) "For high-level function on the real axis: "
                 call writedynamicfunction(nFreq_Re,CorrFn_HL_Re,'G_Imp_Re',tag=iter,    &
-                    tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
+                    tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=.false.)
                 write(6,*) "For Schmidt-decomposed function on the real axis: "
                 call writedynamicfunction(nFreq_Re,Debug_Lat_CorrFn_Re,'G_LatSchmidt_Re',tag=iter,    &
                     tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
