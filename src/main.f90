@@ -157,6 +157,7 @@ Program RealHub
         tRemoveImpCoupsPreSchmidt = .false. !Do we want to remove impurity couplings pre schmidt decomp.?
         tRemakeStaticBath = .false.
         tFullReoptGS = .false.      !Whether to reoptimize the ground state in the static + dynamic bath space
+        tSC_StartwGSCorrPot = .true.    !Whether to start the selfconsistency from h0v or h0
 
     end subroutine set_defaults
 
@@ -603,10 +604,10 @@ Program RealHub
     subroutine SCReadInput()
         implicit none
         logical :: teof
-        character(len=100) :: w
+        character(len=100) :: w,w2
         integer :: Ks(100),i
         character(len=*), parameter :: t_r='SC_ReadInput'
-
+        
         tSC_LR = .true.
         SC: do
             call read_line(teof)
@@ -637,6 +638,19 @@ Program RealHub
                 tRemoveImpCoupsPreSchmidt = .true. !Do we want to remove impurity couplings pre schmidt decomp.?
             case("REMAKE_STATIC_BATH")
                 tRemakeStaticBath = .true.
+            case("DYNAMIC_GS_OPT")
+                tFullReoptGS = .true.
+            case("STARTWITHCORRPOT")
+                tSC_StartwGSCorrPot = .true.
+                if(item.lt.nitems) then
+                    call readu(w2)
+                    select case(w2)
+                    case("FALSE")
+                        tSC_StartwGSCorrPot = .false.
+                    case default
+                        continue
+                    end select
+                endif
             case("MAXITER_LATTICEFIT")
                 call readi(iMaxFitMicroIter)
             case("MAXITER_MACROFIT")

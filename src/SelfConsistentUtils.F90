@@ -11,62 +11,6 @@ module SelfConsistentUtils
 
     contains
     
-    !From numerical recepies - Find Legendre points and weights between interval
-    subroutine gauleg(x1,x2,x,w,n)
-        implicit none
-        integer, intent(in) :: n
-        real(dp), intent(in) :: x1,x2
-        real(dp), intent(out) :: x(n),w(n)
-        real(dp), parameter :: eps=3.0e-14_dp   !Relative precision
-        !Given the lower and upper limits of integration x1 and x2,
-        !and given n, this routine returns arrays x(1:n) and w(1:n) of length
-        !n, containing the abscissas and weights of the Gauss-Legendre n-point quadrature formula
-        integer :: i,j,m
-        real(dp) :: p1,p2,p3,pp,xl,xm,z,z1
-        
-        m = (n+1)/2     !Roots are symmetric in the interval, so we only have to find half of them
-        xm = 0.5_dp*(x2+x1)
-        xl = 0.5_dp*(x2-x1)
-        do i = 1,m      !Loop over desired roots
-            z = cos(pi*(i-0.25_dp)/(n + 0.5_dp))
-            !Starting with the above approximation to the ith root, we enter the
-            !main loop of refinement by Newtons method
-1           continue
-            p1 = one
-            p2 = zero
-            do j = 1,n
-                p3 = p2
-                p2 = p1
-                p1 = ((2.0_dp*j-1.0_dp)*z*p2-(j-one)*p3)/j
-            enddo
-            !p1 is now the desired Legendre polynomial. We next computer pp,
-            !its derivative, by a standard relation involving also p2, the
-            !polynomial of one lower order
-            pp = n*(z*p1-p2)/(z*z-one)
-            z1 = z
-            z = z1-p1/pp                    !Newtons method
-            if(abs(z-z1).gt.eps) goto 1
-            x(i) = xm-xl*z                  !Scale the root by the desired inteval
-            x(n+1-i) = xm+xl*z              !and put in its symmetric counterpart
-            w(i) = 2.0_dp*xl/((one-z*z)*pp*pp)  !Compute weight
-            w(n+1-i) = w(i)                     !and symmetric counterpart
-        enddo
-
-    end subroutine gauleg 
-
-    !Scale the legendre abscissas and weights to the range \pm infty
-    subroutine ScaleFreqPointsWeights(n,f,w)
-        implicit none
-        integer, intent(in) :: n
-        real(dp), intent(inout) :: w(n),f(n)
-        integer :: i
-
-        do i = 1,n
-            w(i) = w(i)*((one + f(i)**2)/(one - f(i)**2)**2)
-            f(i) = -f(i)/(one-f(i)**2)
-        enddo
-    end subroutine ScaleFreqPointsWeights
-    
     subroutine SetChemPot(GFChemPot)
         implicit none
         real(dp), intent(out) :: GFChemPot
@@ -84,6 +28,38 @@ module SelfConsistentUtils
         endif
 
     end subroutine SetChemPot
+
+    !Check options, and write out what it going on
+    subroutine CheckSCOptions(iCorrFnTag)
+        implicit none
+        integer, intent(in) :: iCorrFnTag   !In the end, this will be a global input variable
+        character(len=*), parameter :: t_r='CheckSCOptions'
+    
+        write(6,"(A)") ""
+        write(6,"(A)") " *** Entering code of self-consistent optimizating of spectral functions ***"
+        write(6,"(A)") ""
+
+        if(iCorrFnTag.eq.1) then
+            write(6,"(A)") "Single particle greens functions to be optimized."
+            if(tDiagonalSC) then
+                write(6,"(A)") "Fitting only the diagonal impurity greens function contributions."
+            else
+                write(6,"(A)") "Fitting the entire impurity local greens function matrix."
+            endif
+        endif
+
+        if(.not.tDiag_kSpace) then
+            call stop_all(t_r,"Unfortunately, this is only for systems with a kspace representation currently")
+        endif
+            
+        if((.not.tSC_StartwGSCorrPot).and.tRealSpaceSC) then
+            write(6,"(A)") "With real-space couplings being optimized and starting from the " &
+                //"uncorrelated lattice h, no local couplings will be updated."
+            write(6,"(A)") "Are you sure this is what you want to do? No local interactions in lattice at all."
+            call warning(t_r,'No local lattice couplings over impurity')
+        endif
+
+    end subroutine CheckSCOptions
         
     subroutine SetLatticeParams(iLatParams)
         implicit none
@@ -252,23 +228,27 @@ module SelfConsistentUtils
             endif
             call LatParams_to_ham(iLatParams,LatParams,mu,ham)
         else
-            !Just set to h0v
-            ham(:,:) = zzero
-            do i = 1,nSites
-                do j = 1,nSites
-                    ham(j,i) = cmplx(h0v(j,i),zero,dp)
+            !Not reading in
+            if(tSC_StartwGSCorrPot) then
+                !Just set to h0v
+                ham(:,:) = zzero
+                do i = 1,nSites
+                    do j = 1,nSites
+                        ham(j,i) = cmplx(h0v(j,i),zero,dp)
+                    enddo
                 enddo
-            enddo
-
-!            call ZGEMM('C','N',nSites,nSites,nSites,zone,RtoK_Rot,nSites,ham,nSites,zzero,temp,nSites)
-!            call ZGEMM('N','N',nSites,nSites,nSites,zone,temp,nSites,RtoK_Rot,nSites,zzero,ham_k,nSites)
-!            call writematrixcomp(ham_k,'Initial k space ham',.true.)
-!
-!            call writematrixcomp(ham,'Initial real space ham',.true.)
+            else
+                !Just set to h0
+                !Note that if we are doing real-space couplings, this will *never* allow for updates of the local hamiltonian
+                ham(:,:) = zzero
+                do i = 1,nSites
+                    do j = 1,nSites
+                        ham(j,i) = cmplx(h0(j,i),zero,dp)
+                    enddo
+                    ham(i,i) = ham(i,i) + mu    !Add the correlation potential at least
+                enddo
+            endif
             call ham_to_LatParams(iLatParams,LatParams,ham)
-!            ham = zzero
-!            call LatParams_to_ham(iLatParams,LatParams,mu,ham)
-!            call writematrixcomp(ham,'real space ham converted from latparams',.true.)
         endif
 
     end subroutine InitLatticeParams
@@ -1397,5 +1377,61 @@ module SelfConsistentUtils
         deallocate(ham_real_2,ham_comp)
 
     end subroutine Imposesym_RS
+    
+    !From numerical recepies - Find Legendre points and weights between interval
+    subroutine gauleg(x1,x2,x,w,n)
+        implicit none
+        integer, intent(in) :: n
+        real(dp), intent(in) :: x1,x2
+        real(dp), intent(out) :: x(n),w(n)
+        real(dp), parameter :: eps=3.0e-14_dp   !Relative precision
+        !Given the lower and upper limits of integration x1 and x2,
+        !and given n, this routine returns arrays x(1:n) and w(1:n) of length
+        !n, containing the abscissas and weights of the Gauss-Legendre n-point quadrature formula
+        integer :: i,j,m
+        real(dp) :: p1,p2,p3,pp,xl,xm,z,z1
+        
+        m = (n+1)/2     !Roots are symmetric in the interval, so we only have to find half of them
+        xm = 0.5_dp*(x2+x1)
+        xl = 0.5_dp*(x2-x1)
+        do i = 1,m      !Loop over desired roots
+            z = cos(pi*(i-0.25_dp)/(n + 0.5_dp))
+            !Starting with the above approximation to the ith root, we enter the
+            !main loop of refinement by Newtons method
+1           continue
+            p1 = one
+            p2 = zero
+            do j = 1,n
+                p3 = p2
+                p2 = p1
+                p1 = ((2.0_dp*j-1.0_dp)*z*p2-(j-one)*p3)/j
+            enddo
+            !p1 is now the desired Legendre polynomial. We next computer pp,
+            !its derivative, by a standard relation involving also p2, the
+            !polynomial of one lower order
+            pp = n*(z*p1-p2)/(z*z-one)
+            z1 = z
+            z = z1-p1/pp                    !Newtons method
+            if(abs(z-z1).gt.eps) goto 1
+            x(i) = xm-xl*z                  !Scale the root by the desired inteval
+            x(n+1-i) = xm+xl*z              !and put in its symmetric counterpart
+            w(i) = 2.0_dp*xl/((one-z*z)*pp*pp)  !Compute weight
+            w(n+1-i) = w(i)                     !and symmetric counterpart
+        enddo
+
+    end subroutine gauleg 
+
+    !Scale the legendre abscissas and weights to the range \pm infty
+    subroutine ScaleFreqPointsWeights(n,f,w)
+        implicit none
+        integer, intent(in) :: n
+        real(dp), intent(inout) :: w(n),f(n)
+        integer :: i
+
+        do i = 1,n
+            w(i) = w(i)*((one + f(i)**2)/(one - f(i)**2)**2)
+            f(i) = -f(i)/(one-f(i)**2)
+        enddo
+    end subroutine ScaleFreqPointsWeights
 
 end module SelfConsistentUtils

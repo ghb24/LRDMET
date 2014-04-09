@@ -30,24 +30,9 @@ module SelfConsistentLR2
         real(dp), parameter :: dDeltaImpThresh = 1.0e-4_dp 
         character(len=*), parameter :: t_r='SC_Spectrum_Opt'
 
-        write(6,"(A)") ""
-        write(6,"(A)") " *** Entering code of self-consistent optimizating of spectral functions ... ***"
-        write(6,"(A)") ""
-
         iCorrFnTag = 1    !1 for greens function optimization
-        
-        if(iCorrFnTag.eq.1) then
-            write(6,"(A)") "Single particle greens functions to be optimized."
-            if(tDiagonalSC) then
-                write(6,"(A)") "Fitting only the diagonal impurity greens function contributions."
-            else
-                write(6,"(A)") "Fitting the entire impurity local greens function matrix."
-            endif
-        endif
 
-        if(.not.tDiag_kSpace) then
-            call stop_all(t_r,"Unfortunately, this is only for systems with a kspace representation currently")
-        endif
+        call CheckSCOptions(iCorrFnTag)
 
         !This will set FreqPoints and Weights. nFitPoints is the size of FreqPoints/Weights, 
         !and may refer to real or im axis based on the tFitRealFreq flag.
@@ -121,7 +106,7 @@ module SelfConsistentLR2
                     h_lat_fit,Lat_G_Mat=Debug_Lat_CorrFn_Re)
                 write(6,*) "For high-level function on the real axis: "
                 call writedynamicfunction(nFreq_Re,CorrFn_HL_Re,'G_Imp_Re',tag=iter,    &
-                    tCheckCausal=.true.,tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=.false.)
+                    tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
                 write(6,*) "For Schmidt-decomposed function on the real axis: "
                 call writedynamicfunction(nFreq_Re,Debug_Lat_CorrFn_Re,'G_LatSchmidt_Re',tag=iter,    &
                     tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)

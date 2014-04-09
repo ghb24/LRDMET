@@ -253,24 +253,19 @@ module LinearResponse
         
         !What ground state are we using?
         Psi_0(:) = zzero 
+        allocate(Cre_0(nLinearSystem,nImp))
+        allocate(Ann_0(nLinearSystem,nImp))
+        Cre_0(:,:) = zzero
+        Ann_0(:,:) = zzero
         if(.not.tLR_ReoptGS) then
-            allocate(Cre_0(nLinearSystem,nImp))
-            allocate(Ann_0(nLinearSystem,nImp))
             if(tRemakeStaticBath) call stop_all(t_r,'Cannot remake static bath without at least partially reoptimizing the ground state')
             !The bath space is the same as the GS.
             do i = 1,nFCIDet
                 Psi_0(i) = cmplx(HL_Vec(i),zero,dp)
             enddo
             GSEnergy = HL_Energy
-            !Now, calculate the perturbed ground states
-            do i = 1,nImp
-                call ApplySP_PertGS_EC(Psi_0,nFCIDet,Cre_0(:,i),Ann_0(:,i),nLinearSystem,i)
-            enddo
         elseif(tLR_ReoptGS.and.(.not.tFullReoptGS)) then
             !We are remaking the ground state in the impurty + (presumably) new bath space
-            !Since this does not depend at all on the new basis, the RHS of the equations can be precomputed
-            allocate(Cre_0(nLinearSystem,nImp))
-            allocate(Ann_0(nLinearSystem,nImp))
             if(.not.allocated(Prev_HL_Vec)) then
                 allocate(Prev_HL_Vec(nFCIDet))
                 !Start off with the original high-level vector
@@ -290,6 +285,14 @@ module LinearResponse
             !We cannot construct the ground state yet, since we haven't constructed the hamiltonian for it yet.
             !This will be done later on.
             continue
+        endif
+
+        if(.not.tFullReoptGS) then
+            !Since the hamiltonian does not depend at all on the dynamic basis, the RHS of the equations can be precomputed
+            !Now, calculate the perturbed ground states
+            do i = 1,nImp
+                call ApplySP_PertGS_EC(Psi_0,nFCIDet,Cre_0(:,i),Ann_0(:,i),nLinearSystem,i)
+            enddo
         endif
 
         !Store the fock matrix in complex form, so that we can ZGEMM easily
@@ -371,6 +374,7 @@ module LinearResponse
         
             !Schmidt decompose the response vector
             call FindNI_Charged_FitLat(Omega,GFChemPot,NI_LRMat_Cre,NI_LRMat_Ann,tMatbrAxis,cham,LatVals,LatVecs)
+
             
             !Construct useful intermediates, using zgemm
             !sum_a Gc_a^* F_ax (Creation)

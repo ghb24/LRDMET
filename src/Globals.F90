@@ -237,6 +237,7 @@ module Globals
     logical :: tRemoveImpCoupsPreSchmidt    !Do we want to remove the impurity coupling blocks before we schmidt decompose for the external space?
     logical :: tRemakeStaticBath        !Whether to remake the static bath space in the self-consistency
     logical :: tFullReoptGS             !Whether to reoptimize the ground state in the static + dynamic space
+    logical :: tSC_StartwGSCorrPot      !Whether to start the optimization with h0 or h0v
     complex(dp), allocatable :: FullSchmidtBasis_c(:,:) !For when we decomposed complex orbtials
     complex(dp), allocatable :: FockSchmidt_c(:,:)
     complex(dp), allocatable :: Emb_h0_c(:,:)
