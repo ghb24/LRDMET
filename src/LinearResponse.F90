@@ -555,7 +555,7 @@ module LinearResponse
                     Psi_0(:) = zzero
                     if(.not.allocated(Prev_HL_Vec)) then
                         allocate(Prev_HL_Vec((nGSSpace)))
-                        Prev_HL_Energy = HL_Energy
+!                        Prev_HL_Energy = HL_Energy
                         do i = 1,nFCIDet
                             Psi_0(i) = cmplx(HL_Vec(i),zero,dp)
                         enddo
@@ -563,10 +563,10 @@ module LinearResponse
                         Psi_0(:) = Prev_HL_Vec(:)
                     endif
                     call Comp_NonDir_Davidson(nGSSpace,GSHam,GSEnergy,Psi_0,.true.)
+                    write(6,"(A,G20.10,A,G20.10,A)") "Reoptimized ground state energy is: ",GSEnergy
+ !                       " (old = ",Prev_HL_Energy,")"
                     Prev_HL_Vec(:) = Psi_0(:)
-                    Prev_HL_Energy = GSEnergy
-                    write(6,"(A,G20.10,A,G20.10,A)") "Reoptimized ground state energy is: ",GSEnergy, &  
-                        " (old = ",Prev_HL_Energy,")"
+!                    Prev_HL_Energy = GSEnergy
 
                     !Calculate the perturbed ground state
                     do i = 1,nImp
