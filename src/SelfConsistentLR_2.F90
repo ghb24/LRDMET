@@ -1,5 +1,6 @@
 module SelfConsistentLR2
     use const
+    use timing
     use errors
     use LinearResponse
     use globals
@@ -29,6 +30,8 @@ module SelfConsistentLR2
         integer :: i,iter,iLatParams,j,iCorrFnTag
         real(dp), parameter :: dDeltaImpThresh = 1.0e-4_dp 
         character(len=*), parameter :: t_r='SC_Spectrum_Opt'
+
+        call set_timer(SelfCon_LR)
 
         iCorrFnTag = 1    !1 for greens function optimization
 
@@ -90,9 +93,9 @@ module SelfConsistentLR2
 !                call writematrixcomp(h_lat_fit,'real space matrix sent to LR',.true.)
                 call SchmidtGF_FromLat(CorrFn_HL,GFChemPot,nFitPoints,tFitMatAxis,  &
                     h_lat_fit,FreqPoints,Lat_G_Mat=Debug_Lat_CorrFn_Fit)
-                write(6,*) "For Schmidt-decomposed function on the fitting axis: "
-                call writedynamicfunction(nFitPoints,Debug_Lat_CorrFn_Fit,'G_LatSchmidt_Fit',tag=iter,    &
-                    tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
+!                write(6,*) "For Schmidt-decomposed function on the fitting axis: "
+!                call writedynamicfunction(nFitPoints,Debug_Lat_CorrFn_Fit,'G_LatSchmidt_Fit',tag=iter,    &
+!                    tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
                 !call CheckGFsSame(nFitPoints,Debug_Lat_CorrFn_Fit,CorrFn_Fit,1.0e-7_dp)
                 write(6,*) "For high-level function on the fitting axis: "
                 call writedynamicfunction(nFitPoints,CorrFn_HL,'G_Imp_Fit',tag=iter,    &
@@ -235,6 +238,8 @@ module SelfConsistentLR2
 
         deallocate(h_lat_fit)
         deallocate(FreqPoints,Weights)
+        
+        call halt_timer(SelfCon_LR)
 
     end subroutine SC_Spectrum_Opt
         
@@ -257,6 +262,8 @@ module SelfConsistentLR2
         complex(dp) :: InvMat(nImp,nImp),InvMat2(nImp,nImp),num(nImp,nImp),GFContrib(nImp,nImp)!,hamtmp(nSites,nSites)
         logical :: tMatbrAxis_
         character(len=*), parameter :: t_r='CalcLatticeSpectrum'
+
+        call set_timer(CalcLatSpectrum)
 
         if((.not.present(LatParams)).and.(.not.present(ham))) then
             call stop_all(t_r,'No hamiltonian in real or lattice parameters passed in')
@@ -390,6 +397,7 @@ module SelfConsistentLR2
 !        endif
 
         deallocate(KBlocks)
+        call set_timer(CalcLatSpectrum)
 
     end subroutine CalcLatticeSpectrum
         
@@ -425,7 +433,7 @@ module SelfConsistentLR2
         integer, parameter :: iNormPower = 2    !The power of the matrix norm for the residual
         logical, parameter :: tTestDerivs = .false.
         character(len=*), parameter :: t_r='CalcLatticeFitResidual_2'
-
+        
         !TODO: Fix this, so that the self-energy is an optional argument
         allocate(Lattice_Func(nImp,nImp,nESteps))
 
@@ -607,6 +615,8 @@ module SelfConsistentLR2
         integer :: isave(44)
         logical :: lsave(4)
         character(len=*), parameter :: t_r='FitLatParams'
+
+        call set_timer(FitLatHam)
 
         !Initialize parameters
         allocate(vars(iLatParams))
@@ -816,6 +826,8 @@ module SelfConsistentLR2
         LatParams(:) = vars(:)
         deallocate(vars)
 
+        call halt_timer(FitLatHam)
+
     end subroutine FitLatParams
 
     !A wrapper for the simplex & powell routines
@@ -865,6 +877,8 @@ module SelfConsistentLR2
         logical :: tNonStandardGrid
         character(len=*), parameter :: t_r='CalcJacobian_3'
 
+        call set_timer(CalcGrads) 
+
         if(iLatticeFitType.ne.1) call stop_all(t_r,'Cannot do gradients with non-linear objective functions yet')
         if(iCorrFnTag.ne.1) call stop_all(t_r,'Can currently only do greens functions')
         if(present(FreqPoints)) then
@@ -882,6 +896,7 @@ module SelfConsistentLR2
             else
                 call CalcJacobian_RS(iCorrFnTag,n,iLatParams,DiffMat,Jacobian,LatParams,mu,tMatbrAxis)
             endif
+            call halt_timer(CalcGrads)
             return
         endif
 
@@ -1103,6 +1118,7 @@ module SelfConsistentLR2
             endif
         enddo
         deallocate(FullJac_Re,FullJac_Im)
+        call halt_timer(CalcGrads)
 
     end subroutine CalcJacobian_3
     

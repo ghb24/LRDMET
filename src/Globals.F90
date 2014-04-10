@@ -297,5 +297,10 @@ module Globals
     type(timer) :: LR_EC_GF_OptGS
     type(timer) :: LR_EC_GF_SolveLR
     type(timer) :: LR_EC_GF_FitGF
+    !Self-consistency timers
+    type(timer) :: SelfCon_LR
+    type(timer) :: CalcLatSpectrum
+    type(timer) :: FitLatHam
+    type(timer) :: CalcGrads
 
 end module Globals

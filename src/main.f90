@@ -1077,9 +1077,9 @@ Program RealHub
         if(tConstrainphsym.and.(.not.tConstrainksym)) then
             call stop_all(t_r,'Sorry - you cant constrain ph sym without also constraining ksym')
         endif
-        if(tRealSpaceSC.and.(tImposeksym.or.tConstrainksym)) then
-            call stop_all(t_r,'If doing real-space optimization, then k-symmetry is constrained automatically')
-        endif
+!        if(tRealSpaceSC.and.(tImposeksym.or.tConstrainksym)) then
+!            call stop_all(t_r,'If doing real-space optimization, then k-symmetry is constrained automatically')
+!        endif
         if(tRealSpaceSC.and.(tConstrainphsym)) then
             call stop_all(t_r,'Cannot constrain ph sym if doing real-space optimization')
         endif
@@ -1122,6 +1122,11 @@ Program RealHub
         LR_EC_GF_OptGS%timer_name='GF_EC_OptGS'
         LR_EC_GF_SolveLR%timer_name='GF_EC_SolveLR'
         LR_EC_GF_FitGF%timer_name='GF_EC_FitGF'
+        !self-consistency
+        SelfCon_LR%timer_name='SelfConsistency'
+        FitLatHam%timer_name='FitLatHam'
+        CalcLatSpectrum%timer_name='CalcSPSpectrum'
+        CalcGrads%timer_name='CalcGrads'
 
     end subroutine name_timers
 
