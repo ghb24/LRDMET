@@ -593,7 +593,7 @@ module Davidson
         info=0
         call zheev('V','U',iSize,Mat,iSize,W,Work,lWork,RWork,info)
         if(info.ne.0) call stop_all(t_r,'workspace query failed')
-        lwork=int(work(1))+1
+        lwork=int(abs(work(1)))+1
         deallocate(work)
         allocate(work(lwork),stat=ierr)
         if(ierr.ne.0) call stop_all(t_r,"alloc err")
