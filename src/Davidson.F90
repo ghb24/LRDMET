@@ -238,7 +238,7 @@ module Davidson
         if(present(niter)) niter = niter_
             
         !Deallocate memory as appropriate
-        deallocate(CurrVec,HSubspace,SubspaceVecs,Eigenvals)
+        deallocate(CurrVec,HSubspace,SubspaceVecs,Eigenvals,Eigenvecs)
         if(allocated(SubspaceMat_1)) deallocate(SubspaceMat_1)
         if(allocated(SubspaceMat_2)) deallocate(SubspaceMat_2)
         nullify(SubspaceMat)
@@ -511,7 +511,7 @@ module Davidson
         if(present(niter)) niter = niter_
             
         !Deallocate memory as appropriate
-        deallocate(CurrVec,HSubspace,SubspaceVecs,Eigenvals)
+        deallocate(CurrVec,HSubspace,SubspaceVecs,Eigenvals,Eigenvecs)
         if(allocated(SubspaceMat_1)) deallocate(SubspaceMat_1)
         if(allocated(SubspaceMat_2)) deallocate(SubspaceMat_2)
         nullify(SubspaceMat)

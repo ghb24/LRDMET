@@ -604,13 +604,12 @@ module SelfConsistentLR2
         real(dp), intent(in) :: FreqPoints(n),Weights(n)
         integer, intent(in) :: iter
 
-        real(dp), allocatable :: step(:),vars(:),var(:),FinalVec(:),Jac(:,:),vars_temp(:)
-        real(dp), allocatable :: Freqs_dum(:),Weights_dum(:),low(:),upp(:),grad(:),wa(:)
+        real(dp), allocatable :: step(:),vars(:),var(:),vars_temp(:)
+        real(dp), allocatable :: low(:),upp(:),grad(:),wa(:)
         integer, allocatable :: iwork(:),nbd(:),iwa(:)
         integer :: nop,i,maxf,iprint,nloop,iquad,ierr,nFuncs,j,ierr_tmp,corrs
         real(dp) :: stopcr,simp,rhobeg,rhoend,InitErr,dsave(29),pgtol,FinalErr2
         logical :: tfirst,tOptEVals_,tNonStandardGrid
-        complex(dp), allocatable :: PreSymCorr(:,:,:)
         character(len=60) :: task,csave
         integer :: isave(44)
         logical :: lsave(4)

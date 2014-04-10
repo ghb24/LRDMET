@@ -34,20 +34,20 @@ module LinearResponse
         real(dp), allocatable :: LatVals(:)
         complex(dp), allocatable :: LatVecs(:,:)
         complex(dp), allocatable :: NFCIHam(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
-        real(dp), allocatable :: dNorm_p(:),dNorm_h(:),W(:),temp(:,:)
+        real(dp), allocatable :: dNorm_p(:),dNorm_h(:)
         complex(dp), allocatable , target :: LinearSystem_p(:,:),LinearSystem_h(:,:)
         complex(dp), allocatable :: Cre_0(:,:),Ann_0(:,:),ResponseFn_p(:,:),ResponseFn_h(:,:)
         complex(dp), allocatable :: Gc_a_F_ax_Bra(:,:),Gc_a_F_ax_Ket(:,:),Gc_b_F_ab(:,:)
         complex(dp), allocatable :: ResponseFn_Mat(:,:),Ga_i_F_xi_Ket(:,:)
         complex(dp), allocatable :: Psi1_p(:),Psi1_h(:),Ga_i_F_xi_Bra(:,:),Ga_i_F_ij(:,:),ni_lr_Mat(:,:)
-        complex(dp), allocatable :: temp_vecc(:),Work(:),Psi_0(:),RHS(:)
+        complex(dp), allocatable :: Psi_0(:)
         complex(dp), allocatable :: NI_LRMat_Cre(:,:),NI_LRMat_Ann(:,:),GSHam(:,:)
         complex(dp), allocatable :: h0_schmidt(:,:)
         complex(dp), allocatable :: ctemp(:,:),cEmb_h_fit(:,:)
         integer, allocatable :: Coup_Ann_alpha(:,:,:),Coup_Create_alpha(:,:,:)
         integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,ierr,info,iunit,nCore
         integer :: nLinearSystem,nOrbs,nVirt,tempK,VIndex,VirtStart,VirtEnd
-        integer :: orbdum(1),nLinearSystem_h,Np1GSInd,Nm1GSInd,lWork
+        integer :: orbdum(1),nLinearSystem_h,Np1GSInd,Nm1GSInd
         integer :: pertsite,OmegaVal,nGSSpace,iters_p,iters_h
         real(dp) :: Omega,mu,SpectralWeight,Prev_Spec,AvdNorm_p,AvdNorm_h,Error_GF
         real(dp) :: Diff_GF,GSEnergy
@@ -241,7 +241,6 @@ module LinearResponse
         allocate(Psi_0(nGSSpace),stat=ierr)   !If tFullReoptGS = .F. , then only the first nFCIDet elements will be used
         if(tFullReoptGS) then
             allocate(GSHam(nGSSpace,nGSSpace),stat=ierr)
-            allocate(W(nGSSpace),stat=ierr)
         endif
         allocate(Psi1_p(nLinearSystem),stat=ierr)
         allocate(Psi1_h(nLinearSystem),stat=ierr)
@@ -703,8 +702,8 @@ module LinearResponse
         enddo   !End loop over omega
 
         write(6,"(A,G22.10)") "Total integrated spectral weight: ",SpectralWeight
-
-        deallocate(LinearSystem_p,LinearSystem_h,Psi1_p,Psi1_h)
+        
+        deallocate(LinearSystem_p,LinearSystem_h,Psi1_p,Psi1_h,dNorm_p,dNorm_h)
         deallocate(Cre_0,Ann_0,Psi_0,SchmidtPertGF_Cre_Ket,SchmidtPertGF_Ann_Ket)
         deallocate(NI_LRMat_Cre,NI_LRMat_Ann,ResponseFn_p,ResponseFn_h,ResponseFn_Mat)
         deallocate(ni_lr_Mat,SchmidtPertGF_Cre_Bra,SchmidtPertGF_Ann_Bra)
@@ -735,9 +734,9 @@ module LinearResponse
         deallocate(FockSchmidt_SE_VX,FockSchmidt_SE_CX,FockSchmidt_SE_XV,FockSchmidt_SE_XC)
         deallocate(Gc_a_F_ax_Bra,Gc_a_F_ax_Ket,Gc_b_F_ab,Ga_i_F_xi_Bra,Ga_i_F_xi_Ket,Ga_i_F_ij)
 
-        if(allocated(LatVals)) deallocate(LatVals)
-        if(allocated(LatVecs)) deallocate(LatVecs)
-        if(allocated(h0_schmidt)) deallocate(h0_schmidt)
+        deallocate(LatVals)
+        deallocate(LatVecs)
+        deallocate(h0_schmidt)
 
     end subroutine SchmidtGF_FromLat
 
