@@ -21,6 +21,7 @@ module Globals
     logical :: tSCFHF   !Perform full scf hartree--fock calculation
     logical :: tWriteOut    !Write out additional info
     logical :: tCheck   !Perform extra checks in various subroutines to ensure correct working
+    logical :: tOpenMP
     logical :: tReadSystem  !Read the system from files
     logical :: tThermal     !Are we calculating the thermal bath?
     logical :: tSingFiss    !For the Singlet Fission project
@@ -302,5 +303,8 @@ module Globals
     type(timer) :: CalcLatSpectrum
     type(timer) :: FitLatHam
     type(timer) :: CalcGrads
+    !OpenMP timers for the whole thing since timer routines measure cputime, not walltime
+    real(dp) :: OpenMP_wallstart
+
 
 end module Globals

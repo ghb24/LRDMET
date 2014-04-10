@@ -908,6 +908,7 @@ module SelfConsistentLR2
         allocate(FullJac_Im(nImp,nImp,nKPnts)) !Derivative of the cost function wrt. imag parts of h
         FullJac_Im(:,:,:) = zzero  !Complex?
 
+!$OMP PARALLEL DO PRIVATE(ind_1,ind_2,num,ExtractMat,w,Omega,Mat,InvMat,ztmp,ztmp2,compval)
         do k = 1,nKPnts
             ind_1 = ((k-1)*nImp) + 1
             ind_2 = nImp*k
@@ -1032,6 +1033,7 @@ module SelfConsistentLR2
                 enddo
             enddo
         enddo
+!$OMP END PARALLEL DO
         deallocate(KBlocks)
 
         !Now, package up the jacobian back into the individual lattice parameters

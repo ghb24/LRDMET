@@ -184,6 +184,8 @@ Program RealHub
         call read_input()
 
         call check_input()
+
+        call check_openmp()
         
         inquire(file='zMinResQLP.txt',exist=exists)
         if(exists) then
@@ -1132,11 +1134,19 @@ Program RealHub
 
     subroutine end_calc()
         use timing, only: end_timing, print_timing_report
+!$      use omp_lib
         implicit none
+        real(dp) :: OpenMP_wallend 
             
         call deallocate_mem()
         call end_timing()
         call print_timing_report()
+        if(tOpenMP) then
+!$          OpenMP_wallend = OMP_get_wtime()
+            write(6,"(A)") ""
+            write(6,"(A,F14.2)") "Total calculational walltime per OpenMP thread: ",  &
+                OpenMP_wallend - OpenMP_wallstart
+        endif
 
     end subroutine end_calc
 
@@ -1867,5 +1877,31 @@ Program RealHub
         close(iunit)
 
     end subroutine DumpFCIDUMP
+
+    subroutine check_openmp
+!$      use omp_lib
+        implicit none
+!$      integer(kind=OMP_integer_kind) :: maxthreads
+
+        tOpenMP = .false.
+!$      tOpenMP = .true.
+
+        if(tOpenMP) then
+            write(6,"(A)") " *** OpenMP compile detected *** "
+!$          maxthreads = OMP_get_max_threads()
+!$          write(6,"(A,I7)") "Maxiumum number of threads to be used: ",maxthreads
+!$          OpenMP_wallstart = OMP_get_wtime()
+        else
+            write(6,"(A)") " No OpenMP optimizations"
+        endif
+
+        !Lets test it out
+!$OMP PARALLEL
+!$      write(6,*) "My thread number is: ",OMP_get_thread_num()
+!$OMP END PARALLEL
+
+        write(6,*) ""
+
+    end subroutine check_openmp
 
 End Program RealHub
