@@ -1,0 +1,15 @@
+[main]
+fc = gfortran -m64
+cxx = g++ -m64
+ld = gfortran -m64
+#libs = -ltrlan -framework Accelerate -lstdc++
+libs = -llapack -lblas
+module_flag = -J
+
+[opt]
+fflags = -O3 -fopenmp -fno-range-check -fdefault-double-8  -fdefault-integer-8  -fdefault-real-8
+cxxflags = -O3
+
+[dbg]
+fflags = -g -fopenmp -fbounds-check -fbacktrace -fno-range-check -fdefault-double-8  -fdefault-integer-8  -fdefault-real-8 
+cxxflags = -g -fbounds-check
