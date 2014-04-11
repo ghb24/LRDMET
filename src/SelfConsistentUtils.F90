@@ -517,6 +517,18 @@ module SelfConsistentUtils
 !
 !    end subroutine RealSpace_EValsVecs
 
+!Function to return the index in the variables array from a k-space optimization from the kblocks
+    elemental subroutine kspace_var_to_coupind(k_ind,ind_r,ind_c,blocksize,ind)
+        implicit none
+        integer, intent(in) :: k_ind,ind_r,ind_c,blocksize
+        integer, intent(out) :: ind
+
+        ind = k_ind*blocksize**2 - (blocksize-ind_c+1)**2 + ind_r - ind_c + 1 + max(ind_r-ind_c-1,0)
+!        ind = (k_ind-1)*blocksize**2 + blocksize**2 - (blocksize-ind_c+1)**2 + ind_r - ind_c + 1 + max(ind_r-ind_c-1,0)
+
+    end subroutine kspace_var_to_coupind
+
+
     subroutine KBlocks_to_diag(KBlocks,EVecs,EVals)
         complex(dp), intent(in) :: KBlocks(nImp,nImp,nKPnts)
         complex(dp), intent(out) :: EVecs(nImp,nImp,nKPnts)
@@ -674,7 +686,7 @@ module SelfConsistentUtils
         endif
 
     end subroutine LatParams_to_KBlocks
-            
+
     !This will set FreqPoints and Weights. nFitPoints is the size of FreqPoints/Weights, 
     !and may refer to real or im axis based on the tFitRealFreq flag.
     subroutine SetFreqPoints(nFreq_Re,nFreq_Im,nFitPoints)

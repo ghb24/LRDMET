@@ -1052,7 +1052,8 @@ module SelfConsistentLR2
             ks = nKPnts
         endif
 
-        ind = 1
+!        ind = 1
+!$OMP PARALLEL DO PRIVATE(ind,realval)
         do k = 1,ks
             if(tConstrainphsym) then
                 do i = 1,nImp
@@ -1067,6 +1068,7 @@ module SelfConsistentLR2
                 do i = 1,nImp
                     do j = i,nImp
                         if(i.eq.j) then
+                            call kspace_var_to_coupind(k,j,i,nImp,ind)
                             if(ind.gt.iLatParams) call stop_all(t_r,'Incorrect indexing')
                             realval = FullJac_Re(j,i,k)     !No transpose element to add
                             if(tConstrainKSym) then
@@ -1080,9 +1082,10 @@ module SelfConsistentLR2
                             endif
                             if(abs(aimag(realval)).gt.1.0e-7_dp) call stop_all(t_r,'This should be real')
                             Jacobian(ind) = real(realval,dp)
-                            ind = ind + 1
+!                            ind = ind + 1
                             !Completely ignore derivate wrt imaginary component of diagonal ham matrix element
                         else
+                            call kspace_var_to_coupind(k,j,i,nImp,ind)
                             if((ind+1).gt.iLatParams) call stop_all(t_r,'Incorrect indexing')
                             realval = FullJac_Re(j,i,k) + FullJac_Re(i,j,k) !Add the transpose element
                             if(tConstrainKSym) then
@@ -1112,12 +1115,13 @@ module SelfConsistentLR2
                             endif
                             if(abs(aimag(realval)).gt.1.0e-7_dp) call stop_all(t_r,'This should be real')
                             Jacobian(ind+1) = real(realval,dp)
-                            ind = ind + 2
+!                            ind = ind + 2
                         endif
                     enddo
                 enddo
             endif
         enddo
+!$OMP END PARALLEL DO
         deallocate(FullJac_Re,FullJac_Im)
         call halt_timer(CalcGrads)
 
