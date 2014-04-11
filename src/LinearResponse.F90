@@ -90,7 +90,8 @@ module LinearResponse
             ! This criteria must be satisfied, because otherwise, the orbitals resulting from the diagonalization of
             ! h + Self_energy will mix the occupied and virtual spaces. This will result in the NI greens function
             ! spanning a different space to previous iterations
-            call stop_all(t_r,'Cannot tile the impurity couplings through the occupied and virtual space seperately without mixing them')
+            call stop_all(t_r,'Cannot tile the impurity couplings through the occupied' &
+                //'and virtual space seperately without mixing them')
         endif
         !There are some worrying issues regarding reoptimizing the GS within this scheme. 
         !1) The ground state then becomes a function of frequency! Not ideal?
@@ -98,7 +99,8 @@ module LinearResponse
         !   This would break hermiticity of the greens functions, unless we do N^2 reoptimizations of the wavefunction. Even so, this may still 
         !   break hermiticity, since the bra and ket may now actually be different (for the off diagonal greens functions).
         if(tLR_ReoptGS) write(6,"(A)") "Reoptimizing the ground state in the presence of the non-local coupling terms."
-        if(tRemoveImpCoupsPreSchmidt) call stop_all(t_r,'Removing impurity coupling before schmidt decomposition not available in this routine')
+        if(tRemoveImpCoupsPreSchmidt) call stop_all(t_r,'Removing impurity coupling before '    &
+            //'schmidt decomposition not available in this routine')
 
         !Lets diagonalize the lattice hamiltonian. It is frequency independent, and complex hermitian
         allocate(LatVals(nSites))
@@ -257,7 +259,8 @@ module LinearResponse
         Cre_0(:,:) = zzero
         Ann_0(:,:) = zzero
         if(.not.tLR_ReoptGS) then
-            if(tRemakeStaticBath) call stop_all(t_r,'Cannot remake static bath without at least partially reoptimizing the ground state')
+            if(tRemakeStaticBath) call stop_all(t_r,'Cannot remake static bath without at ' &
+                //'least partially reoptimizing the ground state')
             !The bath space is the same as the GS.
             do i = 1,nFCIDet
                 Psi_0(i) = cmplx(HL_Vec(i),zero,dp)
