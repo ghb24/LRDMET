@@ -3,15 +3,17 @@ fc = ifort
 cxx = icpc
 cppflags = -DHAVE_SSE2
 ld = ifort
-#libs = -lmkl_sequential -lmkl_core -lmkl_intel_ilp64 -lm
-libs = -lacml
+libs = -lmkl_sequential -lmkl_core -lmkl_intel_ilp64 -lm
+#libs = -lacml
+#libs = -lmkl_blas95_ilp64 -lmkl_lapack95_ilp64 -lmkl_solver_ilp64 -lmkl_core -lmkl_intel_ilp64 -lmkl_intel_thread -lpthread -lm
+#libs = $(MKLROOT)/lib/em64t/libmkl_blas95_ilp64.a $(MKLROOT)/lib/em64t/libmkl_lapack95_ilp64.a  $(MKLROOT)/lib/em64t/libmkl_solver_ilp64.a -Wl,--start-group $(MKLROOT)/lib/em64t/libmkl_intel_ilp64.a $(MKLROOT)/lib/em64t/libmkl_core.a $(MKLROOT)/lib/em64t/libmkl_intel_thread.a -Wl,--end-group -lpthread -lm
 module_flag = -module
 
 [opt]
 #fflags = -O3 -ip
-fflags = -O3 -openmp -ip -integer-size 64
+fflags = -O3 -openmp -ip -integer-size 64 
 #cxxflags = -O3
 
 [dbg]
-fflags = -g -traceback -openmp -CB -CU -fp-stack-check -ftrapuv -check arg_temp_created -check format -O0 -integer-size 64
+fflags = -g -traceback -openmp -CB -CU -fp-stack-check -ftrapuv -check arg_temp_created -check format -O0 -integer-size 64 
 cxxflags = -g -traceback
