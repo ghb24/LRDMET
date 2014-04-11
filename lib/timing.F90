@@ -343,14 +343,14 @@ contains
       end if
       if (.not.global_timing_on) then
           write (io,'(a20,f10.2)') 'Global CPU time    ',global_time_cpu
-          write (io,'(a20,f10.2)')  'Global time per thread ',global_time_system
-          write (io,'(a20,f10.2)')  'Global total walltime  ',global_time_system !global_time_cpu+global_time_system
+          write (io,'(a20,f10.2)') 'Global thread time ',global_time_system
+          write (io,'(a20,f10.2)') 'Global total time  ',global_time_system !global_time_cpu+global_time_system
       else
           call cpu_time(t(1))
           t(2)=0
 !$        t(2)=OMP_get_wtime() 
           write (io,'(/a20,f10.2)') 'Global CPU time    ',t(1)-global_time_cpu
-          write (io,'(a20,f10.2)') 'Global walltime',t(2)-global_time_system
+          write (io,'(a20,f10.2)')  'Global walltime    ',t(2)-global_time_system
       end if
       write (io,'(a65)') '================================================================'
 
