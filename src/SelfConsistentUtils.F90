@@ -1114,6 +1114,27 @@ module SelfConsistentUtils
         enddo
         deallocate(u)
     end subroutine spline
+
+    !Rather than getting the next Omega value, get the current one for the 'i'th
+    !index through the list
+    pure subroutine GetOmega(Omega,i,tMatbrAxis,FreqPoints)
+        implicit none
+        real(dp), intent(out) :: Omega
+        integer, intent(in) :: i
+        logical, intent(in) :: tMatbrAxis
+        real(dp), intent(in), optional :: FreqPoints(:)
+        
+        if(present(FreqPoints)) then
+            Omega = FreqPoints(i)
+        else
+            if(tMatbrAxis) then
+                Omega = Start_Omega_Im + (i-1)*Omega_Step_Im
+            else
+                Omega = Start_Omega + (i-1)*Omega_Step
+            endif
+        endif
+
+    end subroutine GetOmega
     
     !Get next omega value for optionally real/matsubara axis
     !OmegaVal = 0 on input initializes
@@ -1241,6 +1262,7 @@ module SelfConsistentUtils
             if(mod(nImp,2).eq.0) then
                 !Multiple of two bands per kpoint. Constrain them so that they are in pairs
                 allocate(rWork(max(1,3*nImp-2)))
+!$OMP PARALLEL DO PRIVATE(KBlock,cWork,rWork,lWork,ierr,Bands_k,DistFromMu,KBlock2,cTemp)
                 do k = 1,nKPnts
                     KBlock(:,:) = KBlocks(:,:,k)
                     !Diagonalize each kBlock
@@ -1278,6 +1300,7 @@ module SelfConsistentUtils
                     call ZGEMM('N','C',nImp,nImp,nImp,zone,cTemp,nImp,KBlock,nImp,zzero,KBlocks(:,:,k),nImp)
                     !call writematrixcomp(KBlocks(:,:,k),'new k-space ham',.true.)
                 enddo
+!$OMP END PARALLEL DO
                 deallocate(rWork)
             elseif(nImp.eq.1) then
                 !If there is only one band per kpoint, then the pairs correspond to different kpoints.

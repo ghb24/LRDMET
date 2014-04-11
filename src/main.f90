@@ -1134,19 +1134,19 @@ Program RealHub
 
     subroutine end_calc()
         use timing, only: end_timing, print_timing_report
-!$      use omp_lib
+!!$      use omp_lib
         implicit none
         real(dp) :: OpenMP_wallend 
             
         call deallocate_mem()
         call end_timing()
         call print_timing_report()
-        if(tOpenMP) then
-!$          OpenMP_wallend = OMP_get_wtime()
-            write(6,"(A)") ""
-            write(6,"(A,F14.2)") "Total calculational walltime per OpenMP thread: ",  &
-                OpenMP_wallend - OpenMP_wallstart
-        endif
+!        if(tOpenMP) then
+!!$          OpenMP_wallend = OMP_get_wtime()
+!            write(6,"(A)") ""
+!            write(6,"(A,F14.2)") "Total calculational walltime per OpenMP thread: ",  &
+!                OpenMP_wallend - OpenMP_wallstart
+!        endif
 
     end subroutine end_calc
 
@@ -1890,7 +1890,9 @@ Program RealHub
             write(6,"(A)") " *** OpenMP compile detected *** "
 !$          maxthreads = OMP_get_max_threads()
 !$          write(6,"(A,I7)") "Maxiumum number of threads to be used: ",maxthreads
-!$          OpenMP_wallstart = OMP_get_wtime()
+!!$          OpenMP_wallstart = OMP_get_wtime()
+!           Do not allow nested threads to start
+!$          call OMP_set_nested(.false.)
         else
             write(6,"(A)") " No OpenMP optimizations"
         endif

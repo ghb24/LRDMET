@@ -304,7 +304,7 @@ module Globals
     type(timer) :: FitLatHam
     type(timer) :: CalcGrads
     !OpenMP timers for the whole thing since timer routines measure cputime, not walltime
-    real(dp) :: OpenMP_wallstart
+    !real(dp) :: OpenMP_wallstart
 
 
 end module Globals

@@ -121,7 +121,7 @@ module Davidson
         do iter = 1,max_iter_
             
             if(mod(iter,10).eq.0) then
-                write(6,*) "Starting Davidson iteration: ",iter,dConv
+                write(6,"(A,I7,G15.5)") "Starting Davidson iteration: ",iter,dConv
                 call flush(6)
             endif
 
@@ -377,7 +377,7 @@ module Davidson
         do iter = 1,max_iter_
 
             if(mod(iter,10).eq.0) then
-                write(6,*) "Starting Davidson iteration: ",iter,dConv
+                write(6,"(A,I7,G15.5)") "Starting Davidson iteration: ",iter,dConv
                 call flush(6)
             endif
 

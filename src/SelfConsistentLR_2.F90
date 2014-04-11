@@ -110,9 +110,9 @@ module SelfConsistentLR2
                 write(6,*) "For high-level function on the real axis: "
                 call writedynamicfunction(nFreq_Re,CorrFn_HL_Re,'G_Imp_Re',tag=iter,    &
                     tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
-                write(6,*) "For Schmidt-decomposed function on the real axis: "
-                call writedynamicfunction(nFreq_Re,Debug_Lat_CorrFn_Re,'G_LatSchmidt_Re',tag=iter,    &
-                    tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
+!                write(6,*) "For Schmidt-decomposed function on the real axis: "
+!                call writedynamicfunction(nFreq_Re,Debug_Lat_CorrFn_Re,'G_LatSchmidt_Re',tag=iter,    &
+!                    tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
                 call CalcLatticeSpectrum(iCorrFnTag,nFreq_Re,CorrFn_Re,GFChemPot,tMatbrAxis=.false.,    &
                     iLatParams=iLatParams,LatParams=LatParams)
                 write(6,*) "For lattice function on the real axis: "
@@ -259,7 +259,7 @@ module SelfConsistentLR2
         real(dp) :: Omega
 !        complex(dp) :: compval
         complex(dp), allocatable :: KBlocks(:,:,:)!,EVecs(:,:,:),EVals(:)
-        complex(dp) :: InvMat(nImp,nImp),InvMat2(nImp,nImp),num(nImp,nImp),GFContrib(nImp,nImp)!,hamtmp(nSites,nSites)
+        complex(dp) :: InvMat(nImp,nImp),InvMat2(nImp,nImp),num(nImp,nImp)!,GFContrib(nImp,nImp)!,hamtmp(nSites,nSites)
         logical :: tMatbrAxis_
         character(len=*), parameter :: t_r='CalcLatticeSpectrum'
 
@@ -317,15 +317,22 @@ module SelfConsistentLR2
 !        enddo
 !        write(6,*) "Element 1,2 of ham: ",compval
 
-        i = 0
-        do while(.true.)
+!$OMP PARALLEL DO PRIVATE(Omega,InvMat,InvMat2,ind_1,ind_2,num)
+        do i = 1,n
+!        i = 0
+!        do while(.true.)
+!            if(present(FreqPoints)) then
+!                call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis_,nFreqPoints=n,FreqPoints=FreqPoints)
+!            else
+!                call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis_)
+!            endif
+!            if(i.lt.0) exit
+!            if(i.gt.n) call stop_all(t_r,'Too many freq points')
             if(present(FreqPoints)) then
-                call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis_,nFreqPoints=n,FreqPoints=FreqPoints)
+                call GetOmega(Omega,i,tMatbrAxis_,FreqPoints=FreqPoints)
             else
-                call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis_)
+                call GetOmega(Omega,i,tMatbrAxis_)
             endif
-            if(i.lt.0) exit
-            if(i.gt.n) call stop_all(t_r,'Too many freq points')
 
             do k = 1,nKPnts 
 
@@ -379,17 +386,18 @@ module SelfConsistentLR2
                     call ZGEMM('N','C',nImp,nImp,nImp,zone,InvMat2,nImp,InvMat,nImp,    &
                         zzero,num,nImp)
                     call ZGEMM('N','N',nImp,nImp,nImp,zone,InvMat,nImp,num,nImp,  &
-                        zzero,GFContrib,nImp)
+                        zone,CorrFn(:,:,i),nImp)
                     
 !                    write(6,"(A,I6,A,2G25.10)") "For kpoint: ",k," G real space Off diagonal matrix element: ",GFContrib(1,2)
 !                    write(6,"(A,I6,A,G25.10)") "For kpoint: ",k," G real space Off diagonal hermiticity: ",abs(GFContrib(1,2)-dconjg(GFContrib(2,1)))
-                    CorrFn(:,:,i) = CorrFn(:,:,i) + GFContrib(:,:)
+!                    CorrFn(:,:,i) = CorrFn(:,:,i) + GFContrib(:,:)
                         
                 else
                     call stop_all(t_r,'Cannot deal with non-greens functions right now')
                 endif
             enddo
         enddo
+!$OMP END PARALLEL DO
 
 !        if(iCorrFn.eq.1) then
             !num term Equivalent to below for one impurity
@@ -427,7 +435,8 @@ module SelfConsistentLR2
         real(dp), intent(out), optional :: dJacobian(iLatParams)
         complex(dp), allocatable :: Lattice_Func(:,:,:),DiffMat(:,:,:)
         real(dp), allocatable :: DiffMatr(:,:,:)
-        real(dp) :: Omega,LattWeight
+        real(dp) :: Omega
+        real(dp) :: LattWei
         logical :: tNonStandardGrid
         integer :: i,j,k
         integer, parameter :: iNormPower = 2    !The power of the matrix norm for the residual
@@ -472,58 +481,101 @@ module SelfConsistentLR2
         endif
 
         dist = zero
-        LattWeight = zero
-        i = 0
-        do while(.true.)
+!$OMP PARALLEL DO REDUCTION(+:dist) PRIVATE(Omega)
+        do i = 1,nESteps
+!        i = 0
+!        do while(.true.)
+!            if(tNonStandardGrid) then
+!                call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis,nFreqPoints=nESteps,FreqPoints=FreqPoints)
+!            else
+!                call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis)
+!            endif
+!            if((abs(Omega).lt.1.0e-9_dp).and.(iFitGFWeighting.ne.0)) then
+!                call stop_all(t_r,'Should not be sampling w=0 with a non-flat weighting function')
+!            endif
+!            if(i.lt.0) exit
+!            if(i.gt.nESteps) call stop_all(t_r,'Too many frequency points')
             if(tNonStandardGrid) then
-                call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis,nFreqPoints=nESteps,FreqPoints=FreqPoints)
+                call GetOmega(Omega,i,tMatbrAxis,FreqPoints=FreqPoints)
             else
-                call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis)
+                call GetOmega(Omega,i,tMatbrAxis)
             endif
-            if((abs(Omega).lt.1.0e-9_dp).and.(iFitGFWeighting.ne.0)) then
-                call stop_all(t_r,'Should not be sampling w=0 with a non-flat weighting function')
-            endif
-            if(i.lt.0) exit
-            if(i.gt.nESteps) call stop_all(t_r,'Too many frequency points')
 
             !Now, sum the squares, with the appropriate weighting factor
             do j = 1,nImp
-                do k = 1,nImp
-                    if(tDiagonalSC.and.(j.ne.k)) cycle  !In the diagonal approximation, the off diagonal GFs are not included
+                if(tDiagonalSC) then
                     if(iFitGFWeighting.eq.0) then
                         !Flat weighting
                         if(tNonStandardGrid) then
-                            dist = dist + (DiffMatr(k,j,i)**iNormPower)*Weights(i)
+                            dist = dist + (DiffMatr(j,j,i)**iNormPower)*Weights(i)
                         else
-                            dist = dist + (DiffMatr(k,j,i)**iNormPower)
+                            dist = dist + (DiffMatr(j,j,i)**iNormPower)
                         endif
                     elseif(iFitGFWeighting.eq.1) then
                         !1/w weighting
                         if(tNonStandardGrid) then
-                            dist = dist + (DiffMatr(k,j,i)**iNormPower)*Weights(i)/abs(Omega)
+                            dist = dist + (DiffMatr(j,j,i)**iNormPower)*Weights(i)/abs(Omega)
                         else
-                            dist = dist + (DiffMatr(k,j,i)**iNormPower)/abs(Omega)
+                            dist = dist + (DiffMatr(j,j,i)**iNormPower)/abs(Omega)
                         endif
                     else
                         !1/w^2 weighting
                         if(tNonStandardGrid) then
-                            dist = dist + (DiffMatr(k,j,i)**iNormPower)*Weights(i)/(Omega**2)
+                            dist = dist + (DiffMatr(j,j,i)**iNormPower)*Weights(i)/(Omega**2)
                         else
-                            dist = dist + (DiffMatr(k,j,i)**iNormPower)/(Omega**2)
+                            dist = dist + (DiffMatr(j,j,i)**iNormPower)/(Omega**2)
                         endif
                     endif
-                    if(iLatticeFitType.eq.3) then
-                        LattWeight = LattWeight + (abs(Lattice_Func(k,j,i)))**iNormPower
-                    endif
-                enddo
+                else
+                    do k = 1,nImp
+                        if(iFitGFWeighting.eq.0) then
+                            !Flat weighting
+                            if(tNonStandardGrid) then
+                                dist = dist + (DiffMatr(k,j,i)**iNormPower)*Weights(i)
+                            else
+                                dist = dist + (DiffMatr(k,j,i)**iNormPower)
+                            endif
+                        elseif(iFitGFWeighting.eq.1) then
+                            !1/w weighting
+                            if(tNonStandardGrid) then
+                                dist = dist + (DiffMatr(k,j,i)**iNormPower)*Weights(i)/abs(Omega)
+                            else
+                                dist = dist + (DiffMatr(k,j,i)**iNormPower)/abs(Omega)
+                            endif
+                        else
+                            !1/w^2 weighting
+                            if(tNonStandardGrid) then
+                                dist = dist + (DiffMatr(k,j,i)**iNormPower)*Weights(i)/(Omega**2)
+                            else
+                                dist = dist + (DiffMatr(k,j,i)**iNormPower)/(Omega**2)
+                            endif
+                        endif
+                    enddo
+                endif
             enddo
         enddo
+!$OMP END PARALLEL DO
 
         if(iLatticeFitType.eq.3) then
             !Attempt to maximize lattice weight in the spectral window so that we don't optimize to v high frequencies
-            !write(6,*) "Dist = ",dist
-            !write(6,*) "Lattweight = ",LattWeight
-            dist = dist/LattWeight
+            !A seperate loop so that we can OpenMP it
+            LattWei = zero
+!$OMP PARALLEL DO REDUCTION(+:LattWei)
+            do i = 1,nESteps
+                !Now, sum the squares, with the appropriate weighting factor
+                do j = 1,nImp
+                    if(tDiagonalSC) then
+                        !In the diagonal approximation, the off diagonal GFs are not included
+                        LattWei = LattWei + (abs(Lattice_Func(j,j,i)))**iNormPower
+                    else
+                        do k = 1,nImp
+                            LattWei = LattWei + (abs(Lattice_Func(k,j,i)))**iNormPower
+                        enddo
+                    endif
+                enddo
+            enddo
+!$OMP END PARALLEL DO
+            dist = dist/LattWei
         endif
             
         if(present(dJacobian).and.tTestDerivs) then
