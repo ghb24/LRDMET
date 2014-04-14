@@ -1261,14 +1261,15 @@ module SelfConsistentUtils
 !            write(6,*) "*** IMPOSING PH SYMMETRY ***",mu
             if(mod(nImp,2).eq.0) then
                 !Multiple of two bands per kpoint. Constrain them so that they are in pairs
-                allocate(rWork(max(1,3*nImp-2)))
 !$OMP PARALLEL DO PRIVATE(KBlock,cWork,rWork,lWork,ierr,Bands_k,DistFromMu,KBlock2,cTemp)
                 do k = 1,nKPnts
+                    allocate(rWork(max(1,3*nImp-2)))
                     KBlock(:,:) = KBlocks(:,:,k)
                     !Diagonalize each kBlock
                     allocate(cWork(1))
                     lWork = -1
                     ierr = 0
+                    Bands_k(:) = zero
                     call zheev('V','U',nImp,KBlock,nImp,Bands_k,cWork,lWork,rWork,ierr)
                     if(ierr.ne.0) call stop_all(t_r,'Error in diag')
                     lWork = int(real(cWork(1))) + 1
@@ -1299,9 +1300,9 @@ module SelfConsistentUtils
                     call ZGEMM('N','N',nImp,nImp,nImp,zone,KBlock,nImp,KBlock2,nImp,zzero,cTemp,nImp)
                     call ZGEMM('N','C',nImp,nImp,nImp,zone,cTemp,nImp,KBlock,nImp,zzero,KBlocks(:,:,k),nImp)
                     !call writematrixcomp(KBlocks(:,:,k),'new k-space ham',.true.)
+                    deallocate(rWork)
                 enddo
 !$OMP END PARALLEL DO
-                deallocate(rWork)
             elseif(nImp.eq.1) then
                 !If there is only one band per kpoint, then the pairs correspond to different kpoints.
                 do i = 1,ks/2
