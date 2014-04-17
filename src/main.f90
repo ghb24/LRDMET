@@ -158,6 +158,7 @@ Program RealHub
         tRemakeStaticBath = .false.
         tFullReoptGS = .false.      !Whether to reoptimize the ground state in the static + dynamic bath space
         tSC_StartwGSCorrPot = .true.    !Whether to start the selfconsistency from h0v or h0
+        iFitStyle = 1                   !1 = Direct fitting. 2 = DMFT
 
     end subroutine set_defaults
 
@@ -616,6 +617,8 @@ Program RealHub
             if(teof) exit
             call readu(w)
             select case(w)
+            case("FIT_STYLE")
+                call readi(iFitStyle)
             case("FIT_REALFREQ")
                 tFitRealFreq = .true.
             case("FIT_ALGO")

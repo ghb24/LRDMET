@@ -245,6 +245,7 @@ module Globals
     complex(dp), allocatable :: Emb_h0v_c(:,:)
     complex(dp), allocatable :: Prev_HL_Vec(:)
     real(dp) :: Prev_HL_Energy
+    integer :: iFitStyle                !1 = direct fitting, 2 = DMFT
 
     !Debugging for Self-consistency
     logical :: tSE_Scan

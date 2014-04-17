@@ -27,7 +27,11 @@ module LRDriver
 !            if(tOptGF_EVals) then
 !                call SC_FitLatticeGF_Im()
 !            else
+            if(iFitStyle.eq.1) then
                 call SC_Spectrum_Opt()
+            else
+                call SC_Spectrum_Opt_DMFT()
+            endif
 !            endif
             !DMFT-style fitting of a lattice & matsubara self-energy
             !call SC_FitLat_and_SE_Im() 

@@ -26,7 +26,7 @@ module SelfConsistentLR2
         complex(dp), allocatable :: Debug_Lat_CorrFn_Re(:,:,:),Debug_Lat_CorrFn_Fit(:,:,:)
         real(dp), allocatable :: AllDiffs(:,:)
 
-        real(dp) :: FinalDist,LowFreq,HighFreq
+        real(dp) :: FinalDist
         integer :: i,iter,iLatParams,j,iCorrFnTag
         real(dp), parameter :: dDeltaImpThresh = 1.0e-4_dp 
         character(len=*), parameter :: t_r='SC_Spectrum_Opt'
@@ -242,6 +242,207 @@ module SelfConsistentLR2
         call halt_timer(SelfCon_LR)
 
     end subroutine SC_Spectrum_Opt
+    
+    !Self-consistently fit a frequency *independent* lattice coupling to the impurity in order to
+    !match the matsubara greens functions. This is done in more of a DMFT-style loop
+    subroutine SC_Spectrum_Opt_DMFT()            
+        implicit none
+        real(dp) :: GFChemPot,Omega
+        integer :: nFreq_Re,nFreq_Im,nFitPoints
+        complex(dp), allocatable :: h_lat_fit(:,:),h0_comp(:,:)
+        real(dp), allocatable :: LatParams(:)
+        complex(dp), allocatable :: CorrFn_Lat(:,:,:),CorrFn_HL(:,:,:),CorrFn_HL_Old(:,:,:)
+        complex(dp), allocatable :: SE_Fit(:,:,:),SE_New(:,:,:),DiffImpCorrFn(:,:,:)
+        complex(dp), allocatable :: CorrFn_HL_Re(:,:,:)
+        real(dp), allocatable :: AllDiffs(:,:)
+
+        real(dp) :: FinalDist
+        integer :: i,iter,iLatParams,j,iCorrFnTag
+        real(dp), parameter :: dDeltaImpThresh = 1.0e-4_dp 
+        logical, parameter :: tRemoveImpCorrs = .false.
+        character(len=*), parameter :: t_r='SC_Spectrum_Opt'
+
+        call set_timer(SelfCon_LR)
+
+        write(6,"(A)") "Converging self-energy and static hybridization potential..."
+
+        iCorrFnTag = 1    !1 for greens function optimization
+
+        call CheckSCOptions(iCorrFnTag)
+
+        !This will set FreqPoints and Weights. nFitPoints is the size of FreqPoints/Weights, 
+        !and may refer to real or im axis based on the tFitRealFreq flag.
+        call SetFreqPoints(nFreq_Re,nFreq_Im,nFitPoints)
+        call SetChemPot(GFChemPot)
+
+        !How many lattice parameters are there to fit?
+        call SetLatticeParams(iLatParams)
+
+        write(6,"(A,I7)") "Number of lattice hamiltonian parameters to optimize: ",iLatParams
+        allocate(LatParams(iLatParams))
+        LatParams(:) = zero
+        allocate(h_lat_fit(nSites,nSites))  !The real-space (complex) lattice hamiltonian
+        allocate(h0_comp(nSites,nSites))    !The bare hamiltonian (complex)
+        h0_comp(:,:) = cmplx(h0(:,:),zero,dp)
+
+        !Initialize the lattice parameters to be those from the ground-state optimization,
+        !and return the initial lattice hamiltonian
+        !Starting from the ground state correlation potential is like starting from a 
+        !frequency-independent self-energy
+        call InitLatticeParams(iLatParams,LatParams,GFChemPot,h_lat_fit)
+
+        write(6,"(A)") "Starting *frequency independent* lattice parameters: "
+        do i = 1,iLatParams
+            write(6,"(I6,G20.13)") i,LatParams(i)
+        enddo
+        write(6,"(A)") "" 
+
+        allocate(SE_Fit(nImp,nImp,nFitPoints))
+        allocate(SE_New(nImp,nImp,nFitPoints))
+        allocate(CorrFn_Lat(nImp,nImp,nFitPoints))
+        allocate(CorrFn_HL(nImp,nImp,nFitPoints))
+        allocate(CorrFn_HL_Old(nImp,nImp,nFitPoints))
+        allocate(DiffImpCorrFn(nImp,nImp,nFitPoints))
+        CorrFn_HL(:,:,:) = zzero
+        if(tCalcRealSpectrum) then
+            allocate(CorrFn_HL_Re(nImp,nImp,nFreq_Re))
+        endif
+
+        !Initially, set the self-energy to be the frequency-independent ground state correlation potential
+        do i = 1,nFitPoints
+            SE_Fit(:,:,i) = cmplx(v_loc(:,:),zero,dp)
+        enddo
+
+        allocate(AllDiffs(3,0:iMaxIter_MacroFit+1))
+        AllDiffs(:,:) = zero
+
+        iter = 0
+        do while(.not.tSkip_Lattice_Fit)
+            iter = iter + 1
+
+            !First, calculate the lattice greens function
+            call CalcLatticeSpectrum(1,nFitPoints,CorrFn_Lat,GFChemPot,tMatbrAxis=tFitMatAxis,  &
+                FreqPoints=FreqPoints,ham=h0_comp,SE=SE_Fit)
+            call writedynamicfunction(nFitPoints,CorrFn_Lat,'G_Lat_Fit',tag=iter,    &
+                tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=tFitMatAxis)
+
+            if(tRemoveImpCorrs) then
+                !Now, calculate the bath greens function. This removes the explicit impurity correlations from the lattice greens function
+                call InvertLocalNonHermFunc(nFitPoints,CorrFn_Lat)
+                do i = 1,nFitPoints
+                    CorrFn_Lat(:,:,i) = CorrFn_Lat(:,:,i) + SE_Fit(:,:,i)
+                enddo
+                call InvertLocalNonHermFunc(nFitPoints,CorrFn_Lat)
+            endif
+
+            !CorrFn_Lat is now the *bath* greens function. We want to fit this to frequency-independent parameters
+            call FitLatParams(1,CorrFn_Lat,nFitPoints,GFChemPot,iLatParams, &
+                LatParams,FinalDist,tFitMatAxis,FreqPoints,Weights,iter)
+            AllDiffs(1,iter) = FinalDist
+
+            !Update h_lat_fit
+            call LatParams_to_ham(iLatParams,LatParams,GFChemPot,h_lat_fit)
+
+            !Now, use these fit parameters to calculate the new HL function
+            call SchmidtGF_FromLat(CorrFn_HL,GFChemPot,nFitPoints,tFitMatAxis,  &
+                h_lat_fit,FreqPoints)
+            call writedynamicfunction(nFitPoints,CorrFn_HL,'G_Imp_Fit',tag=iter,    &
+                tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=tFitMatAxis)
+            
+            if(tCalcRealSpectrum) then
+                call SchmidtGF_FromLat(CorrFn_HL_Re,GFChemPot,nFreq_Re,.false.,  &
+                    h_lat_fit)
+                call writedynamicfunction(nFreq_Re,CorrFn_HL_Re,'G_Imp_Re',tag=iter,    &
+                    tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
+            endif
+            
+            !How much has the correlation function changed?
+            DiffImpCorrFn(:,:,:) = CorrFn_HL_Old(:,:,:) - CorrFn_HL(:,:,:)
+            DiffImpCorrFn(:,:,:) = DiffImpCorrFn(:,:,:) * dconjg(DiffImpCorrFn(:,:,:))
+            AllDiffs(3,iter) = sum(real(DiffImpCorrFn(:,:,:),dp))
+            CorrFn_HL_Old(:,:,:) = CorrFn_HL(:,:,:)    !Update previous correlation function
+
+            !Now, calculate the new self-energy
+            !Damping_SE gives the amount of the *new* self-energy in the update.
+            SE_New(:,:,:) = CorrFn_Lat(:,:,:)
+            call InvertLocalNonHermFunc(nFitPoints,SE_New)
+            call InvertLocalNonHermFunc(nFitPoints,CorrFn_HL)
+            SE_New(:,:,:) = SE_New(:,:,:) - CorrFn_HL(:,:,:)    !Dysons equation
+            DiffImpCorrFn(:,:,:) = SE_Fit(:,:,:) - SE_New(:,:,:)
+            DiffImpCorrFn(:,:,:) = DiffImpCorrFn(:,:,:) * dconjg(DiffImpCorrFn(:,:,:))
+            AllDiffs(2,iter) = sum(real(DiffImpCorrFn(:,:,:),dp))      !How much has the self-energy changed?
+            SE_Fit(:,:,:) = ((one-Damping_SE)*SE_Fit(:,:,:)) + Damping_SE*SE_New(:,:,:)
+
+            write(6,"(A)") ""
+            write(6,"(A,I7,A)") "***   COMPLETED MACROITERATION ",iter," ***"
+            write(6,"(A)") "     Iter.  FitResidual      Delta_SE_Imp(iw)    Delta_GF_Imp(iw)"
+            do i = 0,iter
+                write(6,"(I7,3G20.13)") i,AllDiffs(1,i),AllDiffs(2,i),AllDiffs(3,i)
+            enddo
+            write(6,"(A)") ""
+            call flush(6)
+            
+            if(iter.ge.iMaxIter_MacroFit) then
+                write(6,"(A,I9)") "Exiting. Max iters hit of: ",iMaxIter_MacroFit
+                exit
+            endif
+
+            if(AllDiffs(3,iter).lt.dDeltaImpThresh) then
+                write(6,"(A)") "Success! Convergence on imaginary axis successful"
+                write(6,"(A,G20.13)") "Impurity self-energy changing on imaginary axis by less than: ",dDeltaImpThresh
+                exit
+            endif
+            do i = 1,iLatParams
+                if(abs(LatParams(i)).gt.1000.0_dp) then
+                    write(6,*) LatParams(:)
+                    call stop_all(t_r,'Lattice eigenvalues diverging. Convergence failed.')
+                endif
+            enddo
+        enddo
+
+        !We should write these out to a file so that we can restart from them at a later date (possibly with more variables).
+        !TODO: Actually write out k-blocks
+        write(6,"(A)") "Final *frequency independent* lattice parameters: "
+        do i = 1,iLatParams
+            write(6,"(I6,G20.13)") i,LatParams(i)
+        enddo
+        write(6,"(A)") "" 
+
+        !TODO
+        !if(tOptGF_EVals.and.tDiag_kSpace) then
+        !    !Write out the converged one-electron dispersion / bandstructure
+        !    call WriteBandstructure(Couplings,iLatParams)
+        !endif
+        call writedynamicfunction(nFitPoints,CorrFn_Lat,'G_Lat_Fit_Final',      &
+            tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
+
+        deallocate(DiffImpCorrFn,AllDiffs,CorrFn_Lat,CorrFn_HL_Old)
+        if(tCalcRealSpectrum) deallocate(CorrFn_HL_Re)
+            
+        if(tFitMatAxis) then
+            allocate(CorrFn_HL_Re(nImp,nImp,nFreq_Re))
+                
+            write(6,"(A)") "Now calculating spectral functions on the REAL axis"
+            call flush(6)
+            !TODO: Calculate self-energy on the real axis, so we can calculate the lattice greens function
+            !Finally, calculate the greens function in real-frequency space.
+            call SchmidtGF_FromLat(CorrFn_HL_Re,GFChemPot,nFreq_Re,.false.,h_lat_fit)
+            call writedynamicfunction(nFreq_Re,CorrFn_HL_Re,'G_Imp_Re_Final',   &
+                tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
+            deallocate(CorrFn_HL_Re)
+        else
+            call writedynamicfunction(nFreq_Re,CorrFn_HL,'G_Imp_Fit_Final',     &
+                tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
+        endif
+
+        deallocate(CorrFn_HL)
+
+        deallocate(h_lat_fit,h0_comp)
+        deallocate(FreqPoints,Weights)
+        
+        call halt_timer(SelfCon_LR)
+
+    end subroutine SC_Spectrum_Opt_DMFT
         
     subroutine CalcLatticeSpectrum(iCorrFn,n,CorrFn,mu,tMatbrAxis,iLatParams,LatParams,FreqPoints,ham,SE)
         implicit none
@@ -255,12 +456,11 @@ module SelfConsistentLR2
         complex(dp), intent(in), optional :: ham(nSites,nSites)
         complex(dp), intent(in), optional :: SE(nImp,nImp,n)
 
-        integer :: i,j,k,ind_1,ind_2!,ii,jj
+        integer :: i,j,k,ind_1,ind_2
         real(dp) :: Omega
-!        complex(dp) :: compval
-        complex(dp), allocatable :: KBlocks(:,:,:)!,EVecs(:,:,:),EVals(:)
-        complex(dp) :: InvMat(nImp,nImp),InvMat2(nImp,nImp),num(nImp,nImp)!,GFContrib(nImp,nImp)!,hamtmp(nSites,nSites)
-        logical :: tMatbrAxis_
+        complex(dp), allocatable :: KBlocks(:,:,:)
+        complex(dp) :: InvMat(nImp,nImp),InvMat2(nImp,nImp),num(nImp,nImp)
+        logical :: tMatbrAxis_,tSelfEnergy
         character(len=*), parameter :: t_r='CalcLatticeSpectrum'
 
         call set_timer(CalcLatSpectrum)
@@ -275,7 +475,9 @@ module SelfConsistentLR2
             call stop_all(t_r,'Lattice parameters sent in, but not suze')
         endif
         if(present(SE)) then
-            call stop_all(t_r,'Sorry - cannot currently deal with self-energy')
+            tSelfEnergy = .true.
+        else
+            tSelfEnergy = .false.
         endif
         if(present(tMatbrAxis)) then
             tMatbrAxis_=tMatbrAxis
@@ -337,6 +539,9 @@ module SelfConsistentLR2
             do k = 1,nKPnts 
 
                 InvMat(:,:) = - KBlocks(:,:,k)
+                if(tSelfEnergy) then
+                    InvMat(:,:) = InvMat(:,:) - SE(:,:,n)
+                endif
 
 !                write(6,"(A,I6,A,2G25.10)") "For kpoint: ",k," h Off diagonal matrix element: ",InvMat(1,2)
 !                write(6,"(A,I6,A,G25.10)") "For kpoint: ",k," h Off diagonal hermiticity: ",abs(InvMat(1,2)-dconjg(InvMat(2,1)))

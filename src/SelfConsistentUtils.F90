@@ -268,15 +268,16 @@ module SelfConsistentUtils
         integer :: k,ind_1,ind_2
         
         KBlocks(:,:,:) = zzero
-
-        allocate(ctemp(nSites,nImp))
+!$OMP PARALLEL DO PRIVATE(ind_1,ind_2,ctemp)
         do k = 1,nKPnts
+            allocate(ctemp(nSites,nImp))
             ind_1 = ((k-1)*nImp) + 1
             ind_2 = nImp*k
             call ZGEMM('N','N',nSites,nImp,nSites,zone,ham,nSites,RtoK_Rot(:,ind_1:ind_2),nSites,zzero,ctemp,nSites)
             call ZGEMM('C','N',nImp,nImp,nSites,zone,RtoK_Rot(:,ind_1:ind_2),nSites,ctemp,nSites,zzero,KBlocks(:,:,k),nImp)
+            deallocate(ctemp)
         enddo
-        deallocate(ctemp)
+!$OMP END PARALLEL DO
 
     end subroutine ham_to_KBlocks
 
@@ -927,6 +928,7 @@ module SelfConsistentUtils
                 write(iunit,*) 
             endif
         enddo
+        write(6,"(A,A)") "For function written to file: ",filename
         if(tMatbrAxis_) then
             write(6,"(A,F17.10)") "Total approximate spectral weight on Matsubara axis: ",SpectralWeight
         else
