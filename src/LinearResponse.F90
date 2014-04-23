@@ -367,7 +367,9 @@ module LinearResponse
 
 !        OmegaVal = 0
 !        do while(.true.)
-!$OMP PARALLEL DO PRIVATE(Omega,NILRMat_Cre,NILRMat_Cre,NILRMat_Ann,SPGF_Cre_Bra,SPGF_Cre_Ket,SPGF_Ann_Bra,SPGF_Ann_Ket,Gc_a_F_ax_Bra,Gc_a_F_ax_Ket,Gc_b_F_ab,Ga_i_F_xi_Bra,Ga_i_F_xi_Ket,G_i_F_ij,LinearSystem_p,LinearSystem_h,VNorm,tempel,CNorm,Psi1_p,Psi1_h,info,ResponseFn_p,ResponseFn_h)
+!$OMP PARALLEL DO PRIVATE(Omega,NILRMat_Cre,NILRMat_Ann,SPGF_Cre_Bra,SPGF_Cre_Ket,SPGF_Ann_Bra),                &
+!$OMP&  PRIVATE(SPGF_Ann_Ket,Gc_a_F_ax_Bra,Gc_a_F_ax_Ket,Gc_b_F_ab,Ga_i_F_xi_Bra,Ga_i_F_xi_Ket,Ga_i_F_ij),      &
+!$OMP&  PRIVATE(LinearSystem_p,LinearSystem_h,VNorm,tempel,CNorm,Psi1_p,Psi1_h,info,ResponseFn_p,ResponseFn_h)
         do OmegaVal = 1,nESteps
             if(present(FreqPoints)) then
                 call GetOmega(Omega,OmegaVal,tMatbrAxis,FreqPoints=FreqPoints)
@@ -9425,7 +9427,8 @@ module LinearResponse
     !environment blocks of the hamiltonians.
     !The NILRMat_Cre and NILRMat_Ann matrices are returned as the non-interacting LR
     !The matrices SPGF_Cre and SPGF_Ann are filled
-    subroutine FindNI_Charged_FitLat(Omega,GFChemPot,NILRMat_Cre,NILRMat_Ann,tMatbrAxis,ham,latvals,latvecs,VirtStart,CoreEnd,SPGF_Cre_Ket,SPGF_Cre_Bra,SPGF_Ann_Ket,SPGF_Ann_Bra)
+    subroutine FindNI_Charged_FitLat(Omega,GFChemPot,NILRMat_Cre,NILRMat_Ann,tMatbrAxis,ham,latvals,latvecs,    &
+        VirtStart,CoreEnd,SPGF_Cre_Ket,SPGF_Cre_Bra,SPGF_Ann_Ket,SPGF_Ann_Bra)
         implicit none
         real(dp), intent(in) :: Omega,GFChemPot
         integer, intent(in) :: VirtStart,CoreEnd
