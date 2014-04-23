@@ -1892,12 +1892,14 @@ Program RealHub
         if(tOpenMP) then
             write(6,"(A)") " *** OpenMP compile detected *** "
 !$          maxthreads = OMP_get_max_threads()
-!$          write(6,"(A,I7)") "Maxiumum number of threads to be used: ",maxthreads
+!$          max_omp_threads = maxthreads
+!$          write(6,"(A,I7)") "Maxiumum number of threads to be used: ",max_omp_threads
 !!$          OpenMP_wallstart = OMP_get_wtime()
 !           Do not allow nested threads to start
 !$          call OMP_set_nested(.false.)
         else
             write(6,"(A)") " No OpenMP optimizations"
+            max_omp_threads = 1
         endif
 
         !Lets test it out

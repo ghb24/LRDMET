@@ -6,7 +6,8 @@ module LinearResponse
     use mat_tools, only: DiagNonHermLatticeHam,DiagOneeOp
     use globals
     use LRSolvers
-    use SelfConsistentUtils 
+    use SelfConsistentUtils
+!$  use omp_lib
     implicit none
     integer :: CVIndex,AVIndex,CAIndex
     
@@ -38,20 +39,23 @@ module LinearResponse
         complex(dp), allocatable , target :: LinearSystem_p(:,:),LinearSystem_h(:,:)
         complex(dp), allocatable :: Cre_0(:,:),Ann_0(:,:),ResponseFn_p(:,:),ResponseFn_h(:,:)
         complex(dp), allocatable :: Gc_a_F_ax_Bra(:,:),Gc_a_F_ax_Ket(:,:),Gc_b_F_ab(:,:)
-        complex(dp), allocatable :: ResponseFn_Mat(:,:),Ga_i_F_xi_Ket(:,:)
-        complex(dp), allocatable :: Psi1_p(:),Psi1_h(:),Ga_i_F_xi_Bra(:,:),Ga_i_F_ij(:,:),ni_lr_Mat(:,:)
+        complex(dp), allocatable :: Ga_i_F_xi_Ket(:,:)
+        complex(dp), allocatable :: Psi1_p(:),Psi1_h(:),Ga_i_F_xi_Bra(:,:),Ga_i_F_ij(:,:),ni_lr_Mat(:,:,:)
         complex(dp), allocatable :: Psi_0(:)
-        complex(dp), allocatable :: NI_LRMat_Cre(:,:),NI_LRMat_Ann(:,:),GSHam(:,:)
+        complex(dp), allocatable :: GSHam(:,:)
         complex(dp), allocatable :: h0_schmidt(:,:)
         complex(dp), allocatable :: ctemp(:,:),cEmb_h_fit(:,:)
+        complex(dp), allocatable :: SPGF_Cre_Ket(:,:),SPGF_Cre_Bra(:,:)
+        complex(dp), allocatable :: SPGF_Ann_Ket(:,:),SPGF_Ann_Bra(:,:)
+        complex(dp), allocatable :: NILRMat_Cre(:,:),NILRMat_Ann(:,:)
         integer, allocatable :: Coup_Ann_alpha(:,:,:),Coup_Create_alpha(:,:,:)
         integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,ierr,info,iunit,nCore
         integer :: nLinearSystem,nOrbs,nVirt,tempK,VIndex,VirtStart,VirtEnd
         integer :: orbdum(1),nLinearSystem_h,Np1GSInd,Nm1GSInd
         integer :: pertsite,OmegaVal,nGSSpace,iters_p,iters_h
-        real(dp) :: Omega,mu,SpectralWeight,Prev_Spec,AvdNorm_p,AvdNorm_h,Error_GF
-        real(dp) :: Diff_GF,GSEnergy
-        complex(dp) :: ResponseFn,tempel,ni_lr,ni_lr_p,ni_lr_h,AvResFn_p,AvResFn_h
+        real(dp) :: Omega,mu,SpectralWeight,Prev_Spec,Error_GF
+        real(dp) :: GSEnergy
+        complex(dp) :: ResponseFn,tempel,ni_lr
         complex(dp) :: zdotc,VNorm,CNorm,SelfE(nImp,nImp)
         logical :: tParity,tFirst,tCompLatHam
         character(64) :: filename,filename2
@@ -63,7 +67,6 @@ module LinearResponse
         if(present(Lat_G_Mat)) Lat_G_Mat(:,:,:) = zzero
         SpectralWeight = 0.0_dp
         Prev_Spec = 0.0_dp
-        tFirst = .true.
         iters_p = 0
         iters_h = 0
 
@@ -98,7 +101,13 @@ module LinearResponse
         !2) It might potentially (for nImp > 1) mean that the ground state is also a function of which perturbation is applied first.
         !   This would break hermiticity of the greens functions, unless we do N^2 reoptimizations of the wavefunction. Even so, this may still 
         !   break hermiticity, since the bra and ket may now actually be different (for the off diagonal greens functions).
-        if(tLR_ReoptGS) write(6,"(A)") "Reoptimizing the ground state in the presence of the non-local coupling terms."
+        if(tLR_ReoptGS) then
+            write(6,"(A)") "Reoptimizing the ground state."
+            if(tFullReoptGS.and.tOpenMP) then
+                write(6,"(A)") "Disabling OpenMP when reoptimizing ground state in dynamic bath space"
+!$              call OMP_set_num_threads(1_OMP_integer_kind)
+            endif
+        endif
         if(tRemoveImpCoupsPreSchmidt) call stop_all(t_r,'Removing impurity coupling before '    &
             //'schmidt decomposition not available in this routine')
 
@@ -220,22 +229,19 @@ module LinearResponse
         endif
         open(unit=iunit,file=filename2,status='unknown')
         write(iunit,"(A)") "# 1.Frequency     2.GF_LinearResponse(Re)    3.GF_LinearResponse(Im)    " &
-            & //"4.ParticleGF(Re)   5.ParticleGF(Im)   6.HoleGF(Re)   7.HoleGF(Im)    8.Old_GS    9.New_GS   " &
-            & //"10.Particle_Norm  11.Hole_Norm   12.NI_GF(Re)   13.NI_GF(Im)  14.NI_GF_Part(Re)   15.NI_GF_Part(Im)   " &
-            & //"16.NI_GF_Hole(Re)   17.NI_GF_Hole(Im)  18.SpectralWeight  19.Iters_p   20.Iters_h    " 
+            & //"4.Old_GS    5.New_GS   " &
+            & //" 6.NI_GF(Re)    7.NI_GF(Im)   " &
+            & //" 8.SpectralWeight   9.Iters_p   10.Iters_h    " 
                 
-        allocate(SchmidtPertGF_Cre_Ket(VirtStart:nSites,nImp))
-        allocate(SchmidtPertGF_Cre_Bra(VirtStart:nSites,nImp))
-        allocate(SchmidtPertGF_Ann_Ket(1:CoreEnd,nImp))
-        allocate(SchmidtPertGF_Ann_Bra(1:CoreEnd,nImp))
-        allocate(NI_LRMat_Cre(nImp,nImp))
-        allocate(NI_LRMat_Ann(nImp,nImp))
-        allocate(ni_lr_Mat(nImp,nImp))
+        allocate(SPGF_Cre_Ket(VirtStart:nSites,nImp))
+        allocate(SPGF_Cre_Bra(VirtStart:nSites,nImp))
+        allocate(SPGF_Ann_Ket(1:CoreEnd,nImp))
+        allocate(SPGF_Ann_Bra(1:CoreEnd,nImp))
+        allocate(NILRMat_Cre(nImp,nImp))
+        allocate(NILRMat_Ann(nImp,nImp))
+        allocate(ni_lr_Mat(nImp,nImp,nESteps))
         allocate(ResponseFn_p(nImp,nImp))
         allocate(ResponseFn_h(nImp,nImp))
-        allocate(ResponseFn_Mat(nImp,nImp))
-        allocate(dNorm_p(nImp))
-        allocate(dNorm_h(nImp))
         
         !Allocate memory for hamiltonian in this system:
         allocate(LinearSystem_p(nLinearSystem,nLinearSystem),stat=ierr)
@@ -355,18 +361,25 @@ module LinearResponse
         call SetupNumberCouplingOps(Coup_Create_alpha,Coup_Ann_alpha)
 
         call halt_timer(LR_EC_GF_Precom)
+        if(tOpenMP) call set_timer(LR_EC_GF_HBuild)
 
-        OmegaVal = 0
-        do while(.true.)
+        !TODO: Sort out intermediates assuming hermitian contraction coefficients to halve storage
+
+!        OmegaVal = 0
+!        do while(.true.)
+!$OMP PARALLEL DO PRIVATE(Omega,NILRMat_Cre,NILRMat_Cre,NILRMat_Ann,SPGF_Cre_Bra,SPGF_Cre_Ket,SPGF_Ann_Bra,SPGF_Ann_Ket,Gc_a_F_ax_Bra,Gc_a_F_ax_Ket,Gc_b_F_ab,Ga_i_F_xi_Bra,Ga_i_F_xi_Ket,G_i_F_ij,LinearSystem_p,LinearSystem_h,VNorm,tempel,CNorm,Psi1_p,Psi1_h,info,ResponseFn_p,ResponseFn_h)
+        do OmegaVal = 1,nESteps
             if(present(FreqPoints)) then
-                call GetNextOmega(Omega,OmegaVal,tMatbrAxis,nFreqPoints=nESteps,FreqPoints=FreqPoints)
+                call GetOmega(Omega,OmegaVal,tMatbrAxis,FreqPoints=FreqPoints)
+!                call GetNextOmega(Omega,OmegaVal,tMatbrAxis,nFreqPoints=nESteps,FreqPoints=FreqPoints)
             else
-                call GetNextOmega(Omega,OmegaVal,tMatbrAxis)
+                call GetOmega(Omega,OmegaVal,tMatbrAxis)
+!                call GetNextOmega(Omega,OmegaVal,tMatbrAxis)
             endif
-            if(OmegaVal.lt.0) exit
-            if(OmegaVal.gt.nESteps) call stop_all(t_r,'More frequency points than anticipated')
+!            if(OmegaVal.lt.0) exit
+!            if(OmegaVal.gt.nESteps) call stop_all(t_r,'More frequency points than anticipated')
 
-            call set_timer(LR_EC_GF_HBuild)
+            if(.not.tOpenMP) call set_timer(LR_EC_GF_HBuild)
         
             if(tMatbrAxis) then
                 write(6,"(A,F12.6)") "Calculating linear response for imaginary frequency: ",Omega
@@ -375,26 +388,26 @@ module LinearResponse
             endif
         
             !Schmidt decompose the response vector
-            call FindNI_Charged_FitLat(Omega,GFChemPot,NI_LRMat_Cre,NI_LRMat_Ann,tMatbrAxis,cham,LatVals,LatVecs)
+            call FindNI_Charged_FitLat(Omega,GFChemPot,NILRMat_Cre,NILRMat_Ann,tMatbrAxis,cham,LatVals,LatVecs, &
+                VirtStart,CoreEnd,SPGF_Cre_Ket,SPGF_Cre_Bra,SPGF_Ann_Ket,SPGF_Ann_Bra)
 
-            
             !Construct useful intermediates, using zgemm
             !sum_a Gc_a^* F_ax (Creation)
             call ZGEMM('T','N',EmbSize,nImp,nVirt,zone,FockSchmidt_SE_VX(VirtStart:VirtEnd,ActiveStart:ActiveEnd),  &
-                nVirt,SchmidtPertGF_Cre_Bra(VirtStart:VirtEnd,:),nVirt,zzero,Gc_a_F_ax_Bra,EmbSize)
+                nVirt,SPGF_Cre_Bra(VirtStart:VirtEnd,:),nVirt,zzero,Gc_a_F_ax_Bra,EmbSize)
             call ZGEMM('N','N',EmbSize,nImp,nVirt,zone,FockSchmidt_SE_XV(ActiveStart:ActiveEnd,VirtStart:VirtEnd),  &
-                EmbSize,SchmidtPertGF_Cre_Ket(VirtStart:VirtEnd,:),nVirt,zzero,Gc_a_F_ax_Ket,EmbSize)
+                EmbSize,SPGF_Cre_Ket(VirtStart:VirtEnd,:),nVirt,zzero,Gc_a_F_ax_Ket,EmbSize)
             !sum_b Gc_b F_ab  (Creation)
             call ZGEMM('N','N',nVirt,nImp,nVirt,zone,FockSchmidt_SE_VV(VirtStart:VirtEnd,VirtStart:VirtEnd),    &
-                nVirt,SchmidtPertGF_Cre_Ket(VirtStart:VirtEnd,:),nVirt,zzero,Gc_b_F_ab,nVirt)
+                nVirt,SPGF_Cre_Ket(VirtStart:VirtEnd,:),nVirt,zzero,Gc_b_F_ab,nVirt)
 
             !sum_i Ga_i^bra F_xi (Annihilation)
             call ZGEMM('N','N',EmbSize,nImp,nCore,zone,FockSchmidt_SE_XC(ActiveStart:ActiveEnd,1:CoreEnd),EmbSize,    &
-                SchmidtPertGF_Ann_Bra(1:nCore,:),nCore,zzero,Ga_i_F_xi_Bra,EmbSize)
+                SPGF_Ann_Bra(1:nCore,:),nCore,zzero,Ga_i_F_xi_Bra,EmbSize)
             call ZGEMM('T','N',EmbSize,nImp,nCore,zone,FockSchmidt_SE_CX(1:CoreEnd,ActiveStart:ActiveEnd),nCore,    &
-                SchmidtPertGF_Ann_Ket(1:nCore,:),nCore,zzero,Ga_i_F_xi_Ket,EmbSize)
+                SPGF_Ann_Ket(1:nCore,:),nCore,zzero,Ga_i_F_xi_Ket,EmbSize)
             !sum_i Ga_i F_ij (Annihilation)
-            call ZGEMM('T','N',nCore,nImp,nCore,zone,FockSchmidt_SE_CC(:,:),nCore,SchmidtPertGF_Ann_Ket(:,:),nCore,zzero, &
+            call ZGEMM('T','N',nCore,nImp,nCore,zone,FockSchmidt_SE_CC(:,:),nCore,SPGF_Ann_Ket(:,:),nCore,zzero, &
                 Ga_i_F_ij,nCore)
 
             !Find the first-order wavefunction in the interacting picture for all impurity sites 
@@ -426,11 +439,11 @@ module LinearResponse
                 tempel = zzero 
                 do a = VirtStart,VirtEnd
                     !Calc normalization for the CV block
-                    VNorm = VNorm + SchmidtPertGF_Cre_Bra(a,pertsite)*SchmidtPertGF_Cre_Ket(a,pertsite) 
-                    !VNorm = VNorm + real(SchmidtPertGF_Cre(a,pertsite))**2 + aimag(SchmidtPertGF_Cre(a,pertsite))**2
+                    VNorm = VNorm + SPGF_Cre_Bra(a,pertsite)*SPGF_Cre_Ket(a,pertsite) 
+                    !VNorm = VNorm + real(SPGF_Cre(a,pertsite))**2 + aimag(SPGF_Cre(a,pertsite))**2
                     !Calculate the diagonal correction
-                    !tempel = tempel + conjg(SchmidtPertGF_Cre(a,pertsite))*Gc_b_F_ab(a,pertsite)
-                    tempel = tempel + SchmidtPertGF_Cre_Bra(a,pertsite)*Gc_b_F_ab(a,pertsite)
+                    !tempel = tempel + conjg(SPGF_Cre(a,pertsite))*Gc_b_F_ab(a,pertsite)
+                    tempel = tempel + SPGF_Cre_Bra(a,pertsite)*Gc_b_F_ab(a,pertsite)
                 enddo
                 tempel = tempel / VNorm
                 !Add diagonal virtual correction
@@ -452,10 +465,10 @@ module LinearResponse
                 tempel = zzero 
                 do i = 1,CoreEnd
                     !Calc normalization
-                    !CNorm = CNorm + real(SchmidtPertGF_Ann(i,pertsite))**2 + aimag(SchmidtPertGF_Ann(i,pertsite))**2
-                    CNorm = CNorm + SchmidtPertGF_Ann_Bra(i,pertsite)*SchmidtPertGF_Ann_Ket(i,pertsite)
+                    !CNorm = CNorm + real(SPGF_Ann(i,pertsite))**2 + aimag(SPGF_Ann(i,pertsite))**2
+                    CNorm = CNorm + SPGF_Ann_Bra(i,pertsite)*SPGF_Ann_Ket(i,pertsite)
                     !Calc diagonal correction
-                    tempel = tempel + SchmidtPertGF_Ann_Bra(i,pertsite)*Ga_i_F_ij(i,pertsite)
+                    tempel = tempel + SPGF_Ann_Bra(i,pertsite)*Ga_i_F_ij(i,pertsite)
                 enddo
                 tempel = -tempel / CNorm
                 !Add diagonal correction
@@ -547,9 +560,11 @@ module LinearResponse
                     enddo
                 endif
 
-                !write(6,*) "Hessian constructed successfully...",Omega
-                call halt_timer(LR_EC_GF_HBuild)
-                call set_timer(LR_EC_GF_SolveLR)
+                if(.not.tOpenMP) then
+                    !write(6,*) "Hessian constructed successfully...",Omega
+                    call halt_timer(LR_EC_GF_HBuild)
+                    call set_timer(LR_EC_GF_SolveLR)
+                endif
 
                 if(tFullReoptGS) then
                     !Reoptimize the ground state wavefunction in the full static + dynamic space.
@@ -597,7 +612,7 @@ module LinearResponse
                 if(info.ne.0) then 
                     write(6,*) "INFO: ",info
                     call warning(t_r,'Solving linear system failed for particle hamiltonian - skipping this frequency')
-                    call halt_timer(LR_EC_GF_SolveLR)
+                    if(.not.tOpenMP) call halt_timer(LR_EC_GF_SolveLR)
                     cycle
                 endif
                 !call writevectorcomp(Psi1_p,'Psi1_p')
@@ -616,13 +631,13 @@ module LinearResponse
                 if(info.ne.0) then 
                     write(6,*) "INFO: ",info
                     call warning(t_r,'Solving linear system failed for hole hamiltonian - skipping this frequency')
-                    call halt_timer(LR_EC_GF_SolveLR)
+                    if(.not.tOpenMP) call halt_timer(LR_EC_GF_SolveLR)
                     cycle
                 endif
         
                 !Find normalization of first-order wavefunctions
-                dNorm_p(pertsite) = znrm2(nLinearSystem,Psi1_p,1)
-                dNorm_h(pertsite) = znrm2(nLinearSystem,Psi1_h,1)
+!                dNorm_p(pertsite) = znrm2(nLinearSystem,Psi1_p,1)
+!                dNorm_h(pertsite) = znrm2(nLinearSystem,Psi1_h,1)
                 !write(6,*) "Normalization of first-order wavefunction: ",dNorm_p,dNorm_h
                 
                 !Now, calculate all interacting greens funtions that we want, by dotting in the first-order space
@@ -638,51 +653,35 @@ module LinearResponse
             !call writevectorcomp(Cre_0(:,1),'Cre_0')
 
             !Sum them
-            ResponseFn_Mat(:,:) = ResponseFn_p(:,:) + ResponseFn_h(:,:)
-            ni_lr_Mat(:,:) = NI_LRMat_Cre(:,:) + NI_LRMat_Ann(:,:)
-            G_Mat(:,:,OmegaVal) = ResponseFn_Mat(:,:)
-            if(present(Lat_G_Mat)) then
-                Lat_G_Mat(:,:,OmegaVal) = ni_lr_Mat(:,:)
+            G_Mat(:,:,OmegaVal) = ResponseFn_p(:,:) + ResponseFn_h(:,:)
+            ni_lr_Mat(:,:,OmegaVal) = NILRMat_Cre(:,:) + NILRMat_Ann(:,:)
+            if(present(Lat_G_Mat)) Lat_G_Mat(:,:,OmegaVal) = ni_lr_Mat(:,:,OmegaVal)
+
+            if(.not.tOpenMP) call halt_timer(LR_EC_GF_SolveLR)
+
+        enddo   !End loop over omega
+!$OMP END PARALLEL DO
+
+        !Now, read through global data and write out what is required (serial)
+        tFirst = .true. 
+        do OmegaVal = 1,nESteps
+            if(present(FreqPoints)) then
+                call GetOmega(Omega,OmegaVal,tMatbrAxis,FreqPoints=FreqPoints)
+            else
+                call GetOmega(Omega,OmegaVal,tMatbrAxis)
             endif
 
             !Now, calculate NI and interacting response function as trace over diagonal parts of the local greens functions
             !This is the isotropic average of the local greens function
             ni_lr = zzero
             ResponseFn = zzero
-            AvResFn_p = zzero
-            AvResFn_h = zzero
-            ni_lr_p = zzero
-            ni_lr_h = zzero
-            AvdNorm_p = zero
-            AvdNorm_h = zero
             do i = 1,nImp
-                ni_lr = ni_lr + ni_lr_Mat(i,i)
-                ResponseFn = ResponseFn + ResponseFn_Mat(i,i)
-                AvResFn_p = AvResFn_p + ResponseFn_p(i,i)
-                AvResFn_h = AvResFn_h + ResponseFn_h(i,i)
-                ni_lr_p = ni_lr_p + NI_LRMat_Cre(i,i)
-                ni_lr_h = ni_lr_h + NI_LRMat_Ann(i,i)
-                AvdNorm_p = AvdNorm_p + dNorm_p(i)
-                AvdNorm_h = AvdNorm_h + dNorm_h(i)
+                ni_lr = ni_lr + ni_lr_Mat(i,i,OmegaVal)
+                ResponseFn = ResponseFn + G_Mat(i,i,OmegaVal)
             enddo
             ni_lr = ni_lr/real(nImp,dp)
-            ni_lr_p = ni_lr_p/real(nImp,dp)
-            ni_lr_h = ni_lr_h/real(nImp,dp)
             ResponseFn = ResponseFn/real(nImp,dp)
-            AvResFn_p = AvResFn_p/real(nImp,dp)
-            AvResFn_h = AvResFn_h/real(nImp,dp)
-            AvdNorm_p = AvdNorm_p/real(nImp,dp)
-            AvdNorm_h = AvdNorm_h/real(nImp,dp)
-            write(6,"(A,F13.7)") "Response function value: ",-aimag(ResponseFn)
-
-            Diff_GF = zero  !real(abs(ResponseFn - ni_lr))
-            do i=1,nImp
-                do j=1,nImp
-                    Diff_GF = Diff_GF + real((ni_lr_Mat(j,i)-ResponseFn_Mat(j,i))*dconjg(ni_lr_Mat(j,i)-ResponseFn_Mat(j,i)))
-                enddo
-            enddo
-        
-            call halt_timer(LR_EC_GF_SolveLR)
+!            write(6,"(A,F13.7)") "Response function value: ",-aimag(ResponseFn)
 
             if(.not.tFirst) then
                 if(tMatbrAxis) then
@@ -693,23 +692,27 @@ module LinearResponse
                 Prev_Spec = -aimag(ResponseFn)
             endif
 
-            write(iunit,"(18G22.10,2I7)") Omega,real(ResponseFn),-aimag(ResponseFn), &
-                real(AvResFn_p),-aimag(AvResFn_p),real(AvResFn_h),-aimag(AvResFn_h),    &
-                HL_Energy,GSEnergy,abs(AvdNorm_p),abs(AvdNorm_h),real(ni_lr),-aimag(ni_lr),real(ni_lr_p),    &
-                -aimag(ni_lr_p),real(ni_lr_h),-aimag(ni_lr_h),SpectralWeight,iters_p,iters_h!,real(ni_lr_Mat(1,2)),aimag(ni_lr_Mat(1,2))
-            call flush(iunit)
-            call flush(6)
+            write(iunit,"(8G22.10,2I7)") Omega,real(ResponseFn),-aimag(ResponseFn), &
+                HL_Energy,GSEnergy,real(ni_lr),-aimag(ni_lr),    &
+                SpectralWeight,iters_p,iters_h
 
             if(tFirst) tFirst = .false.
 
-        enddo   !End loop over omega
+        enddo
+        call flush(iunit)
+        call flush(6)
 
         write(6,"(A,G22.10)") "Total integrated spectral weight: ",SpectralWeight
+            
+        if(tFullReoptGS.and.tOpenMP) then
+            !Return the number of OMP threads to the original value
+!$          call OMP_set_num_threads(int(max_omp_threads,OMP_integer_kind))
+        endif
         
-        deallocate(LinearSystem_p,LinearSystem_h,Psi1_p,Psi1_h,dNorm_p,dNorm_h)
-        deallocate(Cre_0,Ann_0,Psi_0,SchmidtPertGF_Cre_Ket,SchmidtPertGF_Ann_Ket)
-        deallocate(NI_LRMat_Cre,NI_LRMat_Ann,ResponseFn_p,ResponseFn_h,ResponseFn_Mat)
-        deallocate(ni_lr_Mat,SchmidtPertGF_Cre_Bra,SchmidtPertGF_Ann_Bra)
+        deallocate(LinearSystem_p,LinearSystem_h,Psi1_p,Psi1_h)
+        deallocate(Cre_0,Ann_0,Psi_0,SPGF_Cre_Ket,SPGF_Ann_Ket)
+        deallocate(NILRMat_Cre,NILRMat_Ann,ResponseFn_p,ResponseFn_h)
+        deallocate(ni_lr_Mat,SPGF_Cre_Bra,SPGF_Ann_Bra)
         close(iunit)
         if(tFullReoptGS) then
             deallocate(GSHam)
@@ -740,6 +743,9 @@ module LinearResponse
         deallocate(LatVals)
         deallocate(LatVecs)
         deallocate(h0_schmidt)
+        
+        !In OpenMP, we just time parallel bits together 
+        if(tOpenMP) call halt_timer(LR_EC_GF_HBuild)
 
     end subroutine SchmidtGF_FromLat
 
@@ -9417,20 +9423,25 @@ module LinearResponse
     !Calculate the non-interacting greens functions for the lattice hamiltonian ham
     !This is then Schmidt decomposed to find the contraction coefficients for the 
     !environment blocks of the hamiltonians.
-    !The NI_LRMat_Cre and NI_LRMat_Ann matrices are returned as the non-interacting LR
-    !The global matrices SchmidtPertGF_Cre and SchmidtPertGF_Ann are filled
-    subroutine FindNI_Charged_FitLat(Omega,GFChemPot,NI_LRMat_Cre,NI_LRMat_Ann,tMatbrAxis,ham,latvals,latvecs)
+    !The NILRMat_Cre and NILRMat_Ann matrices are returned as the non-interacting LR
+    !The matrices SPGF_Cre and SPGF_Ann are filled
+    subroutine FindNI_Charged_FitLat(Omega,GFChemPot,NILRMat_Cre,NILRMat_Ann,tMatbrAxis,ham,latvals,latvecs,VirtStart,CoreEnd,SPGF_Cre_Ket,SPGF_Cre_Bra,SPGF_Ann_Ket,SPGF_Ann_Bra)
         implicit none
         real(dp), intent(in) :: Omega,GFChemPot
-        complex(dp), intent(out) :: NI_LRMat_Cre(nImp,nImp),NI_LRMat_Ann(nImp,nImp)
+        integer, intent(in) :: VirtStart,CoreEnd
+        complex(dp), intent(out) :: NILRMat_Cre(nImp,nImp),NILRMat_Ann(nImp,nImp)
         logical, intent(in) :: tMatbrAxis
         complex(dp), intent(in) :: ham(nSites,nSites)
         real(dp), intent(in) :: latvals(nSites)
         complex(dp), intent(in) :: latvecs(nSites,nSites)
+        complex(dp), intent(out) :: SPGF_Cre_Ket(VirtStart:nSites,nImp)
+        complex(dp), intent(out) :: SPGF_Cre_Bra(VirtStart:nSites,nImp)
+        complex(dp), intent(out) :: SPGF_Ann_Ket(1:CoreEnd,nImp)
+        complex(dp), intent(out) :: SPGF_Ann_Bra(1:CoreEnd,nImp)
 
         complex(dp), allocatable :: HFPertBasis_Ann_Ket(:,:),HFPertBasis_Cre_Ket(:,:),temp(:,:),temp2(:,:)
         complex(dp), allocatable :: HFPertBasis_Ann_Bra(:,:),HFPertBasis_Cre_Bra(:,:)
-        integer :: i,a,pertBra,j,pertsite,nVirt,CoreEnd,VirtStart,ActiveStart,ActiveEnd,nCore
+        integer :: i,a,pertBra,j,pertsite,nVirt,ActiveStart,ActiveEnd,nCore
         character(len=*), parameter :: t_r='FindNI_Charged_FitLat'
 
         !Memory to temperarily store the first order wavefunctions of each impurity site, in the right MO basis (For the Kets)
@@ -9444,8 +9455,8 @@ module LinearResponse
         HFPertBasis_Ann_Ket(:,:) = zzero
         HFPertBasis_Cre_Ket(:,:) = zzero
         
-        NI_LRMat_Cre(:,:) = zzero
-        NI_LRMat_Ann(:,:) = zzero 
+        NILRMat_Cre(:,:) = zzero
+        NILRMat_Ann(:,:) = zzero 
 
         !Now, form the non-interacting greens functions (but with u *and* self-energy)
         do pertsite = 1,nImp
@@ -9473,11 +9484,11 @@ module LinearResponse
             do pertBra = 1,nImp
                 !Now perform the set of dot products of <0|V* with |1> for all combinations of sites
                 do i = 1,nOcc
-                    NI_LRMat_Ann(pertsite,pertBra) = NI_LRMat_Ann(pertsite,pertBra) +   &
+                    NILRMat_Ann(pertsite,pertBra) = NILRMat_Ann(pertsite,pertBra) +   &
                         latvecs(pertBra,i)*HFPertBasis_Ann_Ket(i,pertsite)
                 enddo
                 do a = nOcc+1,nSites
-                    NI_LRMat_Cre(pertBra,pertsite) = NI_LRMat_Cre(pertBra,pertsite) +   &
+                    NILRMat_Cre(pertBra,pertsite) = NILRMat_Cre(pertBra,pertsite) +   &
                         latvecs(pertBra,a)*HFPertBasis_Cre_Ket(a,pertsite)
                 enddo
             enddo
@@ -9486,8 +9497,6 @@ module LinearResponse
         !Schmidt basis bounds
         nVirt = nSites-nOcc-nImp   
         nCore = nOcc-nImp
-        CoreEnd = nOcc-nImp
-        VirtStart = nOcc+nImp+1
         ActiveStart = nOcc-nImp+1
         ActiveEnd = nOcc+nImp
 
@@ -9504,7 +9513,7 @@ module LinearResponse
             !temp is now the (nSites,nImp) rotated HFPertBasis_Ann into the AO basis
             !Now rotate this into the occupied schmidt basis
         call ZGEMM('C','N',nCore,nImp,nSites,zone,FullSchmidtBasis_C(:,1:CoreEnd),nSites,temp,nSites,zzero,   &
-            SchmidtPertGF_Ann_Ket(1:CoreEnd,:),nCore)
+            SPGF_Ann_Ket(1:CoreEnd,:),nCore)
         !Now do the same for the bra contraction coefficients, which are expressed as Bras
         allocate(temp2(nSites,1:nOcc))
         do i=1,nOcc
@@ -9516,14 +9525,14 @@ module LinearResponse
             temp,nSites)
         deallocate(temp2)
         call ZGEMM('C','N',nCore,nImp,nSites,zone,FullSchmidtBasis_C(:,1:CoreEnd),nSites,temp,nSites,zzero,   &
-            SchmidtPertGF_Ann_Bra(1:CoreEnd,:),nCore)
+            SPGF_Ann_Bra(1:CoreEnd,:),nCore)
 
         !Do the same with the particle NI GF
         call ZGEMM('N','N',nSites,nImp,nSites-nOcc,zone,latvecs(:,nOcc+1:nSites),nSites,  &
             HFPertBasis_Cre_Ket,nSites-nOcc,zzero,temp,nSites)
         !Now rotate into schmidt basis
         call ZGEMM('C','N',nVirt,nImp,nSites,zone,FullSchmidtBasis_C(:,VirtStart:nSites),nSites,temp,nSites,zzero,    &
-            SchmidtPertGF_Cre_Ket(VirtStart:nSites,:),nVirt)
+            SPGF_Cre_Ket(VirtStart:nSites,:),nVirt)
         !Now for the Bra version of the particle NI GF
         allocate(temp2(nSites,nOcc+1:nSites))
         do i = nOcc+1,nSites
@@ -9535,24 +9544,24 @@ module LinearResponse
             HFPertBasis_Cre_Bra,nSites-nOcc,zzero,temp,nSites)
         !Now rotate into schmidt basis
         call ZGEMM('C','N',nVirt,nImp,nSites,zone,FullSchmidtBasis_C(:,VirtStart:nSites),nSites,temp,nSites,zzero,    &
-            SchmidtPertGF_Cre_Bra(VirtStart:nSites,:),nVirt)
+            SPGF_Cre_Bra(VirtStart:nSites,:),nVirt)
         deallocate(temp,temp2)
         
         !Check that in the absence of a self-energy, the Bra and Ket are complex conjugates of each other.
         do j = 1,nImp
             do i = VirtStart,nSites
-                if(abs(SchmidtPertGF_Cre_Bra(i,j)-dconjg(SchmidtPertGF_Cre_Ket(i,j))).gt.1.0e-7_dp) then
+                if(abs(SPGF_Cre_Bra(i,j)-dconjg(SPGF_Cre_Ket(i,j))).gt.1.0e-7_dp) then
                     write(6,*) "i: ",i,VirtStart,nSites,j
-                    write(6,*) "Cre Bra: ",SchmidtPertGF_Cre_Bra(i,j)
-                    write(6,*) "Cre Ket: ",SchmidtPertGF_Cre_Ket(i,j)
+                    write(6,*) "Cre Bra: ",SPGF_Cre_Bra(i,j)
+                    write(6,*) "Cre Ket: ",SPGF_Cre_Ket(i,j)
                     call stop_all(t_r,'Bra and Ket are not cc')
                 endif
             enddo
             do i = 1,CoreEnd
-                if(abs(SchmidtPertGF_Ann_Bra(i,j)-dconjg(SchmidtPertGF_Ann_Ket(i,j))).gt.1.0e-7_dp) then
+                if(abs(SPGF_Ann_Bra(i,j)-dconjg(SPGF_Ann_Ket(i,j))).gt.1.0e-7_dp) then
                     write(6,*) "i: ",i,1,CoreEnd,j
-                    write(6,*) "Ann Bra: ",SchmidtPertGF_Ann_Bra(i,j)
-                    write(6,*) "Ann Ket: ",SchmidtPertGF_Ann_Ket(i,j)
+                    write(6,*) "Ann Bra: ",SPGF_Ann_Bra(i,j)
+                    write(6,*) "Ann Ket: ",SPGF_Ann_Ket(i,j)
                     call stop_all(t_r,'Bra and Ket are not cc')
                 endif
             enddo

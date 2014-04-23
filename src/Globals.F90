@@ -22,6 +22,7 @@ module Globals
     logical :: tWriteOut    !Write out additional info
     logical :: tCheck   !Perform extra checks in various subroutines to ensure correct working
     logical :: tOpenMP
+    integer :: max_omp_threads
     logical :: tReadSystem  !Read the system from files
     logical :: tThermal     !Are we calculating the thermal bath?
     logical :: tSingFiss    !For the Singlet Fission project
