@@ -57,7 +57,7 @@ module LinearResponse
         integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,ierr,info,iunit,nCore
         integer :: nLinearSystem,nOrbs,nVirt,tempK,VIndex,VirtStart,VirtEnd
         integer :: orbdum(1),nLinearSystem_h,Np1GSInd,Nm1GSInd
-        integer :: pertsite,OmegaVal,nGSSpace,iters_p,iters_h
+        integer :: pertsite,OmegaVal,nGSSpace,iters_p,iters_h,mem,mem2
         real(dp) :: Omega,mu,SpectralWeight,Prev_Spec,Error_GF
         real(dp) :: GSEnergy
         complex(dp) :: ResponseFn,tempel,ni_lr
@@ -74,6 +74,7 @@ module LinearResponse
         Prev_Spec = 0.0_dp
         iters_p = 0
         iters_h = 0
+        mem = 0 !number of complex numbers to allocate
 
         write(6,"(A)") "Calculating non-interacting EC MR-TDA LR system for *hole* & *particle* alpha spin-orbital perturbations..."
         if(.not.tConstructFullSchmidtBasis) call stop_all(t_r,'To solve LR, must construct full schmidt basis')
@@ -122,6 +123,7 @@ module LinearResponse
         LatVecs(:,:) = cham(:,:)
         LatVals(:) = zero
         call DiagOneEOp(LatVecs,LatVals,nImp,nSites,tDiag_kspace)
+        mem = mem + nSites**2 + nSites/2
 
         allocate(ctemp(nSites,nSites))
         if(tRemakeStaticBath) then
@@ -141,6 +143,7 @@ module LinearResponse
             call ZGEMM('C','N',nSites,nSites,nSites,zone,FullSchmidtBasis_c,nSites,FockSchmidt_c,nSites,zzero,ctemp,nSites)
             call ZGEMM('N','N',nSites,nSites,nSites,zone,ctemp,nSites,FullSchmidtBasis_c,nSites,zzero,FockSchmidt_c,nSites)
         endif
+        mem = mem + 2*(nSites**2)
 
         !In addition, lets calculate the bare 1-electron operator in the schmidt basis
         !Order of ham_schmidt = core, imp, bath, virt
@@ -173,6 +176,7 @@ module LinearResponse
         call GenDets(Elec,EmbSize,.true.,.true.,.true.) 
         write(6,*) "Number of determinants in {N,N+1,N-1} FCI space: ",ECoupledSpace
         write(6,"(A,F12.5,A)") "Memory required for det list storage: ",DetListStorage*RealtoMb, " Mb"
+        mem = mem + DetListStorage / 2
 
         !We are going to choose the uncontracted particle space to have an Ms of 1 (i.e. alpha spin)
         !Construct FCI hamiltonians for the N, N+1_alpha and N-1_beta spaces
@@ -185,6 +189,7 @@ module LinearResponse
         allocate(Np1FCIHam_alpha(nNp1FCIDet,nNp1FCIDet))
         allocate(Nm1FCIHam_beta(nNm1bFCIDet,nNm1bFCIDet))
         call Fill_N_Np1_Nm1b_FCIHam(Elec,1,1,1,NHam=NFCIHam,Np1Ham=Np1FCIHam_alpha,Nm1Ham=Nm1FCIHam_beta)
+        mem = mem + nFCIDet**2 + nNp1FCIDet**2 + nNm1bFCIDet**2
 
         nLinearSystem = nNp1FCIDet + nFCIDet
         nLinearSystem_h = nNm1bFCIDet + nFCIDet
@@ -239,11 +244,14 @@ module LinearResponse
             & //" 8.SpectralWeight   9.Iters_p   10.Iters_h    " 
                 
         allocate(ni_lr_Mat(nImp,nImp,nESteps))
+        mem = mem + nESteps*nImp**2
         
         !Allocate memory for hamiltonian in this system:
         allocate(Psi_0(nGSSpace),stat=ierr)   !If tFullReoptGS = .F. , then only the first nFCIDet elements will be used
+        mem = mem + nGSSpace
         if(tFullReoptGS) then
             allocate(GSHam(nGSSpace,nGSSpace),stat=ierr)
+            mem = mem + nGSSpace**2
         endif
         if(ierr.ne.0) call stop_all(t_r,'Error allocating')
         i = nFCIDet*3 + nLinearSystem*5
@@ -255,6 +263,7 @@ module LinearResponse
         allocate(Ann_0(nLinearSystem,nImp))
         Cre_0(:,:) = zzero
         Ann_0(:,:) = zzero
+        mem = mem + nLinearSystem*nImp*2
         if(.not.tLR_ReoptGS) then
             if(tRemakeStaticBath) call stop_all(t_r,'Cannot remake static bath without at ' &
                 //'least partially reoptimizing the ground state')
@@ -285,6 +294,7 @@ module LinearResponse
             !This will be done later on.
             continue
         endif
+        mem = mem + nFCIDet
 
         if(.not.tFullReoptGS) then
             !Since the hamiltonian does not depend at all on the dynamic basis, the RHS of the equations can be precomputed
@@ -306,6 +316,7 @@ module LinearResponse
         write(6,"(A,F12.5,A)") "Memory required for fock matrix: ", &
             (((2.0_dp*real(nSites,dp))**2)+(real(nOcc,dp)**2)+(real(nSites-nOcc,dp)**2))*ComptoMb, " Mb"
         if(ierr.ne.0) call stop_all(t_r,'Error allocating')
+        mem = mem + nSites**2 + nVirt**2 + nCore**2 + nVirt*nImp*2 + nCore*nImp*2
 
         !FockSchmidt_SE is the matrix that we use for the decomposed space. i.e. it has had the impurity coupling removed
         !This is the matrix which should be accessed in the construction of the Hessians
@@ -333,11 +344,13 @@ module LinearResponse
                 call stop_all(t_r,'FockSchmidt_SE not hermitian')
             endif
         enddo
+        deallocate(h0_schmidt)
 
         !Allocate and precompute 1-operator coupling coefficients between the different sized spaces.
         !First number is the index of operator, and the second is the parity change when applying the operator
         allocate(Coup_Create_alpha(2,nFCIDet,nNm1bFCIDet))
         allocate(Coup_Ann_alpha(2,nFCIDet,nNp1FCIDet))
+        mem = mem + nFCIDet*nNm1bFCIDet*2
 
         call SetupNumberCouplingOps(Coup_Create_alpha,Coup_Ann_alpha)
 
@@ -363,6 +376,14 @@ module LinearResponse
         do i = nOcc+1,nSites
             Virt_latvecs(:,i) = latvecs(:,i)
         enddo
+        mem = mem + nSites*nCore + nSites*nVirt + nSites*nOcc + nSites*nVirt
+        write(6,"(A,F10.4,A)") "Memory required for Shared arrays: ",mem*ComptoMb," Mb"
+        mem2 = nVirt*nImp*3 + nCore*nImp*3 + 2*nImp**2 + 4*nImp**2 + 2*nLinearSystem**2 + nLinearSystem*2
+        mem2 = mem + nOcc*nImp*4 + nSites*nImp + nSites*nOcc*2
+        write(6,"(A,F10.4,A)") "Memory required *per thread* for private arrays: ",mem2*ComptoMb," Mb"
+!$      mem2 = mem2 * OMP_get_max_threads()
+        mem2 = mem2 + mem
+        write(6,"(A,F10.4,A)") "Total memory required: ",mem2*ComptoMb," Mb"
 
         call halt_timer(LR_EC_GF_Precom)
         if(tOpenMP) call set_timer(LR_EC_GF_HBuild)
@@ -789,7 +810,6 @@ module LinearResponse
 
         deallocate(LatVals)
         deallocate(LatVecs)
-        deallocate(h0_schmidt)
         deallocate(Core_SchmidtB,Virt_SchmidtB,Core_latvecs,Virt_latvecs)
         
         !In OpenMP, we just time parallel bits together 
