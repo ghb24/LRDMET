@@ -51,6 +51,8 @@ module LinearResponse
         complex(dp), allocatable :: HFRes_Ann_Ket(:,:),HFRes_Cre_Ket(:,:)
         complex(dp), allocatable :: HFRes_Ann_Bra(:,:),HFRes_Cre_Bra(:,:)
         complex(dp), allocatable :: temp(:,:),temp2(:,:),temp3(:,:)
+        complex(dp), allocatable :: Core_SchmidtB(:,:),Virt_SchmidtB(:,:)
+        complex(dp), allocatable :: Core_latvecs(:,:), Virt_latvecs(:,:)
         integer, allocatable :: Coup_Ann_alpha(:,:,:),Coup_Create_alpha(:,:,:)
         integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,ierr,info,iunit,nCore
         integer :: nLinearSystem,nOrbs,nVirt,tempK,VIndex,VirtStart,VirtEnd
@@ -339,6 +341,29 @@ module LinearResponse
 
         call SetupNumberCouplingOps(Coup_Create_alpha,Coup_Ann_alpha)
 
+        !Array slices for the schmidt decomposition routine
+        allocate(Core_SchmidtB(nSites,1:CoreEnd))
+        allocate(Virt_SchmidtB(nSites,VirtStart:nSites))
+        allocate(Core_latvecs(nSites,nOcc))
+        allocate(Virt_latvecs(nSites,nOcc+1:nSites))
+        Core_SchmidtB(:,:) = zzero
+        Virt_SchmidtB(:,:) = zzero
+        Core_latvecs(:,:) = zzero
+        Virt_latvecs(:,:) = zzero
+        if(.not.allocated(FullSchmidtBasis_C)) call stop_all(t_r,'Schmidt basis not allocated')
+        do i = 1,CoreEnd
+            Core_SchmidtB(:,i) = FullSchmidtBasis_C(:,i)
+        enddo
+        do i = VirtStart,nSites 
+            Virt_SchmidtB(:,i) = FullSchmidtBasis_C(:,i)
+        enddo
+        do i = 1,nOcc
+            Core_latvecs(:,i) = latvecs(:,i)
+        enddo
+        do i = nOcc+1,nSites
+            Virt_latvecs(:,i) = latvecs(:,i)
+        enddo
+
         call halt_timer(LR_EC_GF_Precom)
         if(tOpenMP) call set_timer(LR_EC_GF_HBuild)
 
@@ -400,16 +425,17 @@ module LinearResponse
             if(.not.tOpenMP) call set_timer(LR_EC_GF_HBuild)
         
             if(tMatbrAxis) then
-                write(6,"(A,F12.6)") "Calculating linear response for imaginary frequency: ",Omega
+                write(6,"(A,F12.6,I6)") "Calculating linear response for imaginary frequency: ",Omega   !,OMP_get_thread_num()
             else
-                write(6,"(A,F12.6)") "Calculating linear response for frequency: ",Omega
+                write(6,"(A,F12.6,I6)") "Calculating linear response for frequency: ",Omega !,OMP_get_thread_num()
             endif
 
             !Schmidt decompose the response vector
             call FindNI_Charged_FitLat(Omega,GFChemPot,NILRMat_Cre,NILRMat_Ann,tMatbrAxis,cham,LatVals,LatVecs, &
                 VirtStart,CoreEnd,SPGF_Cre_Ket,SPGF_Cre_Bra,SPGF_Ann_Ket,SPGF_Ann_Bra,HFRes_Ann_Ket,    &
-                HFRes_Cre_Ket,HFRes_Ann_Bra,HFRes_Cre_Bra,temp,temp2,temp3)
-
+                HFRes_Cre_Ket,HFRes_Ann_Bra,HFRes_Cre_Bra,temp,temp2,temp3,Core_SchmidtB,   &
+                Virt_SchmidtB,Core_latvecs,Virt_latvecs)
+            
             !Construct useful intermediates, using zgemm
             !sum_a Gc_a^* F_ax (Creation)
             call ZGEMM('T','N',EmbSize,nImp,nVirt,zone,FockSchmidt_SE_VX(VirtStart:VirtEnd,ActiveStart:ActiveEnd),  &
@@ -428,7 +454,7 @@ module LinearResponse
             !sum_i Ga_i F_ij (Annihilation)
             call ZGEMM('T','N',nCore,nImp,nCore,zone,FockSchmidt_SE_CC(:,:),nCore,SPGF_Ann_Ket(:,:),nCore,zzero, &
                 Ga_i_F_ij,nCore)
-
+            
             !Find the first-order wavefunction in the interacting picture for all impurity sites 
             do pertsite = 1,nImp
 
@@ -578,7 +604,7 @@ module LinearResponse
                         enddo
                     enddo
                 endif
-
+            
                 if(.not.tOpenMP) then
                     !write(6,*) "Hessian constructed successfully...",Omega
                     call halt_timer(LR_EC_GF_HBuild)
@@ -764,6 +790,7 @@ module LinearResponse
         deallocate(LatVals)
         deallocate(LatVecs)
         deallocate(h0_schmidt)
+        deallocate(Core_SchmidtB,Virt_SchmidtB,Core_latvecs,Virt_latvecs)
         
         !In OpenMP, we just time parallel bits together 
         if(tOpenMP) call halt_timer(LR_EC_GF_HBuild)
@@ -9446,7 +9473,8 @@ module LinearResponse
     !The matrices SPGF_Cre and SPGF_Ann are filled
     subroutine FindNI_Charged_FitLat(Omega,GFChemPot,NILRMat_Cre,NILRMat_Ann,tMatbrAxis,ham,latvals,latvecs,    &
         VirtStart,CoreEnd,SPGF_Cre_Ket,SPGF_Cre_Bra,SPGF_Ann_Ket,SPGF_Ann_Bra,HFPertBasis_Ann_Ket,  &
-        HFPertBasis_Cre_Ket,HFPertBasis_Ann_Bra,HFPertBasis_Cre_Bra,temp,temp2,temp3)
+        HFPertBasis_Cre_Ket,HFPertBasis_Ann_Bra,HFPertBasis_Cre_Bra,temp,temp2,temp3,   &
+        Core_SchmidtB,Virt_SchmidtB,Core_latvecs,Virt_latvecs)
         implicit none
         real(dp), intent(in) :: Omega,GFChemPot
         integer, intent(in) :: VirtStart,CoreEnd
@@ -9465,9 +9493,16 @@ module LinearResponse
         complex(dp), intent(out) :: HFPertBasis_Cre_Bra(nOcc+1:nSites,nImp)
         complex(dp), intent(out) :: temp(nSites,nImp),temp2(nSites,1:nOcc)
         complex(dp), intent(out) :: temp3(nSites,nOcc+1:nSites)
+        complex(dp), intent(in) :: Core_SchmidtB(nSites,1:CoreEnd)   !FullSchmidtBasis_C(nSites,1:CoreEnd)
+        complex(dp), intent(in) :: Virt_SchmidtB(nSites,VirtStart:nSites)   !FullSchmidtBasis_C(nSites,VirtStart:nSites)
+        complex(dp), intent(in) :: Core_latvecs(nSites,nOcc)    !latvecs(nSites,nOcc)
+        complex(dp), intent(in) :: Virt_latvecs(nSites,nOcc+1:nSites)  !latvecs(nSites,nOcc+1:nSites)
 
         integer :: i,a,pertBra,j,pertsite,nVirt,ActiveStart,ActiveEnd,nCore
         character(len=*), parameter :: t_r='FindNI_Charged_FitLat'
+
+        NILRMat_Ann(:,:) = zzero 
+        NILRMat_Cre(:,:) = zzero 
 
         !Memory to temperarily store the first order wavefunctions of each impurity site, in the right MO basis (For the Kets)
         !and the left MO space (for the Bras)
@@ -9479,9 +9514,6 @@ module LinearResponse
         HFPertBasis_Cre_Bra(:,:) = zzero
         HFPertBasis_Ann_Ket(:,:) = zzero
         HFPertBasis_Cre_Ket(:,:) = zzero
-        
-        NILRMat_Ann(:,:) = zzero 
-        NILRMat_Cre(:,:) = zzero 
 
         !Now, form the non-interacting greens functions (but with u *and* self-energy)
         do pertsite = 1,nImp
@@ -9529,16 +9561,18 @@ module LinearResponse
         !We want to rotate the vectors, expressed in the 'right' basis (the kets), back into that AO basis.
         !If we can do that, we can easily rotate into the Schmidt basis.
         !The AO to schmidt decomposition is found in FullSchmidtBasis_c 
-        if(.not.allocated(FullSchmidtBasis_c)) call stop_all(t_r,'Error here')
 
         !First, rotate into the AO basis
 !        allocate(temp(nSites,nImp))
-        call ZGEMM('N','N',nSites,nImp,nOcc,zone,latvecs(:,1:nOcc),nSites,HFPertBasis_Ann_Ket(1:nOcc,:),nOcc,zzero,  &
+        !call ZGEMM('N','N',nSites,nImp,nOcc,zone,latvecs(:,1:nOcc),nSites,HFPertBasis_Ann_Ket,nOcc,zzero,  &
+        !    temp,nSites)
+        call ZGEMM('N','N',nSites,nImp,nOcc,zone,Core_latvecs,nSites,HFPertBasis_Ann_Ket,nOcc,zzero,  &
             temp,nSites)
-            !temp is now the (nSites,nImp) rotated HFPertBasis_Ann into the AO basis
-            !Now rotate this into the occupied schmidt basis
-        call ZGEMM('C','N',nCore,nImp,nSites,zone,FullSchmidtBasis_C(:,1:CoreEnd),nSites,temp,nSites,zzero,   &
-            SPGF_Ann_Ket(1:CoreEnd,:),nCore)
+
+        !temp is now the (nSites,nImp) rotated HFPertBasis_Ann into the AO basis
+        !Now rotate this into the occupied schmidt basis
+        call ZGEMM('C','N',nCore,nImp,nSites,zone,Core_SchmidtB,nSites,temp,nSites,zzero,   &
+            SPGF_Ann_Ket,nCore)
 
         !Now do the same for the bra contraction coefficients, which are expressed as Bras
 !        allocate(temp2(nSites,1:nOcc))
@@ -9547,18 +9581,18 @@ module LinearResponse
                 temp2(j,i) = dconjg(latvecs(j,i))
             enddo
         enddo
-        call ZGEMM('N','N',nSites,nImp,nOcc,zone,temp2(:,1:nOcc),nSites,HFPertBasis_Ann_Bra(1:nOcc,:),nOcc,zzero,    &
+        call ZGEMM('N','N',nSites,nImp,nOcc,zone,temp2,nSites,HFPertBasis_Ann_Bra,nOcc,zzero,    &
             temp,nSites)
 !        deallocate(temp2)
-        call ZGEMM('C','N',nCore,nImp,nSites,zone,FullSchmidtBasis_C(:,1:CoreEnd),nSites,temp,nSites,zzero,   &
-            SPGF_Ann_Bra(1:CoreEnd,:),nCore)
+        call ZGEMM('C','N',nCore,nImp,nSites,zone,Core_SchmidtB,nSites,temp,nSites,zzero,   &
+            SPGF_Ann_Bra,nCore)
 
         !Do the same with the particle NI GF
-        call ZGEMM('N','N',nSites,nImp,nSites-nOcc,zone,latvecs(:,nOcc+1:nSites),nSites,  &
+        call ZGEMM('N','N',nSites,nImp,nSites-nOcc,zone,Virt_latvecs,nSites,  &
             HFPertBasis_Cre_Ket,nSites-nOcc,zzero,temp,nSites)
         !Now rotate into schmidt basis
-        call ZGEMM('C','N',nVirt,nImp,nSites,zone,FullSchmidtBasis_C(:,VirtStart:nSites),nSites,temp,nSites,zzero,    &
-            SPGF_Cre_Ket(VirtStart:nSites,:),nVirt)
+        call ZGEMM('C','N',nVirt,nImp,nSites,zone,Virt_SchmidtB,nSites,temp,nSites,zzero,    &
+            SPGF_Cre_Ket,nVirt)
         !Now for the Bra version of the particle NI GF
 !        allocate(temp2(nSites,nOcc+1:nSites))
         do i = nOcc+1,nSites
@@ -9566,11 +9600,11 @@ module LinearResponse
                 temp3(j,i) = dconjg(latvecs(j,i))
             enddo
         enddo
-        call ZGEMM('N','N',nSites,nImp,nSites-nOcc,zone,temp3(:,nOcc+1:nSites),nSites,  &
+        call ZGEMM('N','N',nSites,nImp,nSites-nOcc,zone,temp3,nSites,  &
             HFPertBasis_Cre_Bra,nSites-nOcc,zzero,temp,nSites)
         !Now rotate into schmidt basis
-        call ZGEMM('C','N',nVirt,nImp,nSites,zone,FullSchmidtBasis_C(:,VirtStart:nSites),nSites,temp,nSites,zzero,    &
-            SPGF_Cre_Bra(VirtStart:nSites,:),nVirt)
+        call ZGEMM('C','N',nVirt,nImp,nSites,zone,Virt_SchmidtB,nSites,temp,nSites,zzero,    &
+            SPGF_Cre_Bra,nVirt)
 !        deallocate(temp,temp2)
         
         !Check that in the absence of a self-energy, the Bra and Ket are complex conjugates of each other.
@@ -9592,6 +9626,8 @@ module LinearResponse
                 endif
             enddo
         enddo
+!        write(6,*) "Get here 6: ",OMP_get_thread_num()
+!        call flush(6)
 
 !        deallocate(HFPertBasis_Ann_Bra,HFPertBasis_Cre_Bra)
 !        deallocate(HFPertBasis_Ann_Ket,HFPertBasis_Cre_Ket)
