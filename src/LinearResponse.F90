@@ -380,10 +380,11 @@ module LinearResponse
 
 !        OmegaVal = 0
 !        do while(.true.)
-!$OMP PARALLEL DO PRIVATE(Omega,NILRMat_Cre,NILRMat_Ann,SPGF_Cre_Bra,SPGF_Cre_Ket,SPGF_Ann_Bra),                &
-!$OMP&  PRIVATE(SPGF_Ann_Ket,Gc_a_F_ax_Bra,Gc_a_F_ax_Ket,Gc_b_F_ab,Ga_i_F_xi_Bra,Ga_i_F_xi_Ket,Ga_i_F_ij),      &
-!$OMP&  PRIVATE(LinearSystem_p,LinearSystem_h,VNorm,tempel,CNorm,Psi1_p,Psi1_h,info,ResponseFn_p,ResponseFn_h), &
-!$OMP&  PRIVATE(HFRes_Ann_Ket,HFRes_Cre_Ket,HFRes_Ann_Bra,HFRes_Cre_Bra,temp,temp2,temp3)
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(Omega,VNorm,tempel,CNorm,info),                &
+!$OMP&  FIRSTPRIVATE(NILRMat_Cre,NILRMat_Ann,SPGF_Cre_Bra,SPGF_Cre_Ket,SPGF_Ann_Bra,SPGF_Ann_Ket,Gc_a_F_ax_Bra),    &
+!$OMP&  FIRSTPRIVATE(Gc_a_F_ax_Ket,Gc_b_F_ab,Ga_i_F_xi_Bra,Ga_i_F_xi_Ket,Ga_i_F_ij,LinearSystem_p,LinearSystem_h),  &
+!$OMP&  FIRSTPRIVATE(Psi1_p,Psi1_h,ResponseFn_p,ResponseFn_h,HFRes_Ann_Ket,HFRes_Cre_Ket,HFRes_Ann_Bra),            &
+!$OMP&  FIRSTPRIVATE(HFRes_Cre_Bra,temp,temp2,temp3)
         do OmegaVal = 1,nESteps
             if(present(FreqPoints)) then
                 call GetOmega(Omega,OmegaVal,tMatbrAxis,FreqPoints=FreqPoints)
@@ -402,7 +403,7 @@ module LinearResponse
             else
                 write(6,"(A,F12.6)") "Calculating linear response for frequency: ",Omega
             endif
-        
+
             !Schmidt decompose the response vector
             call FindNI_Charged_FitLat(Omega,GFChemPot,NILRMat_Cre,NILRMat_Ann,tMatbrAxis,cham,LatVals,LatVecs, &
                 VirtStart,CoreEnd,SPGF_Cre_Ket,SPGF_Cre_Bra,SPGF_Ann_Ket,SPGF_Ann_Bra,HFRes_Ann_Ket,    &
@@ -9403,8 +9404,6 @@ module LinearResponse
 
     end subroutine TDA_MCLR
 
-
-
     !Change the RHS so that we multiply by the hermitian conjugate of the shifted matrix, so that we are dealing with a purely hermitian problem
     subroutine setup_RHS(n,V0,Trans_V0)
         implicit none
@@ -9481,8 +9480,8 @@ module LinearResponse
         HFPertBasis_Ann_Ket(:,:) = zzero
         HFPertBasis_Cre_Ket(:,:) = zzero
         
-        NILRMat_Cre(:,:) = zzero
         NILRMat_Ann(:,:) = zzero 
+        NILRMat_Cre(:,:) = zzero 
 
         !Now, form the non-interacting greens functions (but with u *and* self-energy)
         do pertsite = 1,nImp
