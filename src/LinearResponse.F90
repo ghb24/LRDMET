@@ -48,6 +48,9 @@ module LinearResponse
         complex(dp), allocatable :: SPGF_Cre_Ket(:,:),SPGF_Cre_Bra(:,:)
         complex(dp), allocatable :: SPGF_Ann_Ket(:,:),SPGF_Ann_Bra(:,:)
         complex(dp), allocatable :: NILRMat_Cre(:,:),NILRMat_Ann(:,:)
+        complex(dp), allocatable :: HFRes_Ann_Ket(:,:),HFRes_Cre_Ket(:,:)
+        complex(dp), allocatable :: HFRes_Ann_Bra(:,:),HFRes_Cre_Bra(:,:)
+        complex(dp), allocatable :: temp(:,:),temp2(:,:),temp3(:,:)
         integer, allocatable :: Coup_Ann_alpha(:,:,:),Coup_Create_alpha(:,:,:)
         integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,ierr,info,iunit,nCore
         integer :: nLinearSystem,nOrbs,nVirt,tempK,VIndex,VirtStart,VirtEnd
@@ -303,6 +306,16 @@ module LinearResponse
             enddo
         endif
 
+        !Allocate temporary arrays for schmidt decomposition routine
+        !TODO: Reduce this -- unnecessary
+        allocate(HFRes_Ann_Ket(1:nOcc,nImp))
+        allocate(HFRes_Cre_Ket(nOcc+1:nSites,nImp))
+        allocate(HFRes_Ann_Bra(1:nOcc,nImp))
+        allocate(HFRes_Cre_Bra(nOcc+1:nSites,nImp))
+        allocate(temp(nSites,nImp))
+        allocate(temp2(nSites,1:nOcc))
+        allocate(temp3(nSites,nOcc+1:nSites))
+
         !Store the fock matrix in complex form, so that we can ZGEMM easily
         !Also allocate the subblocks seperately. More memory, but will ensure we don't get stack overflow problems
         allocate(FockSchmidt_SE(nSites,nSites),stat=ierr)
@@ -369,7 +382,8 @@ module LinearResponse
 !        do while(.true.)
 !$OMP PARALLEL DO PRIVATE(Omega,NILRMat_Cre,NILRMat_Ann,SPGF_Cre_Bra,SPGF_Cre_Ket,SPGF_Ann_Bra),                &
 !$OMP&  PRIVATE(SPGF_Ann_Ket,Gc_a_F_ax_Bra,Gc_a_F_ax_Ket,Gc_b_F_ab,Ga_i_F_xi_Bra,Ga_i_F_xi_Ket,Ga_i_F_ij),      &
-!$OMP&  PRIVATE(LinearSystem_p,LinearSystem_h,VNorm,tempel,CNorm,Psi1_p,Psi1_h,info,ResponseFn_p,ResponseFn_h)
+!$OMP&  PRIVATE(LinearSystem_p,LinearSystem_h,VNorm,tempel,CNorm,Psi1_p,Psi1_h,info,ResponseFn_p,ResponseFn_h), &
+!$OMP&  PRIVATE(HFRes_Ann_Ket,HFRes_Cre_Ket,HFRes_Ann_Bra,HFRes_Cre_Bra,temp,temp2,temp3)
         do OmegaVal = 1,nESteps
             if(present(FreqPoints)) then
                 call GetOmega(Omega,OmegaVal,tMatbrAxis,FreqPoints=FreqPoints)
@@ -391,7 +405,8 @@ module LinearResponse
         
             !Schmidt decompose the response vector
             call FindNI_Charged_FitLat(Omega,GFChemPot,NILRMat_Cre,NILRMat_Ann,tMatbrAxis,cham,LatVals,LatVecs, &
-                VirtStart,CoreEnd,SPGF_Cre_Ket,SPGF_Cre_Bra,SPGF_Ann_Ket,SPGF_Ann_Bra)
+                VirtStart,CoreEnd,SPGF_Cre_Ket,SPGF_Cre_Bra,SPGF_Ann_Ket,SPGF_Ann_Bra,HFRes_Ann_Ket,    &
+                HFRes_Cre_Ket,HFRes_Ann_Bra,HFRes_Cre_Bra,temp,temp2,temp3)
 
             !Construct useful intermediates, using zgemm
             !sum_a Gc_a^* F_ax (Creation)
@@ -719,6 +734,9 @@ module LinearResponse
         if(tFullReoptGS) then
             deallocate(GSHam)
         endif
+        
+        deallocate(HFRes_Ann_Ket,HFRes_Cre_Ket,HFRes_Ann_Bra,HFRes_Cre_Bra)
+        deallocate(temp,temp2,temp3)
 
         !Deallocate determinant lists
         if(allocated(FCIDetList)) deallocate(FCIDetList)
@@ -9428,7 +9446,8 @@ module LinearResponse
     !The NILRMat_Cre and NILRMat_Ann matrices are returned as the non-interacting LR
     !The matrices SPGF_Cre and SPGF_Ann are filled
     subroutine FindNI_Charged_FitLat(Omega,GFChemPot,NILRMat_Cre,NILRMat_Ann,tMatbrAxis,ham,latvals,latvecs,    &
-        VirtStart,CoreEnd,SPGF_Cre_Ket,SPGF_Cre_Bra,SPGF_Ann_Ket,SPGF_Ann_Bra)
+        VirtStart,CoreEnd,SPGF_Cre_Ket,SPGF_Cre_Bra,SPGF_Ann_Ket,SPGF_Ann_Bra,HFPertBasis_Ann_Ket,  &
+        HFPertBasis_Cre_Ket,HFPertBasis_Ann_Bra,HFPertBasis_Cre_Bra,temp,temp2,temp3)
         implicit none
         real(dp), intent(in) :: Omega,GFChemPot
         integer, intent(in) :: VirtStart,CoreEnd
@@ -9441,18 +9460,22 @@ module LinearResponse
         complex(dp), intent(out) :: SPGF_Cre_Bra(VirtStart:nSites,nImp)
         complex(dp), intent(out) :: SPGF_Ann_Ket(1:CoreEnd,nImp)
         complex(dp), intent(out) :: SPGF_Ann_Bra(1:CoreEnd,nImp)
+        complex(dp), intent(out) :: HFPertBasis_Ann_Ket(1:nOcc,nImp)
+        complex(dp), intent(out) :: HFPertBasis_Cre_Ket(nOcc+1:nSites,nImp)
+        complex(dp), intent(out) :: HFPertBasis_Ann_Bra(1:nOcc,nImp)
+        complex(dp), intent(out) :: HFPertBasis_Cre_Bra(nOcc+1:nSites,nImp)
+        complex(dp), intent(out) :: temp(nSites,nImp),temp2(nSites,1:nOcc)
+        complex(dp), intent(out) :: temp3(nSites,nOcc+1:nSites)
 
-        complex(dp), allocatable :: HFPertBasis_Ann_Ket(:,:),HFPertBasis_Cre_Ket(:,:),temp(:,:),temp2(:,:)
-        complex(dp), allocatable :: HFPertBasis_Ann_Bra(:,:),HFPertBasis_Cre_Bra(:,:)
         integer :: i,a,pertBra,j,pertsite,nVirt,ActiveStart,ActiveEnd,nCore
         character(len=*), parameter :: t_r='FindNI_Charged_FitLat'
 
         !Memory to temperarily store the first order wavefunctions of each impurity site, in the right MO basis (For the Kets)
         !and the left MO space (for the Bras)
-        allocate(HFPertBasis_Ann_Bra(1:nOcc,nImp))
-        allocate(HFPertBasis_Cre_Bra(nOcc+1:nSites,nImp))
-        allocate(HFPertBasis_Ann_Ket(1:nOcc,nImp))
-        allocate(HFPertBasis_Cre_Ket(nOcc+1:nSites,nImp))
+!        allocate(HFPertBasis_Ann_Bra(1:nOcc,nImp))
+!        allocate(HFPertBasis_Cre_Bra(nOcc+1:nSites,nImp))
+!        allocate(HFPertBasis_Ann_Ket(1:nOcc,nImp))
+!        allocate(HFPertBasis_Cre_Ket(nOcc+1:nSites,nImp))
         HFPertBasis_Ann_Bra(:,:) = zzero
         HFPertBasis_Cre_Bra(:,:) = zzero
         HFPertBasis_Ann_Ket(:,:) = zzero
@@ -9510,7 +9533,7 @@ module LinearResponse
         if(.not.allocated(FullSchmidtBasis_c)) call stop_all(t_r,'Error here')
 
         !First, rotate into the AO basis
-        allocate(temp(nSites,nImp))
+!        allocate(temp(nSites,nImp))
         call ZGEMM('N','N',nSites,nImp,nOcc,zone,latvecs(:,1:nOcc),nSites,HFPertBasis_Ann_Ket(1:nOcc,:),nOcc,zzero,  &
             temp,nSites)
             !temp is now the (nSites,nImp) rotated HFPertBasis_Ann into the AO basis
@@ -9518,7 +9541,7 @@ module LinearResponse
         call ZGEMM('C','N',nCore,nImp,nSites,zone,FullSchmidtBasis_C(:,1:CoreEnd),nSites,temp,nSites,zzero,   &
             SPGF_Ann_Ket(1:CoreEnd,:),nCore)
         !Now do the same for the bra contraction coefficients, which are expressed as Bras
-        allocate(temp2(nSites,1:nOcc))
+!        allocate(temp2(nSites,1:nOcc))
         do i=1,nOcc
             do j=1,nSites
                 temp2(j,i) = dconjg(latvecs(j,i))
@@ -9526,7 +9549,7 @@ module LinearResponse
         enddo
         call ZGEMM('N','N',nSites,nImp,nOcc,zone,temp2(:,1:nOcc),nSites,HFPertBasis_Ann_Bra(1:nOcc,:),nOcc,zzero,    &
             temp,nSites)
-        deallocate(temp2)
+!        deallocate(temp2)
         call ZGEMM('C','N',nCore,nImp,nSites,zone,FullSchmidtBasis_C(:,1:CoreEnd),nSites,temp,nSites,zzero,   &
             SPGF_Ann_Bra(1:CoreEnd,:),nCore)
 
@@ -9537,18 +9560,18 @@ module LinearResponse
         call ZGEMM('C','N',nVirt,nImp,nSites,zone,FullSchmidtBasis_C(:,VirtStart:nSites),nSites,temp,nSites,zzero,    &
             SPGF_Cre_Ket(VirtStart:nSites,:),nVirt)
         !Now for the Bra version of the particle NI GF
-        allocate(temp2(nSites,nOcc+1:nSites))
+!        allocate(temp2(nSites,nOcc+1:nSites))
         do i = nOcc+1,nSites
             do j = 1,nSites
-                temp2(j,i) = dconjg(latvecs(j,i))
+                temp3(j,i) = dconjg(latvecs(j,i))
             enddo
         enddo
-        call ZGEMM('N','N',nSites,nImp,nSites-nOcc,zone,temp2(:,nOcc+1:nSites),nSites,  &
+        call ZGEMM('N','N',nSites,nImp,nSites-nOcc,zone,temp3(:,nOcc+1:nSites),nSites,  &
             HFPertBasis_Cre_Bra,nSites-nOcc,zzero,temp,nSites)
         !Now rotate into schmidt basis
         call ZGEMM('C','N',nVirt,nImp,nSites,zone,FullSchmidtBasis_C(:,VirtStart:nSites),nSites,temp,nSites,zzero,    &
             SPGF_Cre_Bra(VirtStart:nSites,:),nVirt)
-        deallocate(temp,temp2)
+!        deallocate(temp,temp2)
         
         !Check that in the absence of a self-energy, the Bra and Ket are complex conjugates of each other.
         do j = 1,nImp
@@ -9570,8 +9593,8 @@ module LinearResponse
             enddo
         enddo
 
-        deallocate(HFPertBasis_Ann_Bra,HFPertBasis_Cre_Bra)
-        deallocate(HFPertBasis_Ann_Ket,HFPertBasis_Cre_Ket)
+!        deallocate(HFPertBasis_Ann_Bra,HFPertBasis_Cre_Bra)
+!        deallocate(HFPertBasis_Ann_Ket,HFPertBasis_Cre_Ket)
 
     end subroutine FindNI_Charged_FitLat
     
