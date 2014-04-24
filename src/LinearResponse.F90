@@ -32,6 +32,7 @@ module LinearResponse
         real(dp), intent(in), optional :: FreqPoints(nESteps)
         complex(dp), intent(out), optional :: Lat_G_Mat(nImp,nImp,nESteps)  !An optional lattice greens function calculated in this routine
 
+        complex(dp) :: NILRMat_Cre(nImp,nImp),NILRMat_Ann(nImp,nImp)
         real(dp), allocatable :: LatVals(:)
         complex(dp), allocatable :: LatVecs(:,:)
         complex(dp), allocatable :: NFCIHam(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
@@ -47,7 +48,6 @@ module LinearResponse
         complex(dp), allocatable :: ctemp(:,:),cEmb_h_fit(:,:)
         complex(dp), allocatable :: SPGF_Cre_Ket(:,:),SPGF_Cre_Bra(:,:)
         complex(dp), allocatable :: SPGF_Ann_Ket(:,:),SPGF_Ann_Bra(:,:)
-        complex(dp), allocatable :: NILRMat_Cre(:,:),NILRMat_Ann(:,:)
         complex(dp), allocatable :: HFRes_Ann_Ket(:,:),HFRes_Cre_Ket(:,:)
         complex(dp), allocatable :: HFRes_Ann_Bra(:,:),HFRes_Cre_Bra(:,:)
         complex(dp), allocatable :: temp(:,:),temp2(:,:),temp3(:,:)
@@ -236,27 +236,13 @@ module LinearResponse
             & //" 6.NI_GF(Re)    7.NI_GF(Im)   " &
             & //" 8.SpectralWeight   9.Iters_p   10.Iters_h    " 
                 
-        allocate(SPGF_Cre_Ket(VirtStart:nSites,nImp))
-        allocate(SPGF_Cre_Bra(VirtStart:nSites,nImp))
-        allocate(SPGF_Ann_Ket(1:CoreEnd,nImp))
-        allocate(SPGF_Ann_Bra(1:CoreEnd,nImp))
-        allocate(NILRMat_Cre(nImp,nImp))
-        allocate(NILRMat_Ann(nImp,nImp))
         allocate(ni_lr_Mat(nImp,nImp,nESteps))
-        allocate(ResponseFn_p(nImp,nImp))
-        allocate(ResponseFn_h(nImp,nImp))
         
         !Allocate memory for hamiltonian in this system:
-        allocate(LinearSystem_p(nLinearSystem,nLinearSystem),stat=ierr)
-        allocate(LinearSystem_h(nLinearSystem,nLinearSystem),stat=ierr)
         allocate(Psi_0(nGSSpace),stat=ierr)   !If tFullReoptGS = .F. , then only the first nFCIDet elements will be used
         if(tFullReoptGS) then
             allocate(GSHam(nGSSpace,nGSSpace),stat=ierr)
         endif
-        allocate(Psi1_p(nLinearSystem),stat=ierr)
-        allocate(Psi1_h(nLinearSystem),stat=ierr)
-        Psi1_p = zzero
-        Psi1_h = zzero
         if(ierr.ne.0) call stop_all(t_r,'Error allocating')
         i = nFCIDet*3 + nLinearSystem*5
         write(6,"(A,F12.5,A)") "Memory required for wavefunctions: ",real(i,dp)*ComptoMb, " Mb"
@@ -306,16 +292,6 @@ module LinearResponse
             enddo
         endif
 
-        !Allocate temporary arrays for schmidt decomposition routine
-        !TODO: Reduce this -- unnecessary
-        allocate(HFRes_Ann_Ket(1:nOcc,nImp))
-        allocate(HFRes_Cre_Ket(nOcc+1:nSites,nImp))
-        allocate(HFRes_Ann_Bra(1:nOcc,nImp))
-        allocate(HFRes_Cre_Bra(nOcc+1:nSites,nImp))
-        allocate(temp(nSites,nImp))
-        allocate(temp2(nSites,1:nOcc))
-        allocate(temp3(nSites,nOcc+1:nSites))
-
         !Store the fock matrix in complex form, so that we can ZGEMM easily
         !Also allocate the subblocks seperately. More memory, but will ensure we don't get stack overflow problems
         allocate(FockSchmidt_SE(nSites,nSites),stat=ierr)
@@ -356,16 +332,6 @@ module LinearResponse
             endif
         enddo
 
-        !Space for useful intermediates
-        !For particle addition
-        allocate(Gc_a_F_ax_Bra(ActiveStart:ActiveEnd,nImp),stat=ierr)
-        allocate(Gc_a_F_ax_Ket(ActiveStart:ActiveEnd,nImp),stat=ierr)
-        allocate(Gc_b_F_ab(VirtStart:VirtEnd,nImp),stat=ierr)
-        !For hole addition
-        allocate(Ga_i_F_xi_Bra(ActiveStart:ActiveEnd,nImp),stat=ierr)
-        allocate(Ga_i_F_xi_Ket(ActiveStart:ActiveEnd,nImp),stat=ierr)
-        allocate(Ga_i_F_ij(1:nCore,nImp),stat=ierr)
-            
         !Allocate and precompute 1-operator coupling coefficients between the different sized spaces.
         !First number is the index of operator, and the second is the parity change when applying the operator
         allocate(Coup_Create_alpha(2,nFCIDet,nNm1bFCIDet))
@@ -380,11 +346,11 @@ module LinearResponse
 
 !        OmegaVal = 0
 !        do while(.true.)
-!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(Omega,VNorm,tempel,CNorm,info),                &
-!$OMP&  FIRSTPRIVATE(NILRMat_Cre,NILRMat_Ann,SPGF_Cre_Bra,SPGF_Cre_Ket,SPGF_Ann_Bra,SPGF_Ann_Ket,Gc_a_F_ax_Bra),    &
-!$OMP&  FIRSTPRIVATE(Gc_a_F_ax_Ket,Gc_b_F_ab,Ga_i_F_xi_Bra,Ga_i_F_xi_Ket,Ga_i_F_ij,LinearSystem_p,LinearSystem_h),  &
-!$OMP&  FIRSTPRIVATE(Psi1_p,Psi1_h,ResponseFn_p,ResponseFn_h,HFRes_Ann_Ket,HFRes_Cre_Ket,HFRes_Ann_Bra),            &
-!$OMP&  FIRSTPRIVATE(HFRes_Cre_Bra,temp,temp2,temp3)
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(Omega,VNorm,tempel,CNorm,info,ierr,NILRMat_Cre,NILRMat_Ann),                &
+!$OMP&  PRIVATE(SPGF_Cre_Bra,SPGF_Cre_Ket,SPGF_Ann_Bra,SPGF_Ann_Ket,Gc_a_F_ax_Bra),    &
+!$OMP&  PRIVATE(Gc_a_F_ax_Ket,Gc_b_F_ab,Ga_i_F_xi_Bra,Ga_i_F_xi_Ket,Ga_i_F_ij,LinearSystem_p,LinearSystem_h),  &
+!$OMP&  PRIVATE(Psi1_p,Psi1_h,ResponseFn_p,ResponseFn_h,HFRes_Ann_Ket,HFRes_Cre_Ket,HFRes_Ann_Bra),            &
+!$OMP&  PRIVATE(HFRes_Cre_Bra,temp,temp2,temp3)
         do OmegaVal = 1,nESteps
             if(present(FreqPoints)) then
                 call GetOmega(Omega,OmegaVal,tMatbrAxis,FreqPoints=FreqPoints)
@@ -396,6 +362,41 @@ module LinearResponse
 !            if(OmegaVal.lt.0) exit
 !            if(OmegaVal.gt.nESteps) call stop_all(t_r,'More frequency points than anticipated')
 
+            !Unfortunately, OpenMP has a really hard time with private allocated
+            !arrays. If they are given as PRIVATE, then the threads don't know
+            !they've been allocated. If FIRSTPRIVATE, then because the other
+            !threads don't know the length, we get race conditions. It is safest
+            !for the individual threads to allocate their own private arrays.
+            allocate(SPGF_Cre_Ket(VirtStart:nSites,nImp))
+            allocate(SPGF_Cre_Bra(VirtStart:nSites,nImp))
+            allocate(SPGF_Ann_Ket(1:CoreEnd,nImp))
+            allocate(SPGF_Ann_Bra(1:CoreEnd,nImp))
+            allocate(ResponseFn_p(nImp,nImp))
+            allocate(ResponseFn_h(nImp,nImp))
+            !Space for useful intermediates
+            !For particle addition
+            allocate(Gc_a_F_ax_Bra(ActiveStart:ActiveEnd,nImp),stat=ierr)
+            allocate(Gc_a_F_ax_Ket(ActiveStart:ActiveEnd,nImp),stat=ierr)
+            allocate(Gc_b_F_ab(VirtStart:VirtEnd,nImp),stat=ierr)
+            !For hole addition
+            allocate(Ga_i_F_xi_Bra(ActiveStart:ActiveEnd,nImp),stat=ierr)
+            allocate(Ga_i_F_xi_Ket(ActiveStart:ActiveEnd,nImp),stat=ierr)
+            allocate(Ga_i_F_ij(1:nCore,nImp),stat=ierr)
+            allocate(LinearSystem_p(nLinearSystem,nLinearSystem),stat=ierr)
+            allocate(LinearSystem_h(nLinearSystem,nLinearSystem),stat=ierr)
+            allocate(Psi1_p(nLinearSystem),stat=ierr)
+            allocate(Psi1_h(nLinearSystem),stat=ierr)
+            !Allocate temporary arrays for schmidt decomposition routine
+            !TODO: Reduce this -- unnecessary
+            allocate(HFRes_Ann_Ket(1:nOcc,nImp))
+            allocate(HFRes_Cre_Ket(nOcc+1:nSites,nImp))
+            allocate(HFRes_Ann_Bra(1:nOcc,nImp))
+            allocate(HFRes_Cre_Bra(nOcc+1:nSites,nImp))
+            allocate(temp(nSites,nImp))
+            allocate(temp2(nSites,1:nOcc))
+            allocate(temp3(nSites,nOcc+1:nSites))
+            if(ierr.ne.0) call stop_all(t_r,'Allocation error')
+            
             if(.not.tOpenMP) call set_timer(LR_EC_GF_HBuild)
         
             if(tMatbrAxis) then
@@ -677,6 +678,11 @@ module LinearResponse
 
             if(.not.tOpenMP) call halt_timer(LR_EC_GF_SolveLR)
 
+            deallocate(SPGF_Cre_Ket,SPGF_Cre_Bra,SPGF_Ann_Ket,SPGF_Ann_Bra,ResponseFn_p,ResponseFn_h)
+            deallocate(Gc_a_F_ax_Bra,Gc_a_F_ax_Ket,Gc_b_F_ab,Ga_i_F_xi_Bra,Ga_i_F_xi_Ket,Ga_i_F_ij)
+            deallocate(LinearSystem_p,LinearSystem_h,Psi1_p,Psi1_h,HFRes_Ann_Ket,HFRes_Cre_Ket)
+            deallocate(HFRes_Ann_Bra,HFRes_Cre_Bra,temp,temp2,temp3)
+
         enddo   !End loop over omega
 !$OMP END PARALLEL DO
 
@@ -727,18 +733,13 @@ module LinearResponse
 !$          call OMP_set_num_threads(int(max_omp_threads,OMP_integer_kind))
         endif
         
-        deallocate(LinearSystem_p,LinearSystem_h,Psi1_p,Psi1_h)
-        deallocate(Cre_0,Ann_0,Psi_0,SPGF_Cre_Ket,SPGF_Ann_Ket)
-        deallocate(NILRMat_Cre,NILRMat_Ann,ResponseFn_p,ResponseFn_h)
-        deallocate(ni_lr_Mat,SPGF_Cre_Bra,SPGF_Ann_Bra)
+        deallocate(Cre_0,Ann_0,Psi_0)
+        deallocate(ni_lr_Mat)
         close(iunit)
         if(tFullReoptGS) then
             deallocate(GSHam)
         endif
         
-        deallocate(HFRes_Ann_Ket,HFRes_Cre_Ket,HFRes_Ann_Bra,HFRes_Cre_Bra)
-        deallocate(temp,temp2,temp3)
-
         !Deallocate determinant lists
         if(allocated(FCIDetList)) deallocate(FCIDetList)
         if(allocated(FCIBitList)) deallocate(FCIBitList)
@@ -759,7 +760,6 @@ module LinearResponse
         deallocate(Coup_Create_alpha,Coup_Ann_alpha)
         deallocate(FockSchmidt_SE,FockSchmidt_SE_VV,FockSchmidt_SE_CC)
         deallocate(FockSchmidt_SE_VX,FockSchmidt_SE_CX,FockSchmidt_SE_XV,FockSchmidt_SE_XC)
-        deallocate(Gc_a_F_ax_Bra,Gc_a_F_ax_Ket,Gc_b_F_ab,Ga_i_F_xi_Bra,Ga_i_F_xi_Ket,Ga_i_F_ij)
 
         deallocate(LatVals)
         deallocate(LatVecs)
@@ -9539,6 +9539,7 @@ module LinearResponse
             !Now rotate this into the occupied schmidt basis
         call ZGEMM('C','N',nCore,nImp,nSites,zone,FullSchmidtBasis_C(:,1:CoreEnd),nSites,temp,nSites,zzero,   &
             SPGF_Ann_Ket(1:CoreEnd,:),nCore)
+
         !Now do the same for the bra contraction coefficients, which are expressed as Bras
 !        allocate(temp2(nSites,1:nOcc))
         do i=1,nOcc

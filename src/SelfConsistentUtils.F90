@@ -268,16 +268,16 @@ module SelfConsistentUtils
         integer :: k,ind_1,ind_2
         
         KBlocks(:,:,:) = zzero
-        allocate(ctemp(nSites,nImp))
-!$OMP PARALLEL DO PRIVATE(ind_1,ind_2) FIRSTPRIVATE(ctemp)
+!$OMP PARALLEL DO PRIVATE(ind_1,ind_2,ctemp)
         do k = 1,nKPnts
+            allocate(ctemp(nSites,nImp))
             ind_1 = ((k-1)*nImp) + 1
             ind_2 = nImp*k
             call ZGEMM('N','N',nSites,nImp,nSites,zone,ham,nSites,RtoK_Rot(:,ind_1:ind_2),nSites,zzero,ctemp,nSites)
             call ZGEMM('C','N',nImp,nImp,nSites,zone,RtoK_Rot(:,ind_1:ind_2),nSites,ctemp,nSites,zzero,KBlocks(:,:,k),nImp)
+            deallocate(ctemp)
         enddo
 !$OMP END PARALLEL DO
-        deallocate(ctemp)
 
     end subroutine ham_to_KBlocks
 
