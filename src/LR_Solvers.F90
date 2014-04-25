@@ -3,12 +3,17 @@ module LRSolvers
     use globals
     use errors, only: stop_all,warning
 !    use mat_tools, only: writevector,writematrixcomp
+!$  use omp_lib
     implicit none
     !Parameters for matrix-vector multiplications within iterative solvers
-    complex(dp), pointer :: zDirMV_Mat(:,:)
-    complex(dp), pointer :: zDirMV_Mat_cmprs(:)
-    integer, pointer :: zDirMV_Mat_cmprs_inds(:)
-    real(dp), allocatable :: Precond_Diag(:)
+    complex(dp), save, pointer :: zDirMV_Mat(:,:)
+    complex(dp), save, pointer :: zDirMV_Mat_cmprs(:)
+    integer, save, pointer :: zDirMV_Mat_cmprs_inds(:)
+    real(dp), save, allocatable :: Precond_Diag(:)
+!$OMP THREADPRIVATE(zDirMV_Mat)
+!$OMP THREADPRIVATE(zDirMV_Mat_cmprs)
+!$OMP THREADPRIVATE(zDirMV_Mat_cmprs_inds)
+!$OMP THREADPRIVATE(Precond_Diag)
 
     contains
     
@@ -697,7 +702,10 @@ module LRSolvers
         character(len=*), parameter :: t_r='zDirMV'
 
         if(tCompressedMats.and.(.not.associated(zDirMV_Mat_cmprs))) call stop_all(t_r,'Compressed matrix not associated')
-        if((.not.tCompressedMats).and.(.not.associated(zDirMV_Mat))) call stop_all(t_r,'Matrix not associated!')
+        if((.not.tCompressedMats).and.(.not.associated(zDirMV_Mat))) then
+!$            write(6,*) "OMP Thread: ",OMP_get_thread_num()
+            call stop_all(t_r,'Matrix not associated!')
+        endif
 
         if(tCompressedMats) then
             !Sparse matrix multiply

@@ -7,6 +7,7 @@ module LinearResponse
     use globals
     use LRSolvers
     use SelfConsistentUtils
+    use zminresqlpModule, only: MinresQLP  
 !$  use omp_lib
     implicit none
     integer :: CVIndex,AVIndex,CAIndex
@@ -42,7 +43,7 @@ module LinearResponse
         complex(dp), allocatable :: Gc_a_F_ax_Bra(:,:),Gc_a_F_ax_Ket(:,:),Gc_b_F_ab(:,:)
         complex(dp), allocatable :: Ga_i_F_xi_Ket(:,:)
         complex(dp), allocatable :: Psi1_p(:),Psi1_h(:),Ga_i_F_xi_Bra(:,:),Ga_i_F_ij(:,:),ni_lr_Mat(:,:,:)
-        complex(dp), allocatable :: Psi_0(:)
+        complex(dp), allocatable :: Psi_0(:),RHS(:)
         complex(dp), allocatable :: GSHam(:,:)
         complex(dp), allocatable :: h0_schmidt(:,:)
         complex(dp), allocatable :: ctemp(:,:),cEmb_h_fit(:,:)
@@ -54,10 +55,12 @@ module LinearResponse
         complex(dp), allocatable :: Core_SchmidtB(:,:),Virt_SchmidtB(:,:)
         complex(dp), allocatable :: Core_latvecs(:,:), Virt_latvecs(:,:)
         integer, allocatable :: Coup_Ann_alpha(:,:,:),Coup_Create_alpha(:,:,:)
+        integer, allocatable :: iters_p(:),iters_h(:)
         integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,ierr,info,iunit,nCore
         integer :: nLinearSystem,nOrbs,nVirt,tempK,VIndex,VirtStart,VirtEnd
         integer :: orbdum(1),nLinearSystem_h,Np1GSInd,Nm1GSInd
-        integer :: pertsite,OmegaVal,nGSSpace,iters_p,iters_h,mem,mem2
+        integer :: pertsite,OmegaVal,nGSSpace,mem,mem2
+        integer :: minres_unit
         real(dp) :: Omega,mu,SpectralWeight,Prev_Spec,Error_GF
         real(dp) :: GSEnergy
         complex(dp) :: ResponseFn,tempel,ni_lr
@@ -72,14 +75,24 @@ module LinearResponse
         if(present(Lat_G_Mat)) Lat_G_Mat(:,:,:) = zzero
         SpectralWeight = 0.0_dp
         Prev_Spec = 0.0_dp
-        iters_p = 0
-        iters_h = 0
+        allocate(iters_p(nESteps))
+        allocate(iters_h(nESteps))
+        iters_p(:) = 0
+        iters_h(:) = 0
+        minres_unit = 0 !Do not write out
+
         mem = 0 !number of complex numbers to allocate
 
         write(6,"(A)") "Calculating non-interacting EC MR-TDA LR system for *hole* & *particle* alpha spin-orbital perturbations..."
         if(.not.tConstructFullSchmidtBasis) call stop_all(t_r,'To solve LR, must construct full schmidt basis')
         if(tMinRes_NonDir) then
-            call stop_all(t_r,'MINRES deprecated in this routine. Use GMRES')
+            if(tPreCond_MinRes) then
+                write(6,"(A)") "Solving linear system with iterative non-direct preconditioned MinRes-QLP algorithm"
+            else
+                write(6,"(A)") "Solving linear system with iterative non-direct MinRes-QLP algorithm"
+            endif
+            write(6,"(A,G22.10)") "Tolerance for solution of linear system: ",rtol_LR
+            write(6,"(A,G22.10)") "Maximum iterations for each solution: ",iMinRes_MaxIter
         else
             if(iSolveLR.eq.1) then
                 write(6,"(A)") "Solving linear system with standard ZGESV linear solver"
@@ -242,7 +255,7 @@ module LinearResponse
             & //"4.Old_GS    5.New_GS   " &
             & //" 6.NI_GF(Re)    7.NI_GF(Im)   " &
             & //" 8.SpectralWeight   9.Iters_p   10.Iters_h    " 
-                
+
         allocate(ni_lr_Mat(nImp,nImp,nESteps))
         mem = mem + nESteps*nImp**2
         
@@ -379,7 +392,11 @@ module LinearResponse
         mem = mem + nSites*nCore + nSites*nVirt + nSites*nOcc + nSites*nVirt
         write(6,"(A,F10.4,A)") "Memory required for Shared arrays: ",mem*ComptoMb," Mb"
         mem2 = nVirt*nImp*3 + nCore*nImp*3 + 2*nImp**2 + 4*nImp**2 + 2*nLinearSystem**2 + nLinearSystem*2
-        mem2 = mem + nOcc*nImp*4 + nSites*nImp + nSites*nOcc*2
+        mem2 = mem2 + nOcc*nImp*4 + nSites*nImp + nSites*nOcc*2
+        if(tMinRes_NonDir) then
+            mem2 = mem2 + nLinearSystem
+            if(tPrecond_MinRes) mem2 = mem2 + nLinearSystem
+        endif
         write(6,"(A,F10.4,A)") "Memory required *per thread* for private arrays: ",mem2*ComptoMb," Mb"
 !$      mem2 = mem2 * OMP_get_max_threads()
         mem2 = mem2 + mem
@@ -396,7 +413,7 @@ module LinearResponse
 !$OMP&  PRIVATE(SPGF_Cre_Bra,SPGF_Cre_Ket,SPGF_Ann_Bra,SPGF_Ann_Ket,Gc_a_F_ax_Bra),    &
 !$OMP&  PRIVATE(Gc_a_F_ax_Ket,Gc_b_F_ab,Ga_i_F_xi_Bra,Ga_i_F_xi_Ket,Ga_i_F_ij,LinearSystem_p,LinearSystem_h),  &
 !$OMP&  PRIVATE(Psi1_p,Psi1_h,ResponseFn_p,ResponseFn_h,HFRes_Ann_Ket,HFRes_Cre_Ket,HFRes_Ann_Bra),            &
-!$OMP&  PRIVATE(HFRes_Cre_Bra,temp,temp2,temp3)
+!$OMP&  PRIVATE(HFRes_Cre_Bra,temp,temp2,temp3,RHS)
         do OmegaVal = 1,nESteps
             if(present(FreqPoints)) then
                 call GetOmega(Omega,OmegaVal,tMatbrAxis,FreqPoints=FreqPoints)
@@ -441,6 +458,11 @@ module LinearResponse
             allocate(temp(nSites,nImp))
             allocate(temp2(nSites,1:nOcc))
             allocate(temp3(nSites,nOcc+1:nSites))
+            if(tMinRes_NonDir) then
+                allocate(RHS(nLinearSystem))
+                if(tPrecond_MinRes) allocate(Precond_Diag(nLinearSystem))
+            endif
+                
             if(ierr.ne.0) call stop_all(t_r,'Allocation error')
             
             if(.not.tOpenMP) call set_timer(LR_EC_GF_HBuild)
@@ -670,16 +692,41 @@ module LinearResponse
                 enddo
 !                call writematrixcomp(LinearSystem_p,'LinearSystem_p',.false.)
                 !Now solve these linear equations
-                !Copy V|0> to another array, since if we are not reoptimizing the GS, we want to keep them.
-                !Minres removed
-                Psi1_p(:) = Cre_0(:,pertsite)
-                !Psi1_p will be overwritten with the solution
-                call SolveCompLinearSystem(LinearSystem_p,Psi1_p,nLinearSystem,info)
-                if(info.ne.0) then 
-                    write(6,*) "INFO: ",info
-                    call warning(t_r,'Solving linear system failed for particle hamiltonian - skipping this frequency')
-                    if(.not.tOpenMP) call halt_timer(LR_EC_GF_SolveLR)
-                    cycle
+!$OMP BARRIER
+                if(tMinRes_NonDir) then
+                    write(6,*) "LinearSystem_p: ",LinearSystem_p(1,1),OMP_get_thread_num()
+                    zDirMV_Mat => LinearSystem_p
+                    write(6,*) "Associated? ",associated(zDirMV_Mat),OMP_get_thread_num()
+                    write(6,*) "zDirMV_Mat: ",zDirMV_Mat(1,1),OMP_get_thread_num()
+                    write(6,*) "loc: ",loc(zDirMV_Mat),OMP_get_thread_num()
+                    call setup_RHS(nLinearSystem,Cre_0(:,pertsite),RHS)
+                    if(tPrecond_MinRes) then
+                        call FormPrecond(nLinearSystem)
+                        call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=RHS,nout=minres_unit,x=Psi1_p, &
+                            itnlim=iMinRes_MaxIter,Msolve=zPreCond,istop=info,itn=iters_p(OmegaVal), &
+                            startguess=tReuse_LS)
+                    else
+                        call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=RHS,nout=minres_unit,x=Psi1_p, &
+                            itnlim=iMinRes_MaxIter,istop=info,itn=iters_p(OmegaVal),startguess=tReuse_LS)
+                    endif
+                    zDirMV_Mat => null()
+                    if(info.gt.7) write(6,*) "info: ",info
+                    if(info.eq.8) write(6,"(A,I9)") "Linear equation solver hit iteration limit: ",iters_p(OmegaVal)
+                    if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) then
+                        call stop_all(t_r,'Input matrices to linear solver incorrect')
+                    endif
+                    if(info.gt.11) call stop_all(t_r,'Linear equation solver failed')
+                else
+                    !Copy V|0> to another array, since if we are not reoptimizing the GS, we want to keep them.
+                    Psi1_p(:) = Cre_0(:,pertsite)
+                    !Psi1_p will be overwritten with the solution
+                    call SolveCompLinearSystem(LinearSystem_p,Psi1_p,nLinearSystem,info)
+                    if(info.ne.0) then 
+                        write(6,*) "INFO: ",info
+                        call warning(t_r,'Solving linear system failed for particle hamiltonian - skipping this frequency')
+                        if(.not.tOpenMP) call halt_timer(LR_EC_GF_SolveLR)
+                        cycle
+                    endif
                 endif
                 !call writevectorcomp(Psi1_p,'Psi1_p')
 
@@ -692,13 +739,34 @@ module LinearResponse
                     endif
                 enddo
 !                call writematrixcomp(LinearSystem_h,'LinearSystem_h',.false.)
-                Psi1_h(:) = Ann_0(:,pertsite)
-                call SolveCompLinearSystem(LinearSystem_h,Psi1_h,nLinearSystem,info)
-                if(info.ne.0) then 
-                    write(6,*) "INFO: ",info
-                    call warning(t_r,'Solving linear system failed for hole hamiltonian - skipping this frequency')
-                    if(.not.tOpenMP) call halt_timer(LR_EC_GF_SolveLR)
-                    cycle
+                if(tMinRes_NonDir) then
+                    zDirMV_Mat => LinearSystem_h
+                    call setup_RHS(nLinearSystem,Ann_0(:,pertsite),RHS)
+                    if(tPrecond_MinRes) then
+                        call FormPrecond(nLinearSystem)
+                        call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=RHS,nout=minres_unit,x=Psi1_h, &
+                            itnlim=iMinRes_MaxIter,Msolve=zPreCond,istop=info,rtol=rtol_LR,itn=iters_h(OmegaVal), &
+                            startguess=tReuse_LS)
+                    else
+                        call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=RHS,nout=minres_unit,x=Psi1_h, &
+                            itnlim=iMinRes_MaxIter,istop=info,rtol=rtol_LR,itn=iters_h(OmegaVal),startguess=tReuse_LS)
+                    endif
+                    zDirMV_Mat => null()
+                    if(info.gt.7) write(6,*) "info: ",info
+                    if(info.eq.8) write(6,"(A,I9)") "Linear equation solver hit iteration limit: ",iters_h(OmegaVal)
+                    if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) then
+                        call stop_all(t_r,'Input matrices to linear solver incorrect')
+                    endif
+                    if(info.gt.11) call stop_all(t_r,'Linear equation solver failed')
+                else
+                    Psi1_h(:) = Ann_0(:,pertsite)
+                    call SolveCompLinearSystem(LinearSystem_h,Psi1_h,nLinearSystem,info)
+                    if(info.ne.0) then 
+                        write(6,*) "INFO: ",info
+                        call warning(t_r,'Solving linear system failed for hole hamiltonian - skipping this frequency')
+                        if(.not.tOpenMP) call halt_timer(LR_EC_GF_SolveLR)
+                        cycle
+                    endif
                 endif
         
                 !Find normalization of first-order wavefunctions
@@ -729,7 +797,10 @@ module LinearResponse
             deallocate(Gc_a_F_ax_Bra,Gc_a_F_ax_Ket,Gc_b_F_ab,Ga_i_F_xi_Bra,Ga_i_F_xi_Ket,Ga_i_F_ij)
             deallocate(LinearSystem_p,LinearSystem_h,Psi1_p,Psi1_h,HFRes_Ann_Ket,HFRes_Cre_Ket)
             deallocate(HFRes_Ann_Bra,HFRes_Cre_Bra,temp,temp2,temp3)
-
+            if(tMinRes_NonDir) then
+                deallocate(RHS)
+                if(tPrecond_MinRes) deallocate(Precond_Diag)
+            endif
         enddo   !End loop over omega
 !$OMP END PARALLEL DO
 
@@ -765,7 +836,7 @@ module LinearResponse
 
             write(iunit,"(8G22.10,2I7)") Omega,real(ResponseFn),-aimag(ResponseFn), &
                 HL_Energy,GSEnergy,real(ni_lr),-aimag(ni_lr),    &
-                SpectralWeight,iters_p,iters_h
+                SpectralWeight,iters_p(OmegaVal),iters_h(OmegaVal)
 
             if(tFirst) tFirst = .false.
 
@@ -907,7 +978,6 @@ module LinearResponse
         use utils, only: get_free_unit,append_ext_real,append_ext
         use DetBitOps, only: DecodeBitDet,SQOperator,CountBits
         use Davidson, only: Comp_NonDir_Davidson,DiagSubspaceMat_real,DiagSubspaceMat_comp
-        use zminresqlpModule, only: MinresQLP  
         use DetToolsData
         use DetTools, only: tospat,umatind,gendets
         use solvers, only: CreateIntMats
@@ -9462,7 +9532,11 @@ module LinearResponse
         
         if(tCompressedMats.and.(.not.associated(zDirMV_Mat_cmprs))) call stop_all(t_r,'Compressed matrix not associated')
         if(tCompressedMats.and.(.not.associated(zDirMV_Mat_cmprs_inds))) call stop_all(t_r,'Compressed indices not associated')
-        if((.not.tCompressedMats).and.(.not.associated(zDirMV_Mat))) call stop_all(t_r,'Matrix not associated!')
+        if((.not.tCompressedMats).and.(.not.associated(zDirMV_Mat))) then
+            write(6,*) "val: ",zDirMV_Mat(1,1),OMP_get_thread_num()
+            write(6,*) "loc: ",loc(zDirMV_Mat),OMP_get_thread_num() 
+            call stop_all(t_r,'Matrix not associated!')
+        endif
 
 !        call writevectorint(zDirMV_Mat_cmprs_inds,'zDirMV_Mat_cmprs_inds')
 !        call writevectorcomp(zDirMV_Mat_cmprs,'zDirMV_Mat_cmprs')

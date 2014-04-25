@@ -14,7 +14,6 @@ module const
     integer, parameter :: i2 = selected_int_kind(3)     !int*2
     integer, parameter :: i4 = selected_int_kind(6)     !int*4
     integer, parameter :: i8 = selected_int_kind(10)    !int*8
-    integer, parameter :: ip = i8
 
     integer, parameter :: sp = selected_real_kind(6,37)     !For single precision real numbers
     integer, parameter :: dp = selected_real_kind(15,307)   !For double precision real numbers
@@ -36,6 +35,7 @@ module const
 
     integer :: qwerty
     integer, parameter :: n_int = kind(qwerty)
+    integer, parameter :: ip = n_int
     integer, parameter :: bits_n_int = bit_size(qwerty)
     integer, parameter :: end_n_int = bits_n_int - 1
     integer, parameter :: size_n_int = bits_n_int/8
