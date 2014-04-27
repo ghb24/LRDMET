@@ -539,7 +539,11 @@ contains
     nout_ = 5
     if (present(nout)) then
        nout_ = nout
-       inquire(unit=nout, opened=connected, named=named_file, name=filename)
+       if(nout.ne.0) then
+           inquire(unit=nout, opened=connected, named=named_file, name=filename)
+       else
+           connected = .true. 
+       endif
        !write(*,*) connected, named_file, filename
        if (.not. connected) then
           write(*,*) "File unit 'nout' is not open."
