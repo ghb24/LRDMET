@@ -8,6 +8,7 @@ module LinearResponse
     use LRSolvers
     use SelfConsistentUtils
     use zminresqlpModule, only: MinresQLP  
+    use LR_Data
 !$  use omp_lib
     implicit none
     integer :: CVIndex,AVIndex,CAIndex
@@ -38,7 +39,7 @@ module LinearResponse
         complex(dp), allocatable :: LatVecs(:,:)
         complex(dp), allocatable :: NFCIHam(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
         real(dp), allocatable :: dNorm_p(:),dNorm_h(:)
-        complex(dp), allocatable , target :: LinearSystem_p(:,:),LinearSystem_h(:,:)
+!        complex(dp), allocatable , target :: LinearSystem_p(:,:),LinearSystem_h(:,:)
         complex(dp), allocatable :: Cre_0(:,:),Ann_0(:,:),ResponseFn_p(:,:),ResponseFn_h(:,:)
         complex(dp), allocatable :: Gc_a_F_ax_Bra(:,:),Gc_a_F_ax_Ket(:,:),Gc_b_F_ab(:,:)
         complex(dp), allocatable :: Ga_i_F_xi_Ket(:,:)
@@ -411,9 +412,10 @@ module LinearResponse
 !        do while(.true.)
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(Omega,VNorm,tempel,CNorm,info,ierr,NILRMat_Cre,NILRMat_Ann),                &
 !$OMP&  PRIVATE(SPGF_Cre_Bra,SPGF_Cre_Ket,SPGF_Ann_Bra,SPGF_Ann_Ket,Gc_a_F_ax_Bra),    &
-!$OMP&  PRIVATE(Gc_a_F_ax_Ket,Gc_b_F_ab,Ga_i_F_xi_Bra,Ga_i_F_xi_Ket,Ga_i_F_ij,LinearSystem_p,LinearSystem_h),  &
+!$OMP&  PRIVATE(Gc_a_F_ax_Ket,Gc_b_F_ab,Ga_i_F_xi_Bra,Ga_i_F_xi_Ket,Ga_i_F_ij),  &
 !$OMP&  PRIVATE(Psi1_p,Psi1_h,ResponseFn_p,ResponseFn_h,HFRes_Ann_Ket,HFRes_Cre_Ket,HFRes_Ann_Bra),            &
-!$OMP&  PRIVATE(HFRes_Cre_Bra,temp,temp2,temp3,RHS)
+!$OMP&  PRIVATE(HFRes_Cre_Bra,temp,temp2,temp3,RHS) 
+!!COPYIN(zDirMV_Mat,LinearSystem_p,LinearSystem_h)
         do OmegaVal = 1,nESteps
             if(present(FreqPoints)) then
                 call GetOmega(Omega,OmegaVal,tMatbrAxis,FreqPoints=FreqPoints)
@@ -699,7 +701,9 @@ module LinearResponse
                     write(6,*) "Associated? ",associated(zDirMV_Mat),OMP_get_thread_num()
                     write(6,*) "zDirMV_Mat: ",zDirMV_Mat(1,1),OMP_get_thread_num()
                     write(6,*) "loc: ",loc(zDirMV_Mat),OMP_get_thread_num()
+!$OMP BARRIER
                     call setup_RHS(nLinearSystem,Cre_0(:,pertsite),RHS)
+!$OMP BARRIER
                     if(tPrecond_MinRes) then
                         call FormPrecond(nLinearSystem)
                         call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=RHS,nout=minres_unit,x=Psi1_p, &
@@ -996,7 +1000,7 @@ module LinearResponse
         logical :: tMatbrAxis_,tLatHamProvided_
         complex(dp), allocatable :: NFCIHam(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
         real(dp), allocatable :: dNorm_p(:),dNorm_h(:),W(:),temp(:,:),ham_schmidt(:,:),Emb_h_fit(:,:)
-        complex(dp), allocatable , target :: LinearSystem_p(:,:),LinearSystem_h(:,:)
+!        complex(dp), allocatable , target :: LinearSystem_p(:,:),LinearSystem_h(:,:)
         complex(dp), allocatable :: Cre_0(:,:),Ann_0(:,:),ResponseFn_p(:,:),ResponseFn_h(:,:)
         complex(dp), allocatable :: Gc_a_F_ax_Bra(:,:),Gc_a_F_ax_Ket(:,:),Gc_b_F_ab(:,:)
         complex(dp), allocatable :: ResponseFn_Mat(:,:),Ga_i_F_xi_Ket(:,:)
@@ -3522,7 +3526,7 @@ module LinearResponse
         complex(dp), allocatable :: NFCIHam_cmps(:),Np1FCIHam_cmps(:),Nm1FCIHam_cmps(:)
         integer, allocatable :: NFCIHam_inds(:),Np1FCIHam_inds(:),Nm1FCIHam_inds(:)
         real(dp), allocatable :: dNorm_p(:),dNorm_h(:)
-        complex(dp), allocatable , target :: LinearSystem_p(:),LinearSystem_h(:)
+        complex(dp), allocatable , target :: LinearSystemc_p(:),LinearSystemc_h(:)
         integer, allocatable , target :: LinearSystem_p_inds(:),LinearSystem_h_inds(:)
         complex(dp), allocatable :: Cre_0(:,:),Ann_0(:,:),ResponseFn_p(:,:),ResponseFn_h(:,:)
         complex(dp), allocatable :: Gc_a_F_ax_Bra(:,:),Gc_a_F_ax_Ket(:,:),Gc_b_F_ab(:,:)
@@ -3896,8 +3900,8 @@ module LinearResponse
             (3*(real(Nmax_Lin_p,dp)*8)+3*(real(Nmax_Lin_h,dp)*8))/1048576.0_dp," Mb"
         write(6,"(A,F14.6,A)") "Compare to memory required for the uncompressed system: ",  &
             2*(real(nLinearSystem,dp)**2)*16/1048576.0_dp," Mb"
-        allocate(LinearSystem_p(Nmax_Lin_p))
-        allocate(LinearSystem_h(Nmax_Lin_h))
+        allocate(LinearSystemc_p(Nmax_Lin_p))
+        allocate(LinearSystemc_h(Nmax_Lin_h))
         allocate(LinearSystem_p_inds(Nmax_Lin_p))
         allocate(LinearSystem_h_inds(Nmax_Lin_h))
 
@@ -3948,8 +3952,8 @@ module LinearResponse
             !Find the first-order wavefunction in the interacting picture for all impurity sites 
             do pertsite = 1,nImp_GF
 
-                LinearSystem_p(:) = zzero 
-                LinearSystem_h(:) = zzero 
+                LinearSystemc_p(:) = zzero 
+                LinearSystemc_h(:) = zzero 
                 LinearSystem_p_inds(:) = 0
                 LinearSystem_h_inds(:) = 0
 
@@ -3965,11 +3969,11 @@ module LinearResponse
                 tempel = tempel / VNorm
 
                 !First, store diagonals
-                LinearSystem_p(1:nNp1FCIDet) = Np1FCIHam_cmps(1:nNp1FCIDet)
+                LinearSystemc_p(1:nNp1FCIDet) = Np1FCIHam_cmps(1:nNp1FCIDet)
                 j = 0
                 do i = nNp1FCIDet+1,nLinearSystem
                     j = j + 1
-                    LinearSystem_p(i) = NFCIHam_cmps(j) + tempel
+                    LinearSystemc_p(i) = NFCIHam_cmps(j) + tempel
                 enddo
                 if(j.ne.nFCIDet) call stop_all(t_r,'Error with matrix indexing')
 
@@ -3985,11 +3989,11 @@ module LinearResponse
                 tempel = -tempel / CNorm
                 
                 !Store diagonals
-                LinearSystem_h(1:nNm1bFCIDet) = Nm1FCIHam_cmps(1:nNm1bFCIDet)
+                LinearSystemc_h(1:nNm1bFCIDet) = Nm1FCIHam_cmps(1:nNm1bFCIDet)
                 j = 0
                 do i = nNm1bFCIDet + 1,nLinearSystem
                     j = j + 1
-                    LinearSystem_h(i) = NFCIHam_cmps(j) + tempel
+                    LinearSystemc_h(i) = NFCIHam_cmps(j) + tempel
                 enddo
                 if(j.ne.nFCIDet) call stop_all(t_r,'Error with matrix indexing')
 
@@ -4008,7 +4012,7 @@ module LinearResponse
                         if(abs(Np1FCIHam_cmps(k)).ge.CompressThresh) then
                             ind_p = ind_p + 1
                             if(ind_p.gt.Nmax_Lin_p) call stop_all(t_r,'Compressed array p size too small')
-                            LinearSystem_p(ind_p) = Np1FCIHam_cmps(k)
+                            LinearSystemc_p(ind_p) = Np1FCIHam_cmps(k)
                             !But what determinant do these correspond to? This is given by Np1FCIHam_alpha_inds(k)
                             LinearSystem_p_inds(ind_p) = Np1FCIHam_inds(k)
                         endif
@@ -4019,7 +4023,7 @@ module LinearResponse
                         if(abs(matel).ge.CompressThresh) then
                             ind_p = ind_p + 1
                             if(ind_p.gt.Nmax_Lin_p) call stop_all(t_r,'Compressed array p size too small 2')
-                            LinearSystem_p(ind_p) = matel 
+                            LinearSystemc_p(ind_p) = matel 
                             LinearSystem_p_inds(ind_p) = Coup_Ann_inds_T(k) + nNp1FCIDet  !Add on cols from block 1
                         endif
                     enddo
@@ -4032,7 +4036,7 @@ module LinearResponse
                         if(abs(matel).gt.CompressThresh) then
                             ind_p = ind_p + 1
                             if(ind_p.gt.Nmax_Lin_p) call stop_all(t_r,'Compressed array p size too small 3')
-                            LinearSystem_p(ind_p) = matel 
+                            LinearSystemc_p(ind_p) = matel 
                             LinearSystem_p_inds(ind_p) = Coup_Ann_inds(k)
                         endif
                     enddo
@@ -4041,7 +4045,7 @@ module LinearResponse
                         if(abs(NFCIHam_cmps(k)).gt.CompressThresh) then
                             ind_p = ind_p + 1
                             if(ind_p.gt.Nmax_Lin_p) call stop_all(t_r,'Compressed array p size too small 4')
-                            LinearSystem_p(ind_p) = NFCIHam_cmps(k)
+                            LinearSystemc_p(ind_p) = NFCIHam_cmps(k)
                             LinearSystem_p_inds(ind_p) = NFCIHam_inds(k) + nNp1FCIDet   !Add on cols from block 3^T
                         endif
                     enddo
@@ -4055,7 +4059,7 @@ module LinearResponse
                         if(abs(Nm1FCIHam_cmps(k)).ge.CompressThresh) then
                             ind_h = ind_h + 1
                             if(ind_h.gt.Nmax_Lin_h) call stop_all(t_r,'Compressed array h size too small')
-                            LinearSystem_h(ind_h) = Nm1FCIHam_cmps(k)
+                            LinearSystemc_h(ind_h) = Nm1FCIHam_cmps(k)
                             LinearSystem_h_inds(ind_h) = Nm1FCIHam_inds(k)
                         endif
                     enddo
@@ -4064,7 +4068,7 @@ module LinearResponse
                         if(abs(matel).gt.CompressThresh) then
                             ind_h = ind_h + 1
                             if(ind_h.gt.Nmax_Lin_p) call stop_all(t_r,'Compressed array h size too small 2')
-                            LinearSystem_h(ind_h) = matel 
+                            LinearSystemc_h(ind_h) = matel 
                             LinearSystem_h_inds(ind_h) = Coup_Create_inds_T(k) + nNm1bFCIDet
                         endif
                     enddo
@@ -4077,7 +4081,7 @@ module LinearResponse
                         if(abs(matel).gt.CompressThresh) then
                             ind_h = ind_h + 1
                             if(ind_h.gt.Nmax_Lin_h) call stop_all(t_r,'Compressed array h size too small 3')
-                            LinearSystem_h(ind_h) = matel 
+                            LinearSystemc_h(ind_h) = matel 
                             LinearSystem_h_inds(ind_h) = Coup_Create_inds(k)
                         endif
                     enddo
@@ -4086,7 +4090,7 @@ module LinearResponse
                         if(abs(NFCIHam_cmps(k)).gt.CompressThresh) then
                             ind_h = ind_h + 1
                             if(ind_h.gt.Nmax_Lin_h) call stop_all(t_r,'Compressed array h size too small 4')
-                            LinearSystem_h(ind_h) = NFCIHam_cmps(k)
+                            LinearSystemc_h(ind_h) = NFCIHam_cmps(k)
                             LinearSystem_h_inds(ind_h) = NFCIHam_inds(k) + nNm1bFCIDet
                         endif
                     enddo
@@ -4103,15 +4107,15 @@ module LinearResponse
                 !call writevectorcomp(Cre_0(:,1),'Ann_0')
                 !call writevectorcomp(Ann_0,'Ann_0')
                 
-                LinearSystem_p(:) = -LinearSystem_p(:)
+                LinearSystemc_p(:) = -LinearSystemc_p(:)
                 !Offset matrix
                 do i = 1,nLinearSystem
-                    LinearSystem_p(i) = LinearSystem_p(i) + dcmplx(Omega+mu+GFChemPot,dDelta)
+                    LinearSystemc_p(i) = LinearSystemc_p(i) + dcmplx(Omega+mu+GFChemPot,dDelta)
                 enddo
 
                 !Now solve these linear equations
                 !call writevectorcomp(Psi1_p,'Cre_0')
-                zDirMV_Mat_cmprs => LinearSystem_p
+                zDirMV_Mat_cmprs => LinearSystemc_p
                 zDirMV_Mat_cmprs_inds => LinearSystem_p_inds
                 if(tMinRes_NonDir) then
                     call setup_RHS(nLinearSystem,Cre_0(:,pertsite),RHS)
@@ -4144,9 +4148,9 @@ module LinearResponse
 
                 !Now solve the LR for the hole addition
                 do i = 1,nLinearSystem
-                    LinearSystem_h(i) = dcmplx(Omega+mu,dDelta) + (LinearSystem_h(i) - dcmplx(GFChemPot,0.0_dp))
+                    LinearSystemc_h(i) = dcmplx(Omega+mu,dDelta) + (LinearSystemc_h(i) - dcmplx(GFChemPot,0.0_dp))
                 enddo
-                zDirMV_Mat_cmprs => LinearSystem_h
+                zDirMV_Mat_cmprs => LinearSystemc_h
                 zDirMV_Mat_cmprs_inds => LinearSystem_h_inds
                 if(tMinRes_NonDir) then
                     call setup_RHS(nLinearSystem,Ann_0(:,pertsite),RHS)
@@ -4250,7 +4254,7 @@ module LinearResponse
 
         write(6,"(A,G22.10)") "Total integrated spectral weight: ",SpectralWeight
 
-        deallocate(LinearSystem_p,LinearSystem_h,LinearSystem_p_inds,LinearSystem_h_inds,Psi1_p,Psi1_h)
+        deallocate(LinearSystemc_p,LinearSystemc_h,LinearSystem_p_inds,LinearSystem_h_inds,Psi1_p,Psi1_h)
         deallocate(Cre_0,Ann_0,Psi_0,SchmidtPertGF_Cre_Ket,SchmidtPertGF_Ann_Ket)
         deallocate(NI_LRMat_Cre,NI_LRMat_Ann,ResponseFn_p,ResponseFn_h,ResponseFn_Mat)
         deallocate(ni_lr_Mat,SchmidtPertGF_Cre_Bra,SchmidtPertGF_Ann_Bra)
@@ -4302,7 +4306,7 @@ module LinearResponse
         implicit none
         complex(dp), allocatable :: NFCIHam(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
         real(dp), allocatable :: W(:),dNorm_p(:),dNorm_h(:)
-        complex(dp), allocatable , target :: LinearSystem_p(:,:),LinearSystem_h(:,:)
+!        complex(dp), allocatable , target :: LinearSystem_p(:,:),LinearSystem_h(:,:)
         complex(dp), allocatable :: Cre_0(:,:),Ann_0(:,:),ResponseFn_p(:,:),ResponseFn_h(:,:)
         complex(dp), allocatable :: Gc_a_F_ax_Bra(:,:),Gc_a_F_ax_Ket(:,:),Gc_b_F_ab(:,:),GSHam(:,:)
         complex(dp), allocatable :: ResponseFn_Mat(:,:),Ga_i_F_xi_Ket(:,:)

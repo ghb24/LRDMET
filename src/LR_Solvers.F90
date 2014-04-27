@@ -2,18 +2,11 @@ module LRSolvers
     use const
     use globals
     use errors, only: stop_all,warning
+    use LR_Data
 !    use mat_tools, only: writevector,writematrixcomp
 !$  use omp_lib
     implicit none
     !Parameters for matrix-vector multiplications within iterative solvers
-    complex(dp), save, pointer :: zDirMV_Mat(:,:)
-    complex(dp), save, pointer :: zDirMV_Mat_cmprs(:)
-    integer, save, pointer :: zDirMV_Mat_cmprs_inds(:)
-    real(dp), save, allocatable :: Precond_Diag(:)
-!$OMP THREADPRIVATE(zDirMV_Mat)
-!$OMP THREADPRIVATE(zDirMV_Mat_cmprs)
-!$OMP THREADPRIVATE(zDirMV_Mat_cmprs_inds)
-!$OMP THREADPRIVATE(Precond_Diag)
 
     contains
     

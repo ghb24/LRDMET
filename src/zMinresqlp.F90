@@ -25,6 +25,7 @@ module zminresqlpModule
 !  use  zminresqlpDataModule, only : dp, ip, one, zero, eps, realmin, debug, zone, zzero
 !  use  zminresqlpBlasModule, only : znrm2, zdotc 
   use const
+  use LR_Data
   use mat_tools, only: znrm2
   
   implicit none
@@ -1220,7 +1221,7 @@ contains
 
        
        ! See if it is time to print something.
-       
+       prnt = .false. 
        if (nout_ > 0) then
           prnt   = .false.
           if (n              <= 40          ) prnt = .true.
