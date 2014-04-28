@@ -247,6 +247,7 @@ module Globals
     complex(dp), allocatable :: Prev_HL_Vec(:)
     real(dp) :: Prev_HL_Energy
     integer :: iFitStyle                !1 = direct fitting, 2 = DMFT
+    logical :: tCalcRealSpectrum        !Whether to calculate the real spectrum in addition to the fit spectrum
 
     !Debugging for Self-consistency
     logical :: tSE_Scan

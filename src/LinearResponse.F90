@@ -39,7 +39,7 @@ module LinearResponse
         complex(dp), allocatable :: LatVecs(:,:)
         complex(dp), allocatable :: NFCIHam(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
         real(dp), allocatable :: dNorm_p(:),dNorm_h(:)
-!        complex(dp), allocatable , target :: LinearSystem_p(:,:),LinearSystem_h(:,:)
+        complex(dp), allocatable , target :: LinearSystem_p(:,:),LinearSystem_h(:,:)
         complex(dp), allocatable :: Cre_0(:,:),Ann_0(:,:),ResponseFn_p(:,:),ResponseFn_h(:,:)
         complex(dp), allocatable :: Gc_a_F_ax_Bra(:,:),Gc_a_F_ax_Ket(:,:),Gc_b_F_ab(:,:)
         complex(dp), allocatable :: Ga_i_F_xi_Ket(:,:)
@@ -414,8 +414,7 @@ module LinearResponse
 !$OMP&  PRIVATE(SPGF_Cre_Bra,SPGF_Cre_Ket,SPGF_Ann_Bra,SPGF_Ann_Ket,Gc_a_F_ax_Bra),    &
 !$OMP&  PRIVATE(Gc_a_F_ax_Ket,Gc_b_F_ab,Ga_i_F_xi_Bra,Ga_i_F_xi_Ket,Ga_i_F_ij),  &
 !$OMP&  PRIVATE(Psi1_p,Psi1_h,ResponseFn_p,ResponseFn_h,HFRes_Ann_Ket,HFRes_Cre_Ket,HFRes_Ann_Bra),            &
-!$OMP&  PRIVATE(HFRes_Cre_Bra,temp,temp2,temp3,RHS) 
-!!COPYIN(zDirMV_Mat,LinearSystem_p,LinearSystem_h)
+!$OMP&  PRIVATE(HFRes_Cre_Bra,temp,temp2,temp3,RHS,LinearSystem_p,LinearSystem_h)
         do OmegaVal = 1,nESteps
             if(present(FreqPoints)) then
                 call GetOmega(Omega,OmegaVal,tMatbrAxis,FreqPoints=FreqPoints)
@@ -694,16 +693,12 @@ module LinearResponse
                 enddo
 !                call writematrixcomp(LinearSystem_p,'LinearSystem_p',.false.)
                 !Now solve these linear equations
-!$OMP BARRIER
                 if(tMinRes_NonDir) then
-                    write(6,*) "LinearSystem_p: ",LinearSystem_p(1,1),OMP_get_thread_num()
+!                    write(6,*) "LinearSystem_p: ",LinearSystem_p(1,1),OMP_get_thread_num()
                     zDirMV_Mat => LinearSystem_p
-                    write(6,*) "Associated? ",associated(zDirMV_Mat),OMP_get_thread_num()
-                    write(6,*) "zDirMV_Mat: ",zDirMV_Mat(1,1),OMP_get_thread_num()
-                    write(6,*) "loc: ",loc(zDirMV_Mat),OMP_get_thread_num()
-!$OMP BARRIER
+!                    write(6,*) "Associated? ",associated(zDirMV_Mat),OMP_get_thread_num()
+!                    write(6,*) "zDirMV_Mat: ",zDirMV_Mat(1,1),OMP_get_thread_num()
                     call setup_RHS(nLinearSystem,Cre_0(:,pertsite),RHS)
-!$OMP BARRIER
                     if(tPrecond_MinRes) then
                         call FormPrecond(nLinearSystem)
                         call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=RHS,nout=minres_unit,x=Psi1_p, &
@@ -744,6 +739,10 @@ module LinearResponse
                 enddo
 !                call writematrixcomp(LinearSystem_h,'LinearSystem_h',.false.)
                 if(tMinRes_NonDir) then
+                    !NB: There is a bug in ifort, if using array bounds checking and multiple openmp threads.
+                    !This is caused since the bounds checking will only check the bounds on pointers on thread 0.
+                    !This means that if it has nullified the pointer on thread 0, but not on others, there will be
+                    !array bounds errors. DO NOT use multiple threads with array bounds checking for the minres option.
                     zDirMV_Mat => LinearSystem_h
                     call setup_RHS(nLinearSystem,Ann_0(:,pertsite),RHS)
                     if(tPrecond_MinRes) then
@@ -1000,7 +999,7 @@ module LinearResponse
         logical :: tMatbrAxis_,tLatHamProvided_
         complex(dp), allocatable :: NFCIHam(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
         real(dp), allocatable :: dNorm_p(:),dNorm_h(:),W(:),temp(:,:),ham_schmidt(:,:),Emb_h_fit(:,:)
-!        complex(dp), allocatable , target :: LinearSystem_p(:,:),LinearSystem_h(:,:)
+        complex(dp), allocatable , target :: LinearSystem_p(:,:),LinearSystem_h(:,:)
         complex(dp), allocatable :: Cre_0(:,:),Ann_0(:,:),ResponseFn_p(:,:),ResponseFn_h(:,:)
         complex(dp), allocatable :: Gc_a_F_ax_Bra(:,:),Gc_a_F_ax_Ket(:,:),Gc_b_F_ab(:,:)
         complex(dp), allocatable :: ResponseFn_Mat(:,:),Ga_i_F_xi_Ket(:,:)
@@ -4306,7 +4305,7 @@ module LinearResponse
         implicit none
         complex(dp), allocatable :: NFCIHam(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
         real(dp), allocatable :: W(:),dNorm_p(:),dNorm_h(:)
-!        complex(dp), allocatable , target :: LinearSystem_p(:,:),LinearSystem_h(:,:)
+        complex(dp), allocatable , target :: LinearSystem_p(:,:),LinearSystem_h(:,:)
         complex(dp), allocatable :: Cre_0(:,:),Ann_0(:,:),ResponseFn_p(:,:),ResponseFn_h(:,:)
         complex(dp), allocatable :: Gc_a_F_ax_Bra(:,:),Gc_a_F_ax_Ket(:,:),Gc_b_F_ab(:,:),GSHam(:,:)
         complex(dp), allocatable :: ResponseFn_Mat(:,:),Ga_i_F_xi_Ket(:,:)
@@ -9537,9 +9536,14 @@ module LinearResponse
         if(tCompressedMats.and.(.not.associated(zDirMV_Mat_cmprs))) call stop_all(t_r,'Compressed matrix not associated')
         if(tCompressedMats.and.(.not.associated(zDirMV_Mat_cmprs_inds))) call stop_all(t_r,'Compressed indices not associated')
         if((.not.tCompressedMats).and.(.not.associated(zDirMV_Mat))) then
-            write(6,*) "val: ",zDirMV_Mat(1,1),OMP_get_thread_num()
-            write(6,*) "loc: ",loc(zDirMV_Mat),OMP_get_thread_num() 
-            call stop_all(t_r,'Matrix not associated!')
+            if(.not.(tOpenMP.and.(max_omp_threads.gt.1))) then
+                !There is a *horrible* ifort compiler bug when using threadprivate
+                !pointers. The associate option only seems to check thread 0. We
+                !will just have to hope and pray that the matrix is associated in
+                !this instance.
+!$               write(6,*) "OMP Thread: ",OMP_get_thread_num()
+                call stop_all(t_r,'Matrix not associated!')
+            endif
         endif
 
 !        call writevectorint(zDirMV_Mat_cmprs_inds,'zDirMV_Mat_cmprs_inds')

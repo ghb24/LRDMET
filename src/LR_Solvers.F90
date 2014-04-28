@@ -696,8 +696,14 @@ module LRSolvers
 
         if(tCompressedMats.and.(.not.associated(zDirMV_Mat_cmprs))) call stop_all(t_r,'Compressed matrix not associated')
         if((.not.tCompressedMats).and.(.not.associated(zDirMV_Mat))) then
-!$            write(6,*) "OMP Thread: ",OMP_get_thread_num()
-            call stop_all(t_r,'Matrix not associated!')
+            if(.not.(tOpenMP.and.(max_omp_threads.gt.1))) then
+                !There is a *horrible* ifort compiler bug when using threadprivate
+                !pointers. The associate option only seems to check thread 0. We
+                !will just have to hope and pray that the matrix is associated in
+                !this instance.
+!$               write(6,*) "OMP Thread: ",OMP_get_thread_num()
+                call stop_all(t_r,'Matrix not associated!')
+            endif
         endif
 
         if(tCompressedMats) then

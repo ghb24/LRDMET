@@ -15,5 +15,5 @@ fflags = -O3 -openmp -ip -integer-size 64 -r8
 #cxxflags = -O3
 
 [dbg]
-fflags = -g -traceback -openmp -CB -CU -fp-stack-check -ftrapuv -check arg_temp_created -check format -O0 -integer-size 64 -r8
+fflags = -g -traceback -openmp -CU -fp-stack-check -ftrapuv -check arg_temp_created -check format -O0 -integer-size 64 -r8
 cxxflags = -g -traceback
