@@ -201,9 +201,6 @@ module SelfConsistentLR2
 
         deallocate(DiffImpCorrFn,AllDiffs,CorrFn_Fit_Old,CorrFn_Fit,CorrFn_HL_Old)
 
-        allocate(InvGMat(nImp,nImp,nFreq_Re))
-        allocate(InvG0Mat(nImp,nImp,nFreq_Re))
-
         if(tFitMatAxis) then
             allocate(CorrFn_Fit(nImp,nImp,nFreq_Re))
             allocate(CorrFn_HL_Re(nImp,nImp,nFreq_Re))
@@ -223,36 +220,21 @@ module SelfConsistentLR2
             call writedynamicfunction(nFreq_Re,CorrFn_HL_Re,'G_Imp_Re_Final',   &
                 tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
 
-            !Invert for self-energy calculation
-            InvGMat(:,:,:) = CorrFn_HL_Re(:,:,:)
-            InvG0Mat(:,:,:) = CorrFn_Fit(:,:,:)
-            call InvertLocalNonHermFunc(nFreq_Re,InvGMat)
-            call InvertLocalNonHermFunc(nFreq_Re,InvG0Mat)
             deallocate(CorrFn_HL_Re,CorrFn_Fit)
         else
-            allocate(CorrFn_Fit(nImp,nImp,nFreq_Re))
             call writedynamicfunction(nFreq_Re,CorrFn_HL,'G_Imp_Fit_Final',     &
                 tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
-
-            !Invert for self-energy calculation
-            call CalcLatticeSpectrum(iCorrFnTag,nFreq_Re,CorrFn_Fit,GFChemPot,tMatbrAxis=.false.,    &
-                iLatParams=iLatParams,LatParams=LatParams)
-            InvGMat(:,:,:) = CorrFn_HL(:,:,:)
-            InvG0Mat(:,:,:) = CorrFn_Fit(:,:,:)
-            call InvertLocalNonHermFunc(nFreq_Re,InvGMat)
-            call InvertLocalNonHermFunc(nFreq_Re,InvG0Mat)
         endif
-        deallocate(CorrFn_HL)
-        
-        !Calculate and write out the real-frequency self-energy.
-        allocate(SelfEnergy(nImp,nImp,nFreq_Re))
-        SelfEnergy(:,:,:) = zzero
-        do i = 1,nFreq_Re
-            SelfEnergy(:,:,i) = InvGMat(:,:,i) - InvG0Mat(:,:,i)
-        enddo
+            
+
+
+
         call writedynamicfunction(nFreq_Re,SelfEnergy,'SelfEnergy_Final',tCheckCausal=.true.,   &
             tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
         deallocate(SelfEnergy)
+
+        !TODO: Do we want the matsubara self-energy
+        !TODO: Do we want the self energy from the fit lattice hamiltonian (sum rules obeyed)
 
         !TODO
         !if(tOptGF_EVals.and.tDiag_kSpace) then
