@@ -24,6 +24,7 @@ module SelfConsistentLR2
         complex(dp), allocatable :: CorrFn_Fit_Old(:,:,:),DiffImpCorrFn(:,:,:)
         complex(dp), allocatable :: CorrFn_HL_Re(:,:,:),CorrFn_Re(:,:,:)
         complex(dp), allocatable :: Debug_Lat_CorrFn_Re(:,:,:),Debug_Lat_CorrFn_Fit(:,:,:)
+        complex(dp), allocatable :: SelfEnergy(:,:,:),InvGMat(:,:,:),InvG0Mat(:,:,:)
         real(dp), allocatable :: AllDiffs(:,:)
 
         real(dp) :: FinalDist
@@ -195,16 +196,14 @@ module SelfConsistentLR2
         enddo
         write(6,"(A)") "" 
 
-        !TODO
-        !if(tOptGF_EVals.and.tDiag_kSpace) then
-        !    !Write out the converged one-electron dispersion / bandstructure
-        !    call WriteBandstructure(Couplings,iLatParams)
-        !endif
         call writedynamicfunction(nFitPoints,CorrFn_Fit,'G_Lat_Fit_Final',      &
             tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
 
         deallocate(DiffImpCorrFn,AllDiffs,CorrFn_Fit_Old,CorrFn_Fit,CorrFn_HL_Old)
-            
+
+        allocate(InvGMat(nImp,nImp,nFreq_Re))
+        allocate(InvG0Mat(nImp,nImp,nFreq_Re))
+
         if(tFitMatAxis) then
             allocate(CorrFn_Fit(nImp,nImp,nFreq_Re))
             allocate(CorrFn_HL_Re(nImp,nImp,nFreq_Re))
@@ -223,13 +222,43 @@ module SelfConsistentLR2
             call SchmidtGF_FromLat(CorrFn_HL_Re,GFChemPot,nFreq_Re,.false.,h_lat_fit)
             call writedynamicfunction(nFreq_Re,CorrFn_HL_Re,'G_Imp_Re_Final',   &
                 tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
+
+            !Invert for self-energy calculation
+            InvGMat(:,:,:) = CorrFn_HL_Re(:,:,:)
+            InvG0Mat(:,:,:) = CorrFn_Fit(:,:,:)
+            call InvertLocalNonHermFunc(nFreq_Re,InvGMat)
+            call InvertLocalNonHermFunc(nFreq_Re,InvG0Mat)
             deallocate(CorrFn_HL_Re,CorrFn_Fit)
         else
+            allocate(CorrFn_Fit(nImp,nImp,nFreq_Re))
             call writedynamicfunction(nFreq_Re,CorrFn_HL,'G_Imp_Fit_Final',     &
                 tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
-        endif
 
+            !Invert for self-energy calculation
+            call CalcLatticeSpectrum(iCorrFnTag,nFreq_Re,CorrFn_Fit,GFChemPot,tMatbrAxis=.false.,    &
+                iLatParams=iLatParams,LatParams=LatParams)
+            InvGMat(:,:,:) = CorrFn_HL(:,:,:)
+            InvG0Mat(:,:,:) = CorrFn_Fit(:,:,:)
+            call InvertLocalNonHermFunc(nFreq_Re,InvGMat)
+            call InvertLocalNonHermFunc(nFreq_Re,InvG0Mat)
+        endif
         deallocate(CorrFn_HL)
+        
+        !Calculate and write out the real-frequency self-energy.
+        allocate(SelfEnergy(nImp,nImp,nFreq_Re))
+        SelfEnergy(:,:,:) = zzero
+        do i = 1,nFreq_Re
+            SelfEnergy(:,:,i) = InvGMat(:,:,i) - InvG0Mat(:,:,i)
+        enddo
+        call writedynamicfunction(nFreq_Re,SelfEnergy,'SelfEnergy_Final',tCheckCausal=.true.,   &
+            tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
+        deallocate(SelfEnergy)
+
+        !TODO
+        !if(tOptGF_EVals.and.tDiag_kSpace) then
+        !    !Write out the converged one-electron dispersion / bandstructure
+        !    call WriteBandstructure(Couplings,iLatParams)
+        !endif
 
         deallocate(h_lat_fit)
         deallocate(FreqPoints,Weights)
