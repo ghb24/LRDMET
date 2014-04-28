@@ -414,7 +414,7 @@ module LinearResponse
 !$OMP&  PRIVATE(SPGF_Cre_Bra,SPGF_Cre_Ket,SPGF_Ann_Bra,SPGF_Ann_Ket,Gc_a_F_ax_Bra),    &
 !$OMP&  PRIVATE(Gc_a_F_ax_Ket,Gc_b_F_ab,Ga_i_F_xi_Bra,Ga_i_F_xi_Ket,Ga_i_F_ij),  &
 !$OMP&  PRIVATE(Psi1_p,Psi1_h,ResponseFn_p,ResponseFn_h,HFRes_Ann_Ket,HFRes_Cre_Ket,HFRes_Ann_Bra),            &
-!$OMP&  PRIVATE(HFRes_Cre_Bra,temp,temp2,temp3,RHS,LinearSystem_p,LinearSystem_h)
+!$OMP&  PRIVATE(HFRes_Cre_Bra,temp,temp2,temp3,RHS,LinearSystem_p,LinearSystem_h) SCHEDULE(DYNAMIC)
         do OmegaVal = 1,nESteps
             if(present(FreqPoints)) then
                 call GetOmega(Omega,OmegaVal,tMatbrAxis,FreqPoints=FreqPoints)
