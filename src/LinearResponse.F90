@@ -909,6 +909,8 @@ module LinearResponse
         Coup_Ann_alpha(:,:,:) = 0
         !TODO: This can be largly sped up by considering single excitations in isolation, rather than running through all elements
         !   This will result in an N_FCI * n_imp scaling, rather than N_FCI^2
+!$OMP PARALLEL DO DEFAULT(NONE) PRIVATE(DiffOrb,nOrbs,orbdum,gam,tempK,tParity),    &
+!$OMP& SHARED(Nm1bBitList,FCIBitList,nFCIDet,nNm1bFCIDet,Coup_Create_alpha,nNp1FCIDet,Np1BitList,Coup_Ann_alpha,CoreEnd)
         do J = 1,nFCIDet
             !Start with the creation of an alpha orbital
             do K = 1,nNm1bFCIDet
@@ -969,6 +971,7 @@ module LinearResponse
                 endif
             enddo
         enddo
+!$OMP END PARALLEL DO
         i = 2*nFCIDet*nNm1bFCIDet + 2*nFCIDet*nNp1FCIDet
         write(6,"(A,F12.5,A)") "Memory required for coupling coefficient matrices: ",real(i,dp)*RealtoMb, " Mb"
 
@@ -6797,6 +6800,7 @@ module LinearResponse
         endif
 
         !This is going to be done in a very slow N^2 loop, rather than 
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(ilut,tParity)
         do i=1,nFCIDet
             !We want to create a particle
             if(.not.btest(FCIBitList(i),pertsitespin-1)) then
@@ -6871,6 +6875,7 @@ module LinearResponse
                 endif
             endif
         enddo
+!$OMP END PARALLEL DO
 
         if(.not.tFullReoptGS) then
             !We do not have GS in other parts of the space
@@ -6879,6 +6884,7 @@ module LinearResponse
 
         if(tSwapExcits_) then
             !This is part of the GS which will contribute to the particle removal (V0_Ann) wavefunction
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(ilut,tParity,GSInd)
             do i = 1,nNp1bFCIDet
                 if(btest(Np1bBitList(i),pertsitespin-1)) then
                     ilut = Np1bBitList(i)
@@ -6897,8 +6903,10 @@ module LinearResponse
                     if(j.gt.nFCIDet) call stop_all(t_r,'Could not find corresponding determinant 3')
                 endif
             enddo
+!$OMP END PARALLEL DO
 
             !This is the n-1 active space which will be operated on my the particle creation operator
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(ilut,tParity,GSInd)
             do i = 1,nNm1FCIDet
                 if(.not.btest(Nm1BitList(i),pertsitespin-1)) then
                     ilut = Nm1BitList(i)
@@ -6917,8 +6925,10 @@ module LinearResponse
                     if(j.gt.nFCIDet) call stop_all(t_r,'Could not find corresponding determinant 2')
                 endif
             enddo
+!$OMP END PARALLEL DO
         else
             !This is part of the GS which will contribute to the particle removal (V0_Ann) wavefunction
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(ilut,tParity,GSInd)
             do i = 1,nNp1FCIDet
                 if(btest(Np1BitList(i),pertsitespin-1)) then
                     ilut = Np1BitList(i)
@@ -6937,8 +6947,10 @@ module LinearResponse
                     if(j.gt.nFCIDet) call stop_all(t_r,'Could not find corresponding determinant 3')
                 endif
             enddo
+!$OMP END PARALLEL DO
 
             !This is the n-1 active space which will be operated on my the particle creation operator
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(ilut,tParity,GSInd)
             do i = 1,nNm1bFCIDet
                 if(.not.btest(Nm1bBitList(i),pertsitespin-1)) then
                     ilut = Nm1bBitList(i)
@@ -6957,6 +6969,7 @@ module LinearResponse
                     if(j.gt.nFCIDet) call stop_all(t_r,'Could not find corresponding determinant 2')
                 endif
             enddo
+!$OMP END PARALLEL DO
         endif
 
     end subroutine ApplySP_PertGS_EC

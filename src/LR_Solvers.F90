@@ -138,38 +138,49 @@ module LRSolvers
             Np1Ham(:,:) = zzero
             Nm1Ham(:,:) = zzero
             !Beware - these can be non-hermitian. Ensure that the indices are the right way around!
+!$OMP PARALLEL DO 
             do i = 1,nFCIDet
                 do j = 1,nFCIDet
                     call GetHElement_comp(FCIDetList(:,i),FCIDetList(:,j),nElec,NHam(i,j),  &
                         ilutnI=FCIBitList(i),ilutnJ=FCIBitList(j))
                 enddo
             enddo
+!$OMP END PARALLEL DO
+
             if(tSwapExcits_) then
+!$OMP PARALLEL DO 
                 do i = 1,nNp1bFCIDet
                     do j = 1,nNp1bFCIDet
                         call GetHElement_comp(Np1bFCIDetList(:,i),Np1bFCIDetList(:,j),nElec+1,Np1Ham(i,j),    &
                             ilutnI=Np1bBitList(i),ilutnJ=Np1bBitList(j))
                     enddo
                 enddo
+!$OMP END PARALLEL DO
+!$OMP PARALLEL DO 
                 do i = 1,nNm1FCIDet
                     do j = 1,nNm1FCIDet
                         call GetHElement_comp(Nm1FCIDetList(:,i),Nm1FCIDetList(:,j),nElec-1,Nm1Ham(i,j), &
                             ilutnI=Nm1BitList(i),ilutnJ=Nm1BitList(j))
                     enddo
                 enddo
+!$OMP END PARALLEL DO
             else
+!$OMP PARALLEL DO 
                 do i = 1,nNp1FCIDet
                     do j = 1,nNp1FCIDet
                         call GetHElement_comp(Np1FCIDetList(:,i),Np1FCIDetList(:,j),nElec+1,Np1Ham(i,j),    &
                             ilutnI=Np1BitList(i),ilutnJ=Np1BitList(j))
                     enddo
                 enddo
+!$OMP END PARALLEL DO
+!$OMP PARALLEL DO 
                 do i = 1,nNm1bFCIDet
                     do j = 1,nNm1bFCIDet
                         call GetHElement_comp(Nm1bFCIDetList(:,i),Nm1bFCIDetList(:,j),nElec-1,Nm1Ham(i,j), &
                             ilutnI=Nm1bBitList(i),ilutnJ=Nm1bBitList(j))
                     enddo
                 enddo
+!$OMP END PARALLEL DO
             endif
             if(tCheck) then
                 do i = 1,nFCIDet
