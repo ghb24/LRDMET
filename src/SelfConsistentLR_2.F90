@@ -65,13 +65,7 @@ module SelfConsistentLR2
         allocate(CorrFn_HL(nImp,nImp,nFitPoints))
         allocate(CorrFn_HL_Old(nImp,nImp,nFitPoints))
         allocate(DiffImpCorrFn(nImp,nImp,nFitPoints))
-        allocate(Debug_Lat_CorrFn_Fit(nImp,nImp,nFitPoints))
         CorrFn_HL(:,:,:) = zzero
-        if(tCalcRealSpectrum) then
-            allocate(CorrFn_HL_Re(nImp,nImp,nFreq_Re))
-            allocate(CorrFn_Re(nImp,nImp,nFreq_Re))
-            allocate(Debug_Lat_CorrFn_Re(nImp,nImp,nFreq_Re))
-        endif
 
 !        call writematrixcomp(h_lat_fit,'Initial real space matrix',.true.)
         call CalcLatticeSpectrum(iCorrFnTag,nFitPoints,CorrFn_Fit,GFChemPot,tMatbrAxis=tFitMatAxis, &
@@ -91,7 +85,8 @@ module SelfConsistentLR2
             if(iCorrFnTag.eq.1) then
 !                call writematrixcomp(h_lat_fit,'real space matrix sent to LR',.true.)
                 call SchmidtGF_FromLat(CorrFn_HL,GFChemPot,nFitPoints,tFitMatAxis,  &
-                    h_lat_fit,FreqPoints,Lat_G_Mat=Debug_Lat_CorrFn_Fit)
+                    h_lat_fit,FreqPoints)
+!                    h_lat_fit,FreqPoints,Lat_G_Mat=Debug_Lat_CorrFn_Fit)
 !                write(6,*) "For Schmidt-decomposed function on the fitting axis: "
 !                call writedynamicfunction(nFitPoints,Debug_Lat_CorrFn_Fit,'G_LatSchmidt_Fit',tag=iter,    &
 !                    tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
@@ -102,19 +97,24 @@ module SelfConsistentLR2
                 call stop_all(t_r,'Non GF correlation functions not yet coded up')
             endif
 
-            if(tCalcRealSpectrum) then
+            if(tCalcRealSpectrum.or.(iter.eq.1)) then
+                allocate(CorrFn_HL_Re(nImp,nImp,nFreq_Re))
                 call SchmidtGF_FromLat(CorrFn_HL_Re,GFChemPot,nFreq_Re,.false., &
-                    h_lat_fit,Lat_G_Mat=Debug_Lat_CorrFn_Re)
+                    h_lat_fit)
+!                    h_lat_fit,Lat_G_Mat=Debug_Lat_CorrFn_Re)
                 call writedynamicfunction(nFreq_Re,CorrFn_HL_Re,'G_Imp_Re',tag=iter,    &
                     tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
 !                write(6,*) "For Schmidt-decomposed function on the real axis: "
 !                call writedynamicfunction(nFreq_Re,Debug_Lat_CorrFn_Re,'G_LatSchmidt_Re',tag=iter,    &
 !                    tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
+                deallocate(CorrFn_HL_Re)
+                allocate(CorrFn_Re(nImp,nImp,nFreq_Re))
                 call CalcLatticeSpectrum(iCorrFnTag,nFreq_Re,CorrFn_Re,GFChemPot,tMatbrAxis=.false.,    &
                     iLatParams=iLatParams,LatParams=LatParams)
                 call writedynamicfunction(nFreq_Re,CorrFn_Re,'G_Lat_Re',tag=iter,   &
                     tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
                 !call CheckGFsSame(nFreq_Re,Debug_Lat_CorrFn_Re,CorrFn_Re,1.0e-7_dp)
+                deallocate(CorrFn_Re)
             endif
 
             if(iLatticeFitType.eq.2) then
@@ -203,8 +203,7 @@ module SelfConsistentLR2
         call writedynamicfunction(nFitPoints,CorrFn_Fit,'G_Lat_Fit_Final',      &
             tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
 
-        deallocate(DiffImpCorrFn,AllDiffs,CorrFn_Fit_Old,CorrFn_Fit,CorrFn_HL_Old,Debug_Lat_CorrFn_Fit)
-        if(tCalcRealSpectrum) deallocate(CorrFn_HL_Re,CorrFn_Re,Debug_Lat_CorrFn_Re)
+        deallocate(DiffImpCorrFn,AllDiffs,CorrFn_Fit_Old,CorrFn_Fit,CorrFn_HL_Old)
             
         if(tFitMatAxis) then
             allocate(CorrFn_Fit(nImp,nImp,nFreq_Re))
