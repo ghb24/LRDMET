@@ -930,9 +930,9 @@ module SelfConsistentUtils
         enddo
 !        write(6,"(A,A)") "For function written to file: ",filename
         if(tMatbrAxis_) then
-            write(6,"(A,A,F17.10)") filename," Total approximate spectral weight on Matsubara axis: ",SpectralWeight
+            write(6,"(A,A,F17.10)") trim(filename)," Total approximate spectral weight on Matsubara axis: ",SpectralWeight
         else
-            write(6,"(A,A,F17.10)") filename," Total approximate spectral weight on real axis: ",SpectralWeight
+            write(6,"(A,A,F17.10)") trim(filename)," Total approximate spectral weight on real axis: ",SpectralWeight
         endif
         close(iunit)
 

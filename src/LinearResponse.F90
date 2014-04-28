@@ -469,9 +469,9 @@ module LinearResponse
             if(.not.tOpenMP) call set_timer(LR_EC_GF_HBuild)
         
             if(tMatbrAxis) then
-                write(6,"(A,F12.6,I6)") "Calculating linear response for imaginary frequency: ",Omega   !,OMP_get_thread_num()
+                write(6,"(A,F14.6)") "Calculating linear response for imaginary frequency: ",Omega   !,OMP_get_thread_num()
             else
-                write(6,"(A,F12.6,I6)") "Calculating linear response for frequency: ",Omega !,OMP_get_thread_num()
+                write(6,"(A,F14.6)") "Calculating linear response for frequency: ",Omega !,OMP_get_thread_num()
             endif
 
             !Schmidt decompose the response vector
@@ -669,7 +669,7 @@ module LinearResponse
                         Psi_0(:) = Prev_HL_Vec(:)
                     endif
                     call Comp_NonDir_Davidson(nGSSpace,GSHam,GSEnergy,Psi_0,.true.)
-                    write(6,"(A,G20.10,A,G20.10,A)") "Reoptimized ground state energy is: ",GSEnergy
+                    write(6,"(A,G20.10,A,G20.10)") "Reoptimized ground state energy is: ",GSEnergy
  !                       " (old = ",Prev_HL_Energy,")"
                     Prev_HL_Vec(:) = Psi_0(:)
 !                    Prev_HL_Energy = GSEnergy
