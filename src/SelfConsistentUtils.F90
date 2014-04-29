@@ -10,6 +10,55 @@ module SelfConsistentUtils
     implicit none
 
     contains
+
+    !Calculate and write out the bandstructure
+    !If SelfEnergy specified, include the self-energy contribution (therefore a correlated bandstructure)
+    !Else, it is just a single-particle.
+    !If h_lat is not specified, then it will just use 
+    !TODO: Include spline interpolation for a finer resolution of the bandstructure?
+    subroutine CalcBandstructure(n,mu,h_lat,SelfEnergy,FreqPoints)
+        integer, intent(in) :: n    !Number of frequency points
+        real(dp), intent(in) :: mu  !Chemical potential
+        complex(dp), intent(in), optional :: h_lat(nSites,nSites)
+        complex(dp), intent(in), optional :: SelfEnergy(nImp,nImp,n)
+        real(dp), intent(in), optional :: FreqPoints(n)
+        
+        complex(dp), allocatable :: KBlocks(:,:,:)
+        complex(dp), allocatable :: h0c(:,:)
+
+        if(present(SelfEnergy).and.present(h_lat)) then
+            call stop_all(t_r,'Both a lattice hamiltonian and a self-energy specified. Doesnt seem right')
+        endif
+
+        allocate(KBlocks(nImp,nImp,nKPnts))
+        if(.not.present(h_lat)) then
+            allocate(h0c(nSites,nSites))
+            do i = 1,nSites
+                do j = 1,nSites
+                    h0c(j,i) = cmplx(h0(j,i),zero,dp)
+                enddo
+                h0c(i,i) = h0c(i,i) + cmplx(mu,zero,dp)
+            enddo
+            call ham_to_KBlocks(h0c,KBlocks)
+        else
+            call ham_to_KBlocks(h_lat,KBlocks)
+        endif
+
+        do i = 1,n
+            if(present(FreqPoints)) then
+                call GetOmega(Omega,i,.false.,FreqPoints=FreqPoints)
+            else
+                call GetOmega(Omega,i,.false.)
+            endif
+
+            do k = 1,nKPnts
+                InvMat(:,:) = -KBlocks(:,:,k)
+                if(present(SelfEnergy)) then
+                    InvMat(:,:) = InvMat(:,:) - SelfEnergy(:,:,n)
+                endif
+
+
+    end subroutine CalcBandstructure
     
     subroutine SetChemPot(GFChemPot)
         implicit none

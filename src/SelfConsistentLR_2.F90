@@ -237,6 +237,14 @@ module SelfConsistentLR2
         !TODO: Do we want the self energy from the fit lattice hamiltonian (sum rules obeyed)
         call writedynamicfunction(nFreq_Re,SelfEnergy,'SelfEnergy_Re_Final',tCheckCausal=.true.,   &
             tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
+
+        !TODO: Write out greens function of h + SelfEnergy
+
+        !TODO:  Write out Bandstructure from h + Local SelfEnergy
+        !       Write out Bandstructre form h_tilde
+
+
+
         deallocate(SelfEnergy)
 
         !TODO
