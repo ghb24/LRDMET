@@ -1584,6 +1584,12 @@ module SelfConsistentLR2
             call CalcLatticeSpectrum(1,n,InvG0Mat,mu,tMatbrAxis=tMatbrAxis_,ham=h0c)
         endif
         deallocate(h0c)
+        !As a test, write out the uncorrelated greens function
+!        if(present(FreqPoints)) then
+!            call writedynamicfunction(n,InvG0Mat,'test',tMatbrAxis=tMatbrAxis_,FreqPoints=FreqPoints)
+!        else
+!            call writedynamicfunction(n,InvG0Mat,'test',tMatbrAxis=tMatbrAxis_)
+!        endif
         call InvertLocalNonHermFunc(n,InvG0Mat)
 
         allocate(InvGMat(nImp,nImp,n))

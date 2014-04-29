@@ -173,9 +173,25 @@ module SelfConsistentUtils
             enddo
             deallocate(KBlocks)
         else
-            write(iunit,*) iLatParams
-            do i = 1,iLatParams
-                write(iunit,*) LatParams(i)
+            !Write out k-space hamiltonian
+            allocate(KBlocks(nImp,nImp,nKPnts))
+            call LatParams_to_KBlocks(iLatParams,LatParams,U/2.0_dp,KBlocks)
+!            write(iunit,*) iLatParams
+            write(iunit,"(3I9)") nImp,nKPnts,LatticeDim
+            do k = 1,nKPnts
+                !First, write out k-vector
+                do i = 1,LatticeDim-1
+                    write(iunit,"(F20.12)",advance='no') KPnts(i,k)
+                enddo
+                write(iunit,"(I9,F20.12)") k, KPnts(LatticeDim,k)
+
+                !Then write out the block
+                do i = 1,nImp
+                    do j = 1,nImp-1
+                        write(iunit,"(2G20.12)",advance='no') real(KBlocks(i,j,k),dp),aimag(KBlocks(i,j,k))
+                    enddo
+                    write(iunit,"(2G20.12)") real(KBlocks(i,nImp,k),dp),aimag(KBlocks(i,nImp,k))
+                enddo
             enddo
         endif
         close(iunit)
