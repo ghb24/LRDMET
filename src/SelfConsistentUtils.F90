@@ -144,57 +144,59 @@ module SelfConsistentUtils
         iunit = get_free_unit()
 
         open(unit=iunit,file='LatkBlocks',status='unknown')
-        if(tRealSpaceSC) then
-            !Convert to k-space... HACK
-            !TODO: In the future, just write out real space coupling
-            allocate(KBlocks(nImp,nImp,nKPnts))
-            call LatParams_to_KBlocks(iLatParams,LatParams,U/2.0_dp,KBlocks)
-            if(tShift_Mesh) then
-                ks = nKPnts/2
-            else
-                ks = (nKPnts/2) + 1
-            endif
-            !because they're complex
-            kspace_params = ((nImp*(nImp+1)/2) + (nImp*(nImp-1)/2)) * ks
-            write(iunit,*) kspace_params
-            do k = 1,ks
-                do i = 1,nImp
-                    !Run through columns
-                    do j = i,nImp
-                        !Run through rows
-                        if(i.eq.j) then
-                            write(iunit,*) real(KBlocks(j,i,k),dp)
-                        else
-                            write(iunit,*) real(KBlocks(j,i,k),dp)
-                            write(iunit,*) aimag(KBlocks(j,i,k))
-                        endif
-                    enddo
-                enddo
+        allocate(KBlocks(nImp,nImp,nKPnts))
+        call LatParams_to_KBlocks(iLatParams,LatParams,U/2.0_dp,KBlocks)
+!        write(iunit,*) iLatParams
+        write(iunit,"(3I9)") nImp,nKPnts,LatticeDim
+        do k = 1,nKPnts
+            !First, write out k-vector
+            do i = 1,LatticeDim-1
+                write(iunit,"(F20.12)",advance='no') KPnts(i,k)
             enddo
-            deallocate(KBlocks)
-        else
-            !Write out k-space hamiltonian
-            allocate(KBlocks(nImp,nImp,nKPnts))
-            call LatParams_to_KBlocks(iLatParams,LatParams,U/2.0_dp,KBlocks)
-!            write(iunit,*) iLatParams
-            write(iunit,"(3I9)") nImp,nKPnts,LatticeDim
-            do k = 1,nKPnts
-                !First, write out k-vector
-                do i = 1,LatticeDim-1
-                    write(iunit,"(F20.12)",advance='no') KPnts(i,k)
-                enddo
-                write(iunit,"(I9,F20.12)") k, KPnts(LatticeDim,k)
+            write(iunit,"(I9,F20.12)") k, KPnts(LatticeDim,k)
 
-                !Then write out the block
-                do i = 1,nImp
-                    do j = 1,nImp-1
-                        write(iunit,"(2G20.12)",advance='no') real(KBlocks(i,j,k),dp),aimag(KBlocks(i,j,k))
-                    enddo
-                    write(iunit,"(2G20.12)") real(KBlocks(i,nImp,k),dp),aimag(KBlocks(i,nImp,k))
+            !Then write out the block
+            do i = 1,nImp
+                do j = 1,nImp-1
+                    write(iunit,"(2G20.12)",advance='no') real(KBlocks(i,j,k),dp),aimag(KBlocks(i,j,k))
                 enddo
+                write(iunit,"(2G20.12)") real(KBlocks(i,nImp,k),dp),aimag(KBlocks(i,nImp,k))
             enddo
-        endif
+        enddo
+        deallocate(KBlocks)
         close(iunit)
+
+!        if(tRealSpaceSC) then
+!            !Convert to k-space... HACK
+!            !TODO: In the future, just write out real space coupling
+!            if(tShift_Mesh) then
+!                ks = nKPnts/2
+!            else
+!                ks = (nKPnts/2) + 1
+!            endif
+!            !because they're complex
+!            kspace_params = ((nImp*(nImp+1)/2) + (nImp*(nImp-1)/2)) * ks
+!            write(iunit,*) kspace_params
+!            do k = 1,ks
+!                do i = 1,nImp
+!                    !Run through columns
+!                    do j = i,nImp
+!                        !Run through rows
+!                        if(i.eq.j) then
+!                            write(iunit,*) real(KBlocks(j,i,k),dp)
+!                        else
+!                            write(iunit,*) real(KBlocks(j,i,k),dp)
+!                            write(iunit,*) aimag(KBlocks(j,i,k))
+!                        endif
+!                    enddo
+!                enddo
+!            enddo
+!            deallocate(KBlocks)
+!        else
+!            !Write out k-space hamiltonian
+!            allocate(KBlocks(nImp,nImp,nKPnts))
+!            call LatParams_to_KBlocks(iLatParams,LatParams,U/2.0_dp,KBlocks)
+!        endif
 
     end subroutine WriteLatticeParams
 
@@ -203,8 +205,10 @@ module SelfConsistentUtils
         real(dp), intent(in) :: mu
         real(dp), intent(out) :: LatParams(iLatParams)
         complex(dp), intent(out) :: ham(nSites,nSites)  !Return the lattice hamiltonian too
-!        complex(dp) :: ham_k(nSites,nSites),temp(nSites,nSites)
-        integer :: i,j,iloclatcoups,iunit
+
+        complex(dp), allocatable :: KBlocks(:,:,:)
+        real(dp) :: KPnt_read(LatticeDim),kBlk_read(2*nImp)
+        integer :: i,j,iloclatcoups,iunit,k_read,nImp_read,nKPnts_read,LatticeDim_read,k
         logical :: exists
         character(len=*), parameter :: t_r='InitLatticeParams'
 
@@ -223,26 +227,66 @@ module SelfConsistentUtils
             endif
             iunit = get_free_unit()
             open(unit=iunit,file='LatkBlocks_Read',status='old')
-            read(iunit,*) iloclatcoups
-            if(iloclatcoups.gt.iLatParams) then
-                call stop_all(t_r,'Cannot read in from larger lattice / check inputs compatible')
-            elseif(iloclatcoups.eq.iLatParams) then
-                write(6,"(A)") "In lattice read, number of free parameters the same. Assuming that the "    &
-                    //"k-point mesh is commensurate, and just using these values."
-                do i = 1,iloclatcoups
-                    read(iunit,*) LatParams(i)
-                enddo
-                if(abs(dShiftLatticeEvals).gt.1.0e-8_dp) then
-                    call ShiftLatParams(iLatParams,LatParams,dShiftLatticeEvals)
-                endif
-            else
+
+            read(iunit,*) nImp_read,nKPnts_read,LatticeDim_read
+            if(nImp_read.ne.nImp) then
+                call stop_all(t_r,'Number of impurities has changed from LatkBlock_read. Cannot read in lattice h')
+            elseif(LatticeDim_read.ne.LatticeDim) then
+                call stop_all(t_r,'Dimensionality of lattice has changed from LatkBlock_read. Can not read in lattice h')
+            endif
+            if(nKPnts_read.ne.nKPnts) then
                 call stop_all(t_r,'Reading in from smaller lattice? This should be possible. Bug ghb24 to code up splines')
+            else
+                write(6,"(A,I9)") "Reading in a commensurate lattice with number of k-points: ",nKPnts
+                allocate(KBlocks(nImp,nImp,nKPnts))
+                KBlocks(:,:,:) = zzero
+
+                do k = 1,nKPnts
+                    read(iunit,*) k_read,KPnt_read(1:LatticeDim)
+                    if(k_read.ne.k) call stop_all(t_r,'Not reading kpoints sequentially')
+                    do i = 1,LatticeDim
+                        if(abs(KPnt_read(i)-KPnts(i,k)).gt.1.0e-7_dp) then
+                            call stop_all(t_r,'I thought the kpoint meshes were commensurate, but they are not')
+                        endif
+                    enddo
+                    !Now read this kBlock
+                    do i = 1,nImp
+                        read(iunit,*) kBlk_read(1:2*nImp)   !real and imaginary
+                        do j = 1,nImp
+                            KBlocks(i,j,k) = cmplx(kBlk_read(j*2-1),kBlk_read(j*2),dp)
+                        enddo
+                    enddo
+                enddo
+
+                call KBlocks_to_LatParams(iLatParams,LatParams,KBlocks)
+                deallocate(KBlocks)
+                if(tImposephsym.or.tImposeKSym) then
+                    write(6,"(A)") "Imposing symmetry constrains on read in lattice hamiltonian"
+                    call ImposeSym_2(iLatParams,LatParams,mu)
+                endif
+                call LatParams_to_ham(iLatParams,LatParams,mu,ham)
+                !call WriteLatticeParams(iLatParams,LatParams)
             endif
 
-            if(tImposephsym.or.tImposeKSym) then
-                call ImposeSym_2(iLatParams,LatParams,mu)
-            endif
-            call LatParams_to_ham(iLatParams,LatParams,mu,ham)
+!            read(iunit,*) iloclatcoups
+!            if(iloclatcoups.gt.iLatParams) then
+!                call stop_all(t_r,'Cannot read in from larger lattice / check inputs compatible')
+!            elseif(iloclatcoups.eq.iLatParams) then
+!                write(6,"(A)") "In lattice read, number of free parameters the same. Assuming that the "    &
+!                    //"k-point mesh is commensurate, and just using these values."
+!                do i = 1,iloclatcoups
+!                    read(iunit,*) LatParams(i)
+!                enddo
+!                if(abs(dShiftLatticeEvals).gt.1.0e-8_dp) then
+!                    call ShiftLatParams(iLatParams,LatParams,dShiftLatticeEvals)
+!                endif
+!            else
+!            endif
+!
+!            if(tImposephsym.or.tImposeKSym) then
+!                call ImposeSym_2(iLatParams,LatParams,mu)
+!            endif
+!            call LatParams_to_ham(iLatParams,LatParams,mu,ham)
         else
             !Not reading in
             if(tSC_StartwGSCorrPot) then
