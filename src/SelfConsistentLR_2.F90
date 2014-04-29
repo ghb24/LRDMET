@@ -201,6 +201,8 @@ module SelfConsistentLR2
 
         deallocate(DiffImpCorrFn,AllDiffs,CorrFn_Fit_Old,CorrFn_Fit,CorrFn_HL_Old)
 
+        allocate(SelfEnergy(nImp,nImp,nFreq_Re))
+
         if(tFitMatAxis) then
             allocate(CorrFn_Fit(nImp,nImp,nFreq_Re))
             allocate(CorrFn_HL_Re(nImp,nImp,nFreq_Re))
@@ -220,21 +222,22 @@ module SelfConsistentLR2
             call writedynamicfunction(nFreq_Re,CorrFn_HL_Re,'G_Imp_Re_Final',   &
                 tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
 
+            call CalcSelfEnergy(nFreq_Re,CorrFn_HL_Re,GFChemPot,SelfEnergy,tMatbrAxis=.false.) 
+
             deallocate(CorrFn_HL_Re,CorrFn_Fit)
         else
             call writedynamicfunction(nFreq_Re,CorrFn_HL,'G_Imp_Fit_Final',     &
                 tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
+
+            call CalcSelfEnergy(nFreq_Re,CorrFn_HL,GFChemPot,SelfEnergy,tMatbrAxis=.false.,FreqPoints=FreqPoints)
         endif
             
-
-
-
-        call writedynamicfunction(nFreq_Re,SelfEnergy,'SelfEnergy_Final',tCheckCausal=.true.,   &
-            tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
-        deallocate(SelfEnergy)
-
+        !Write out real-frequency self-energy
         !TODO: Do we want the matsubara self-energy
         !TODO: Do we want the self energy from the fit lattice hamiltonian (sum rules obeyed)
+        call writedynamicfunction(nFreq_Re,SelfEnergy,'SelfEnergy_Re_Final',tCheckCausal=.true.,   &
+            tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
+        deallocate(SelfEnergy)
 
         !TODO
         !if(tOptGF_EVals.and.tDiag_kSpace) then
@@ -244,6 +247,7 @@ module SelfConsistentLR2
 
         deallocate(h_lat_fit)
         deallocate(FreqPoints,Weights)
+        deallocate(CorrFn_HL)
         
         call halt_timer(SelfCon_LR)
 
@@ -1543,5 +1547,59 @@ module SelfConsistentLR2
         deallocate(num,ham_temp,ham_temp_2,ham)
 
     end subroutine CalcJacobian_RS
+    
+    !Calculate the self energy from the uncorrelated hamiltonian, on the real or imaginary frequency axis. The 'correlated' greens function (which could be the correlated lattice GF), is passed in
+    subroutine CalcSelfEnergy(n,G,mu,SelfEnergy,tMatbrAxis,FreqPoints)
+        implicit none
+        integer, intent(in) :: n
+        complex(dp), intent(in) :: G(nImp,nImp,n)
+        real(dp), intent(in) :: mu
+        complex(dp), intent(out) :: SelfEnergy(nImp,nImp,n)
+        logical, intent(in), optional :: tMatbrAxis
+        real(dp), intent(in), optional :: FreqPoints(n)
+
+        complex(dp), allocatable :: InvGMat(:,:,:),InvG0Mat(:,:,:)
+        complex(dp), allocatable :: h0c(:,:)
+        integer :: i,j
+        logical :: tMatbrAxis_
+
+        if(present(tMatbrAxis)) then
+            tMatbrAxis_ = tMatbrAxis
+        else
+            tMatbrAxis_ = .false.
+        endif
+
+        !Find the original, uncorrelated lattice hamiltonian (with chemical potential)
+        allocate(h0c(nSites,nSites))
+        do i = 1,nSites
+            do j = 1,nSites
+                h0c(j,i) = cmplx(h0(j,i),zero,dp)
+            enddo
+            h0c(i,i) = h0c(i,i) + cmplx(mu,zero,dp)
+        enddo
+        allocate(InvG0Mat(nImp,nImp,n))
+        if(present(FreqPoints)) then
+            call CalcLatticeSpectrum(1,n,InvG0Mat,mu,tMatbrAxis=tMatbrAxis_,FreqPoints=FreqPoints,ham=h0c)
+        else
+            call CalcLatticeSpectrum(1,n,InvG0Mat,mu,tMatbrAxis=tMatbrAxis_,ham=h0c)
+        endif
+        deallocate(h0c)
+        call InvertLocalNonHermFunc(n,InvG0Mat)
+
+        allocate(InvGMat(nImp,nImp,n))
+        !Invert for self-energy calculation
+        InvGMat(:,:,:) = G(:,:,:)
+        call InvertLocalNonHermFunc(n,InvGMat)
+
+
+        !Calculate and write out the real-frequency self-energy.
+        SelfEnergy(:,:,:) = zzero
+        do i = 1,n
+            SelfEnergy(:,:,i) = InvG0Mat(:,:,i) - InvGMat(:,:,i)
+        enddo
+
+        deallocate(InvGMat,InvG0Mat)
+
+    end subroutine CalcSelfEnergy
                 
 end module SelfConsistentLR2

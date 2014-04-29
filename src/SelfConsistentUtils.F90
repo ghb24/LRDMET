@@ -10,51 +10,6 @@ module SelfConsistentUtils
     implicit none
 
     contains
-
-    !Calculate the self energy from the uncorrelated hamiltonian, on the real or imaginary frequency axis. The 'correlated' greens function (which could be the correlated lattice GF), is passed in
-    subroutine CalcSelfEnergy(n,G,mu,tMatbrAxis,FreqPoints)
-        implicit none
-        integer, intent(in) :: n
-        complex(dp), intent(in) :: G(nImp,nImp,n)
-        real(dp), intent(in) :: mu
-        logical, intent(in), optional :: tMatbrAxis
-        real(dp), intent(in), optional :: FreqPoints(n)
-
-        logical :: tMatbrAxis_
-
-        allocate(InvGMat(nImp,nImp,nFreq_Re))
-        allocate(InvG0Mat(nImp,nImp,nFreq_Re))
-
-            !Invert for self-energy calculation
-            InvGMat(:,:,:) = CorrFn_HL(:,:,:)
-            call InvertLocalNonHermFunc(nFreq_Re,InvGMat)
-        
-            !Find the original, uncorrelated lattice hamiltonian (with chemical potential)
-        allocate(CorrFn_Fit(nImp,nImp,nFreq_Re))
-        allocate(h0c(nSites,nSites))
-        do i = 1,nSites
-            do j = 1,nSites
-                h0c(i,i) = cmplx(h0(i,i) + GFChemPot,zero,dp)
-            enddo
-        enddo
-        allocate(LatParams_uncorr(iLatParams))
-        call ham_to_LatParams(iLatParams,LatParams_uncorr
-        call CalcLatticeSpectrum(iCorrFnTag,nFreq_Re,CorrFn_Fit,GFChemPot,tMatbrAxis=.false.,    &
-            iLatParams=iLatParams,LatParams=LatParams)
-
-        InvG0Mat(:,:,:) = CorrFn_Fit(:,:,:)
-        call InvertLocalNonHermFunc(nFreq_Re,InvG0Mat)
-        
-        deallocate(CorrFn_HL)
-        !Calculate and write out the real-frequency self-energy.
-        allocate(SelfEnergy(nImp,nImp,nFreq_Re))
-        SelfEnergy(:,:,:) = zzero
-        do i = 1,nFreq_Re
-            SelfEnergy(:,:,i) = InvGMat(:,:,i) - InvG0Mat(:,:,i)
-        enddo
-
-
-    end subroutine CalcSelfEnergy
     
     subroutine SetChemPot(GFChemPot)
         implicit none
