@@ -240,18 +240,15 @@ module SelfConsistentLR2
 
         !TODO: Write out greens function of h + SelfEnergy
 
-        !TODO:  Write out Bandstructure from h + Local SelfEnergy
-        !       Write out Bandstructre form h_tilde
+        
+        !Calculate and write out two bandstructures.
+        !Firstly, simply the bandstructure from the fit hamiltonian...
+        call CalcBandstructure(nFreq_Re,GFChemPot,'Bandstructure_fit',h_lat=h_lat_fit)
 
-
+        !Secondly, from the uncorrelated h and the self energy, which will give a correlated bandstructure picture
+        call CalcBandstructure(nFreq_Re,GFChemPot,'Bandstructure_SE',SelfEnergy=SelfEnergy)
 
         deallocate(SelfEnergy)
-
-        !TODO
-        !if(tOptGF_EVals.and.tDiag_kSpace) then
-        !    !Write out the converged one-electron dispersion / bandstructure
-        !    call WriteBandstructure(Couplings,iLatParams)
-        !endif
 
         deallocate(h_lat_fit)
         deallocate(FreqPoints,Weights)

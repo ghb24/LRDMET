@@ -16,19 +16,39 @@ module SelfConsistentUtils
     !Else, it is just a single-particle.
     !If h_lat is not specified, then it will just use 
     !TODO: Include spline interpolation for a finer resolution of the bandstructure?
-    subroutine CalcBandstructure(n,mu,h_lat,SelfEnergy,FreqPoints)
+    !Note for gnuplot: for [IDX=0:623:50] 'Bandstructure_SE' i IDX u 1:($3 + $2 +0.5*IDX) w lp
+    subroutine CalcBandstructure(n,mu,fileroot,tag,h_lat,SelfEnergy,FreqPoints)
         integer, intent(in) :: n    !Number of frequency points
         real(dp), intent(in) :: mu  !Chemical potential
+        character(len=*), intent(in) :: fileroot
+        integer, intent(in), optional :: tag
         complex(dp), intent(in), optional :: h_lat(nSites,nSites)
         complex(dp), intent(in), optional :: SelfEnergy(nImp,nImp,n)
         real(dp), intent(in), optional :: FreqPoints(n)
         
-        complex(dp), allocatable :: KBlocks(:,:,:)
+        integer :: iunit,i,j,k,lWork,info
+        real(dp) :: Omega,EVals(nImp)
+        real(dp), allocatable :: rWork(:)
+        complex(dp) :: Mat(nImp,nImp),MatInv(nImp,nImp)
+        complex(dp), allocatable :: KBlocks(:,:,:),cWork(:)
         complex(dp), allocatable :: h0c(:,:)
+        character(64) :: filename
+        character(len=*), parameter :: t_r='CalcBandstructure'
+
+        write(6,*) "Calculating bandstructure..."
 
         if(present(SelfEnergy).and.present(h_lat)) then
             call stop_all(t_r,'Both a lattice hamiltonian and a self-energy specified. Doesnt seem right')
         endif
+
+        !Open file
+        if(present(tag)) then
+            call append_ext(fileroot,tag,filename)
+        else
+            filename = fileroot
+        endif
+        iunit = get_free_unit()
+        open(unit=iunit,file=filename,status='unknown')
 
         allocate(KBlocks(nImp,nImp,nKPnts))
         if(.not.present(h_lat)) then
@@ -40,23 +60,77 @@ module SelfConsistentUtils
                 h0c(i,i) = h0c(i,i) + cmplx(mu,zero,dp)
             enddo
             call ham_to_KBlocks(h0c,KBlocks)
+            deallocate(h0c)
         else
             call ham_to_KBlocks(h_lat,KBlocks)
         endif
 
-        do i = 1,n
-            if(present(FreqPoints)) then
-                call GetOmega(Omega,i,.false.,FreqPoints=FreqPoints)
-            else
-                call GetOmega(Omega,i,.false.)
-            endif
-
+        if(present(SelfEnergy)) then
+            !This can actually provide a correlated bandstructure with non-unit spectral weight.
+            !We have to write out the whole range of frequencies for each kpoint
             do k = 1,nKPnts
-                InvMat(:,:) = -KBlocks(:,:,k)
-                if(present(SelfEnergy)) then
-                    InvMat(:,:) = InvMat(:,:) - SelfEnergy(:,:,n)
-                endif
+                !Write out the header
+                write(iunit,"(A,F8.4)",advance='no') '"k = ',KPnts(1,k)
+                do i = 2,LatticeDim
+                    write(iunit,"(A,F8.4)",advance='no') ', ',KPnts(i,k)
+                enddo
+                write(iunit,"(A)") ' "'
 
+                !Now loop over frequencies.
+                do i = 1,n
+                    if(present(FreqPoints)) then
+                        call GetOmega(Omega,i,.false.,FreqPoints=FreqPoints)
+                    else
+                        call GetOmega(Omega,i,.false.)
+                    endif
+
+                    !Construct the matrix
+                    Mat(:,:) = - KBlocks(:,:,k) - SelfEnergy(:,:,i)
+                    do j = 1,nImp
+                        Mat(j,j) = Mat(j,j) + cmplx(Omega + mu,dDelta)
+                    enddo
+                    call mat_inv(Mat,MatInv,nImp)
+
+                    write(iunit,"(G22.10)",advance='no') Omega
+                    do j = 1,nImp-1 
+                        write(iunit,"(F20.12)",advance='no') -aimag(MatInv(j,j))
+                    enddo
+                    write(iunit,"(F20.12)") -aimag(MatInv(nImp,nImp))
+                enddo
+                write(iunit,"(A)") ""
+                write(iunit,"(A)") ""
+            enddo
+        else
+            !Easy peasy. Just write out the lattice eigenvalues with their klabel
+            !TODO: Splines
+            allocate(rWork(max(1,3*nImp-2)))
+            do k = 1,nKPnts
+                !Diagonalize
+                allocate(cWork(1))
+                lWork = -1
+                info = 0
+                call zheev('V','U',nImp,KBlocks(:,:,k),nImp,EVals,cWork,lWork,rWork,info)
+                if(info.ne.0) call stop_all(t_r,'Error in diag 1')
+                lWork = int(real(cWork(1))) + 1
+                deallocate(cWork)
+                allocate(cWork(lWork))
+                call zheev('V','U',nImp,KBlocks(:,:,k),nImp,EVals,cWork,lWork,rWork,info)
+                if(info.ne.0) call stop_all(t_r,'Error in diag 2')
+                deallocate(cWork)
+
+                !Write out the eigenvalues.
+                do i = 1,LatticeDim
+                    write(iunit,"(F20.12)",advance='no') KPnts(i,k)
+                enddo
+                do i = 1,nImp-1
+                    write(iunit,"(F20.12)",advance='no') EVals(i)
+                enddo
+                write(iunit,"(F20.12)") EVals(nImp)
+            enddo
+            deallocate(rWork)
+        endif
+        deallocate(KBlocks)
+        close(iunit)
 
     end subroutine CalcBandstructure
     
@@ -271,9 +345,7 @@ module SelfConsistentUtils
             LatParams(:) = zero
 
             inquire(file='LatkBlocks_Read',exist=exists)
-            if(.not.exists) then
-                call stop_all(t_r,'LatkBlocks_Read file does not exist')
-            endif
+            if(.not.exists) call stop_all(t_r,'LatkBlocks_Read file does not exist')
             iunit = get_free_unit()
             open(unit=iunit,file='LatkBlocks_Read',status='old')
 
