@@ -887,11 +887,11 @@ module SelfConsistentUtils
         if(.not.tHalfFill.and.tUsePoswFreqPoints) then
             call stop_all(t_r,'Trying to just optimize the positive frequency points, but not half filled system')
         endif
-        if(tHalfFill.and.(nImp.eq.1)) then
-            tUsePoswFreqPoints = .true. !For ph symmetric systems, this seems to make no difference (but is faster!)
-        else
+!        if(tHalfFill.and.(nImp.eq.1)) then
+!            tUsePoswFreqPoints = .true. !For ph symmetric systems, this seems to make no difference (but is faster!)
+!        else
             tUsePoswFreqPoints = .false.
-        endif
+!        endif
 
         nFreq_Re = 0
         OmegaVal = 0
