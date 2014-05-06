@@ -1842,10 +1842,11 @@ module solvers
         close(iunit)
 
     end subroutine WriteFCIDUMP
-
+    
     !Find logical size of desired compressed hamiltonian
     subroutine CountSizeCompMat(DetList,Elec,nDet,Nmax,BitDetList)
-        use DetTools, only: GetHElement
+        use DetTools, only: GetHElement,GetHElement_comp
+        use DetToolsData, only: TMat_Comp
         implicit none
         integer, intent(in) :: Elec,nDet
         integer, intent(out) :: Nmax
@@ -1853,6 +1854,14 @@ module solvers
         integer, intent(in), optional :: BitDetList(nDet)
         integer :: i,j
         real(dp) :: Elem
+        complex(dp) :: Elem_comp
+        logical :: tUseCompInts
+
+        if(allocated(TMat_Comp)) then
+            tUseCompInts = .true.
+        else
+            tUseCompInts = .false.
+        endif
 
 !        Nmax = nDet + 1 !For storage of diagonal elements (now done after parallel reduction)
         Nmax = 0
@@ -1861,9 +1870,16 @@ module solvers
 !$OMP PARALLEL DO REDUCTION(+:Nmax) DEFAULT(SHARED) PRIVATE(Elem) SCHEDULE(DYNAMIC)
             do i = 1,nDet
                 do j = i+1,nDet
-                    call GetHElement(DetList(:,i),DetList(:,j),Elec,Elem,ilutnI=BitDetList(i),ilutnJ=BitDetList(j))
-                    if(abs(Elem).ge.CompressThresh) then
-                        Nmax = Nmax + 2     !Due to both sides of matrix
+                    if(tUseCompInts) then
+                        call GetHElement_comp(DetList(:,i),DetList(:,j),Elec,Elem_comp,ilutnI=BitDetList(i),ilutnJ=BitDetList(j))
+                        if(abs(Elem_comp).ge.CompressThresh) then
+                            Nmax = Nmax + 2     !Due to both sides of matrix
+                        endif
+                    else
+                        call GetHElement(DetList(:,i),DetList(:,j),Elec,Elem,ilutnI=BitDetList(i),ilutnJ=BitDetList(j))
+                        if(abs(Elem).ge.CompressThresh) then
+                            Nmax = Nmax + 2     !Due to both sides of matrix
+                        endif
                     endif
                 enddo
                 if(mod(i,25000).eq.0) then
@@ -1876,9 +1892,16 @@ module solvers
 !$OMP PARALLEL DO REDUCTION(+:Nmax) DEFAULT(SHARED) PRIVATE(Elem) SCHEDULE(DYNAMIC)
             do i = 1,nDet
                 do j = i+1,nDet
-                    call GetHElement(DetList(:,i),DetList(:,j),Elec,Elem)
-                    if(abs(Elem).ge.CompressThresh) then
-                        Nmax = Nmax + 2     !Due to both sides of matrix
+                    if(tUseCompInts) then
+                        call GetHElement_comp(DetList(:,i),DetList(:,j),Elec,Elem_comp)
+                        if(abs(Elem_comp).ge.CompressThresh) then
+                            Nmax = Nmax + 2     !Due to both sides of matrix
+                        endif
+                    else
+                        call GetHElement(DetList(:,i),DetList(:,j),Elec,Elem)
+                        if(abs(Elem).ge.CompressThresh) then
+                            Nmax = Nmax + 2     !Due to both sides of matrix
+                        endif
                     endif
                 enddo
                 if(mod(i,25000).eq.0) then
