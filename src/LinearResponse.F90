@@ -1217,7 +1217,10 @@ module LinearResponse
                 close(iunit_tmp)
                 write(6,*) "Read in NMAX_N = ",Nmax_N
             else
-                if(iHamSize_N.eq.0) then
+                !if(iHamSize_N.eq.0) then
+                if(.true.) then
+                    !Since the hamiltonian is changing each iteration, we need to recalculate the size of the 
+                    !compressed matrix
                     call CountSizeCompMat(FCIDetList,Elec,nFCIDet,Nmax_N,FCIBitList)
                     iHamSize_N = Nmax_N
                 else
@@ -1226,7 +1229,10 @@ module LinearResponse
                 endif
             endif
         else
-            if(iHamSize_N.eq.0) then
+            !if(iHamSize_N.eq.0) then
+            if(.true.) then
+                !Since the hamiltonian is changing each iteration, we need to recalculate the size of the 
+                !compressed matrix
                 call CountSizeCompMat(FCIDetList,Elec,nFCIDet,Nmax_N,FCIBitList)
                 iHamSize_N = Nmax_N
             else
@@ -1234,7 +1240,10 @@ module LinearResponse
                 Nmax_N = iHamSize_N
             endif
         endif
-        if(iHamSize_Nm1.eq.0) then
+        !if(iHamSize_Nm1.eq.0) then
+        if(.true.) then
+            !Since the hamiltonian is changing each iteration, we need to recalculate the size of the 
+            !compressed matrix
             if(tBetaExcit) then
                 call CountSizeCompMat(Nm1FCIDetList,Elec-1,nNm1FCIDet,Nmax_Nm1,Nm1bBitList)
             else
@@ -1245,7 +1254,10 @@ module LinearResponse
             write(6,"(A,I16)") "Assuming size of compressed N-1 electron hamiltonian is: ",iHamSize_Nm1
             Nmax_Nm1 = iHamSize_Nm1
         endif
-        if(iHamSize_Np1.eq.0) then
+        !if(iHamSize_Np1.eq.0) then
+        if(.true.) then
+            !Since the hamiltonian is changing each iteration, we need to recalculate the size of the 
+            !compressed matrix
             if(tBetaExcit) then
                 call CountSizeCompMat(Np1bFCIDetList,Elec+1,nNp1bFCIDet,Nmax_Np1,Np1bBitList)
             else
@@ -7523,6 +7535,9 @@ module LinearResponse
         Coup_Create_cum_T(1) = 1
         Coup_Ann_cum_T(1) = 1
 
+        !BOO! This cannot be easily parallelized. This will eventually be the bottleneck.
+        !We should make a routine to calculate single excitations of a given determinant
+        !and their positions in the determinant list.
 
         i = 0
         i_Ann = 0
