@@ -10,13 +10,16 @@ module Davidson
     !Take a complex, hermitian matrix, and find the lowest eigenvalue and eigenvector
     !Via davidson diagonalization
     !If tStartingVec, then Vec(:) contains the initial state to use
-    subroutine Comp_NonDir_Davidson(nSize,Mat,Val,Vec,tStartingVec,tol,max_iter,tLowestVal,niter)
+    subroutine Comp_NonDir_Davidson(nSize,Val,Vec,tStartingVec,Nmax,Mat,CompressMat,IndexMat,tol,max_iter,tLowestVal,niter)
         implicit none
         integer, intent(in) :: nSize
-        complex(dp), intent(in) :: Mat(nSize,nSize)
         real(dp), intent(out) :: Val
         complex(dp), intent(inout) :: Vec(nSize)
         logical, intent(in) :: tStartingVec
+        integer, intent(in) :: Nmax
+        complex(dp), intent(in), optional :: Mat(nSize,nSize)
+        complex(dp), intent(in), optional :: CompressMat(Nmax)
+        integer, intent(in), optional :: IndexMat(Nmax)
         integer, intent(in), optional :: max_iter
         real(dp), intent(in), optional :: tol
         logical, intent(in), optional :: tLowestVal     !Whether to converge to lowest or highest state
@@ -27,6 +30,7 @@ module Davidson
         real(dp) :: tol_
         logical :: tLowestVal_
         integer :: niter_
+        logical :: tCompressedMat
 
         complex(dp), allocatable :: SubspaceVecs(:,:),HSubspace(:,:)
         complex(dp), allocatable :: CurrVec(:)
@@ -38,7 +42,33 @@ module Davidson
 !        complex(dp) :: zdotc
         real(dp) :: dConv
         real(dp), parameter :: kappa = 0.25     !Tolerance for orthogonalization procedure
+        complex(dp) :: DiagEl
         character(len=*), parameter :: t_r='Comp_NonDir_Davidson'
+
+        if(present(CompressMat)) then
+            tCompressedMat = .true.
+        else
+            tCompressedMat = .false.
+        endif
+        
+        if((.not.present(Mat)).and.(.not.present(CompressMat))) then
+            call stop_all(t_r,'Neither expanded nor compressed matrix found')
+        elseif(present(Mat).and.present(CompressMat)) then
+            call stop_all(t_r,'Both full and compressed matrices found')
+        endif
+        if(tCompressedMat.and.(.not.present(CompressMat))) then
+            call stop_all(t_r,'Compressed matrix not found')
+        endif
+        if(tCompressedMat.and.(.not.present(IndexMat))) then
+            call stop_all(t_r,'Compressed index vector not found')
+        endif
+        if(tCompressedMat.and.(Nmax.eq.1)) then
+            call stop_all(t_r,'Compressed matrix asked for, but Nmax == 1')
+        endif
+        if(tCompressedMat.and.(present(Mat))) then
+            call stop_all(t_r,'Compressed matrices asked for, but full matrix found')
+        endif
+
 
         if(.not.present(tol)) then
             !Set tol default
@@ -58,7 +88,7 @@ module Davidson
             tLowestVal_ = tLowestVal
         endif
 
-        if(tCheck) then
+        if(tCheck.and.(.not.tCompressedMat)) then
             !Check it is hermitian
             do i = 1,nSize 
                 if(abs(aimag(Mat(i,i))).gt.1.0e-8_dp) then
@@ -132,7 +162,12 @@ module Davidson
             SubspaceVecs(:,iter) = CurrVec(:)
 
             !Apply hamiltonian to subspace vector and store all results
-            call ApplyMat_comp(Mat,SubspaceVecs(:,iter),HSubspace(:,iter),nSize)
+            if(tCompressedMat) then
+                call ApplyMat_comp(SubspaceVecs(:,iter),HSubspace(:,iter),nSize,tCompressedMat,Nmax,    &
+                    CompressMat=CompressMat,IndexMat=IndexMat)
+            else
+                call ApplyMat_comp(SubspaceVecs(:,iter),HSubspace(:,iter),nSize,tCompressedMat,Nmax,Mat=Mat)
+            endif
 
             !Form subspace matrix
             if(.not.associated(SubspaceMat)) then
@@ -225,8 +260,15 @@ module Davidson
             !t = [1/(Diag(H) - val x I)] r
             !Just pairwise multiplication
             do i = 1,nSize
-                if(abs(real(Mat(i,i))-Val).gt.1.0e-8_dp) then
-                    CurrVec(i) = CurrVec(i) / (real(Mat(i,i)) - Val)
+                if(tCompressedMat) then
+                    !Diagonals are first elements of compressed matrix
+                    DiagEl = CompressMat(i)
+                else
+                    DiagEl = Mat(i,i)
+                endif
+
+                if(abs(real(DiagEl)-Val).gt.1.0e-8_dp) then
+                    CurrVec(i) = CurrVec(i) / (real(DiagEl) - Val)
                 endif
             enddo
 
@@ -642,13 +684,37 @@ module Davidson
     
     !Apply the matrix to a trial vector. Essentially just a wrapper for ZGEMV, but will eventually
     !want to be modified for a direct algorithm
-    subroutine ApplyMat_comp(Mat,Vec,ResVec,nSize)
+    subroutine ApplyMat_comp(Vec,ResVec,nSize,tCompressedMat,Nmax,Mat,CompressMat,IndexMat)
         implicit none
         integer, intent(in) :: nSize
-        complex(dp), intent(in) :: Mat(nSize,nSize),Vec(nSize)
+        complex(dp), intent(in) :: Vec(nSize)
         complex(dp), intent(out) :: ResVec(nSize)
+        logical, intent(in) :: tCompressedMat
+        integer, intent(in) :: Nmax
+        complex(dp), intent(in), optional :: Mat(nSize,nSize)
+        complex(dp), intent(in), optional :: CompressMat(Nmax)
+        integer, intent(in), optional :: IndexMat(Nmax)
+        character(len=*), parameter :: t_r='ApplyMat_comp'
+        integer :: i,k
         
-        call ZGEMV('N',nSize,nSize,zone,Mat,nSize,Vec,1,zzero,ResVec,1)
+        if(.not.tCompressedMat) then
+            if(.not.present(Mat)) call stop_all(t_r,'Uncompressed matrix not passed through')
+            call ZGEMV('N',nSize,nSize,zone,Mat,nSize,Vec,1,zzero,ResVec,1)
+        else
+            if(present(Mat)) call stop_all(t_r,'Uncompressed matrix passed through')
+            if(.not.present(CompressMat)) call stop_all(t_r,'Compressed matrix not passed through')
+            if(.not.present(IndexMat)) call stop_all(t_r,'Compressed index array not passed through')
+
+            !Sparse matrix multiply
+            if(IndexMat(1).ne.nSize+2) call stop_all(t_r,'Mismatched vector and matrix')
+
+            do i = 1,nSize
+                ResVec(i) = CompressMat(i)*Vec(i)   !Diagonal terms
+                do k = IndexMat(i),IndexMat(i+1)-1  !Off-diagonal terms
+                    ResVec(i) = ResVec(i) + CompressMat(k)*Vec(IndexMat(k))
+                enddo
+            enddo
+        endif
 
     end subroutine ApplyMat_comp
 

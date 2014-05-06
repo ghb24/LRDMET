@@ -3,12 +3,23 @@ module LinearResponse
     use timing
     use errors, only: stop_all,warning
     use mat_tools, only: WriteVector,WriteMatrix,WriteVectorInt,WriteMatrixComp,WriteVectorComp,znrm2
-    use mat_tools, only: DiagNonHermLatticeHam,DiagOneeOp
+    use mat_tools, only: DiagNonHermLatticeHam,DiagOneeOp,add_localpot_comp_inplace,add_localpot
     use globals
     use LRSolvers
     use SelfConsistentUtils
     use zminresqlpModule, only: MinresQLP  
     use LR_Data
+    use utils, only: get_free_unit,append_ext_real,append_ext
+    use Davidson, only: Comp_NonDir_Davidson,DiagSubspaceMat_real,DiagSubspaceMat_comp
+    use DetToolsData
+    use DetTools, only: tospat,umatind,gendets,GetHElement,gtid,iGetExcitLevel,GetExcitation
+    use DetBitOps, only: DecodeBitDet,SQOperator,CountBits
+    use solvers, only: CreateIntMats,CountSizeCompMat,StoreCompMat
+    use SchmidtDecomp, only: SchmidtDecompose_C
+    use fitting, only: Fit_SE
+    use sort_mod, only: sort_int
+    use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
+    use sort_mod, only: Orthonorm_zgeev_vecs
 !$  use omp_lib
     implicit none
     integer :: CVIndex,AVIndex,CAIndex
@@ -19,12 +30,6 @@ module LinearResponse
     !This is a routine to accept a complex hermitian lattice matrix, and construct the appropriate basis to work in. 
     !The hamiltonian will necessarily be fit across all the parts of the lattice apart from impurity & its coupling
     subroutine SchmidtGF_FromLat(G_Mat,GFChemPot,nESteps,tMatbrAxis,cham,FreqPoints,Lat_G_Mat)
-        use utils, only: get_free_unit,append_ext_real,append_ext
-        use Davidson, only: Comp_NonDir_Davidson,DiagSubspaceMat_real,DiagSubspaceMat_comp
-        use DetToolsData
-        use DetTools, only: tospat,umatind,gendets
-        use solvers, only: CreateIntMats
-        use SchmidtDecomp, only: SchmidtDecompose_C
         implicit none
         integer, intent(in) :: nESteps
         real(dp), intent(in) :: GFChemPot
@@ -39,7 +44,7 @@ module LinearResponse
         complex(dp), allocatable :: LatVecs(:,:)
         complex(dp), allocatable :: NFCIHam(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
         real(dp), allocatable :: dNorm_p(:),dNorm_h(:)
-        complex(dp), allocatable , target :: LinearSystem_p(:,:),LinearSystem_h(:,:)
+        complex(dp), allocatable, target :: LinearSystem_p(:,:),LinearSystem_h(:,:)
         complex(dp), allocatable :: Cre_0(:,:),Ann_0(:,:),ResponseFn_p(:,:),ResponseFn_h(:,:)
         complex(dp), allocatable :: Gc_a_F_ax_Bra(:,:),Gc_a_F_ax_Ket(:,:),Gc_b_F_ab(:,:)
         complex(dp), allocatable :: Ga_i_F_xi_Ket(:,:)
@@ -55,16 +60,24 @@ module LinearResponse
         complex(dp), allocatable :: temp(:,:),temp2(:,:),temp3(:,:)
         complex(dp), allocatable :: Core_SchmidtB(:,:),Virt_SchmidtB(:,:)
         complex(dp), allocatable :: Core_latvecs(:,:), Virt_latvecs(:,:)
+        complex(dp), allocatable :: NFCIHam_cmps(:),Np1FCIHam_cmps(:),Nm1FCIHam_cmps(:)
+        complex(dp), allocatable, target :: LinearSystemc_p(:),LinearSystemc_h(:)
+        integer, allocatable, target :: LinearSystem_p_inds(:),LinearSystem_h_inds(:)
+        integer, allocatable :: NFCIHam_inds(:),Np1FCIHam_inds(:),Nm1FCIHam_inds(:)
         integer, allocatable :: Coup_Ann_alpha(:,:,:),Coup_Create_alpha(:,:,:)
         integer, allocatable :: iters_p(:),iters_h(:)
+        integer, allocatable :: Coup_Create(:,:),Coup_Ann(:,:),Coup_Create_inds(:)
+        integer, allocatable :: Coup_Ann_inds(:),Coup_Create_cum(:),Coup_Ann_cum(:)
+        integer, allocatable :: Coup_Create_T(:,:),Coup_Ann_T(:,:),Coup_Create_inds_T(:)
+        integer, allocatable :: Coup_Ann_inds_T(:),Coup_Create_cum_T(:),Coup_Ann_cum_T(:)
         integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,ierr,info,iunit,nCore
         integer :: nLinearSystem,nOrbs,nVirt,tempK,VIndex,VirtStart,VirtEnd
-        integer :: orbdum(1),nLinearSystem_h,Np1GSInd,Nm1GSInd
-        integer :: pertsite,OmegaVal,nGSSpace,mem,mem2
-        integer :: minres_unit
+        integer :: orbdum(1),nLinearSystem_h,Np1GSInd,Nm1GSInd,ind_h,ind_p
+        integer :: pertsite,OmegaVal,nGSSpace,mem,mem2,Nmax_Lin_p,Nmax_Lin_h
+        integer :: minres_unit,Nmax_N,Nmax_Nm1,Nmax_Np1,Nmax_Coup_Create,Nmax_Coup_Ann
         real(dp) :: Omega,mu,SpectralWeight,Prev_Spec,Error_GF
         real(dp) :: GSEnergy
-        complex(dp) :: ResponseFn,tempel,ni_lr
+        complex(dp) :: ResponseFn,tempel,ni_lr,matel
         complex(dp) :: zdotc,VNorm,CNorm,SelfE(nImp,nImp)
         logical :: tParity,tFirst,tCompLatHam
         character(64) :: filename,filename2
@@ -81,6 +94,7 @@ module LinearResponse
         iters_p(:) = 0
         iters_h(:) = 0
         minres_unit = 0 !Do not write out
+        zDirMV_Mat => null()
 
         mem = 0 !number of complex numbers to allocate
 
@@ -108,6 +122,7 @@ module LinearResponse
             else
                 call stop_all(t_r,"Linear equation solver unknown")
             endif
+            if(tCompressedMats) call stop_all(t_r,'Need iterative solver for compressed matrices')
         endif
         if(mod(nOcc,nImp).ne.0) then
             ! This criteria must be satisfied, because otherwise, the orbitals resulting from the diagonalization of
@@ -130,6 +145,11 @@ module LinearResponse
         endif
         if(tRemoveImpCoupsPreSchmidt) call stop_all(t_r,'Removing impurity coupling before '    &
             //'schmidt decomposition not available in this routine')
+        if(tCompressedMats) then
+            if(tBetaExcit) call stop_all(t_r,'Is UHF really working for this?')
+            if(tUHF) call stop_all(t_r,'Is UHF really working for this?')
+            if(tFullReoptGS) call stop_all(t_r,'Cannot fully reoptimize the ground state in the full space if using compressed matrices currently')
+        endif
 
         !Lets diagonalize the lattice hamiltonian. It is frequency independent, and complex hermitian
         allocate(LatVals(nSites))
@@ -196,14 +216,35 @@ module LinearResponse
         !Construct FCI hamiltonians for the N, N+1_alpha and N-1_beta spaces
         if(nNp1FCIDet.ne.nNm1FCIDet) call stop_all(t_r,'Active space not half-filled')
         if(nNp1FCIDet.ne.nNp1bFCIDet) call stop_all(t_r,'Cannot deal with open shell systems')
-        write(6,"(A,F12.5,A)") "Memory required for N-electron hamil: ",(real(nFCIDet,dp)**2)*ComptoMb, " Mb"
-        write(6,"(A,F12.5,A)") "Memory required for N+1-electron hamil: ",(real(nNp1FCIDet,dp)**2)*ComptoMb, " Mb"
-        write(6,"(A,F12.5,A)") "Memory required for N-1-electron hamil: ",(real(nNm1bFCIDet,dp)**2)*ComptoMb, " Mb"
-        allocate(NFCIHam(nFCIDet,nFCIDet))
-        allocate(Np1FCIHam_alpha(nNp1FCIDet,nNp1FCIDet))
-        allocate(Nm1FCIHam_beta(nNm1bFCIDet,nNm1bFCIDet))
-        call Fill_N_Np1_Nm1b_FCIHam(Elec,1,1,1,NHam=NFCIHam,Np1Ham=Np1FCIHam_alpha,Nm1Ham=Nm1FCIHam_beta)
-        mem = mem + nFCIDet**2 + nNp1FCIDet**2 + nNm1bFCIDet**2
+
+        if(tCompressedMats) then
+            call CalcSizeCmprsMats(Nmax_N,Nmax_Nm1,Nmax_Np1)
+
+            allocate(NFCIHam_cmps(Nmax_N),stat=ierr)
+            allocate(NFCIHam_inds(Nmax_N),stat=ierr)
+            !Want Np1b for particle and Nm1 for hole if tBetaExcit, or vice versa otherwise
+            !We have removed the distinction, and so will have to remember...
+            allocate(Np1FCIHam_cmps(Nmax_Np1),stat=ierr)
+            allocate(Np1FCIHam_inds(Nmax_Np1),stat=ierr)
+            allocate(Nm1FCIHam_cmps(Nmax_Nm1),stat=ierr)
+            allocate(Nm1FCIHam_inds(Nmax_Nm1),stat=ierr)
+            if(ierr.ne.0) call stop_all(t_r,'Allocation fail')
+            if(tBetaExcit) call stop_all(t_r,'Is UHF really working in this routine?!')
+            mem = mem + 3*Nmax_N + 3*Nmax_Np1 + 3*Nmax_Nm1
+            call Fill_N_Np1_Nm1b_FCIHam(Elec,Nmax_N,Nmax_Np1,Nmax_Nm1,Nham_cmps=NFCIHam_cmps,Np1Ham_cmps=Np1FCIHam_cmps,    &
+                Nm1Ham_cmps=Nm1FCIHam_cmps,NHam_inds=NFCIHam_inds,Np1Ham_inds=Np1FCIHam_inds,   &
+                Nm1Ham_inds=Nm1FCIHam_inds,tSwapExcits=.false.)
+
+        else
+            write(6,"(A,F12.5,A)") "Memory required for N-electron hamil: ",(real(nFCIDet,dp)**2)*ComptoMb, " Mb"
+            write(6,"(A,F12.5,A)") "Memory required for N+1-electron hamil: ",(real(nNp1FCIDet,dp)**2)*ComptoMb, " Mb"
+            write(6,"(A,F12.5,A)") "Memory required for N-1-electron hamil: ",(real(nNm1bFCIDet,dp)**2)*ComptoMb, " Mb"
+            allocate(NFCIHam(nFCIDet,nFCIDet))
+            allocate(Np1FCIHam_alpha(nNp1FCIDet,nNp1FCIDet))
+            allocate(Nm1FCIHam_beta(nNm1bFCIDet,nNm1bFCIDet))
+            call Fill_N_Np1_Nm1b_FCIHam(Elec,1,1,1,NHam=NFCIHam,Np1Ham=Np1FCIHam_alpha,Nm1Ham=Nm1FCIHam_beta)
+            mem = mem + 2*nFCIDet**2 + 2*nNp1FCIDet**2 + 2*nNm1bFCIDet**2
+        endif
 
         nLinearSystem = nNp1FCIDet + nFCIDet
         nLinearSystem_h = nNm1bFCIDet + nFCIDet
@@ -218,8 +259,6 @@ module LinearResponse
             call stop_all(t_r,'Should change restriction on the Linear system size being the same for particle/hole addition')
         endif
         
-        write(6,"(A,F14.6,A)") "Memory required for the LR system: ",2*(real(nLinearSystem,dp)**2)*16/1048576.0_dp," Mb"
-
         !Set up orbital indices for SCHMIDT basis
         CoreEnd = nOcc-nImp
         VirtStart = nOcc+nImp+1
@@ -298,7 +337,12 @@ module LinearResponse
             else
                 Psi_0(1:nFCIDet) = Prev_HL_Vec(:)
             endif
-            call Comp_NonDir_Davidson(nFCIDet,NFCIHam,GSEnergy,Psi_0(1:nFCIDet),.true.)
+            if(tCompressedMats) then
+                call Comp_NonDir_Davidson(nFCIDet,GSEnergy,Psi_0(1:nFCIDet),.true.,NMax_N,  &
+                    CompressMat=NFCIHam_cmps,IndexMat=NFCIHam_inds)
+            else
+                call Comp_NonDir_Davidson(nFCIDet,GSEnergy,Psi_0(1:nFCIDet),.true.,1,Mat=NFCIHam)
+            endif
             write(6,"(A,G20.10,A,G20.10,A)") "Reoptimized ground state energy is: ",GSEnergy, &  
                 " (old = ",Prev_HL_Energy,")"
             Prev_HL_Vec(:) = Psi_0(1:nFCIDet)
@@ -362,11 +406,47 @@ module LinearResponse
 
         !Allocate and precompute 1-operator coupling coefficients between the different sized spaces.
         !First number is the index of operator, and the second is the parity change when applying the operator
-        allocate(Coup_Create_alpha(2,nFCIDet,nNm1bFCIDet))
-        allocate(Coup_Ann_alpha(2,nFCIDet,nNp1FCIDet))
-        mem = mem + nFCIDet*nNm1bFCIDet*2
+        if(tCompressedMats) then
+            call CalcSizeCmprsNumCoupOps(Nmax_Coup_Create,Nmax_Coup_Ann)
+            allocate(Coup_Create(2,Nmax_Coup_Create))
+            allocate(Coup_Ann(2,Nmax_Coup_Ann))
+            !Also indexing arrays
+            allocate(Coup_Create_inds(Nmax_Coup_Create))
+            allocate(Coup_Ann_inds(Nmax_Coup_Ann))
+            !_cum arrays index start of row block
+            allocate(Coup_Create_cum(nFCIDet+1))
+            allocate(Coup_Ann_cum(nFCIDet+1))
 
-        call SetupNumberCouplingOps(Coup_Create_alpha,Coup_Ann_alpha)
+            !Unfortunately, it is not easy to calculate the transpose. Do it explicitly now (matrices are at least of the same size)
+            allocate(Coup_Create_T(2,Nmax_Coup_Create))
+            allocate(Coup_Ann_T(2,Nmax_Coup_Ann))
+            !Also indexing arrays
+            allocate(Coup_Create_inds_T(Nmax_Coup_Create))
+            allocate(Coup_Ann_inds_T(Nmax_Coup_Ann))
+            allocate(Coup_Create_cum_T(nNm1bFCIDet+1))
+            allocate(Coup_Ann_cum_T(nNp1FCIDet+1))
+            
+            !Create coupling matrices of the appropriate spin
+            call CreateCmprsCouplingMatrices(NMax_Coup_Create,NMax_Coup_Ann,Coup_Create,Coup_Ann,Coup_Create_inds,  &
+                Coup_Ann_inds,Coup_Create_cum,Coup_Ann_cum,Coup_Create_T,Coup_Ann_T,Coup_Create_inds_T, &
+                Coup_Ann_inds_T,Coup_Create_cum_T,Coup_Ann_cum_T,tSwapSpins=tBetaExcit)
+            mem = mem + 6*Nmax_Coup_Create + 6*Nmax_Coup_Ann + 2*(nFCIDet+1) + nNm1bFCIDet + nNp1FCIDet + 2
+
+            Nmax_Lin_p = Nmax_Np1 + Nmax_N + 2*Nmax_Coup_Ann
+            Nmax_Lin_h = Nmax_Nm1 + Nmax_N + 2*Nmax_Coup_Create
+            write(6,"(A,F14.6,A)") "Memory required for compressed LR systems: ",   &
+                (3*(real(Nmax_Lin_p,dp)*8)+3*(real(Nmax_Lin_h,dp)*8))/1048576.0_dp," Mb/thread"
+            write(6,"(A,F14.6,A)") "Compare to memory required for the uncompressed system: ",  &
+                2*(real(nLinearSystem,dp)**2)*16/1048576.0_dp," Mb/thread"
+        else
+            allocate(Coup_Create_alpha(2,nFCIDet,nNm1bFCIDet))
+            allocate(Coup_Ann_alpha(2,nFCIDet,nNp1FCIDet))
+            mem = mem + nFCIDet*nNm1bFCIDet*2
+
+            call SetupNumberCouplingOps(Coup_Create_alpha,Coup_Ann_alpha)
+            write(6,"(A,F14.6,A)") "Memory required for the LR system: ",2*(real(nLinearSystem,dp)**2)*16/1048576.0_dp," Mb"
+
+        endif
 
         !Array slices for the schmidt decomposition routine
         allocate(Core_SchmidtB(nSites,1:CoreEnd))
@@ -392,7 +472,12 @@ module LinearResponse
         enddo
         mem = mem + nSites*nCore + nSites*nVirt + nSites*nOcc + nSites*nVirt
         write(6,"(A,F10.4,A)") "Memory required for Shared arrays: ",mem*ComptoMb," Mb"
-        mem2 = nVirt*nImp*3 + nCore*nImp*3 + 2*nImp**2 + 4*nImp**2 + 2*nLinearSystem**2 + nLinearSystem*2
+        if(tCompressedMats) then
+            mem2 = 3*Nmax_Lin_p + 3*Nmax_Lin_h
+        else
+            mem2 = 2*nLinearSystem**2
+        endif
+        mem2 = mem2 + nVirt*nImp*3 + nCore*nImp*3 + 2*nImp**2 + 4*nImp**2 + nLinearSystem*2
         mem2 = mem2 + nOcc*nImp*4 + nSites*nImp + nSites*nOcc*2
         if(tMinRes_NonDir) then
             mem2 = mem2 + nLinearSystem
@@ -414,7 +499,8 @@ module LinearResponse
 !$OMP&  PRIVATE(SPGF_Cre_Bra,SPGF_Cre_Ket,SPGF_Ann_Bra,SPGF_Ann_Ket,Gc_a_F_ax_Bra),    &
 !$OMP&  PRIVATE(Gc_a_F_ax_Ket,Gc_b_F_ab,Ga_i_F_xi_Bra,Ga_i_F_xi_Ket,Ga_i_F_ij),  &
 !$OMP&  PRIVATE(Psi1_p,Psi1_h,ResponseFn_p,ResponseFn_h,HFRes_Ann_Ket,HFRes_Cre_Ket,HFRes_Ann_Bra),            &
-!$OMP&  PRIVATE(HFRes_Cre_Bra,temp,temp2,temp3,RHS,LinearSystem_p,LinearSystem_h) SCHEDULE(DYNAMIC)
+!$OMP&  PRIVATE(HFRes_Cre_Bra,temp,temp2,temp3,RHS,LinearSystem_p,LinearSystem_h,j,matel),  &
+!$OMP&  PRIVATE(LinearSystemc_p,LinearSystemc_h,LinearSystem_p_inds,LinearSystem_h_inds,ind_h,ind_p) SCHEDULE(DYNAMIC)
         do OmegaVal = 1,nESteps
             if(present(FreqPoints)) then
                 call GetOmega(Omega,OmegaVal,tMatbrAxis,FreqPoints=FreqPoints)
@@ -446,8 +532,16 @@ module LinearResponse
             allocate(Ga_i_F_xi_Bra(ActiveStart:ActiveEnd,nImp),stat=ierr)
             allocate(Ga_i_F_xi_Ket(ActiveStart:ActiveEnd,nImp),stat=ierr)
             allocate(Ga_i_F_ij(1:nCore,nImp),stat=ierr)
-            allocate(LinearSystem_p(nLinearSystem,nLinearSystem),stat=ierr)
-            allocate(LinearSystem_h(nLinearSystem,nLinearSystem),stat=ierr)
+
+            if(tCompressedMats) then
+                allocate(LinearSystemc_p(Nmax_Lin_p),stat=ierr)
+                allocate(LinearSystemc_h(Nmax_Lin_h),stat=ierr)
+                allocate(LinearSystem_p_inds(Nmax_Lin_p),stat=ierr)
+                allocate(LinearSystem_h_inds(Nmax_Lin_h),stat=ierr)
+            else
+                allocate(LinearSystem_p(nLinearSystem,nLinearSystem),stat=ierr)
+                allocate(LinearSystem_h(nLinearSystem,nLinearSystem),stat=ierr)
+            endif
             allocate(Psi1_p(nLinearSystem),stat=ierr)
             allocate(Psi1_h(nLinearSystem),stat=ierr)
             !Allocate temporary arrays for schmidt decomposition routine
@@ -502,152 +596,302 @@ module LinearResponse
             !Find the first-order wavefunction in the interacting picture for all impurity sites 
             do pertsite = 1,nImp
 
-                if(tFullReoptGS) GSHam(:,:) = zzero
-                LinearSystem_p(:,:) = zzero 
-                LinearSystem_h(:,:) = zzero 
-
-                !Block 1 for particle hamiltonian
-                !First, construct n + 1 (alpha) FCI space, in determinant basis
-                LinearSystem_p(1:nNp1FCIDet,1:nNp1FCIDet) = Np1FCIHam_alpha(:,:)
-                !Block 1 for hole hamiltonian
-                LinearSystem_h(1:nNm1bFCIDet,1:nNm1bFCIDet) = Nm1FCIHam_beta(:,:)
-                if(tFullReoptGS) then
-                    !Block 1 for GS
-                    GSHam(1:nFCIDet,1:nFCIDet) = nFCIHam(:,:)
-                    !Block 2 (diagonal part to come)
-                    GSHam(Np1GSInd:Nm1GSInd-1,Np1GSInd:Nm1GSInd-1) = Np1FCIHam_alpha(:,:)
-                    !Block 4 (diagonal part to come)
-                    GSHam(Nm1GSInd:nGSSpace,Nm1GSInd:nGSSpace) = Nm1FCIHam_beta(:,:)
-                endif
-
-                !Block 2 for particle hamiltonian
-                !Copy the N electron FCI hamiltonian to this diagonal block
-                LinearSystem_p(VIndex:nLinearSystem,VIndex:nLinearSystem) = nFCIHam(:,:)
-        
-                VNorm = zzero
-                tempel = zzero 
-                do a = VirtStart,VirtEnd
-                    !Calc normalization for the CV block
-                    VNorm = VNorm + SPGF_Cre_Bra(a,pertsite)*SPGF_Cre_Ket(a,pertsite) 
-                    !VNorm = VNorm + real(SPGF_Cre(a,pertsite))**2 + aimag(SPGF_Cre(a,pertsite))**2
-                    !Calculate the diagonal correction
-                    !tempel = tempel + conjg(SPGF_Cre(a,pertsite))*Gc_b_F_ab(a,pertsite)
-                    tempel = tempel + SPGF_Cre_Bra(a,pertsite)*Gc_b_F_ab(a,pertsite)
-                enddo
-                tempel = tempel / VNorm
-                !Add diagonal virtual correction
-                do i = VIndex,nLinearSystem
-                    LinearSystem_p(i,i) = LinearSystem_p(i,i) + tempel
-                enddo
-                if(tFullReoptGS) then
-                    !Diagonal part of block 4
-                    do i = Nm1GSInd,nGSSpace
-                        GSHam(i,i) = GSHam(i,i) + tempel
+                if(tCompressedMats) then
+                    LinearSystemc_p(:) = zzero
+                    LinearSystemc_h(:) = zzero
+                    LinearSystem_p_inds(:) = 0
+                    LinearSystem_h_inds(:) = 0
+                
+                    VNorm = zzero
+                    tempel = zzero 
+                    do a = VirtStart,VirtEnd
+                        !Calc normalization for the CV block
+                        VNorm = VNorm + SPGF_Cre_Bra(a,pertsite)*SPGF_Cre_Ket(a,pertsite) 
+                        !Calculate the diagonal correction
+                        !tempel = tempel + conjg(SchmidtPertGF_Cre(a,pertsite))*Gc_b_F_ab(a,pertsite)
+                        tempel = tempel + SPGF_Cre_Bra(a,pertsite)*Gc_b_F_ab(a,pertsite)
                     enddo
-                endif
+                    tempel = tempel / VNorm
 
-                !Block 2 for the hole hamiltonian
-                !Copy the N electron FCI hamiltonian to this diagonal blockk
-                LinearSystem_h(VIndex:nLinearSystem,VIndex:nLinearSystem) = nFCIHam(:,:)
-
-                CNorm = zzero
-                tempel = zzero 
-                do i = 1,CoreEnd
-                    !Calc normalization
-                    !CNorm = CNorm + real(SPGF_Ann(i,pertsite))**2 + aimag(SPGF_Ann(i,pertsite))**2
-                    CNorm = CNorm + SPGF_Ann_Bra(i,pertsite)*SPGF_Ann_Ket(i,pertsite)
-                    !Calc diagonal correction
-                    tempel = tempel + SPGF_Ann_Bra(i,pertsite)*Ga_i_F_ij(i,pertsite)
-                enddo
-                tempel = -tempel / CNorm
-                !Add diagonal correction
-                do i = VIndex,nLinearSystem
-                    LinearSystem_h(i,i) = LinearSystem_h(i,i) + tempel
-                enddo
-                if(tFullReoptGS) then
-                    !Diagonal part of block 2
-                    do i = Np1GSInd,Nm1GSInd-1
-                        GSHam(i,i) = GSHam(i,i) + tempel
+                    !First, store diagonals
+                    LinearSystemc_p(1:nNp1FCIDet) = Np1FCIHam_cmps(1:nNp1FCIDet)
+                    j = 0
+                    do i = nNp1FCIDet+1,nLinearSystem
+                        j = j + 1
+                        LinearSystemc_p(i) = NFCIHam_cmps(j) + tempel
                     enddo
-                endif
+                    if(j.ne.nFCIDet) call stop_all(t_r,'Error with matrix indexing')
+
+                    !And for hole diagonals
+                    CNorm = zzero
+                    tempel = zzero 
+                    do i = 1,CoreEnd
+                        !Calc normalization
+                        CNorm = CNorm + SPGF_Ann_Bra(i,pertsite)*SPGF_Ann_Ket(i,pertsite)
+                        !Calc diagonal correction
+                        tempel = tempel + SPGF_Ann_Bra(i,pertsite)*Ga_i_F_ij(i,pertsite)
+                    enddo
+                    tempel = -tempel / CNorm
+                    
+                    !Store diagonals
+                    LinearSystemc_h(1:nNm1bFCIDet) = Nm1FCIHam_cmps(1:nNm1bFCIDet)
+                    j = 0
+                    do i = nNm1bFCIDet + 1,nLinearSystem
+                        j = j + 1
+                        LinearSystemc_h(i) = NFCIHam_cmps(j) + tempel
+                    enddo
+                    if(j.ne.nFCIDet) call stop_all(t_r,'Error with matrix indexing')
+
+                    !Now for off-diagonal elements
+                    ind_h = nLinearSystem + 1
+                    LinearSystem_h_inds(1) = nLinearSystem + 2
+                    ind_p = nLinearSystem + 1
+                    LinearSystem_p_inds(1) = nLinearSystem + 2
+                    
+                    !Deal with particle matrix
+                    !First - the top rows (np1 rows)
+                    do i = 1,nNp1FCIDet
+                        !Loop through rows - first through block 1
+                        do k = Np1FCIHam_inds(i),Np1FCIHam_inds(i+1)-1
+                            !k indexes the non-zero, off-diagonal matrix elements moving along the row of i
+                            if(abs(Np1FCIHam_cmps(k)).ge.CompressThresh) then
+                                ind_p = ind_p + 1
+                                if(ind_p.gt.Nmax_Lin_p) call stop_all(t_r,'Compressed array p size too small')
+                                LinearSystemc_p(ind_p) = Np1FCIHam_cmps(k)
+                                !But what determinant do these correspond to? This is given by Np1FCIHam_alpha_inds(k)
+                                LinearSystem_p_inds(ind_p) = Np1FCIHam_inds(k)
+                            endif
+                        enddo
+                        !Now loop through the same row of block 3
+                        do k = Coup_Ann_cum_T(i),Coup_Ann_cum_T(i+1)-1
+                            matel = Gc_a_F_ax_Ket(Coup_Ann_T(1,k),pertsite)*Coup_Ann_T(2,k)/sqrt(VNorm)
+                            if(abs(matel).ge.CompressThresh) then
+                                ind_p = ind_p + 1
+                                if(ind_p.gt.Nmax_Lin_p) call stop_all(t_r,'Compressed array p size too small 2')
+                                LinearSystemc_p(ind_p) = matel 
+                                LinearSystem_p_inds(ind_p) = Coup_Ann_inds_T(k) + nNp1FCIDet  !Add on cols from block 1
+                            endif
+                        enddo
+                        LinearSystem_p_inds(i+1) = ind_p + 1
+                    enddo
+                    !Now, the rows from block 3_T and 2
+                    do i = 1,nFCIDet
+                        do k = Coup_Ann_cum(i),Coup_Ann_cum(i+1)-1
+                            matel = Gc_a_F_ax_Bra(Coup_Ann(1,k),pertsite)*Coup_Ann(2,k)/sqrt(VNorm)
+                            if(abs(matel).gt.CompressThresh) then
+                                ind_p = ind_p + 1
+                                if(ind_p.gt.Nmax_Lin_p) call stop_all(t_r,'Compressed array p size too small 3')
+                                LinearSystemc_p(ind_p) = matel 
+                                LinearSystem_p_inds(ind_p) = Coup_Ann_inds(k)
+                            endif
+                        enddo
+                        !Now loop through the same row of block 2
+                        do k = NFCIHam_inds(i),NFCIHam_inds(i+1)-1
+                            if(abs(NFCIHam_cmps(k)).gt.CompressThresh) then
+                                ind_p = ind_p + 1
+                                if(ind_p.gt.Nmax_Lin_p) call stop_all(t_r,'Compressed array p size too small 4')
+                                LinearSystemc_p(ind_p) = NFCIHam_cmps(k)
+                                LinearSystem_p_inds(ind_p) = NFCIHam_inds(k) + nNp1FCIDet   !Add on cols from block 3^T
+                            endif
+                        enddo
+                        LinearSystem_p_inds(i+1+nNp1FCIDet) = ind_p + 1
+                    enddo
+
+                    !Now for hole hamiltonian
+                    do i = 1,nNm1bFCIDet
+                        !Loop through rows
+                        do k = Nm1FCIHam_inds(i),Nm1FCIHam_inds(i+1)-1
+                            if(abs(Nm1FCIHam_cmps(k)).ge.CompressThresh) then
+                                ind_h = ind_h + 1
+                                if(ind_h.gt.Nmax_Lin_h) call stop_all(t_r,'Compressed array h size too small')
+                                LinearSystemc_h(ind_h) = Nm1FCIHam_cmps(k)
+                                LinearSystem_h_inds(ind_h) = Nm1FCIHam_inds(k)
+                            endif
+                        enddo
+                        do k = Coup_Create_cum_T(i),Coup_Create_cum_T(i+1)-1
+                            matel = - Ga_i_F_xi_Ket(Coup_Create_T(1,k),pertsite)*Coup_Create_T(2,k)/sqrt(CNorm)
+                            if(abs(matel).gt.CompressThresh) then
+                                ind_h = ind_h + 1
+                                if(ind_h.gt.Nmax_Lin_p) call stop_all(t_r,'Compressed array h size too small 2')
+                                LinearSystemc_h(ind_h) = matel 
+                                LinearSystem_h_inds(ind_h) = Coup_Create_inds_T(k) + nNm1bFCIDet
+                            endif
+                        enddo
+                        LinearSystem_h_inds(i+1) = ind_h + 1
+                    enddo
+                    !Now, the rows from block 3^T and 2
+                    do i = 1,nFCIDet
+                        do k = Coup_Create_cum(i),Coup_Create_cum(i+1)-1
+                            matel = - Ga_i_F_xi_Bra(Coup_Create(1,k),pertsite)*Coup_Create(2,k)/sqrt(CNorm)
+                            if(abs(matel).gt.CompressThresh) then
+                                ind_h = ind_h + 1
+                                if(ind_h.gt.Nmax_Lin_h) call stop_all(t_r,'Compressed array h size too small 3')
+                                LinearSystemc_h(ind_h) = matel 
+                                LinearSystem_h_inds(ind_h) = Coup_Create_inds(k)
+                            endif
+                        enddo
+                        !Now loop through the same row of block 2
+                        do k = NFCIHam_inds(i),NFCIHam_inds(i+1)-1
+                            if(abs(NFCIHam_cmps(k)).gt.CompressThresh) then
+                                ind_h = ind_h + 1
+                                if(ind_h.gt.Nmax_Lin_h) call stop_all(t_r,'Compressed array h size too small 4')
+                                LinearSystemc_h(ind_h) = NFCIHam_cmps(k)
+                                LinearSystem_h_inds(ind_h) = NFCIHam_inds(k) + nNm1bFCIDet
+                            endif
+                        enddo
+                        LinearSystem_h_inds(i+1+nNm1bFCIDet) = ind_h + 1
+                    enddo
+
+                else
+                    !if not constructing compressed matrices
+                    if(tFullReoptGS) GSHam(:,:) = zzero
+                    LinearSystem_p(:,:) = zzero 
+                    LinearSystem_h(:,:) = zzero 
+
+                    !Block 1 for particle hamiltonian
+                    !First, construct n + 1 (alpha) FCI space, in determinant basis
+                    LinearSystem_p(1:nNp1FCIDet,1:nNp1FCIDet) = Np1FCIHam_alpha(:,:)
+                    !Block 1 for hole hamiltonian
+                    LinearSystem_h(1:nNm1bFCIDet,1:nNm1bFCIDet) = Nm1FCIHam_beta(:,:)
+                    if(tFullReoptGS) then
+                        !Block 1 for GS
+                        GSHam(1:nFCIDet,1:nFCIDet) = nFCIHam(:,:)
+                        !Block 2 (diagonal part to come)
+                        GSHam(Np1GSInd:Nm1GSInd-1,Np1GSInd:Nm1GSInd-1) = Np1FCIHam_alpha(:,:)
+                        !Block 4 (diagonal part to come)
+                        GSHam(Nm1GSInd:nGSSpace,Nm1GSInd:nGSSpace) = Nm1FCIHam_beta(:,:)
+                    endif
+
+                    !Block 2 for particle hamiltonian
+                    !Copy the N electron FCI hamiltonian to this diagonal block
+                    LinearSystem_p(VIndex:nLinearSystem,VIndex:nLinearSystem) = nFCIHam(:,:)
             
-                !Block 3 for particle hamiltonian
-                do J = 1,nNp1FCIDet
-                    do K = 1,nFCIDet    !VIndex,nLinearSystem
-                        if(Coup_Ann_alpha(1,K,J).ne.0) then
-                            !Determinants are connected via a single SQ operator
-                            !First index is the spatial index, second is parity 
-                            !Matrices not necessarily hermitian with self-energy term, so need to construct them seperately
-                            LinearSystem_p(K+VIndex-1,J) = Gc_a_F_ax_Bra(Coup_Ann_alpha(1,K,J),pertsite)    &
-                                *Coup_Ann_alpha(2,K,J)/sqrt(VNorm)
-                            !LinearSystem_p(J,K+VIndex-1) = conjg(LinearSystem_p(K+VIndex-1,J))
-                            LinearSystem_p(J,K+VIndex-1) = Gc_a_F_ax_Ket(Coup_Ann_alpha(1,K,J),pertsite)    &
-                                *Coup_Ann_alpha(2,K,J)/sqrt(VNorm)
-                            if(tFullReoptGS) then
-                                !Block 3 contribution
-                                !Assume that all the matrices are hermitian as we shouldn't be reoptimizing the GS with self-energy
-                                GSHam(K,Np1GSInd+J-1) = -Ga_i_F_xi_Ket(Coup_Ann_alpha(1,K,J),pertsite)  &
-                                    *Coup_Ann_alpha(2,K,J)/sqrt(CNorm)
-                                GSHam(Np1GSInd+J-1,K) = conjg(GSHam(K,Np1GSInd+J-1))
-                            endif
-                        endif
+                    VNorm = zzero
+                    tempel = zzero 
+                    do a = VirtStart,VirtEnd
+                        !Calc normalization for the CV block
+                        VNorm = VNorm + SPGF_Cre_Bra(a,pertsite)*SPGF_Cre_Ket(a,pertsite) 
+                        !VNorm = VNorm + real(SPGF_Cre(a,pertsite))**2 + aimag(SPGF_Cre(a,pertsite))**2
+                        !Calculate the diagonal correction
+                        !tempel = tempel + conjg(SPGF_Cre(a,pertsite))*Gc_b_F_ab(a,pertsite)
+                        tempel = tempel + SPGF_Cre_Bra(a,pertsite)*Gc_b_F_ab(a,pertsite)
                     enddo
-                enddo
-
-!                call writematrixcomp(LinearSystem_p(1:nNp1FCIDet,VIndex:nLinearSystem),'OffDiagBlock',.true.)
-
-                !Block 3 for hole hamiltonian
-                do J = 1,nNm1bFCIDet
-                    do K = 1,nFCIDet
-                        if(Coup_Create_alpha(1,K,J).ne.0) then
-                            !Determinants are connected via a single SQ operator
-                            LinearSystem_h(K+VIndex-1,J) = - Ga_i_F_xi_Bra(Coup_Create_alpha(1,K,J),pertsite)   &
-                                *Coup_Create_alpha(2,K,J)/sqrt(CNorm)
-                            LinearSystem_h(J,K+VIndex-1) = - Ga_i_F_xi_Ket(Coup_Create_alpha(1,K,J),pertsite)   &
-                                *Coup_Create_alpha(2,K,J)/sqrt(CNorm)
-                            if(tFullReoptGS) then
-                                !Block 6 contribution
-                                GSHam(K,Nm1GSInd+J-1) = Gc_a_F_ax_Ket(Coup_Create_alpha(1,K,J),pertsite) &
-                                    *Coup_Create_alpha(2,K,J)/sqrt(VNorm)
-                                GSHam(Nm1GSInd+J-1,K) = conjg(GSHam(K,Nm1GSInd+J-1))
-                            endif
-                        endif
+                    tempel = tempel / VNorm
+                    !Add diagonal virtual correction
+                    do i = VIndex,nLinearSystem
+                        LinearSystem_p(i,i) = LinearSystem_p(i,i) + tempel
                     enddo
-                enddo
-
-                !Now, check hessian is hermitian
-                do i = 1,nLinearSystem
-                    do j=i,nLinearSystem
-                        if(abs(LinearSystem_p(i,j)-conjg(LinearSystem_p(j,i))).gt.1.0e-8_dp) then
-                            write(6,*) "i, j: ",i,j
-                            write(6,*) "LinearSystem_p(i,j): ",LinearSystem_p(i,j)
-                            write(6,*) "LinearSystem_p(j,i): ",LinearSystem_p(j,i)
-                            call stop_all(t_r,'Particle hessian for EC-LR not hermitian')
-                        endif
-                        if(abs(LinearSystem_h(i,j)-conjg(LinearSystem_h(j,i))).gt.1.0e-8_dp) then
-                            write(6,*) "i, j: ",i,j
-                            write(6,*) "LinearSystem_h(i,j): ",LinearSystem_h(i,j)
-                            write(6,*) "LinearSystem_h(j,i): ",LinearSystem_h(j,i)
-                            call stop_all(t_r,'Hole hessian for EC-LR not hermitian')
-                        endif
-                    enddo
-                    if(abs(aimag(LinearSystem_p(i,i))).gt.1.0e-8_dp) then
-                        call stop_all(t_r,'Diagonal element complex in particle hessian. Not hermitian')
+                    if(tFullReoptGS) then
+                        !Diagonal part of block 4
+                        do i = Nm1GSInd,nGSSpace
+                            GSHam(i,i) = GSHam(i,i) + tempel
+                        enddo
                     endif
-                    if(abs(aimag(LinearSystem_h(i,i))).gt.1.0e-8_dp) then
-                        call stop_all(t_r,'Diagonal element complex in hole hessian. Not hermitian')
+
+                    !Block 2 for the hole hamiltonian
+                    !Copy the N electron FCI hamiltonian to this diagonal blockk
+                    LinearSystem_h(VIndex:nLinearSystem,VIndex:nLinearSystem) = nFCIHam(:,:)
+
+                    CNorm = zzero
+                    tempel = zzero 
+                    do i = 1,CoreEnd
+                        !Calc normalization
+                        !CNorm = CNorm + real(SPGF_Ann(i,pertsite))**2 + aimag(SPGF_Ann(i,pertsite))**2
+                        CNorm = CNorm + SPGF_Ann_Bra(i,pertsite)*SPGF_Ann_Ket(i,pertsite)
+                        !Calc diagonal correction
+                        tempel = tempel + SPGF_Ann_Bra(i,pertsite)*Ga_i_F_ij(i,pertsite)
+                    enddo
+                    tempel = -tempel / CNorm
+                    !Add diagonal correction
+                    do i = VIndex,nLinearSystem
+                        LinearSystem_h(i,i) = LinearSystem_h(i,i) + tempel
+                    enddo
+                    if(tFullReoptGS) then
+                        !Diagonal part of block 2
+                        do i = Np1GSInd,Nm1GSInd-1
+                            GSHam(i,i) = GSHam(i,i) + tempel
+                        enddo
                     endif
-                enddo
-                if(tFullReoptGS) then
-                    !Check GS hamiltonian is hermitian
-                    do i = 1,nGSSpace
-                        do j = i,nGSSpace
-                            if(abs(GSHam(j,i)-conjg(GSHam(i,j))).gt.1.0e-8_dp) then
-                                call stop_all(t_r,'Reoptimized ground state hamiltonian is not hermitian')
+                
+                    !Block 3 for particle hamiltonian
+                    do J = 1,nNp1FCIDet
+                        do K = 1,nFCIDet    !VIndex,nLinearSystem
+                            if(Coup_Ann_alpha(1,K,J).ne.0) then
+                                !Determinants are connected via a single SQ operator
+                                !First index is the spatial index, second is parity 
+                                !Matrices not necessarily hermitian with self-energy term, so need to construct them seperately
+                                LinearSystem_p(K+VIndex-1,J) = Gc_a_F_ax_Bra(Coup_Ann_alpha(1,K,J),pertsite)    &
+                                    *Coup_Ann_alpha(2,K,J)/sqrt(VNorm)
+                                !LinearSystem_p(J,K+VIndex-1) = conjg(LinearSystem_p(K+VIndex-1,J))
+                                LinearSystem_p(J,K+VIndex-1) = Gc_a_F_ax_Ket(Coup_Ann_alpha(1,K,J),pertsite)    &
+                                    *Coup_Ann_alpha(2,K,J)/sqrt(VNorm)
+                                if(tFullReoptGS) then
+                                    !Block 3 contribution
+                                    !Assume that all the matrices are hermitian as we shouldn't be reoptimizing the GS with self-energy
+                                    GSHam(K,Np1GSInd+J-1) = -Ga_i_F_xi_Ket(Coup_Ann_alpha(1,K,J),pertsite)  &
+                                        *Coup_Ann_alpha(2,K,J)/sqrt(CNorm)
+                                    GSHam(Np1GSInd+J-1,K) = conjg(GSHam(K,Np1GSInd+J-1))
+                                endif
                             endif
                         enddo
                     enddo
-                endif
+
+    !                call writematrixcomp(LinearSystem_p(1:nNp1FCIDet,VIndex:nLinearSystem),'OffDiagBlock',.true.)
+
+                    !Block 3 for hole hamiltonian
+                    do J = 1,nNm1bFCIDet
+                        do K = 1,nFCIDet
+                            if(Coup_Create_alpha(1,K,J).ne.0) then
+                                !Determinants are connected via a single SQ operator
+                                LinearSystem_h(K+VIndex-1,J) = - Ga_i_F_xi_Bra(Coup_Create_alpha(1,K,J),pertsite)   &
+                                    *Coup_Create_alpha(2,K,J)/sqrt(CNorm)
+                                LinearSystem_h(J,K+VIndex-1) = - Ga_i_F_xi_Ket(Coup_Create_alpha(1,K,J),pertsite)   &
+                                    *Coup_Create_alpha(2,K,J)/sqrt(CNorm)
+                                if(tFullReoptGS) then
+                                    !Block 6 contribution
+                                    GSHam(K,Nm1GSInd+J-1) = Gc_a_F_ax_Ket(Coup_Create_alpha(1,K,J),pertsite) &
+                                        *Coup_Create_alpha(2,K,J)/sqrt(VNorm)
+                                    GSHam(Nm1GSInd+J-1,K) = conjg(GSHam(K,Nm1GSInd+J-1))
+                                endif
+                            endif
+                        enddo
+                    enddo
+
+                    !Now, check hessian is hermitian
+                    do i = 1,nLinearSystem
+                        do j=i,nLinearSystem
+                            if(abs(LinearSystem_p(i,j)-conjg(LinearSystem_p(j,i))).gt.1.0e-8_dp) then
+                                write(6,*) "i, j: ",i,j
+                                write(6,*) "LinearSystem_p(i,j): ",LinearSystem_p(i,j)
+                                write(6,*) "LinearSystem_p(j,i): ",LinearSystem_p(j,i)
+                                call stop_all(t_r,'Particle hessian for EC-LR not hermitian')
+                            endif
+                            if(abs(LinearSystem_h(i,j)-conjg(LinearSystem_h(j,i))).gt.1.0e-8_dp) then
+                                write(6,*) "i, j: ",i,j
+                                write(6,*) "LinearSystem_h(i,j): ",LinearSystem_h(i,j)
+                                write(6,*) "LinearSystem_h(j,i): ",LinearSystem_h(j,i)
+                                call stop_all(t_r,'Hole hessian for EC-LR not hermitian')
+                            endif
+                        enddo
+                        if(abs(aimag(LinearSystem_p(i,i))).gt.1.0e-8_dp) then
+                            call stop_all(t_r,'Diagonal element complex in particle hessian. Not hermitian')
+                        endif
+                        if(abs(aimag(LinearSystem_h(i,i))).gt.1.0e-8_dp) then
+                            call stop_all(t_r,'Diagonal element complex in hole hessian. Not hermitian')
+                        endif
+                    enddo
+                    if(tFullReoptGS) then
+                        !Check GS hamiltonian is hermitian
+                        do i = 1,nGSSpace
+                            do j = i,nGSSpace
+                                if(abs(GSHam(j,i)-conjg(GSHam(i,j))).gt.1.0e-8_dp) then
+                                    call stop_all(t_r,'Reoptimized ground state hamiltonian is not hermitian')
+                                endif
+                            enddo
+                        enddo
+                    endif
+
+                endif   !End if compressed matrices or not
             
                 if(.not.tOpenMP) then
                     !write(6,*) "Hessian constructed successfully...",Omega
@@ -656,6 +900,7 @@ module LinearResponse
                 endif
 
                 if(tFullReoptGS) then
+                    !Cannot be compressed matrices
                     !Reoptimize the ground state wavefunction in the full static + dynamic space.
                     if(.not.tNonDirDavidson) call stop_all(t_r,'Cannot do this optimization without davidson')
                     Psi_0(:) = zzero
@@ -668,7 +913,7 @@ module LinearResponse
                     else
                         Psi_0(:) = Prev_HL_Vec(:)
                     endif
-                    call Comp_NonDir_Davidson(nGSSpace,GSHam,GSEnergy,Psi_0,.true.)
+                    call Comp_NonDir_Davidson(nGSSpace,GSEnergy,Psi_0,.true.,1,Mat=GSHam)
                     write(6,"(A,G20.10,A,G20.10)") "Reoptimized ground state energy is: ",GSEnergy
  !                       " (old = ",Prev_HL_Energy,")"
                     Prev_HL_Vec(:) = Psi_0(:)
@@ -682,39 +927,63 @@ module LinearResponse
 
                 !Solve particle GF to start
                 !The V|0> for particle and hole perturbations are held in Cre_0 and Ann_0
-                LinearSystem_p(:,:) = -LinearSystem_p(:,:)
-                !Offset matrix
-                do i = 1,nLinearSystem
-                    if(tMatbrAxis) then
-                        LinearSystem_p(i,i) = LinearSystem_p(i,i) + dcmplx(GFChemPot+GSEnergy,Omega)
-                    else
-                        LinearSystem_p(i,i) = LinearSystem_p(i,i) + dcmplx(Omega+GFChemPot+GSEnergy,dDelta)
-                    endif
-                enddo
+                if(tCompressedMats) then
+                    LinearSystemc_p(:) = -LinearSystemc_p(:)
+                    do i = 1,nLinearSystem
+                        if(tMatbrAxis) then
+                            LinearSystemc_p(i) = LinearSystemc_p(i) + cmplx(GFChemPot+GSEnergy,Omega,dp)
+                        else
+                            LinearSystemc_p(i) = LinearSystemc_p(i) + cmplx(Omega+GFChemPot+GSEnergy,dDelta,dp)
+                        endif
+                    enddo
+                else
+                    LinearSystem_p(:,:) = -LinearSystem_p(:,:)
+                    !Offset matrix
+                    do i = 1,nLinearSystem
+                        if(tMatbrAxis) then
+                            LinearSystem_p(i,i) = LinearSystem_p(i,i) + cmplx(GFChemPot+GSEnergy,Omega,dp)
+                        else
+                            LinearSystem_p(i,i) = LinearSystem_p(i,i) + cmplx(Omega+GFChemPot+GSEnergy,dDelta,dp)
+                        endif
+                    enddo
+                endif
 !                call writematrixcomp(LinearSystem_p,'LinearSystem_p',.false.)
+
                 !Now solve these linear equations
                 if(tMinRes_NonDir) then
-!                    write(6,*) "LinearSystem_p: ",LinearSystem_p(1,1),OMP_get_thread_num()
-                    zDirMV_Mat => LinearSystem_p
-!                    write(6,*) "Associated? ",associated(zDirMV_Mat),OMP_get_thread_num()
-!                    write(6,*) "zDirMV_Mat: ",zDirMV_Mat(1,1),OMP_get_thread_num()
+                    if(tCompressedMats) then
+                        zDirMV_Mat_cmprs => LinearSystemc_p
+                        zDirMV_Mat_cmprs_inds => LinearSystem_p_inds
+                    else
+!                        write(6,*) "LinearSystem_p: ",LinearSystem_p(1,1),OMP_get_thread_num()
+                        zDirMV_Mat => LinearSystem_p
+!                        write(6,*) "Associated? ",associated(zDirMV_Mat),OMP_get_thread_num()
+!                        write(6,*) "zDirMV_Mat: ",zDirMV_Mat(1,1),OMP_get_thread_num()
+                    endif
                     call setup_RHS(nLinearSystem,Cre_0(:,pertsite),RHS)
                     if(tPrecond_MinRes) then
                         call FormPrecond(nLinearSystem)
                         call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=RHS,nout=minres_unit,x=Psi1_p, &
-                            itnlim=iMinRes_MaxIter,Msolve=zPreCond,istop=info,itn=iters_p(OmegaVal), &
+                            itnlim=iMinRes_MaxIter,Msolve=zPreCond,istop=info,rtol=rtol_LR,itn=iters_p(OmegaVal), &
                             startguess=tReuse_LS)
                     else
                         call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=RHS,nout=minres_unit,x=Psi1_p, &
-                            itnlim=iMinRes_MaxIter,istop=info,itn=iters_p(OmegaVal),startguess=tReuse_LS)
+                            itnlim=iMinRes_MaxIter,istop=info,rtol=rtol_LR,itn=iters_p(OmegaVal),startguess=tReuse_LS)
                     endif
-                    zDirMV_Mat => null()
+                    if(tCompressedMats) then
+                        zDirMV_Mat_cmprs => null()
+                        zDirMV_Mat_cmprs_inds => null()
+                    else
+                        zDirMV_Mat => null()
+                    endif
                     if(info.gt.7) write(6,*) "info: ",info
                     if(info.eq.8) write(6,"(A,I9)") "Linear equation solver hit iteration limit: ",iters_p(OmegaVal)
                     if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) then
                         call stop_all(t_r,'Input matrices to linear solver incorrect')
                     endif
                     if(info.gt.11) call stop_all(t_r,'Linear equation solver failed')
+                elseif(tGMRES_NonDir) then
+                    call stop_all(t_r,'Code this up')
                 else
                     !Copy V|0> to another array, since if we are not reoptimizing the GS, we want to keep them.
                     Psi1_p(:) = Cre_0(:,pertsite)
@@ -730,20 +999,36 @@ module LinearResponse
                 !call writevectorcomp(Psi1_p,'Psi1_p')
 
                 !Now solve the LR for the hole addition
-                do i = 1,nLinearSystem
-                    if(tMatbrAxis) then
-                        LinearSystem_h(i,i) = dcmplx(GFChemPot-GSEnergy,Omega) + LinearSystem_h(i,i)
-                    else
-                        LinearSystem_h(i,i) = dcmplx(Omega+GFChemPot-GSEnergy,dDelta) + LinearSystem_h(i,i)
-                    endif
-                enddo
+                if(tCompressedMats) then
+                    do i = 1,nLinearSystem
+                        if(tMatbrAxis) then
+                            LinearSystemc_h(i) = LinearSystemc_h(i) +  cmplx(GFChemPot-GSEnergy,Omega,dp)
+                        else
+                            LinearSystemc_h(i) = LinearSystemc_h(i) + cmplx(Omega+GFChemPot-GSEnergy,dDelta,dp)
+                        endif
+                    enddo
+                else
+                    do i = 1,nLinearSystem
+                        if(tMatbrAxis) then
+                            LinearSystem_h(i,i) = cmplx(GFChemPot-GSEnergy,Omega,dp) + LinearSystem_h(i,i)
+                        else
+                            LinearSystem_h(i,i) = cmplx(Omega+GFChemPot-GSEnergy,dDelta,dp) + LinearSystem_h(i,i)
+                        endif
+                    enddo
+                endif
 !                call writematrixcomp(LinearSystem_h,'LinearSystem_h',.false.)
+
                 if(tMinRes_NonDir) then
                     !NB: There is a bug in ifort, if using array bounds checking and multiple openmp threads.
                     !This is caused since the bounds checking will only check the bounds on pointers on thread 0.
                     !This means that if it has nullified the pointer on thread 0, but not on others, there will be
                     !array bounds errors. DO NOT use multiple threads with array bounds checking for the minres option.
-                    zDirMV_Mat => LinearSystem_h
+                    if(tCompressedMats) then
+                        zDirMV_Mat_cmprs => LinearSystemc_h
+                        zDirMV_Mat_cmprs_inds => LinearSystem_h_inds
+                    else
+                        zDirMV_Mat => LinearSystem_h
+                    endif
                     call setup_RHS(nLinearSystem,Ann_0(:,pertsite),RHS)
                     if(tPrecond_MinRes) then
                         call FormPrecond(nLinearSystem)
@@ -754,13 +1039,20 @@ module LinearResponse
                         call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=RHS,nout=minres_unit,x=Psi1_h, &
                             itnlim=iMinRes_MaxIter,istop=info,rtol=rtol_LR,itn=iters_h(OmegaVal),startguess=tReuse_LS)
                     endif
-                    zDirMV_Mat => null()
+                    if(tCompressedMats) then
+                        zDirMV_Mat_cmprs => null()
+                        zDirMV_Mat_cmprs_inds => null()
+                    else
+                        zDirMV_Mat => null()
+                    endif
                     if(info.gt.7) write(6,*) "info: ",info
                     if(info.eq.8) write(6,"(A,I9)") "Linear equation solver hit iteration limit: ",iters_h(OmegaVal)
                     if((info.eq.9).or.(info.eq.10).or.(info.eq.11)) then
                         call stop_all(t_r,'Input matrices to linear solver incorrect')
                     endif
                     if(info.gt.11) call stop_all(t_r,'Linear equation solver failed')
+                elseif(tGMRES_NonDir) then
+                    call stop_all(t_r,'Code this up')
                 else
                     Psi1_h(:) = Ann_0(:,pertsite)
                     call SolveCompLinearSystem(LinearSystem_h,Psi1_h,nLinearSystem,info)
@@ -798,8 +1090,13 @@ module LinearResponse
 
             deallocate(SPGF_Cre_Ket,SPGF_Cre_Bra,SPGF_Ann_Ket,SPGF_Ann_Bra,ResponseFn_p,ResponseFn_h)
             deallocate(Gc_a_F_ax_Bra,Gc_a_F_ax_Ket,Gc_b_F_ab,Ga_i_F_xi_Bra,Ga_i_F_xi_Ket,Ga_i_F_ij)
-            deallocate(LinearSystem_p,LinearSystem_h,Psi1_p,Psi1_h,HFRes_Ann_Ket,HFRes_Cre_Ket)
+            deallocate(Psi1_p,Psi1_h,HFRes_Ann_Ket,HFRes_Cre_Ket)
             deallocate(HFRes_Ann_Bra,HFRes_Cre_Bra,temp,temp2,temp3)
+            if(tCompressedMats) then
+                deallocate(LinearSystemc_p,LinearSystemc_h,LinearSystem_p_inds,LinearSystem_h_inds)
+            else
+                deallocate(LinearSystem_p,LinearSystem_h)
+            endif
             if(tMinRes_NonDir) then
                 deallocate(RHS)
                 if(tPrecond_MinRes) deallocate(Precond_Diag)
@@ -877,8 +1174,16 @@ module LinearResponse
         if(allocated(Np1bBitList)) deallocate(Np1bBitList)
 
         !Stored intermediates
-        deallocate(NFCIHam,Nm1FCIHam_beta,Np1FCIHam_alpha)
-        deallocate(Coup_Create_alpha,Coup_Ann_alpha)
+        if(tCompressedMats) then
+            deallocate(NFCIHam_cmps,Nm1FCIHam_cmps,Np1FCIHam_cmps)
+            deallocate(NFCIHam_inds,Nm1FCIHam_inds,Np1FCIHam_inds)
+            deallocate(Coup_Create,Coup_Ann,Coup_Create_inds,Coup_Ann_inds)
+            deallocate(Coup_Create_cum,Coup_Ann_cum,Coup_Create_T,Coup_Ann_T)
+            deallocate(Coup_Create_inds_T,Coup_Ann_inds_T,Coup_Create_cum_T,Coup_Ann_cum_T)
+        else
+            deallocate(NFCIHam,Nm1FCIHam_beta,Np1FCIHam_alpha)
+            deallocate(Coup_Create_alpha,Coup_Ann_alpha)
+        endif
         deallocate(FockSchmidt_SE,FockSchmidt_SE_VV,FockSchmidt_SE_CC)
         deallocate(FockSchmidt_SE_VX,FockSchmidt_SE_CX,FockSchmidt_SE_XV,FockSchmidt_SE_XC)
 
@@ -890,11 +1195,108 @@ module LinearResponse
         if(tOpenMP) call halt_timer(LR_EC_GF_HBuild)
 
     end subroutine SchmidtGF_FromLat
+            
+    !Calculate the size of the required particle number sector compressed hamiltonians
+    subroutine CalcSizeCmprsMats(Nmax_N,Nmax_Nm1,Nmax_Np1)
+        implicit none
+        integer, intent(out) :: Nmax_N,Nmax_Np1,Nmax_Nm1
+        logical :: texist
+        integer :: iunit_tmp,isize
+
+        write(6,"(A)") "Computing size of compressed Hamiltonian matrices"
+        call flush(6)
+        if(tReadMats) then
+            inquire(file='CompressHam_N',exist=texist)
+            if(texist) then
+                write(6,*) "N-electron hamiltonian found"
+                iunit_tmp = get_free_unit()
+                open(iunit_tmp,file='CompressHam_N',status='old')
+                read(iunit_tmp,*) isize
+                Nmax_N = isize
+                rewind(iunit_tmp)
+                close(iunit_tmp)
+                write(6,*) "Read in NMAX_N = ",Nmax_N
+            else
+                if(iHamSize_N.eq.0) then
+                    call CountSizeCompMat(FCIDetList,Elec,nFCIDet,Nmax_N,FCIBitList)
+                    iHamSize_N = Nmax_N
+                else
+                    write(6,"(A,I16)") "Assuming size of compressed N electron hamiltonian is: ",iHamSize_N
+                    Nmax_N = iHamSize_N
+                endif
+            endif
+        else
+            if(iHamSize_N.eq.0) then
+                call CountSizeCompMat(FCIDetList,Elec,nFCIDet,Nmax_N,FCIBitList)
+                iHamSize_N = Nmax_N
+            else
+                write(6,"(A,I16)") "Assuming size of compressed N electron hamiltonian is: ",iHamSize_N
+                Nmax_N = iHamSize_N
+            endif
+        endif
+        if(iHamSize_Nm1.eq.0) then
+            if(tBetaExcit) then
+                call CountSizeCompMat(Nm1FCIDetList,Elec-1,nNm1FCIDet,Nmax_Nm1,Nm1bBitList)
+            else
+                call CountSizeCompMat(Nm1bFCIDetList,Elec-1,nNm1bFCIDet,Nmax_Nm1,Nm1bBitList)
+            endif
+            iHamSize_Nm1 = Nmax_Nm1
+        else
+            write(6,"(A,I16)") "Assuming size of compressed N-1 electron hamiltonian is: ",iHamSize_Nm1
+            Nmax_Nm1 = iHamSize_Nm1
+        endif
+        if(iHamSize_Np1.eq.0) then
+            if(tBetaExcit) then
+                call CountSizeCompMat(Np1bFCIDetList,Elec+1,nNp1bFCIDet,Nmax_Np1,Np1bBitList)
+            else
+                call CountSizeCompMat(Np1FCIDetList,Elec+1,nNp1FCIDet,Nmax_Np1,Np1BitList)
+            endif
+            iHamSize_Np1 = Nmax_Np1
+        else
+            write(6,"(A,I16)") "Assuming size of compressed N+1 electron hamiltonian is: ",iHamSize_Np1
+            Nmax_Np1 = iHamSize_Np1
+        endif
+
+        write(6,"(A,F12.5,A)") "Memory required for N-electron hamil: ",(real(Nmax_N,dp)*2)*ComptoMb, " Mb"
+        write(6,"(A,F12.5,A)") "Memory required for N+1-electron hamil: ",(real(Nmax_Np1,dp)*2)*ComptoMb, " Mb"
+        write(6,"(A,F12.5,A)") "Memory required for N-1-electron hamil: ",(real(Nmax_Nm1,dp)*2)*ComptoMb, " Mb"
+        call flush(6)
+
+    end subroutine CalcSizeCmprsMats
+        
+    subroutine CalcSizeCmprsNumCoupOps(Nmax_Coup_Create,Nmax_Coup_Ann)
+        implicit none
+        integer, intent(out) :: Nmax_Coup_Create,Nmax_Coup_Ann
+        integer :: J,K,DiffOrb,nOrbs
+
+        Nmax_Coup_Create = 0
+        Nmax_Coup_Ann = 0
+
+!$OMP PARALLEL DO REDUCTION(+:NMax_Coup_Create,NMax_Coup_Ann) DEFAULT(SHARED) PRIVATE(DiffOrb,nOrbs)
+        do J = 1,nFCIDet
+            !Start with the creation of a spin orbital
+            do K = 1,nNm1bFCIDet
+                DiffOrb = ieor(Nm1bBitList(K),FCIBitList(J))
+                nOrbs = CountBits(DiffOrb)
+                if(nOrbs.eq.1) then
+                    Nmax_Coup_Create = Nmax_Coup_Create + 1
+                endif
+            enddo
+            !Now, annihilation of a spin orbital
+            do K = 1,nNp1FCIDet
+                DiffOrb = ieor(Np1BitList(K),FCIBitList(J))
+                nOrbs = CountBits(DiffOrb)
+                if(nOrbs.eq.1) then
+                    Nmax_Coup_Ann = Nmax_Coup_Ann + 1
+                endif
+            enddo
+        enddo
+!$OMP END PARALLEL DO
+
+    end subroutine CalcSizeCmprsNumCoupOps
+
 
     subroutine SetupNumberCouplingOps(Coup_Create_alpha,Coup_Ann_alpha)
-        use DetBitOps, only: DecodeBitDet,SQOperator,CountBits
-        use DetToolsData
-        use DetTools, only: tospat
         implicit none
         integer, intent(out) :: Coup_Create_alpha(2,nFCIDet,nNm1bFCIDet)
         integer, intent(out) :: Coup_Ann_alpha(2,nFCIDet,nNp1FCIDet)
@@ -980,13 +1382,6 @@ module LinearResponse
     !Calculate linear response for charged excitations - add the hole creation to particle creation
     !This is a tester routine to calculate the whole GF matrix, and include an optional self-energy in the bath construction
     subroutine SchmidtGF_wSE(G_Mat,GFChemPot,SE,nESteps,tMatbrAxis,ham,cham,ham_vals,ham_vecs,FreqPoints,Lat_G_Mat)
-        use mat_tools, only: add_localpot_comp_inplace
-        use utils, only: get_free_unit,append_ext_real,append_ext
-        use DetBitOps, only: DecodeBitDet,SQOperator,CountBits
-        use Davidson, only: Comp_NonDir_Davidson,DiagSubspaceMat_real,DiagSubspaceMat_comp
-        use DetToolsData
-        use DetTools, only: tospat,umatind,gendets
-        use solvers, only: CreateIntMats
         implicit none
         integer, intent(in) :: nESteps
         complex(dp), intent(in) :: SE(nImp,nImp,nESteps)
@@ -1416,7 +1811,7 @@ module LinearResponse
         GSEnergy = HL_Energy
         if(tLR_ReoptGS) then
             !We only reoptimize here in the static bath space, with the *new* hamiltonian projected into it.
-            call Comp_NonDir_Davidson(nFCIDet,NFCIHam,GSEnergy,Psi_0(1:nFCIDet),.true.)
+            call Comp_NonDir_Davidson(nFCIDet,GSEnergy,Psi_0(1:nFCIDet),.true.,1,Mat=NFCIHam)
             write(6,"(A,G20.10,A,G20.10,A)") "Reoptimized ground state energy is: ",GSEnergy, &  
                 " (old = ",HL_Energy,")"
             call flush(6)
@@ -2081,12 +2476,6 @@ module LinearResponse
     end subroutine SchmidtGF_wSE
     
     subroutine NonIntExCont_TDA_MCLR_DD_Cmprs()
-        use utils, only: get_free_unit,append_ext_real,append_ext
-        use DetBitOps, only: DecodeBitDet,SQOperator,CountBits
-        use zminresqlpModule, only: MinresQLP  
-        use DetToolsData
-        use DetTools, only: tospat,umatind,GenDets,GetHElement
-        use solvers, only: CountSizeCompMat,StoreCompMat,CreateIntMats
         implicit none
         integer :: a,i,j,k,b,beta
         integer :: CoreEnd,VirtStart,VirtEnd,iunit
@@ -3515,15 +3904,6 @@ module LinearResponse
     !Calculate linear response for charged excitations - add the hole creation to particle creation
     !This routine uses a compressed matrix formalism
     subroutine NonIntExCont_TDA_MCLR_Charged_Cmprs()
-        use mat_tools, only: add_localpot_comp_inplace
-        use utils, only: get_free_unit,append_ext_real,append_ext
-        use Davidson, only: Comp_NonDir_Davidson
-        use fitting, only: Fit_SE
-        use zminresqlpModule, only: MinresQLP  
-        use DetToolsData
-        use solvers, only: CountSizeCompMat,CreateIntMats
-        use DetTools, only: tospat,umatind,gendets
-        use DetBitOps, only: CountBits
         implicit none
         complex(dp), allocatable :: NFCIHam_cmps(:),Np1FCIHam_cmps(:),Nm1FCIHam_cmps(:)
         integer, allocatable :: NFCIHam_inds(:),Np1FCIHam_inds(:),Nm1FCIHam_inds(:)
@@ -4296,15 +4676,6 @@ module LinearResponse
 
     !Calculate linear response for charged excitations - add the hole creation to particle creation
     subroutine NonIntExCont_TDA_MCLR_Charged()
-        use mat_tools, only: add_localpot_comp_inplace
-        use utils, only: get_free_unit,append_ext_real,append_ext
-        use DetBitOps, only: DecodeBitDet,SQOperator,CountBits
-        use Davidson, only: Comp_NonDir_Davidson
-        use fitting, only: Fit_SE
-        use zminresqlpModule, only: MinresQLP  
-        use DetToolsData
-        use DetTools, only: tospat,umatind,gendets
-        use solvers, only: CreateIntMats
         implicit none
         complex(dp), allocatable :: NFCIHam(:,:),Np1FCIHam_alpha(:,:),Nm1FCIHam_beta(:,:)
         real(dp), allocatable :: W(:),dNorm_p(:),dNorm_h(:)
@@ -4892,7 +5263,7 @@ module LinearResponse
 
                     if(tLR_ReoptGS) then
                         if(tNonDirDavidson) then
-                            call Comp_NonDir_Davidson(nGSSpace,GSHam,GFChemPot,Psi_0,.false.)
+                            call Comp_NonDir_Davidson(nGSSpace,GFChemPot,Psi_0,.false.,1,Mat=GSHam)
                         else
                             allocate(Work(max(1,3*nGSSpace-2)))
                             allocate(temp_vecc(1))
@@ -5235,12 +5606,6 @@ module LinearResponse
     end subroutine NonIntExCont_TDA_MCLR_Charged
 
     subroutine NonIntExContracted_TDA_MCLR()
-        use utils, only: get_free_unit,append_ext_real,append_ext
-        use DetBitOps, only: DecodeBitDet,SQOperator,CountBits
-        use zminresqlpModule, only: MinresQLP  
-        use DetToolsData
-        use DetTools, only: tospat,umatind,GenDets,GetHElement
-        use solvers, only: CreateIntMats
         implicit none
         integer :: a,i,j,k,AVInd_tmp,b,beta
         integer :: CoreEnd,VirtStart,VirtEnd,CVInd_tmp,iunit,iunit2
@@ -6613,8 +6978,6 @@ module LinearResponse
     !This will apply an alpha creation operator at site pertsite to the first order interacting wavefunction
     !Returns the wavefunction Psi in the standard N-electron determinant space
     subroutine ApplyCre_FirstOrder_EC(Psi_1,nSize1,Psi,nSize0,pertsite)
-        use DetToolsData
-        use DetBitOps, only: SQOperator 
         implicit none
         integer, intent(in) :: nSize1,nSize0,pertsite
         complex(dp), intent(in) :: Psi_1(nSize1)
@@ -6686,8 +7049,6 @@ module LinearResponse
     ! The first space couples to the uncontracted N electron space of the GS, while if the GS has been reoptimized, then
     ! we also have coupling between the second space with the N-1 (third) space of the GS wavefunction
     subroutine ApplyAnn_FirstOrder_EC(Psi_1,nSize1,Psi,nSize0,pertsite)
-        use DetToolsData
-        use DetBitOps, only: SQOperator 
         implicit none
         integer, intent(in) :: nSize1,nSize0,pertsite
         complex(dp), intent(in) :: Psi_1(nSize1)
@@ -6756,8 +7117,6 @@ module LinearResponse
     !It is only trying to create/destroy the alpha orbital applied to the ground state wavefunction
     !Will return the ground state, with a particle created or destroyed in pertsite
     subroutine ApplySP_PertGS_EC(Psi_0,SizeGS,V0_Cre,V0_Ann,nSizeLR,pertsite,tSwapExcits)
-        use DetToolsData
-        use DetBitOps, only: SQOperator 
         implicit none
         integer, intent(in) :: SizeGS,nSizeLR,pertsite
         complex(dp), intent(in) :: Psi_0(SizeGS)
@@ -6978,7 +7337,6 @@ module LinearResponse
     !Apply the density perturbation in the externally contracted space which is a rotation
     !into the non-null and orthogonal basis of the overlap matrix
     subroutine ApplyDensityPert_EC_Orthog(GS,V0,nSpan,nFull,Transform)
-        use DetToolsData
         implicit none
         integer , intent(in) :: nSpan,nFull
         complex(dp), intent(in) :: GS(nSpan),Transform(nFull,nSpan)
@@ -7021,7 +7379,6 @@ module LinearResponse
 
     !Apply the density perturbation in the Externally contracted space
     subroutine ApplyDensityPert_EC(GS,V0,nSize)
-        use DetToolsData
         implicit none
         integer , intent(in) :: nSize
         complex(dp), intent(in) :: GS(nSize)
@@ -7123,9 +7480,6 @@ module LinearResponse
     subroutine CreateCmprsCouplingMatrices(NMax_Coup_Create,NMax_Coup_Ann,Coup_Create,Coup_Ann, &
             Coup_Create_inds,Coup_Ann_inds,Coup_Create_cum,Coup_Ann_cum,Coup_Create_T,Coup_Ann_T,   &
             Coup_Create_inds_T,Coup_Ann_inds_T,Coup_Create_cum_T,Coup_Ann_cum_T,tSwapSpins)
-        use DetToolsData
-        use DetTools, only: tospat
-        use DetBitOps, only: DecodeBitDet,SQOperator,CountBits
         implicit none
         integer, intent(in) :: NMax_Coup_Create,NMax_Coup_Ann
         integer, intent(out) :: Coup_Create(2,Nmax_Coup_Create),Coup_Ann(2,Nmax_Coup_Ann)
@@ -7364,9 +7718,6 @@ module LinearResponse
     !Contract the basis of single excitations, by summing together all the uncontracted parts with the non-interacting LR coefficients
     !This results in requiring the solution of a system which *only* scales with the size of the active hilbert space, not the lattice
     subroutine NonIntContracted_TDA_MCLR()
-        use utils, only: get_free_unit
-        use DetBitOps, only: DecodeBitDet,SQOperator
-        use DetToolsData
         implicit none
 !        integer :: nLinearSystem,ierr,i,j,a,b,info,lwork,n,iunit
 !        integer :: i_spat,a_spat,gtid,alpha,beta,gam,dj,ExcitInd
@@ -8549,8 +8900,6 @@ module LinearResponse
     !Find <Dj|p^+q|0> if tGSKet=T, or the other way around if false.
     !det is the label to the single determinant function Dj
     subroutine FindDeterminantTransRDM(det,Trans1RDM,tGSKet)
-        use DetToolsData, only: FCIDetList,nFCIDet
-        use DetTools, only: gtid,iGetExcitLevel,GetExcitation
         implicit none
         integer, intent(in) :: det
         logical, intent(in) :: tGSKet
@@ -8594,9 +8943,6 @@ module LinearResponse
     !This is only over the ACTIVE space
     !These are spin-integrated, and have the form given in Helgakker
     subroutine CalcNp1_2RDM(Bra,Ket,RDM)
-        use DetToolsData, only: nNp1FCIDet,Np1BitList,Np1FCIDetList
-        use DetBitOps, only: CountBits
-        use DetTools, only: gtid,GetExcitation
         implicit none
         real(dp), intent(in) :: Bra(nNp1FCIDet),Ket(nNp1FCIDet)
         real(dp), intent(out) :: RDM(nImp*2,nImp*2,nImp*2,nImp*2)
@@ -8793,9 +9139,6 @@ module LinearResponse
     !This is only over the ACTIVE space
     !These are spin-integrated
     subroutine CalcNp1_1RDM(Bra,Ket,RDM)
-        use DetToolsData, only: nNp1FCIDet,Np1BitList,Np1FCIDetList
-        use DetBitOps, only: CountBits
-        use DetTools, only: gtid,getexcitation
         implicit none
         real(dp), intent(in) :: Bra(nNp1FCIDet),Ket(nNp1FCIDet)
         real(dp), intent(out) :: RDM(nImp*2,nImp*2)
@@ -8841,9 +9184,6 @@ module LinearResponse
     !This is only over the ACTIVE space
     !These are spin-integrated, and have the form given in Helgakker
     subroutine CalcNm1_2RDM(Bra,Ket,RDM)
-        use DetToolsData, only: nNm1FCIDet,Nm1BitList,Nm1FCIDetList
-        use DetBitOps, only: CountBits
-        use DetTools, only: gtid,GetExcitation
         implicit none
         real(dp), intent(in) :: Bra(nNm1FCIDet),Ket(nNm1FCIDet)
         real(dp), intent(out) :: RDM(nImp*2,nImp*2,nImp*2,nImp*2)
@@ -9040,9 +9380,6 @@ module LinearResponse
     !This is only over the ACTIVE space
     !These are spin-integrated
     subroutine CalcNm1_1RDM(Bra,Ket,RDM)
-        use DetToolsData, only: nNm1FCIDet,Nm1BitList,Nm1FCIDetList
-        use DetBitOps, only: CountBits
-        use DetTools, only: gtid,getexcitation
         implicit none
         real(dp), intent(in) :: Bra(nNm1FCIDet),Ket(nNm1FCIDet)
         real(dp), intent(out) :: RDM(nImp*2,nImp*2)
@@ -9087,8 +9424,6 @@ module LinearResponse
     !Calculate the (transition) 1RDM.
     !Do this very naively to start with.
     subroutine Calc1RDM(Bra,Ket,RDM)
-        use DetToolsData, only: nFCIDet,FCIDetList
-        use DetTools, only: gtid,igetexcitlevel,getexcitation
         implicit none
         real(dp), intent(in) :: Bra(nFCIDet),Ket(nFCIDet)
         real(dp), intent(out) :: RDM(nSites,nSites)
@@ -9145,9 +9480,6 @@ module LinearResponse
     !the virtual space, the basis of single excitations of the core into virtual space, and the basis
     !of single excitations of core into active space. This will all be constructed explicitly initially.
     subroutine TDA_MCLR()
-        use sort_mod, only: sort_int
-        use DetToolsData, only: nFCIDet,FCIDetList
-        use DetTools, only: GetHElement,GetExcitation
         implicit none
         integer :: nCoreVirt,nCoreActive,nActiveVirt,nLinearSystem,ierr,info
         integer :: i,j,CoreNEl,ind2,ind1,a,x,Ex(2),b,pertsite
@@ -9546,8 +9878,18 @@ module LinearResponse
         integer :: i,j,k
         character(len=*), parameter :: t_r='setup_RHS'
         
-        if(tCompressedMats.and.(.not.associated(zDirMV_Mat_cmprs))) call stop_all(t_r,'Compressed matrix not associated')
-        if(tCompressedMats.and.(.not.associated(zDirMV_Mat_cmprs_inds))) call stop_all(t_r,'Compressed indices not associated')
+        if(tCompressedMats.and.(.not.associated(zDirMV_Mat_cmprs))) then
+            if(.not.(tOpenMP.and.(max_omp_threads.gt.1))) then
+                !See below for why I do this
+                call stop_all(t_r,'Compressed matrix not associated')
+            endif
+        endif
+        if(tCompressedMats.and.(.not.associated(zDirMV_Mat_cmprs_inds))) then
+            if(.not.(tOpenMP.and.(max_omp_threads.gt.1))) then
+                !See below for why I do this
+                call stop_all(t_r,'Compressed indices not associated')
+            endif
+        endif
         if((.not.tCompressedMats).and.(.not.associated(zDirMV_Mat))) then
             if(.not.(tOpenMP.and.(max_omp_threads.gt.1))) then
                 !There is a *horrible* ifort compiler bug when using threadprivate
@@ -10046,9 +10388,6 @@ module LinearResponse
     !The global matrices SchmidtPertGF_Cre and SchmidtPertGF_Ann are filled, as well as the
     !new one-electron hamiltonians for the interacting problem: Emb_h0v_SE and FockSchmidt_SE
     subroutine FindNI_Charged_wSE(Omega,GFChemPot,NI_LRMat_Cre,NI_LRMat_Ann,SE,tMatbrAxis,ham,latvals,latvecs_L,latvecs_R)
-        use mat_tools, only: add_localpot_comp_inplace
-        use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
-        use sort_mod, only: Orthonorm_zgeev_vecs
         implicit none
         real(dp), intent(in) :: Omega,GFChemPot
         complex(dp), intent(out) :: NI_LRMat_Cre(nImp,nImp),NI_LRMat_Ann(nImp,nImp)
@@ -10344,9 +10683,6 @@ module LinearResponse
     !The global matrices SchmidtPertGF_Cre and SchmidtPertGF_Ann are filled, as well as the
     !new one-electron hamiltonians for the interacting problem: Emb_h0v_SE and FockSchmidt_SE
     subroutine FindNI_Charged(Omega,NI_LRMat_Cre,NI_LRMat_Ann)
-        use mat_tools, only: add_localpot_comp_inplace
-        use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
-        use sort_mod, only: Orthonorm_zgeev_vecs
         implicit none
         real(dp), intent(in) :: Omega
         complex(dp), intent(out) :: NI_LRMat_Cre(nImp,nImp),NI_LRMat_Ann(nImp,nImp)
@@ -10690,7 +11026,6 @@ module LinearResponse
     ! G_0^+
     ! This is ONLY done for the local greens functions at site 1
     subroutine FindSchmidtPert_Charged(Omega,NI_LRMat_Cre,NI_LRMat_Ann,tSwapSpins)
-        use mat_tools, only: add_localpot
         implicit none
         real(dp), intent(in) :: Omega
         complex(dp), intent(out) :: NI_LRMat_Cre(1,1),NI_LRMat_Ann(1,1)

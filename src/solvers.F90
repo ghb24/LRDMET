@@ -1854,9 +1854,11 @@ module solvers
         integer :: i,j
         real(dp) :: Elem
 
-        Nmax = nDet + 1 !For storage of diagonal elements
+!        Nmax = nDet + 1 !For storage of diagonal elements (now done after parallel reduction)
+        Nmax = 0
 
         if(present(BitDetList)) then
+!$OMP PARALLEL DO REDUCTION(+:Nmax) DEFAULT(SHARED) PRIVATE(Elem) SCHEDULE(DYNAMIC)
             do i = 1,nDet
                 do j = i+1,nDet
                     call GetHElement(DetList(:,i),DetList(:,j),Elec,Elem,ilutnI=BitDetList(i),ilutnJ=BitDetList(j))
@@ -1869,7 +1871,9 @@ module solvers
                     call flush(6)
                 endif
             enddo
+!$OMP END PARALLEL DO
         else
+!$OMP PARALLEL DO REDUCTION(+:Nmax) DEFAULT(SHARED) PRIVATE(Elem) SCHEDULE(DYNAMIC)
             do i = 1,nDet
                 do j = i+1,nDet
                     call GetHElement(DetList(:,i),DetList(:,j),Elec,Elem)
@@ -1882,7 +1886,10 @@ module solvers
                     call flush(6)
                 endif
             enddo
+!$OMP END PARALLEL DO
         endif
+            
+        Nmax = Nmax + nDet + 1  !For storage of diagonal elements
 
     end subroutine CountSizeCompMat
 
