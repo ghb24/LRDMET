@@ -2364,7 +2364,7 @@ module mat_tools
     !the SS_Period is the size of the supercell repeating unit (e.g. the coupling correlation potential)
     !This will be equivalent to the number of bands per kpoint
     !Ham returns the eigenvectors (in real space).
-    subroutine DiagOneEOp_r(Ham,Vals,SS_Period,nLat,tKSpace_Diag)
+    subroutine DiagOneEOp_r(Ham,Vals,SS_Period,nLat,tKSpace_Diag,tRealVectors)
         use sort_mod, only: sort_d_a_c
         implicit none
         integer, intent(in) :: nLat
@@ -2372,6 +2372,7 @@ module mat_tools
         integer, intent(in) :: SS_Period
         real(dp), intent(inout) :: Ham(nLat,nLat)
         real(dp), intent(out) :: Vals(nLat)
+        logical, intent(in), optional :: tRealVectors
         real(dp), allocatable :: Work(:),r_vecs_real(:,:)
         real(dp) :: PrimLattVec(LatticeDim),SiteVec(LatticeDim),Expo,DDOT,phase
         complex(dp), allocatable :: RotMat(:,:),temp(:,:),CompHam(:,:),RotHam(:,:),cWork(:)
@@ -2384,6 +2385,12 @@ module mat_tools
         character(len=*), parameter :: t_r='DiagOneEOp_r'
         
         write(6,*) "Entered DiagOneEOp_r..."
+
+        if(present(tRealVectors)) then
+            if(.not.tRealVectors) then
+                call stop_all(t_r,'Cannot have complex eigenvectors with real hamiltonian!')
+            endif
+        endif
 
         if(tKSpace_Diag) then
             if(LatticeDim.eq.2) then
@@ -2929,7 +2936,7 @@ module mat_tools
     !the SS_Period is the size of the supercell repeating unit (e.g. the coupling correlation potential)
     !This will be equivalent to the number of bands per kpoint
     !Ham returns the eigenvectors (in real space).
-    subroutine DiagOneEOp_z(Ham,Vals,SS_Period,nLat,tKSpace_Diag)
+    subroutine DiagOneEOp_z(Ham,Vals,SS_Period,nLat,tKSpace_Diag,tRealVectors)
         use sort_mod, only: sort_d_a_c
         implicit none
         integer, intent(in) :: nLat
@@ -2937,15 +2944,23 @@ module mat_tools
         integer, intent(in) :: SS_Period
         complex(dp), intent(inout) :: Ham(nLat,nLat)
         real(dp), intent(out) :: Vals(nLat)
+        logical, intent(in), optional :: tRealVectors
         real(dp), allocatable :: Work(:),r_vecs_real(:,:)
         real(dp) :: phase
         complex(dp), allocatable :: RotMat(:,:),CompHam(:,:),cWork(:),vec_temp(:)
         complex(dp), allocatable :: ztemp(:,:),k_Ham(:,:),k_vecs(:,:),vec_temp2(:)
         complex(dp), allocatable :: r_vecs(:,:)
         integer :: lWork,info,i,j,k,kSpace_ind,ind_1,ind_2
+        logical :: tRealVectors_
         character(len=*), parameter :: t_r='DiagOneEOp_z'
 
         write(6,*) "Entered DiagOneEOp_z..."
+
+        if(present(tRealVectors)) then
+            tRealVectors_ = tRealVectors
+        else
+            tRealVectors_ = .true. 
+        endif
 
         if(tKSpace_Diag) then
             if(LatticeDim.eq.2) then
@@ -3079,89 +3094,112 @@ module mat_tools
                 deallocate(cWork)
                 !write(6,*) "Eigensystem correctly computed and transformed to real space"
             endif
-            
-            !Degenerate sets?
-            !It is *impossible* to have non-complex k-pure eigenvectors in the presence of degeneracies.
-            !Within the degenerate set, we must rotate them together, losing the k-label. Boo.
-            !HACK!!
-            !Just rotate them together in equal quantities. We should only ever have mixtures of +-K, which should
-            !be taken as the positive and negative LC. e^ik.r = cos k.r + i sin k.r     We want these trig functions
-            allocate(Vec_temp(nLat))
-            allocate(Vec_temp2(nLat))
-            i = 1
-            do while(i.le.(nLat-1))
-                j = i + 1
-                do while(abs(Vals(i)-Vals(j)).lt.1.0e-8)
-                    j = j + 1
-                    if(j.gt.nLat) exit
-                enddo
-                if((j-i).gt.1) then
-                    !Degeneracy
-                    if((j-i).gt.2) then
-                        !More than two fold degenerate. How do we rotate these??
-                        call stop_all(t_r,'Cannot handle more than 2x degeneracy in the k-space hamiltonian')
-                    endif
-                    !Degeneracy is between i and i + 1 (or i and j - 1)
-                    if((i+1).ne.(j-1)) call stop_all(t_r,'Indexing error')
-                    !Rotate these vectors together in positive and negative linear combinations
-                    Vec_temp(:) = (r_vecs(:,i) + r_vecs(:,i+1)) / sqrt(2.0_dp)
-                    Vec_temp2(:) = (r_vecs(:,i) - r_vecs(:,i+1)) / sqrt(2.0_dp)
-                    r_vecs(:,i) = Vec_temp(:)
-                    r_vecs(:,i+1) = Vec_temp2(:)
-                endif
-                i = j 
-            enddo
-            deallocate(Vec_temp,Vec_temp2)
 
-            allocate(r_vecs_real(nLat,nLat))
-            r_vecs_real(:,:) = zero
-            !Now, find the appropriate phase, such that the rotation will make the r_vecs real.
-            !Apply the inverse of this rotation to the k_vecs, such that we end up with a complex set of
-            !k-vectors (ordered by k-point), and real set of r_vecs (Ordered by energy).
-            do i = 1,nLat   !Run through eigenvectors
-                phase = zero
-                if(tWriteOut) write(6,*) "Rotating eigenvector : ",i
-                do j = 1,nLat
-                    if((abs(aimag(r_vecs(j,i))).gt.1.0e-9_dp).and.(abs(r_vecs(j,i)).gt.1.0e-7_dp)) then
-                        !Find the phase factor for this eigenvector
-                        phase = atan(aimag(r_vecs(j,i))/real(r_vecs(j,i)))
-                        if(tWriteOut) write(6,*) "Eigenvector: ",i,j,phase,r_vecs(j,i) * exp(dcmplx(0.0_dp,-phase))
-                        exit
+            if(tRealVectors_) then
+                !Degenerate sets?
+                !It is *impossible* to have non-complex k-pure eigenvectors in the presence of degeneracies.
+                !Within the degenerate set, we must rotate them together, losing the k-label. Boo.
+                !HACK!!
+                !Just rotate them together in equal quantities. We should only ever have mixtures of +-K, which should
+                !be taken as the positive and negative LC. e^ik.r = cos k.r + i sin k.r     We want these trig functions
+                allocate(Vec_temp(nLat))
+                allocate(Vec_temp2(nLat))
+                i = 1
+                do while(i.le.(nLat-1))
+                    j = i + 1
+                    do while(abs(Vals(i)-Vals(j)).lt.1.0e-8)
+                        j = j + 1
+                        if(j.gt.nLat) exit
+                    enddo
+                    if((j-i).gt.1) then
+                        !Degeneracy
+                        if((j-i).gt.2) then
+                            !More than two fold degenerate. How do we rotate these??
+                            call stop_all(t_r,'Cannot handle more than 2x degeneracy in the k-space hamiltonian')
+                        endif
+                        !Degeneracy is between i and i + 1 (or i and j - 1)
+                        if((i+1).ne.(j-1)) call stop_all(t_r,'Indexing error')
+                        !Rotate these vectors together in positive and negative linear combinations
+                        Vec_temp(:) = (r_vecs(:,i) + r_vecs(:,i+1)) / sqrt(2.0_dp)
+                        Vec_temp2(:) = (r_vecs(:,i) - r_vecs(:,i+1)) / sqrt(2.0_dp)
+                        r_vecs(:,i) = Vec_temp(:)
+                        r_vecs(:,i+1) = Vec_temp2(:)
                     endif
+                    i = j 
                 enddo
-                !The phase should be the same for all components of the eigenvector
-                r_vecs(:,i) = r_vecs(:,i) * exp(dcmplx(zero,-phase))
-                do j = 1,nLat
-                    if(abs(aimag(r_vecs(j,i))).gt.1.0e-6) then
-                        write(6,*) "Error rotating component: ",j
-                        write(6,*) phase,r_vecs(j,i)
-                        call stop_all(t_r,'Eigenvectors not rotated correctly - degeneracies?')
-                    endif
-                    r_vecs_real(j,i) = real(r_vecs(j,i),dp)
-                enddo
-            enddo
+                deallocate(Vec_temp,Vec_temp2)
 
-            !Check again that these rotated r_vecs are correct eigenfunctions...
-!            if(tCheck) then
-!                !Do these satisfy the original eigenvalue problem?
-!                allocate(Work(nLat))
-!                do i = 1,nLat
-!                    call DGEMV('N',nLat,nLat,one,Ham,nLat,r_vecs_real(:,i),1,zero,Work,1)
-!                    do j = 1,nLat
-!                        if(abs(Work(j)-(Vals(i)*r_vecs_real(j,i))).gt.1.0e-8_dp) then
-!                            call stop_all(t_r,'Eigensystem not computed correctly in real real basis')
-!                        endif
+                allocate(r_vecs_real(nLat,nLat))
+                r_vecs_real(:,:) = zero
+                !Now, find the appropriate phase, such that the rotation will make the r_vecs real.
+                !Apply the inverse of this rotation to the k_vecs, such that we end up with a complex set of
+                !k-vectors (ordered by k-point), and real set of r_vecs (Ordered by energy).
+                do i = 1,nLat   !Run through eigenvectors
+                    phase = zero
+                    if(tWriteOut) write(6,*) "Rotating eigenvector : ",i
+                    do j = 1,nLat
+                        if((abs(aimag(r_vecs(j,i))).gt.1.0e-9_dp).and.(abs(r_vecs(j,i)).gt.1.0e-7_dp)) then
+                            !Find the phase factor for this eigenvector
+                            phase = atan(aimag(r_vecs(j,i))/real(r_vecs(j,i)))
+                            if(tWriteOut) write(6,*) "Eigenvector: ",i,j,phase,r_vecs(j,i) * exp(dcmplx(0.0_dp,-phase))
+                            exit
+                        endif
+                    enddo
+                    !The phase should be the same for all components of the eigenvector
+                    r_vecs(:,i) = r_vecs(:,i) * exp(dcmplx(zero,-phase))
+                    do j = 1,nLat
+                        if(abs(aimag(r_vecs(j,i))).gt.1.0e-6) then
+                            write(6,*) "Error rotating component: ",j
+                            write(6,*) phase,r_vecs(j,i)
+                            call stop_all(t_r,'Eigenvectors not rotated correctly - degeneracies?')
+                        endif
+                        r_vecs_real(j,i) = real(r_vecs(j,i),dp)
+                    enddo
+                enddo
+
+                !Check again that these rotated r_vecs are correct eigenfunctions...
+!                if(tCheck) then
+!                    !Do these satisfy the original eigenvalue problem?
+!                    allocate(Work(nLat))
+!                    do i = 1,nLat
+!                        call DGEMV('N',nLat,nLat,one,Ham,nLat,r_vecs_real(:,i),1,zero,Work,1)
+!                        do j = 1,nLat
+!                            if(abs(Work(j)-(Vals(i)*r_vecs_real(j,i))).gt.1.0e-8_dp) then
+!                                call stop_all(t_r,'Eigensystem not computed correctly in real real basis')
+!                            endif
+!                        enddo
 !                    enddo
-!                enddo
-!                deallocate(Work)
-!                !write(6,*) "Eigensystem correctly computed and transformed to real real space"
-!            endif
+!                    deallocate(Work)
+!                    !write(6,*) "Eigensystem correctly computed and transformed to real real space"
+!                endif
 
-            Ham(:,:) = cmplx(r_vecs_real(:,:),zero,dp)
-            deallocate(CompHam,r_vecs_real,r_vecs)
-            
-!            Ham(:,:) = r_vecs(:,:)
+                Ham(:,:) = cmplx(r_vecs_real(:,:),zero,dp)
+                deallocate(CompHam,r_vecs_real,r_vecs)
+            else
+                !No need to maintain real eigenvectors
+                
+                !Check that these r_vecs are correct eigenfunctions...
+                if(tCheck) then
+                    !Do these satisfy the original eigenvalue problem?
+                    allocate(vec_temp(nLat))
+                    do i = 1,nLat
+                        call ZGEMV('N',nLat,nLat,zone,Ham,nLat,r_vecs(:,i),1,zzero,vec_temp,1)
+                        do j = 1,nLat
+                            if(abs(vec_temp(j)-(Vals(i)*r_vecs(j,i))).gt.1.0e-8_dp) then
+                                call stop_all(t_r,'Eigensystem not computed correctly in real basis')
+                            endif
+                        enddo
+                    enddo
+                    deallocate(vec_temp)
+                    !write(6,*) "Eigensystem computed correctly"
+                endif
+
+                Ham(:,:) = r_vecs(:,:)
+            endif
         else
+            if(tRealVectors_) then
+                call stop_all(t_r,'Cannot provide complex wavefunction without kpoint symmetry and hope for real vectors!')
+            endif
             !Normal real space diagonalization
             Vals(:) = 0.0_dp
             allocate(cWork(1))

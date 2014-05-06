@@ -296,18 +296,20 @@ module SchmidtDecomp
         call ZGEMM('C','N',nSites,nSites,nSites,zone,Orbs,nSites,FullSchmidtBasis_c,nSites,zzero,HFtoSchmidtTransform_c,nSites)
 
         allocate(temp(nSites,nSites))
-        !Check that this operator is unitary
-        !call DGEMM('N','T',nSites,nSites,nSites,1.0_dp,HFtoSchmidtTransform,nSites,HFtoSchmidtTransform,nSites,0.0_dp,temp,nSites)
-        !call writematrix(temp,'Test of unitarity of HF to Schmidt Transform',.true.)
-        !do i=1,nSites
-        !    do j=1,nSites
-        !        if((i.ne.j).and.(abs(temp(i,j)).gt.1.0e-7_dp)) then
-        !            call stop_all(t_r,'Transformation matrix not unitary')
-        !        elseif((i.eq.j).and.(abs(temp(i,j)-1.0_dp).gt.1.0e-7)) then
-        !            call stop_all(t_r,'Transformation matrix not unitary')
-        !        endif
-        !    enddo
-        !enddo
+        if(tCheck) then
+            !Check that this operator is unitary
+            call ZGEMM('N','C',nSites,nSites,nSites,zone,HFtoSchmidtTransform_c,nSites,HFtoSchmidtTransform_c,nSites,zzero,temp,nSites)
+!            call writematrix(temp,'Test of unitarity of HF to Schmidt Transform',.true.)
+            do i=1,nSites
+                do j=1,nSites
+                    if((i.ne.j).and.(abs(temp(i,j)).gt.1.0e-7_dp)) then
+                        call stop_all(t_r,'Transformation matrix not unitary')
+                    elseif((i.eq.j).and.(abs(temp(i,j)-zone).gt.1.0e-7)) then
+                        call stop_all(t_r,'Transformation matrix not unitary')
+                    endif
+                enddo
+            enddo
+        endif
 
         !Use this to rotate the fock operator into this new basis
         if(allocated(FockSchmidt_c)) deallocate(FockSchmidt_c)

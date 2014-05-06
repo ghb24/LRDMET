@@ -136,7 +136,7 @@ module LinearResponse
         allocate(LatVecs(nSites,nSites))
         LatVecs(:,:) = cham(:,:)
         LatVals(:) = zero
-        call DiagOneEOp(LatVecs,LatVals,nImp,nSites,tDiag_kspace)
+        call DiagOneEOp(LatVecs,LatVals,nImp,nSites,tDiag_kspace,.false.)
         mem = mem + nSites**2 + nSites/2
 
         allocate(ctemp(nSites,nSites))
@@ -9686,7 +9686,7 @@ module LinearResponse
 
         !temp is now the (nSites,nImp) rotated HFPertBasis_Ann into the AO basis
         !Now rotate this into the occupied schmidt basis
-        call ZGEMM('C','N',nCore,nImp,nSites,zone,Core_SchmidtB,nSites,temp,nSites,zzero,   &
+        call ZGEMM('T','N',nCore,nImp,nSites,zone,Core_SchmidtB,nSites,temp,nSites,zzero,   &
             SPGF_Ann_Ket,nCore)
 
         !Now do the same for the bra contraction coefficients, which are expressed as Bras
@@ -9706,7 +9706,7 @@ module LinearResponse
         call ZGEMM('N','N',nSites,nImp,nSites-nOcc,zone,Virt_latvecs,nSites,  &
             HFPertBasis_Cre_Ket,nSites-nOcc,zzero,temp,nSites)
         !Now rotate into schmidt basis
-        call ZGEMM('C','N',nVirt,nImp,nSites,zone,Virt_SchmidtB,nSites,temp,nSites,zzero,    &
+        call ZGEMM('T','N',nVirt,nImp,nSites,zone,Virt_SchmidtB,nSites,temp,nSites,zzero,    &
             SPGF_Cre_Ket,nVirt)
         !Now for the Bra version of the particle NI GF
 !        allocate(temp2(nSites,nOcc+1:nSites))
@@ -9729,7 +9729,7 @@ module LinearResponse
                     write(6,*) "i: ",i,VirtStart,nSites,j
                     write(6,*) "Cre Bra: ",SPGF_Cre_Bra(i,j)
                     write(6,*) "Cre Ket: ",SPGF_Cre_Ket(i,j)
-                    call stop_all(t_r,'Bra and Ket are not cc')
+                    call stop_all(t_r,'Cre Bra and Ket are not cc')
                 endif
             enddo
             do i = 1,CoreEnd
@@ -9737,7 +9737,7 @@ module LinearResponse
                     write(6,*) "i: ",i,1,CoreEnd,j
                     write(6,*) "Ann Bra: ",SPGF_Ann_Bra(i,j)
                     write(6,*) "Ann Ket: ",SPGF_Ann_Ket(i,j)
-                    call stop_all(t_r,'Bra and Ket are not cc')
+                    call stop_all(t_r,'Ann Bra and Ket are not cc')
                 endif
             enddo
         enddo
