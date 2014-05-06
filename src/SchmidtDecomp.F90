@@ -298,7 +298,8 @@ module SchmidtDecomp
         allocate(temp(nSites,nSites))
         if(tCheck) then
             !Check that this operator is unitary
-            call ZGEMM('N','C',nSites,nSites,nSites,zone,HFtoSchmidtTransform_c,nSites,HFtoSchmidtTransform_c,nSites,zzero,temp,nSites)
+            call ZGEMM('N','C',nSites,nSites,nSites,zone,HFtoSchmidtTransform_c,nSites,HFtoSchmidtTransform_c,  &
+                nSites,zzero,temp,nSites)
 !            call writematrix(temp,'Test of unitarity of HF to Schmidt Transform',.true.)
             do i=1,nSites
                 do j=1,nSites

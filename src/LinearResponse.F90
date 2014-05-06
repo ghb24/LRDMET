@@ -148,7 +148,8 @@ module LinearResponse
         if(tCompressedMats) then
             if(tBetaExcit) call stop_all(t_r,'Is UHF really working for this?')
             if(tUHF) call stop_all(t_r,'Is UHF really working for this?')
-            if(tFullReoptGS) call stop_all(t_r,'Cannot fully reoptimize the ground state in the full space if using compressed matrices currently')
+            if(tFullReoptGS) call stop_all(t_r, &
+                'Cannot fully reoptimize the ground state in the full space if using compressed matrices currently')
         endif
 
         !Lets diagonalize the lattice hamiltonian. It is frequency independent, and complex hermitian
