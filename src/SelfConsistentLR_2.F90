@@ -22,7 +22,7 @@ module SelfConsistentLR2
         real(dp), allocatable :: LatParams(:)
         complex(dp), allocatable :: CorrFn_Fit(:,:,:),CorrFn_HL(:,:,:),CorrFn_HL_Old(:,:,:)
         complex(dp), allocatable :: CorrFn_Fit_Old(:,:,:),DiffImpCorrFn(:,:,:)
-        complex(dp), allocatable :: CorrFn_HL_Re(:,:,:),CorrFn_Re(:,:,:)
+        complex(dp), allocatable :: CorrFn_HL_Re(:,:,:),CorrFn_Re(:,:,:),h0c(:,:)
         complex(dp), allocatable :: Debug_Lat_CorrFn_Re(:,:,:),Debug_Lat_CorrFn_Fit(:,:,:)
         complex(dp), allocatable :: SelfEnergy(:,:,:),InvGMat(:,:,:),InvG0Mat(:,:,:)
         real(dp), allocatable :: AllDiffs(:,:)
@@ -238,8 +238,20 @@ module SelfConsistentLR2
         call writedynamicfunction(nFreq_Re,SelfEnergy,'SelfEnergy_Re_Final',tCheckCausal=.true.,   &
             tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
 
-        !TODO: Write out greens function of h + SelfEnergy
-
+        !TODO: Write out greens function of uncorrelated h + SelfEnergy. At the moment, this is buggy.
+        allocate(h0c(nSites,nSites))
+        do i = 1,nSites
+            do j = 1,nSites
+                h0c(j,i) = cmplx(h0(j,i),zero,dp)
+            enddo
+            h0c(i,i) = h0c(i,i) + cmplx(GFChemPot,zero,dp)
+        enddo
+        allocate(CorrFn_HL_Re(nImp,nImp,nFreq_Re))
+        call CalcLatticeSpectrum(1,nFreq_Re,CorrFn_HL_Re,GFChemPot,tMatbrAxis=.false.,ham=h0c,SE=SelfEnergy)
+        deallocate(h0c)
+        call writedynamicfunction(nFreq_Re,CorrFn_HL_Re,'G0wSE_Final',     &
+            tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
+        deallocate(CorrFn_HL_Re)
         
         !Calculate and write out two bandstructures.
         !Firstly, simply the bandstructure from the fit hamiltonian...
@@ -253,6 +265,7 @@ module SelfConsistentLR2
         deallocate(h_lat_fit)
         deallocate(FreqPoints,Weights)
         deallocate(CorrFn_HL)
+        deallocate(LatParams)
         
         call halt_timer(SelfCon_LR)
 
