@@ -433,8 +433,8 @@ module LinearResponse
                 Coup_Ann_inds_T,Coup_Create_cum_T,Coup_Ann_cum_T,tSwapSpins=tBetaExcit)
             mem = mem + 6*Nmax_Coup_Create + 6*Nmax_Coup_Ann + 2*(nFCIDet+1) + nNm1bFCIDet + nNp1FCIDet + 2
 
-            Nmax_Lin_p = Nmax_Np1 + Nmax_N + 2*Nmax_Coup_Ann
-            Nmax_Lin_h = Nmax_Nm1 + Nmax_N + 2*Nmax_Coup_Create
+            Nmax_Lin_p = Nmax_Np1 + Nmax_N + 2*Nmax_Coup_Create + 3
+            Nmax_Lin_h = Nmax_Nm1 + Nmax_N + 2*Nmax_Coup_Ann + 3
             write(6,"(A,F14.6,A)") "Memory required for compressed LR systems: ",   &
                 (3*(real(Nmax_Lin_p,dp)*8)+3*(real(Nmax_Lin_h,dp)*8))/1048576.0_dp," Mb/thread"
             write(6,"(A,F14.6,A)") "Compare to memory required for the uncompressed system: ",  &

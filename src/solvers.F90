@@ -1272,6 +1272,7 @@ module solvers
             if(allocated(tmat_comp)) deallocate(tmat_comp)
             allocate(tmat_comp(EmbSizeSpin,EmbSizeSpin))
             tmat_comp(:,:) = zzero
+            if(allocated(tmat)) deallocate(tmat)
         else
             if(allocated(tmat)) deallocate(tmat)
             allocate(tmat(EmbSizeSpin,EmbSizeSpin))
@@ -1846,7 +1847,7 @@ module solvers
     !Find logical size of desired compressed hamiltonian
     subroutine CountSizeCompMat(DetList,Elec,nDet,Nmax,BitDetList)
         use DetTools, only: GetHElement,GetHElement_comp
-        use DetToolsData, only: TMat_Comp
+        use DetToolsData, only: TMat_Comp,TMat
         implicit none
         integer, intent(in) :: Elec,nDet
         integer, intent(out) :: Nmax
@@ -1856,9 +1857,11 @@ module solvers
         real(dp) :: Elem
         complex(dp) :: Elem_comp
         logical :: tUseCompInts
+        character(len=*), parameter :: t_r='CountSizeCompMat'
 
         if(allocated(TMat_Comp)) then
             tUseCompInts = .true.
+            if(allocated(TMat)) call stop_all(t_r,'Both TMAT and TMAT_Comp allocated')
         else
             tUseCompInts = .false.
         endif
@@ -2019,7 +2022,11 @@ module solvers
                     call GetHElement_comp(DetList(:,i),DetList(:,j),Elec,Elem,ilutnI=BitDetList(i),ilutnJ=BitDetList(j))
                     if(abs(Elem).ge.CompressThresh) then
                         k = k + 1
-                        if(k.gt.Nmax) call stop_all(t_r,'Compressed array sizes too small')
+                        if(k.gt.Nmax) then
+                            write(6,*) "k, Nmax: ",k,Nmax
+                            write(6,*) "Number of electrons: ", Elec
+                            call stop_all(t_r,'Compressed array sizes too small')
+                        endif
                         sa(k) = Elem
                         ija(k) = j
                     endif
