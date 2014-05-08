@@ -446,7 +446,6 @@ module LinearResponse
 
             call SetupNumberCouplingOps(Coup_Create_alpha,Coup_Ann_alpha)
             write(6,"(A,F14.6,A)") "Memory required for the LR system: ",2*(real(nLinearSystem,dp)**2)*16/1048576.0_dp," Mb"
-
         endif
 
         !Array slices for the schmidt decomposition routine
@@ -9979,10 +9978,6 @@ module LinearResponse
 
         !Memory to temperarily store the first order wavefunctions of each impurity site, in the right MO basis (For the Kets)
         !and the left MO space (for the Bras)
-!        allocate(HFPertBasis_Ann_Bra(1:nOcc,nImp))
-!        allocate(HFPertBasis_Cre_Bra(nOcc+1:nSites,nImp))
-!        allocate(HFPertBasis_Ann_Ket(1:nOcc,nImp))
-!        allocate(HFPertBasis_Cre_Ket(nOcc+1:nSites,nImp))
         HFPertBasis_Ann_Bra(:,:) = zzero
         HFPertBasis_Cre_Bra(:,:) = zzero
         HFPertBasis_Ann_Ket(:,:) = zzero
@@ -10064,7 +10059,7 @@ module LinearResponse
         call ZGEMM('N','N',nSites,nImp,nSites-nOcc,zone,Virt_latvecs,nSites,  &
             HFPertBasis_Cre_Ket,nSites-nOcc,zzero,temp,nSites)
         !Now rotate into schmidt basis
-        call ZGEMM('T','N',nVirt,nImp,nSites,zone,Virt_SchmidtB,nSites,temp,nSites,zzero,    &
+        call ZGEMM('C','N',nVirt,nImp,nSites,zone,Virt_SchmidtB,nSites,temp,nSites,zzero,    &
             SPGF_Cre_Ket,nVirt)
         !Now for the Bra version of the particle NI GF
 !        allocate(temp2(nSites,nOcc+1:nSites))
@@ -10076,7 +10071,7 @@ module LinearResponse
         call ZGEMM('N','N',nSites,nImp,nSites-nOcc,zone,temp3,nSites,  &
             HFPertBasis_Cre_Bra,nSites-nOcc,zzero,temp,nSites)
         !Now rotate into schmidt basis
-        call ZGEMM('C','N',nVirt,nImp,nSites,zone,Virt_SchmidtB,nSites,temp,nSites,zzero,    &
+        call ZGEMM('T','N',nVirt,nImp,nSites,zone,Virt_SchmidtB,nSites,temp,nSites,zzero,    &
             SPGF_Cre_Bra,nVirt)
 !        deallocate(temp,temp2)
         

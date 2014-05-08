@@ -315,19 +315,24 @@ module SchmidtDecomp
         !Use this to rotate the fock operator into this new basis
         if(allocated(FockSchmidt_c)) deallocate(FockSchmidt_c)
         allocate(FockSchmidt_c(nSites,nSites))
-        !Set up FockSchmidt to temporarily to be the HF basis fock operator (i.e. diagonal)
-        FockSchmidt_c(:,:) = zero
-        do i=1,nSites
-            FockSchmidt_c(i,i) = cmplx(Energies(i),zero,dp)
-        enddo
-        call ZGEMM('C','N',nSites,nSites,nSites,zone,HFtoSchmidtTransform_c,nSites,FockSchmidt_c,nSites,zzero,temp,nSites)
-        call ZGEMM('N','N',nSites,nSites,nSites,zone,temp,nSites,HFtoSchmidtTransform_c,nSites,zzero,FockSchmidt_c,nSites)
+        if(.true.) then
+            !Set up FockSchmidt to temporarily to be the HF basis fock operator (i.e. diagonal)
+            FockSchmidt_c(:,:) = zero
+            do i=1,nSites
+                FockSchmidt_c(i,i) = cmplx(Energies(i),zero,dp)
+            enddo
+            call ZGEMM('C','N',nSites,nSites,nSites,zone,HFtoSchmidtTransform_c,nSites,FockSchmidt_c,nSites,zzero,temp,nSites)
+            call ZGEMM('N','N',nSites,nSites,nSites,zone,temp,nSites,HFtoSchmidtTransform_c,nSites,zzero,FockSchmidt_c,nSites)
+        else
+            !construct it from the AO basis and rotate into schmidt from there.
+            !These two blocks are entirely equivalent
+            FockSchmidt_c(:,:) = matc(:,:)
+            call ZGEMM('C','N',nSites,nSites,nSites,zone,FullSchmidtBasis_c,nSites,FockSchmidt_c,nSites,zzero,temp,nSites)
+            call ZGEMM('N','N',nSites,nSites,nSites,zone,temp,nSites,FullSchmidtBasis_c,nSites,zzero,FockSchmidt_c,nSites)
+        endif
             
         deallocate(temp)
 
-        !do i=1,nSites
-        !    write(6,*) "FOCKSCHMIDT: ",i,FockSchmidt(i,i)
-        !enddo
         !FockSchmidt has been overwritten with the fock matrix in the schmidt basis
 !        call writematrix(FockSchmidt,'Fock in schmidt basis',.true.)
 
