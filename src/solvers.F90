@@ -1870,13 +1870,14 @@ module solvers
         Nmax = 0
 
         if(present(BitDetList)) then
-!$OMP PARALLEL DO REDUCTION(+:Nmax) DEFAULT(SHARED) PRIVATE(Elem) SCHEDULE(DYNAMIC)
+!$OMP PARALLEL DO REDUCTION(+:Nmax) DEFAULT(SHARED) PRIVATE(Elem,Elem_comp) SCHEDULE(STATIC,4)
             do i = 1,nDet
                 do j = i+1,nDet
                     if(tUseCompInts) then
                         call GetHElement_comp(DetList(:,i),DetList(:,j),Elec,Elem_comp,ilutnI=BitDetList(i),ilutnJ=BitDetList(j))
                         if(abs(Elem_comp).ge.CompressThresh) then
                             Nmax = Nmax + 2     !Due to both sides of matrix
+!                            write(6,*) i,j,Elem_comp,Nmax
                         endif
                     else
                         call GetHElement(DetList(:,i),DetList(:,j),Elec,Elem,ilutnI=BitDetList(i),ilutnJ=BitDetList(j))
@@ -1892,7 +1893,7 @@ module solvers
             enddo
 !$OMP END PARALLEL DO
         else
-!$OMP PARALLEL DO REDUCTION(+:Nmax) DEFAULT(SHARED) PRIVATE(Elem) SCHEDULE(DYNAMIC)
+!$OMP PARALLEL DO REDUCTION(+:Nmax) DEFAULT(SHARED) PRIVATE(Elem,Elem_comp) SCHEDULE(STATIC,4)
             do i = 1,nDet
                 do j = i+1,nDet
                     if(tUseCompInts) then
@@ -2022,6 +2023,7 @@ module solvers
                     call GetHElement_comp(DetList(:,i),DetList(:,j),Elec,Elem,ilutnI=BitDetList(i),ilutnJ=BitDetList(j))
                     if(abs(Elem).ge.CompressThresh) then
                         k = k + 1
+!                        write(6,*) i,j,Elem,Nmax
                         if(k.gt.Nmax) then
                             write(6,*) "k, Nmax: ",k,Nmax
                             write(6,*) "Number of electrons: ", Elec

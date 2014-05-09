@@ -359,7 +359,7 @@ module LinearResponse
             !Since the hamiltonian does not depend at all on the dynamic basis, the RHS of the equations can be precomputed
             !Now, calculate the perturbed ground states
             do i = 1,nImp
-                call ApplySP_PertGS_EC(Psi_0,nFCIDet,Cre_0(:,i),Ann_0(:,i),nLinearSystem,i)
+                call ApplySP_PertGS_EC(Psi_0(1:nFCIDet),nFCIDet,Cre_0(:,i),Ann_0(:,i),nLinearSystem,i,tFullReoptGS)
             enddo
         endif
 
@@ -921,7 +921,7 @@ module LinearResponse
 
                     !Calculate the perturbed ground state
                     do i = 1,nImp
-                        call ApplySP_PertGS_EC(Psi_0,nGSSpace,Cre_0(:,i),Ann_0(:,i),nLinearSystem,i)
+                        call ApplySP_PertGS_EC(Psi_0,nGSSpace,Cre_0(:,i),Ann_0(:,i),nLinearSystem,i,tFullReoptGS)
                     enddo
                 endif
 
@@ -1829,7 +1829,7 @@ module LinearResponse
             call flush(6)
         endif
         do i = 1,nImp
-            call ApplySP_PertGS_EC(Psi_0,nFCIDet,Cre_0(:,i),Ann_0(:,i),nLinearSystem,i)
+            call ApplySP_PertGS_EC(Psi_0(1:nFCIDet),nFCIDet,Cre_0(:,i),Ann_0(:,i),nLinearSystem,i,tLR_ReoptGS)
         enddo
         
         !Store the fock matrix in complex form, so that we can ZGEMM easily
@@ -4186,7 +4186,7 @@ module LinearResponse
 !            call writevector(HL_Vec,'GS Vec')
             GFChemPot = HL_Energy
             do i = 1,nImp_GF
-                call ApplySP_PertGS_EC(Psi_0,nGSSpace,Cre_0(:,i),Ann_0(:,i),nLinearSystem,i,tSwapExcits=tBetaExcit)
+                call ApplySP_PertGS_EC(Psi_0(1:nFCIDet),nFCIDet,Cre_0(:,i),Ann_0(:,i),nLinearSystem,i,tLR_ReoptGS,tSwapExcits=tBetaExcit)
             enddo
 !            call writevectorcomp(Ann_0(:,1),'Ann Vec')
         endif
@@ -4903,7 +4903,7 @@ module LinearResponse
             GFChemPot = HL_Energy
 !            call writevector(HL_Vec(:),'Psi_0')
             do i = 1,nImp_GF
-                call ApplySP_PertGS_EC(Psi_0,nGSSpace,Cre_0(:,i),Ann_0(:,i),nLinearSystem,i)
+                call ApplySP_PertGS_EC(Psi_0(1:nFCIDet),nFCIDet,Cre_0(:,i),Ann_0(:,i),nLinearSystem,i,tLR_ReoptGS)
 !                call writevectorcomp(Ann_0(:,1),'Ann_0')
             enddo
         endif
@@ -5311,7 +5311,7 @@ module LinearResponse
                     !call writevectorcomp(Psi_0,'Psi_0')
                     if(tLR_ReoptGS) then
                         !Since we are only keeping these one at a time, we don't actually need to store all pertsite vectors
-                        call ApplySP_PertGS_EC(Psi_0,nGSSpace,Cre_0(:,pertsite),Ann_0(:,pertsite),nLinearSystem,pertsite)
+                        call ApplySP_PertGS_EC(Psi_0,nGSSpace,Cre_0(:,pertsite),Ann_0(:,pertsite),nLinearSystem,pertsite,tLR_ReoptGS)
                     endif
                     !call writevectorcomp(Psi_0,'Psi_0')
                     !call writevectorcomp(Cre_0(:,1),'Ann_0')
@@ -7128,11 +7128,12 @@ module LinearResponse
             
     !It is only trying to create/destroy the alpha orbital applied to the ground state wavefunction
     !Will return the ground state, with a particle created or destroyed in pertsite
-    subroutine ApplySP_PertGS_EC(Psi_0,SizeGS,V0_Cre,V0_Ann,nSizeLR,pertsite,tSwapExcits)
+    subroutine ApplySP_PertGS_EC(Psi_0,SizeGS,V0_Cre,V0_Ann,nSizeLR,pertsite,tFullSpace,tSwapExcits)
         implicit none
         integer, intent(in) :: SizeGS,nSizeLR,pertsite
         complex(dp), intent(in) :: Psi_0(SizeGS)
         complex(dp), intent(out) :: V0_Cre(nSizeLR),V0_Ann(nSizeLR)
+        logical, intent(in) :: tFullSpace 
         logical, intent(in), optional :: tSwapExcits
         integer :: ilut,pertsitespin,i,j,GSInd
         logical :: tParity,tSwapExcits_
@@ -7149,10 +7150,10 @@ module LinearResponse
         V0_Ann(:) = zzero
         V0_Cre(:) = zzero 
 
-        if(tFullReoptGS.and.(SizeGS.ne.(nFCIDet+nNp1FCIDet+nNm1bFCIDet))) then
+        if(tFullSpace.and.(SizeGS.ne.(nFCIDet+nNp1FCIDet+nNm1bFCIDet))) then
             call stop_all(t_r,'Zeroth order wavefunction not expected size')
         endif
-        if(.not.tFullReoptGS.and.(SizeGS.ne.nFCIDet)) then
+        if(.not.tFullSpace.and.(SizeGS.ne.nFCIDet)) then
             call stop_all(t_r,'Zeroth order wavefunction not expected size')
         endif
         if(nSizeLR.ne.(nFCIDet+nNp1FCIDet)) then
@@ -7248,7 +7249,7 @@ module LinearResponse
         enddo
 !$OMP END PARALLEL DO
 
-        if(.not.tFullReoptGS) then
+        if(.not.tFullSpace) then
             !We do not have GS in other parts of the space
             return
         endif
