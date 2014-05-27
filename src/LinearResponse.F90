@@ -4186,7 +4186,8 @@ module LinearResponse
 !            call writevector(HL_Vec,'GS Vec')
             GFChemPot = HL_Energy
             do i = 1,nImp_GF
-                call ApplySP_PertGS_EC(Psi_0(1:nFCIDet),nFCIDet,Cre_0(:,i),Ann_0(:,i),nLinearSystem,i,tLR_ReoptGS,tSwapExcits=tBetaExcit)
+                call ApplySP_PertGS_EC(Psi_0(1:nFCIDet),nFCIDet,Cre_0(:,i),Ann_0(:,i),  &
+                    nLinearSystem,i,tLR_ReoptGS,tSwapExcits=tBetaExcit)
             enddo
 !            call writevectorcomp(Ann_0(:,1),'Ann Vec')
         endif
@@ -5311,7 +5312,8 @@ module LinearResponse
                     !call writevectorcomp(Psi_0,'Psi_0')
                     if(tLR_ReoptGS) then
                         !Since we are only keeping these one at a time, we don't actually need to store all pertsite vectors
-                        call ApplySP_PertGS_EC(Psi_0,nGSSpace,Cre_0(:,pertsite),Ann_0(:,pertsite),nLinearSystem,pertsite,tLR_ReoptGS)
+                        call ApplySP_PertGS_EC(Psi_0,nGSSpace,Cre_0(:,pertsite),Ann_0(:,pertsite),  &
+                            nLinearSystem,pertsite,tLR_ReoptGS)
                     endif
                     !call writevectorcomp(Psi_0,'Psi_0')
                     !call writevectorcomp(Cre_0(:,1),'Ann_0')
