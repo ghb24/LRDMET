@@ -722,7 +722,7 @@ module LRSolvers
         complex(dp), intent(in) :: x(n)
         complex(dp), intent(out) :: y(n)
         integer :: i,k,j,n_half,ierr
-        complex(dp), allocatable :: temp(:)
+        complex(dp) :: temp(n)
         character(len=*), parameter :: t_r='zDirMV'
 
         if(tCompressedMats.and.(.not.associated(zDirMV_Mat_cmprs))) then
@@ -784,9 +784,6 @@ module LRSolvers
 
         else
 
-            allocate(temp(n),stat=ierr)
-            if(ierr.ne.0) call stop_all(t_r,'Error allocating')
-
             if(tCompressedMats) then
                 !Sparse matrix multiply
                 if(zDirMV_Mat_cmprs_inds(1).ne.(n+2)) then
@@ -815,7 +812,6 @@ module LRSolvers
                 call ZGEMV('N',n,n,zone,zDirMV_Mat,n,x,1,zzero,temp,1)
                 call ZGEMV('C',n,n,zone,zDirMV_Mat,n,temp,1,zzero,y,1)
             endif
-            deallocate(temp)
 
         endif
 
@@ -827,4 +823,76 @@ module LRSolvers
 !!        y(:) = y(:) - y(:)*dconjg(zShift)
 
     end subroutine zDirMV
+
+    !Calculate the final error in the evaluation of |Ax-b|
+    subroutine CalcError(n,x,b,Error)
+        integer, intent(in) :: n
+        complex(dp), intent(in) :: x(n),b(n)
+        real, intent(out) :: Error
+
+        integer :: i
+        complex(dp) :: ErrVec(n)
+
+        call zDirMV_True(n,x,ErrVec)
+        ErrVec(:) = ErrVec(:) - b(:)
+
+        Error = zero
+        do i = 1,n
+            Error = Error + real(ErrVec(i)*dconjg(ErrVec(i)),dp)
+        enddo
+        Error = sqrt(Error)
+
+    end subroutine CalcError
+    
+    !A true multiplication of a vector by the true matrix
+    subroutine zDirMV_True(n,x,y)
+        use const
+        integer(ip), intent(in) :: n
+        complex(dp), intent(in) :: x(n)
+        complex(dp), intent(out) :: y(n)
+        integer :: i,k,j
+        character(len=*), parameter :: t_r='zDirMV_True'
+
+        if(tCompressedMats.and.(.not.associated(zDirMV_Mat_cmprs))) then
+            if(.not.(tOpenMP.and.(max_omp_threads.gt.1))) then
+                !See below
+                call stop_all(t_r,'Compressed matrix not associated')
+            endif
+        endif
+        if((.not.tCompressedMats).and.(.not.associated(zDirMV_Mat))) then
+            if(.not.(tOpenMP.and.(max_omp_threads.gt.1))) then
+                !There is a *horrible* ifort compiler bug when using threadprivate
+                !pointers. The associate option only seems to check thread 0. We
+                !will just have to hope and pray that the matrix is associated in
+                !this instance.
+!$               write(6,*) "OMP Thread: ",OMP_get_thread_num()
+                call stop_all(t_r,'Matrix not associated!')
+            endif
+        endif
+
+        if(tCompressedMats) then
+            !Sparse matrix multiply
+            if(zDirMV_Mat_cmprs_inds(1).ne.(n+2)) then
+                write(6,*) "zDirMV_Mat_cmprs_inds(1): ",zDirMV_Mat_cmprs_inds(1)
+                write(6,*) "n+2: ",n+2
+                call stop_all(t_r,'Mismatched vector and matrix')
+            endif
+            do i = 1,n
+                y(i) = zDirMV_Mat_cmprs(i)*x(i)
+                do k = zDirMV_Mat_cmprs_inds(i),zDirMV_Mat_cmprs_inds(i+1)-1
+                    y(i) = y(i) + zDirMV_Mat_cmprs(k)*x(zDirMV_Mat_cmprs_inds(k))
+                enddo
+            enddo
+        else
+            call ZGEMV('N',n,n,zone,zDirMV_Mat,n,x,1,zzero,y,1)
+        endif
+
+!        temp(:) = x(:)
+!        call ZGEMV('N',n,n,zone,zDirMV_Mat,n,x,1,-zShift,temp,1)
+!!        temp(:) = temp(:) - temp(:)*zShift
+!        y(:) = temp(:)
+!        call ZGEMV('C',n,n,zone,zDirMV_Mat,n,temp,1,-dconjg(zShift),y,1)
+!!        y(:) = y(:) - y(:)*dconjg(zShift)
+
+    end subroutine zDirMV_True
 end module LRSolvers

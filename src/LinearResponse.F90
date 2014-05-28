@@ -76,7 +76,7 @@ module LinearResponse
         integer :: pertsite,OmegaVal,nGSSpace,mem,mem2,Nmax_Lin_p,Nmax_Lin_h
         integer :: minres_unit,Nmax_N,Nmax_Nm1,Nmax_Np1,Nmax_Coup_Create,Nmax_Coup_Ann
         real(dp) :: Omega,mu,SpectralWeight,Prev_Spec,Error_GF
-        real(dp) :: GSEnergy
+        real(dp) :: GSEnergy,MinResErr
         complex(dp) :: ResponseFn,tempel,ni_lr,matel
         complex(dp) :: zdotc,VNorm,CNorm,SelfE(nImp,nImp)
         logical :: tParity,tFirst,tCompLatHam
@@ -502,15 +502,13 @@ module LinearResponse
 
         !TODO: Sort out intermediates assuming hermitian contraction coefficients to halve storage
 
-!        OmegaVal = 0
-!        do while(.true.)
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(Omega,VNorm,tempel,CNorm,info,ierr,NILRMat_Cre,NILRMat_Ann),                &
 !$OMP&  PRIVATE(SPGF_Cre_Bra,SPGF_Cre_Ket,SPGF_Ann_Bra,SPGF_Ann_Ket,Gc_a_F_ax_Bra),    &
 !$OMP&  PRIVATE(Gc_a_F_ax_Ket,Gc_b_F_ab,Ga_i_F_xi_Bra,Ga_i_F_xi_Ket,Ga_i_F_ij),  &
 !$OMP&  PRIVATE(Psi1_p,Psi1_h,ResponseFn_p,ResponseFn_h,HFRes_Ann_Ket,HFRes_Cre_Ket,HFRes_Ann_Bra),            &
 !$OMP&  PRIVATE(HFRes_Cre_Bra,temp,temp2,temp3,RHS,LinearSystem_p,LinearSystem_h,j,matel,AugRHS),  &
 !$OMP&  PRIVATE(LinearSystemc_p,LinearSystemc_h,LinearSystem_p_inds,LinearSystem_h_inds,ind_h,ind_p),   &
-!$OMP&  PRIVATE(AugPsi1) SCHEDULE(DYNAMIC)
+!$OMP&  PRIVATE(AugPsi1,MinResErr) SCHEDULE(DYNAMIC)
         do OmegaVal = 1,nESteps
             if(present(FreqPoints)) then
                 call GetOmega(Omega,OmegaVal,tMatbrAxis,FreqPoints=FreqPoints)
@@ -991,6 +989,11 @@ module LinearResponse
                             call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=RHS,nout=minres_unit,x=Psi1_p, &
                                 itnlim=iMinRes_MaxIter,istop=info,rtol=rtol_LR,itn=iters_p(OmegaVal),startguess=tReuse_LS)
                         endif
+                        if(.false.) then
+                            !Calc Ax - b (the true A)
+                            call CalcError(nLinearSystem,Psi1_p,Cre_0(:,pertsite),MinResErr)
+                            write(6,"(A,F15.5,I9,G25.10)") "Iterations for particle: ",Omega,iters_p(OmegaVal),MinResErr
+                        endif
                     endif
                     if(tCompressedMats) then
                         zDirMV_Mat_cmprs => null()
@@ -1067,6 +1070,11 @@ module LinearResponse
                         else
                             call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=RHS,nout=minres_unit,x=Psi1_h, &
                                 itnlim=iMinRes_MaxIter,istop=info,rtol=rtol_LR,itn=iters_h(OmegaVal),startguess=tReuse_LS)
+                        endif
+                        if(.false.) then
+                            !Calc Ax - b (the true A)
+                            call CalcError(nLinearSystem,Psi1_h,Ann_0(:,pertsite),MinResErr)
+                            write(6,"(A,F15.5,I9,G25.10)") "Iterations for hole: ",Omega,iters_h(OmegaVal),MinResErr
                         endif
                     endif
                     if(tCompressedMats) then
