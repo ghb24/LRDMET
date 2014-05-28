@@ -646,6 +646,10 @@ module LRSolvers
             endif
         endif
 
+        if(tAugMinRes) then
+            call stop_all(t_r,'I wouldnt use a preconditioner with tAugMinRes if I were you...')
+        endif
+
         if(tCompressedMats) then
 
             do i = 1,n
@@ -710,13 +714,15 @@ module LRSolvers
     !A direct matrix multiplication
     !Multiply twice, first by A-I(zShift), then by (A*-I(conjg(zShift)))
     !The shift is now included in the matrix
+    !However, if tAugMinRes is used, then we solve a twice as large matrix which
+    !is now hermitian and has no worse a condition number as the original matrix!
     subroutine zDirMV(n,x,y)
         use const
         integer(ip), intent(in) :: n
         complex(dp), intent(in) :: x(n)
         complex(dp), intent(out) :: y(n)
-        integer :: i,k,j
-        complex(dp) :: temp(n)
+        integer :: i,k,j,n_half,ierr
+        complex(dp), allocatable :: temp(:)
         character(len=*), parameter :: t_r='zDirMV'
 
         if(tCompressedMats.and.(.not.associated(zDirMV_Mat_cmprs))) then
@@ -736,33 +742,81 @@ module LRSolvers
             endif
         endif
 
-        if(tCompressedMats) then
-            !Sparse matrix multiply
-            if(zDirMV_Mat_cmprs_inds(1).ne.(n+2)) then
-                write(6,*) "zDirMV_Mat_cmprs_inds(1): ",zDirMV_Mat_cmprs_inds(1)
-                write(6,*) "n+2: ",n+2
-                call stop_all(t_r,'Mismatched vector and matrix')
-            endif
-            do i = 1,n
-                temp(i) = zDirMV_Mat_cmprs(i)*x(i)
-                do k = zDirMV_Mat_cmprs_inds(i),zDirMV_Mat_cmprs_inds(i+1)-1
-                    temp(i) = temp(i) + zDirMV_Mat_cmprs(k)*x(zDirMV_Mat_cmprs_inds(k))
-                enddo
-            enddo
+        if(tAugMinRes) then
 
-            !Now by transpose
-            do i = 1,n  !Diagonals
-                y(i) = conjg(zDirMV_Mat_cmprs(i))*temp(i)
-            enddo
-            do i = 1,n
-                do k = zDirMV_Mat_cmprs_inds(i),zDirMV_Mat_cmprs_inds(i+1)-1
-                    j = zDirMV_Mat_cmprs_inds(k)
-                    y(j) = y(j) + conjg(zDirMV_Mat_cmprs(k))*temp(i)
+            !This is actually the size of the matrix
+            n_half = n/2
+
+            if(tCompressedMats) then
+                !Sparse matrix multiply
+                if(zDirMV_Mat_cmprs_inds(1).ne.(n_half+2)) then
+                    write(6,*) "zDirMV_Mat_cmprs_inds(1): ",zDirMV_Mat_cmprs_inds(1)
+                    write(6,*) "n+2: ",n_half+2
+                    call stop_all(t_r,'Mismatched vector and matrix')
+                endif
+                do i = 1,n_half
+                    y(i) = zDirMV_Mat_cmprs(i)*x(n_half+i)
+                    do k = zDirMV_Mat_cmprs_inds(i),zDirMV_Mat_cmprs_inds(i+1)-1
+                        y(i) = y(i) + zDirMV_Mat_cmprs(k)*x(zDirMV_Mat_cmprs_inds(k)+n_half)
+                    enddo
                 enddo
-            enddo
+
+                y(1:n_half) = y(1:n_half) + x(1:n_half)
+
+                !Multiply by cc
+                do i = 1,n_half  !Diagonals
+                    y(i+n_half) = conjg(zDirMV_Mat_cmprs(i))*x(i)
+                enddo
+                do i = 1,n_half
+                    do k = zDirMV_Mat_cmprs_inds(i),zDirMV_Mat_cmprs_inds(i+1)-1
+                        j = zDirMV_Mat_cmprs_inds(k)
+                        y(j+n_half) = y(j+n_half) + conjg(zDirMV_Mat_cmprs(k))*x(i)
+                    enddo
+                enddo
+
+            else
+                call ZGEMV('N',n_half,n_half,zone,zDirMV_Mat,n_half,    &
+                    x(n_half+1:n),1,zzero,y(1:n_half),1)
+                y(1:n_half) = y(1:n_half) + x(1:n_half)
+                call ZGEMV('C',n_half,n_half,zone,zDirMV_Mat,n_half,    &
+                    x(1:n_half),1,zzero,y(n_half+1:n),1)
+            endif
+
         else
-            call ZGEMV('N',n,n,zone,zDirMV_Mat,n,x,1,zzero,temp,1)
-            call ZGEMV('C',n,n,zone,zDirMV_Mat,n,temp,1,zzero,y,1)
+
+            allocate(temp(n),stat=ierr)
+            if(ierr.ne.0) call stop_all(t_r,'Error allocating')
+
+            if(tCompressedMats) then
+                !Sparse matrix multiply
+                if(zDirMV_Mat_cmprs_inds(1).ne.(n+2)) then
+                    write(6,*) "zDirMV_Mat_cmprs_inds(1): ",zDirMV_Mat_cmprs_inds(1)
+                    write(6,*) "n+2: ",n+2
+                    call stop_all(t_r,'Mismatched vector and matrix')
+                endif
+                do i = 1,n
+                    temp(i) = zDirMV_Mat_cmprs(i)*x(i)
+                    do k = zDirMV_Mat_cmprs_inds(i),zDirMV_Mat_cmprs_inds(i+1)-1
+                        temp(i) = temp(i) + zDirMV_Mat_cmprs(k)*x(zDirMV_Mat_cmprs_inds(k))
+                    enddo
+                enddo
+
+                !Now by transpose
+                do i = 1,n  !Diagonals
+                    y(i) = conjg(zDirMV_Mat_cmprs(i))*temp(i)
+                enddo
+                do i = 1,n
+                    do k = zDirMV_Mat_cmprs_inds(i),zDirMV_Mat_cmprs_inds(i+1)-1
+                        j = zDirMV_Mat_cmprs_inds(k)
+                        y(j) = y(j) + conjg(zDirMV_Mat_cmprs(k))*temp(i)
+                    enddo
+                enddo
+            else
+                call ZGEMV('N',n,n,zone,zDirMV_Mat,n,x,1,zzero,temp,1)
+                call ZGEMV('C',n,n,zone,zDirMV_Mat,n,temp,1,zzero,y,1)
+            endif
+            deallocate(temp)
+
         endif
 
 !        temp(:) = x(:)

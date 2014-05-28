@@ -49,7 +49,7 @@ module LinearResponse
         complex(dp), allocatable :: Gc_a_F_ax_Bra(:,:),Gc_a_F_ax_Ket(:,:),Gc_b_F_ab(:,:)
         complex(dp), allocatable :: Ga_i_F_xi_Ket(:,:)
         complex(dp), allocatable :: Psi1_p(:),Psi1_h(:),Ga_i_F_xi_Bra(:,:),Ga_i_F_ij(:,:),ni_lr_Mat(:,:,:)
-        complex(dp), allocatable :: Psi_0(:),RHS(:)
+        complex(dp), allocatable :: Psi_0(:),RHS(:),AugRHS(:),AugPsi1(:)
         complex(dp), allocatable :: GSHam(:,:)
         complex(dp), allocatable :: h0_schmidt(:,:)
         complex(dp), allocatable :: ctemp(:,:),cEmb_h_fit(:,:)
@@ -72,7 +72,7 @@ module LinearResponse
         integer, allocatable :: Coup_Ann_inds_T(:),Coup_Create_cum_T(:),Coup_Ann_cum_T(:)
         integer :: i,a,j,k,ActiveEnd,ActiveStart,CoreEnd,DiffOrb,gam,ierr,info,iunit,nCore
         integer :: nLinearSystem,nOrbs,nVirt,tempK,VIndex,VirtStart,VirtEnd
-        integer :: orbdum(1),nLinearSystem_h,Np1GSInd,Nm1GSInd,ind_h,ind_p
+        integer :: orbdum(1),nLinearSystem_h,Np1GSInd,Nm1GSInd,ind_h,ind_p,Aug_nLin
         integer :: pertsite,OmegaVal,nGSSpace,mem,mem2,Nmax_Lin_p,Nmax_Lin_h
         integer :: minres_unit,Nmax_N,Nmax_Nm1,Nmax_Np1,Nmax_Coup_Create,Nmax_Coup_Ann
         real(dp) :: Omega,mu,SpectralWeight,Prev_Spec,Error_GF
@@ -108,6 +108,10 @@ module LinearResponse
             endif
             write(6,"(A,G22.10)") "Tolerance for solution of linear system: ",rtol_LR
             write(6,"(A,G22.10)") "Maximum iterations for each solution: ",iMinRes_MaxIter
+            if(tReuse_LS) then
+                tReuse_LS = .false. !Since we are using OpenMP, we deallocate and reallocate the arrays
+                write(6,*) "NOT reusing the previous omega response vector since we reallocate with openmp"
+            endif
         else
             if(iSolveLR.eq.1) then
                 write(6,"(A)") "Solving linear system with standard ZGESV linear solver"
@@ -249,6 +253,11 @@ module LinearResponse
 
         nLinearSystem = nNp1FCIDet + nFCIDet
         nLinearSystem_h = nNm1bFCIDet + nFCIDet
+        if(tAugMinRes) then
+            Aug_nLin = 2*nLinearSystem
+        else
+            Aug_nLin = 0
+        endif
         nGSSpace = nFCIDet + nNp1FCIDet + nNm1bFCIDet
         Np1GSInd = nFCIDet + 1
         Nm1GSInd = Np1GSInd + nNp1FCIDet
@@ -499,8 +508,9 @@ module LinearResponse
 !$OMP&  PRIVATE(SPGF_Cre_Bra,SPGF_Cre_Ket,SPGF_Ann_Bra,SPGF_Ann_Ket,Gc_a_F_ax_Bra),    &
 !$OMP&  PRIVATE(Gc_a_F_ax_Ket,Gc_b_F_ab,Ga_i_F_xi_Bra,Ga_i_F_xi_Ket,Ga_i_F_ij),  &
 !$OMP&  PRIVATE(Psi1_p,Psi1_h,ResponseFn_p,ResponseFn_h,HFRes_Ann_Ket,HFRes_Cre_Ket,HFRes_Ann_Bra),            &
-!$OMP&  PRIVATE(HFRes_Cre_Bra,temp,temp2,temp3,RHS,LinearSystem_p,LinearSystem_h,j,matel),  &
-!$OMP&  PRIVATE(LinearSystemc_p,LinearSystemc_h,LinearSystem_p_inds,LinearSystem_h_inds,ind_h,ind_p) SCHEDULE(DYNAMIC)
+!$OMP&  PRIVATE(HFRes_Cre_Bra,temp,temp2,temp3,RHS,LinearSystem_p,LinearSystem_h,j,matel,AugRHS),  &
+!$OMP&  PRIVATE(LinearSystemc_p,LinearSystemc_h,LinearSystem_p_inds,LinearSystem_h_inds,ind_h,ind_p),   &
+!$OMP&  PRIVATE(AugPsi1) SCHEDULE(DYNAMIC)
         do OmegaVal = 1,nESteps
             if(present(FreqPoints)) then
                 call GetOmega(Omega,OmegaVal,tMatbrAxis,FreqPoints=FreqPoints)
@@ -556,6 +566,10 @@ module LinearResponse
             if(tMinRes_NonDir) then
                 allocate(RHS(nLinearSystem))
                 if(tPrecond_MinRes) allocate(Precond_Diag(nLinearSystem))
+                if(tAugMinRes) then
+                    allocate(AugRHS(Aug_nLin))
+                    allocate(AugPsi1(Aug_nLin))
+                endif
             endif
                 
             if(ierr.ne.0) call stop_all(t_r,'Allocation error')
@@ -967,8 +981,16 @@ module LinearResponse
                             itnlim=iMinRes_MaxIter,Msolve=zPreCond,istop=info,rtol=rtol_LR,itn=iters_p(OmegaVal), &
                             startguess=tReuse_LS)
                     else
-                        call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=RHS,nout=minres_unit,x=Psi1_p, &
-                            itnlim=iMinRes_MaxIter,istop=info,rtol=rtol_LR,itn=iters_p(OmegaVal),startguess=tReuse_LS)
+                        if(tAugMinRes) then
+                            AugRHS(:) = zzero
+                            AugRHS(1:nLinearSystem) = RHS(:)
+                            call MinResQLP(n=Aug_nLin,Aprod=zDirMV,b=AugRHS,nout=minres_unit,x=AugPsi1, &
+                                itnlim=iMinRes_MaxIter,istop=info,rtol=rtol_LR,itn=iters_p(OmegaVal),startguess=tReuse_LS)
+                            Psi1_p(:) = AugPsi1(nLinearSystem+1:Aug_nLin)
+                        else
+                            call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=RHS,nout=minres_unit,x=Psi1_p, &
+                                itnlim=iMinRes_MaxIter,istop=info,rtol=rtol_LR,itn=iters_p(OmegaVal),startguess=tReuse_LS)
+                        endif
                     endif
                     if(tCompressedMats) then
                         zDirMV_Mat_cmprs => null()
@@ -1036,8 +1058,16 @@ module LinearResponse
                             itnlim=iMinRes_MaxIter,Msolve=zPreCond,istop=info,rtol=rtol_LR,itn=iters_h(OmegaVal), &
                             startguess=tReuse_LS)
                     else
-                        call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=RHS,nout=minres_unit,x=Psi1_h, &
-                            itnlim=iMinRes_MaxIter,istop=info,rtol=rtol_LR,itn=iters_h(OmegaVal),startguess=tReuse_LS)
+                        if(tAugMinRes) then
+                            AugRHS(:) = zzero
+                            AugRHS(1:nLinearSystem) = RHS(:)
+                            call MinResQLP(n=Aug_nLin,Aprod=zDirMV,b=AugRHS,nout=minres_unit,x=AugPsi1, &
+                                itnlim=iMinRes_MaxIter,istop=info,rtol=rtol_LR,itn=iters_h(OmegaVal),startguess=tReuse_LS)
+                            Psi1_h(:) = AugPsi1(nLinearSystem+1:Aug_nLin)
+                        else
+                            call MinResQLP(n=nLinearSystem,Aprod=zDirMV,b=RHS,nout=minres_unit,x=Psi1_h, &
+                                itnlim=iMinRes_MaxIter,istop=info,rtol=rtol_LR,itn=iters_h(OmegaVal),startguess=tReuse_LS)
+                        endif
                     endif
                     if(tCompressedMats) then
                         zDirMV_Mat_cmprs => null()
@@ -1100,6 +1130,10 @@ module LinearResponse
             if(tMinRes_NonDir) then
                 deallocate(RHS)
                 if(tPrecond_MinRes) deallocate(Precond_Diag)
+                if(tAugMinRes) then
+                    deallocate(AugRHS)
+                    deallocate(AugPsi1)
+                endif
             endif
         enddo   !End loop over omega
 !$OMP END PARALLEL DO
@@ -9919,24 +9953,30 @@ module LinearResponse
             endif
         endif
 
-!        call writevectorint(zDirMV_Mat_cmprs_inds,'zDirMV_Mat_cmprs_inds')
-!        call writevectorcomp(zDirMV_Mat_cmprs,'zDirMV_Mat_cmprs')
-
-!        Trans_V0(:) = V0(:)
-!        call ZGEMV('C',n,n,zone,zDirMV_Mat,n,V0,1,-dconjg(zShift),Trans_V0,1)
-        if(tCompressedMats) then
-            if(zDirMV_Mat_cmprs_inds(1).ne.(n+2)) call stop_all(t_r,'Mismatched vector and matrix')
-            do i = 1,n
-                Trans_V0(i) = conjg(zDirMV_Mat_cmprs(i))*V0(i)
-            enddo
-            do i = 1,n
-                do k = zDirMV_Mat_cmprs_inds(i),zDirMV_Mat_cmprs_inds(i+1)-1
-                    j = zDirMV_Mat_cmprs_inds(k)
-                    Trans_V0(j) = Trans_V0(j) + conjg(zDirMV_Mat_cmprs(k))*V0(i)
-                enddo
-            enddo
+        if(tAugMinRes) then
+            !We are not solving the squared matrix. This should greatly improve convergence
+            Trans_V0(:) = V0(:)
         else
-            call ZGEMV('C',n,n,zone,zDirMV_Mat,n,V0,1,zzero,Trans_V0,1)
+
+!            call writevectorint(zDirMV_Mat_cmprs_inds,'zDirMV_Mat_cmprs_inds')
+!            call writevectorcomp(zDirMV_Mat_cmprs,'zDirMV_Mat_cmprs')
+
+!            Trans_V0(:) = V0(:)
+!            call ZGEMV('C',n,n,zone,zDirMV_Mat,n,V0,1,-dconjg(zShift),Trans_V0,1)
+            if(tCompressedMats) then
+                if(zDirMV_Mat_cmprs_inds(1).ne.(n+2)) call stop_all(t_r,'Mismatched vector and matrix')
+                do i = 1,n
+                    Trans_V0(i) = conjg(zDirMV_Mat_cmprs(i))*V0(i)
+                enddo
+                do i = 1,n
+                    do k = zDirMV_Mat_cmprs_inds(i),zDirMV_Mat_cmprs_inds(i+1)-1
+                        j = zDirMV_Mat_cmprs_inds(k)
+                        Trans_V0(j) = Trans_V0(j) + conjg(zDirMV_Mat_cmprs(k))*V0(i)
+                    enddo
+                enddo
+            else
+                call ZGEMV('C',n,n,zone,zDirMV_Mat,n,V0,1,zzero,Trans_V0,1)
+            endif
         endif
 
     end subroutine setup_RHS

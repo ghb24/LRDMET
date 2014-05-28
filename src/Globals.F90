@@ -95,6 +95,7 @@ module Globals
     logical :: tReadMats, tWriteMats    !Options for reading/writing the compressed matrices (N-electron only)
     integer :: iHamSize_N,iHamSize_Nm1,iHamSize_Np1     !Size of the compressed hamiltonians for N,N-1 and N+1 respectively
     logical :: tCorrelatedBath      ! Explicit two-electron terms of the hamiltonian in the bath space
+    logical :: tAugMinRes           ! Solve an augmented linear system (twice as large) without reducing the condition number of the problem
 
     integer , allocatable :: TD_Imp_Lat(:,:),TD_Imp_Phase(:,:)  !Parameterization of the orbital space for 2D hubbard
     integer , allocatable :: ImpSites(:)    !The list of site indices for the impurity sites
