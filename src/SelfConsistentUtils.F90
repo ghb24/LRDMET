@@ -7,6 +7,7 @@ module SelfConsistentUtils
     use mat_tools, only: MakeBlockHermitian,writematrixcomp,writevector
     use mat_tools, only: Add_Nonlocal_comp_inplace,var_to_couplingind
     use matrixops, only: mat_inv
+    use LRSolvers, only: GetNextkval
     implicit none
 
     contains
@@ -33,6 +34,7 @@ module SelfConsistentUtils
         complex(dp), allocatable :: KBlocks(:,:,:),cWork(:)
         complex(dp), allocatable :: h0c(:,:)
         character(64) :: filename
+        logical :: tFinishedk
         character(len=*), parameter :: t_r='CalcBandstructure'
 
         write(6,*) "Calculating bandstructure..."
@@ -68,7 +70,13 @@ module SelfConsistentUtils
         if(present(SelfEnergy)) then
             !This can actually provide a correlated bandstructure with non-unit spectral weight.
             !We have to write out the whole range of frequencies for each kpoint
-            do k = 1,nKPnts
+            !By default, we only write out 40 kpoints, unless specified otherwise
+            !This can be controlled with the KPNT_CALCS option in the LINEAR_RESPONSE block
+            k = 0
+            do while(.true.)
+                call GetNextkVal(k,tFinishedk)
+                if(tFinishedk) exit 
+                
                 !Write out the header
                 write(iunit,"(A,F8.4)",advance='no') '"k = ',KPnts(1,k)
                 do i = 2,LatticeDim

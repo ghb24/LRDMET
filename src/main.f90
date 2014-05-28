@@ -120,7 +120,7 @@ Program RealHub
         tConvergeMicroSE = .false.
         iMinRes_MaxIter = 20000
         tBetaExcit = .false.
-        nKCalcs = 0
+        nKCalcs = 30
         max_SE_iter = 0
         NIGF_WeightFac = 0.0_dp
         tRead_SelfEnergy = .false.
