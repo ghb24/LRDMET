@@ -234,15 +234,23 @@ module SelfConsistentUtils
             
             if(tConstrainKSym) then
                 !e(k) = e(-k), and we are always using a uniform mesh
-                !If gamma-centered mesh, then have nSites/2 + 1 independent parameters (we are sampling k=0 and BZ boundary which dont pair)
-                !If Shifted mesh, then we have nSites/2 independent parameters
-                if(tShift_Mesh) then
-                    ks = nKPnts/2
+                if(mod(nKPnts,2).eq.0) then
+                    !Even number of kpoints 
+                    !If gamma-centered mesh, then have nSites/2 + 1 independent parameters 
+                    !(we are sampling k=0 and BZ boundary which dont pair)
+                    !If Shifted mesh, then we have nSites/2 independent parameters
+                    if(tShift_Mesh) then
+                        nIndKPnts = nKPnts/2
+                    else
+                        nIndKPnts = (nKPnts/2) + 1
+                    endif
                 else
-                    ks = (nKPnts/2) + 1
+                    !This is independent of whether we have a shifted mesh or not
+                    nIndKPnts = (nKPnts+1)/2    
                 endif
+
             else
-                ks = nKPnts
+                nIndKPnts = nKPnts
             endif
 
             if(tConstrainphsym) then
@@ -258,13 +266,11 @@ module SelfConsistentUtils
                 params_per_k = (nImp*(nImp+1)/2) + (nImp*(nImp-1)/2)
             endif
 
-            iLatParams = params_per_k * ks
+            iLatParams = params_per_k * nIndKPnts
 
-            write(6,"(A,I8)") "Total number of independent k-points to optimize: ",ks
+            write(6,"(A,I8)") "Total number of independent k-points to optimize: ",nIndKPnts
             write(6,"(A,I8)") "Total number of independent (real) parameters per kpoint: ",params_per_k
             write(6,"(A,I8)") "Total number of (real) adjustable parameters in non-local couplings: ",iLatParams
-
-
 
         endif
 
@@ -648,21 +654,8 @@ module SelfConsistentUtils
             deallocate(LatticeCoups_)
         else
             
-            if(tConstrainKSym) then
-                !e(k) = e(-k), and we are always using a uniform mesh
-                !If gamma-centered mesh, then have nSites/2 + 1 independent parameters (we are sampling k=0 and BZ boundary which dont pair)
-                !If Shifted mesh, then we have nSites/2 independent parameters
-                if(tShift_Mesh) then
-                    ks = nKPnts/2
-                else
-                    ks = (nKPnts/2) + 1
-                endif
-            else
-                ks = nKPnts
-            endif
-
             ind = 1
-            do k = 1,ks
+            do k = 1,nIndKPnts
                 if(tConstrainphsym) then
                     do i = 1,nImp
                         do j = i,nImp-i+1
@@ -800,21 +793,8 @@ module SelfConsistentUtils
         else
             !k-space hamiltonian optimization
             
-            if(tConstrainKSym) then
-                !e(k) = e(-k), and we are always using a uniform mesh
-                !If gamma-centered mesh, then have nSites/2 + 1 independent parameters (we are sampling k=0 and BZ boundary which dont pair)
-                !If Shifted mesh, then we have nSites/2 independent parameters
-                if(tShift_Mesh) then
-                    ks = nKPnts/2
-                else
-                    ks = (nKPnts/2) + 1
-                endif
-            else
-                ks = nKPnts
-            endif
-
             ind = 1
-            do k = 1,ks
+            do k = 1,nIndKPnts
                 if(tConstrainphsym) then
                     do i = 1,nImp
                         do j = i,nImp-i+1
@@ -870,25 +850,25 @@ module SelfConsistentUtils
                     if(tShift_Mesh) then
                         !No gamma point sampled. All k-points symmetric.
                         !Mirror the k-space hamiltonian
-                        do i = 1,ks
-                            KBlocks(:,:,i+ks) = dconjg(KBlocks(:,:,ks-i+1))
+                        do i = 1,nIndKPnts
+                            KBlocks(:,:,i+nIndKPnts) = dconjg(KBlocks(:,:,nIndKPnts-i+1))
                         enddo
                     else
                         !Mirror the kpoints, but ignore the gamma point and BZ boundary
-                        do i = 2,ks-1
-                            KBlocks(:,:,i+ks-1) = dconjg(KBlocks(:,:,ks-i+1))
+                        do i = 2,nIndKPnts-1
+                            KBlocks(:,:,i+nIndKPnts-1) = dconjg(KBlocks(:,:,nIndKPnts-i+1))
                         enddo
                     endif
                 else
                     !Odd number of kpoints
                     !This means that we can never actually sample the chemical potential
-                    !tShift=T will mean that we sample the Gamma point
-                    !tShift=F will mean that we sample the BZ boundary
-                    do i = 1,ks-1
+                    !tShift=T will mean that we sample the Gamma point (and it has no equivalent point)
+                    !tShift=F will mean that we sample the BZ boundary (and it has no equivalent point)
+                    do i = 1,nIndKPnts-1
                         if(tShift_Mesh) then
-                            KBlocks(:,:,i+ks) = dconjg(KBlocks(:,:,ks-i))
+                            KBlocks(:,:,i+nIndKPnts) = dconjg(KBlocks(:,:,nIndKPnts-i))
                         else
-                            KBlocks(:,:,i+ks) = dconjg(KBlocks(:,:,ks-i+1))
+                            KBlocks(:,:,i+nIndKPnts) = dconjg(KBlocks(:,:,nIndKPnts-i+1))
                         endif
                     enddo
                 endif
@@ -1439,12 +1419,6 @@ module SelfConsistentUtils
         allocate(KBlocks(nImp,nImp,nKPnts))
         call LatParams_to_KBlocks(iLatParams,vars,mu,KBlocks)
             
-        if(tShift_Mesh) then
-            ks = nKPnts/2
-        else
-            ks = (nKPnts/2) + 1
-        endif
-
         if(tImposeKSym) then
             !After fitting, add back in momentum inversion symmetry (if we are working in k-space)
             !This means that h(k) = h*(-k)
@@ -1453,18 +1427,35 @@ module SelfConsistentUtils
             !We should not be able to be constraining any syms
             if(tRealSpaceSC) call stop_all(t_r,'K symmetry should be automatically conserved rather '   &
                 &   //'than imposed with real-space lattice opt')
-            if(tShift_Mesh) then
-                do i = 1,nKPnts/2
-                    KBlock(:,:) = (KBlocks(:,:,i) + dconjg(KBlocks(:,:,nKPnts-i+1))) / 2.0_dp
-                    KBlocks(:,:,i) = KBlock(:,:)
-                    KBlocks(:,:,nKPnts-i+1) = dconjg(KBlock(:,:))
-                enddo
+            if(mod(nKPnts,2).eq.0) then
+                !Even number of kpoints
+                if(tShift_Mesh) then
+                    do i = 1,nIndKPnts  !nKPnts/2
+                        KBlock(:,:) = (KBlocks(:,:,i) + dconjg(KBlocks(:,:,nKPnts-i+1))) / 2.0_dp
+                        KBlocks(:,:,i) = KBlock(:,:)
+                        KBlocks(:,:,nKPnts-i+1) = dconjg(KBlock(:,:))
+                    enddo
+                else
+                    do i = 2,nIndKPnts-1
+                        KBlock(:,:) = (KBlocks(:,:,i) + dconjg(KBlocks(:,:,nKPnts-i+2))) / 2.0_dp
+                        KBlocks(:,:,i) = KBlock(:,:)
+                        KBlocks(:,:,nKPnts-i+2) = dconjg(KBlock(:,:))
+                    enddo
+                endif
             else
-                do i = 2,nKPnts/2
-                    KBlock(:,:) = (KBlocks(:,:,i) + dconjg(KBlocks(:,:,nKPnts-i+2))) / 2.0_dp
-                    KBlocks(:,:,i) = KBlock(:,:)
-                    KBlocks(:,:,nKPnts-i+2) = dconjg(KBlock(:,:))
-                enddo
+                if(tShift_Mesh) then
+                    do i = 1,nIndKPnts-1
+                        KBlock(:,:) = (KBlocks(:,:,i) + dconjg(KBlocks(:,:,nKPnts-i+1))) / 2.0_dp
+                        KBlocks(:,:,i) = KBlock(:,:)
+                        KBlocks(:,:,nKPnts-i+1) = dconjg(KBlock(:,:))
+                    enddo
+                else
+                    do i = 2,nIndKPnts
+                        KBlock(:,:) = (KBlocks(:,:,i) + dconjg(KBlocks(:,:,nKPnts-i+2))) / 2.0_dp
+                        KBlocks(:,:,i) = KBlock(:,:)
+                        KBlocks(:,:,nKPnts-i+2) = dconjg(KBlock(:,:))
+                    enddo
+                endif
             endif
         endif
 
@@ -1517,9 +1508,10 @@ module SelfConsistentUtils
 !$OMP END PARALLEL DO
             elseif(nImp.eq.1) then
                 !If there is only one band per kpoint, then the pairs correspond to different kpoints.
-                do i = 1,ks/2
-                    DistFromMu = 0.5_dp*( (mu - real(KBlocks(1,1,ks-i+1)) ) + (real(KBlocks(1,1,i)) - mu))
-                    KBlocks(1,1,ks-i+1) = cmplx(mu - DistFromMu,zero,dp)
+                if(mod(nKPnts,2).eq.1) call stop_all(t_r,'Hardcoded for even number of kpoints for 1-band problem? FIXME')
+                do i = 1,nIndKPnts/2
+                    DistFromMu = 0.5_dp*( (mu - real(KBlocks(1,1,nIndKPnts-i+1)) ) + (real(KBlocks(1,1,i)) - mu))
+                    KBlocks(1,1,nIndKPnts-i+1) = cmplx(mu - DistFromMu,zero,dp)
                     KBlocks(1,1,i) = cmplx(mu + DistFromMu,zero,dp)
                 enddo
 
