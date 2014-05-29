@@ -260,6 +260,12 @@ module SelfConsistentUtils
 
             iLatParams = params_per_k * ks
 
+            write(6,"(A,I8)") "Total number of independent k-points to optimize: ",ks
+            write(6,"(A,I8)") "Total number of independent (real) parameters per kpoint: ",params_per_k
+            write(6,"(A,I8)") "Total number of (real) adjustable parameters in non-local couplings: ",iLatParams
+
+
+
         endif
 
     end subroutine SetLatticeParams
@@ -859,16 +865,31 @@ module SelfConsistentUtils
                 !Update this so that it uses a function to map to equivalent kpoints
                 !Currently this is only going to work for 1D
 
-                if(tShift_Mesh) then
-                    !No gamma point sampled. All k-points symmetric.
-                    !Mirror the k-space hamiltonian
-                    do i = 1,ks
-                        KBlocks(:,:,i+ks) = dconjg(KBlocks(:,:,ks-i+1))
-                    enddo
+                if(mod(nKPnts,2).eq.0) then
+                    !Even number of kpoints
+                    if(tShift_Mesh) then
+                        !No gamma point sampled. All k-points symmetric.
+                        !Mirror the k-space hamiltonian
+                        do i = 1,ks
+                            KBlocks(:,:,i+ks) = dconjg(KBlocks(:,:,ks-i+1))
+                        enddo
+                    else
+                        !Mirror the kpoints, but ignore the gamma point and BZ boundary
+                        do i = 2,ks-1
+                            KBlocks(:,:,i+ks-1) = dconjg(KBlocks(:,:,ks-i+1))
+                        enddo
+                    endif
                 else
-                    !Mirror the kpoints, but ignore the gamma point and BZ boundary
-                    do i = 2,ks-1
-                        KBlocks(:,:,i+ks-1) = dconjg(KBlocks(:,:,ks-i+1))
+                    !Odd number of kpoints
+                    !This means that we can never actually sample the chemical potential
+                    !tShift=T will mean that we sample the Gamma point
+                    !tShift=F will mean that we sample the BZ boundary
+                    do i = 1,ks-1
+                        if(tShift_Mesh) then
+                            KBlocks(:,:,i+ks) = dconjg(KBlocks(:,:,ks-i))
+                        else
+                            KBlocks(:,:,i+ks) = dconjg(KBlocks(:,:,ks-i+1))
+                        endif
                     enddo
                 endif
             endif

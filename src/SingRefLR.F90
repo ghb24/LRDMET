@@ -156,8 +156,10 @@ module SingRefLR
 
         if(tAllImp_LR) then
             nImp_GF = nImp
+            write(6,*) "Calculating *all* diagonal single-reference greens functions"
         else
             nImp_GF = 1
+            write(6,*) "WARNING: Only calculating *ONE* greens function"
         endif
 
         allocate(ni_lr_ann(nImp_GF))
@@ -167,7 +169,7 @@ module SingRefLR
         allocate(ni_lr(nImp_GF))
         allocate(ni_lr_b(nImp_GF))
 
-        call writematrix(HFOrbs,'HFOrbs',.true.)
+        if(tWriteOut) call writematrix(HFOrbs,'HFOrbs',.true.)
 
         Omega = Start_Omega
         do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))

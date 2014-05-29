@@ -1461,6 +1461,7 @@ module mat_tools
             if(mod(nKPnts,2).eq.0) then
                 if(tPeriodic) then
                     !We want to use a Gamma centered mesh
+                    !I.e. include BZ boundary
                     tShift_Mesh = .false.
                 else
                     !We want a Monkhort-Pack mesh
@@ -1472,14 +1473,14 @@ module mat_tools
                     !We want to use a Gamma centered mesh
                     tShift_Mesh = .true. 
                 else
-                    !Monkhorst-Pack mesh
+                    !Gamma-centered mesh (i.e. include BZ boundary)
                     tShift_Mesh = .false.
                 endif
             endif
             if(tShift_Mesh) then
-                write(6,"(A)") "Using a Monkhorst-pack kpoint mesh of 1st BZ - no gamma point"
+                write(6,"(A)") "Using a Monkhorst-pack kpoint mesh of 1st BZ - Symmetric k-points around Gamma point"
             else
-                write(6,"(A)") "Using a gamma-centered kpoint mesh of 1st BZ - gamma point included"
+                write(6,"(A)") "Using a gamma-centered kpoint mesh of 1st BZ - BZ boundary included"
             endif
 
             BZVol = 2.0_dp*pi/real(SS_Period,dp)
