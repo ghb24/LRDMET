@@ -745,7 +745,7 @@ module SelfConsistentLR2
             
             !corrs is the maximum number of variable metric corrections
             !used to define the limited memory matrix.
-            corrs = 6
+            corrs = 18
 
             !Working arrays
             allocate(wa(2*iLatParams*corrs + 5*iLatParams + 11*corrs*corrs + 8*corrs))
