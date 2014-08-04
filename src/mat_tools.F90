@@ -70,20 +70,63 @@ module mat_tools
             write(6,"(2I7)") i,ImpSites(i)
         enddo
 
+        !TODO: Now, work out whether we want periodic or antiperiodic boundary conditions
+        tPeriodic = .true.
+        tAntiPeriodic = .false.
+
+        if(tPeriodic) then
+            write(6,"(A)") "PERIODIC boundary conditions chosen to ensure a closed shell fermi surface"
+        else
+            write(6,"(A)") "ANTIPERIODIC boundary conditions chosen to ensure a closed shell fermi surface"
+        endif
+
         !Now, how many impurity "repeats" will there be once they are striped through the space?
         iImpRepeats = nint(real(nSites_x,dp)/real(nImp_x,dp))
         write(6,"(A,I6)") "Number of copied of correlation potential striped through space: ",iImpRepeats
 
+        allocate(StripedImpIndices(nImp,iImpRepeats))
+        StripedImpIndices(:,:) = 0
 
 
+        StartInd = 1    !This labels the first index of this impurity cluster
+        do k = 1,iImpRepeats
+            do i = 1,nImp_x
+                do j = 1,nImp_y
+                    call FindDisplacedIndex_2DSquare(StartInd,DeltaX-1,DeltaY-1,StripedImpIndices(((i-1)*nImp_x)+j,k),PhaseChange)
 
+                    !Check that we never have any boundary conditions since we should never have left the supercell
+                    if(PhaseChange.ne.1) call stop_all(t_r,'Should not be leaving supercell, so should not be changing phase!'
+                enddo
+            enddo
+            StartInd = StartInd + nSites_y*nImp_x + nImp_y
+        enddo
 
-
+        !Check that the first repeat is the same as the indices we have already worked out for the main impurity
+        do i = 1,nImp
+            if(StripedImpIndices(i,1).ne.ImpSites(i)) call stop_all(t_r,'Something wrong here')
+        enddo
 
     end subroutine Setup2DLattice_Square
 
+    subroutine LatCoordToSiteIndex_2DSquare(Ind_X,Ind_Y,LatIndex)
+        implicit none
+        integer, intent(in) :: Ind_X,Ind_Y
+        integer, intent(out) :: LatIndex
+        character(len=*), parameter :: t_r='LatCoordToSiteIndex_2DSquare'
+
+        if((Ind_X.lt.1).or.(Ind_X.gt.nSites_x)) call stop_all(t_r,'This routine must take coordinates inside the supercell')
+        if((Ind_Y.lt.1).or.(Ind_Y.gt.nSites_y)) call stop_all(t_r,'This routine must take coordinates inside the supercell')
+
+        LatIndex = (Ind_X-1)*nSites_y + Ind_Y
+
+        if((LatIndex.lt.1).or.(LatIndex.gt.nSites)) call stop_all(t_r,'This routine must take an index inside the supercell')
+
+    end subroutine LatCoordToSiteIndex_2DSquare
+
     !Find the lattice coordinate from the site index
     !The LatIndex has to be between 1 and nSites
+    !The indexing is row major like a coordinate, i.e (1,1) (2,1)
+    !                                                 (2,1) (2,2)
     subroutine SiteIndexToLatCoord_2DSquare(LatIndex,Ind_X,Ind_Y)
         implicit none
         integer, intent(in) :: LatIndex
@@ -92,9 +135,8 @@ module mat_tools
 
         if((LatIndex.lt.1).or.(LatIndex.gt.nSites)) call stop_all(t_r,'This routine must take an index inside the supercell')
 
-
-
-
+        Ind_Y = mod(LatIndex,nSites_x)
+        Ind_X = (LatIndex - Ind_Y) / nSites_x
 
     end subroutine SiteIndexToLatCoord_2DSquare
 
@@ -105,20 +147,59 @@ module mat_tools
         integer, intent(in) :: LatIndIn,DeltaX,DeltaY
         integer, intent(out) :: LatIndOut
         integer, intent(out) :: PhaseChange
+        !local
+        integer :: Ind_X,Ind_Y,IndX_folded,IndY_folded,flips_x,flips_y
         
         LatIndOut = LatIndIn
         PhaseChange = 1
 
-        !Shift in x direction first
-        LatIndOut = LatIndOut + nSites_x*DeltaX
+        call SiteIndexToLatCoord_2DSquare(LatIndOut,Ind_X,Ind_Y)
 
-        !Now map back in if necessary
-        if(LatIndOut.lt.1) then
-            LatIndOut = LatIndOut + nSites
-        elseif(LatIndOut.gt.nSites) then
-            LatIndOut = LatIndOut - nSites
+        Ind_X = Ind_X + DeltaX
+        Ind_Y = IndY + DeltaY
+
+        !Now, we may need to map back into the supercell
+        IndX_folded = py_mod(Ind_X,nSites_X)
+        IndY_folded = py_mod(Ind_Y,nSites_Y)
+        if(IndX_folded.eq.0) IndX_folded = nSites_X
+        if(IndY_folded.eq.0) IndY_folded = nSites_Y
+
+        if(tAntiPeriodic) then
+            !Has this wrapped an even or odd number of times?
+            if(Ind_X.ge.1) then
+                flips_x = abs(mod(int(real(Ind_X-1,dp)/real(nSites_x,dp)),2))
+            else
+                flips_x = abs(mod(int(real(Ind_X-nSites_x,dp)/real(nSites_x,dp)),2))
+            endif
+            if(Ind_Y.ge.1) then
+                flips_y = abs(mod(int(real(Ind_Y-1,dp)/real(nSites_y,dp)),2))
+            else
+                flips_y = abs(mod(int(real(Ind_Y-nSites_y,dp)/real(nSites_y,dp)),2))
+            endif
+            if(flips_x.eq.0) then
+                flips_x = 1
+            else
+                flips_x = -1
+            endif
+            if(flips_y.eq.0) then
+                flips_y = 1
+            else
+                flips_y = -1
+            endif
+        else
+            !With PBCs, it doesn't actually matter how many flips we use, since we will never change phase
+            flips_x = 1
+            flips_y = 1
         endif
-        if((LatIndOut.gt.nSites).or.(LatIndOut.le.0)) call stop_all(t_r,'Cannot translate lattice index by more than a lattice in a dimension')
+
+        Ind_X = IndX_folded
+        Ind_Y = IndY_folded
+
+        !What is the overall phase (assume same BCs on x and y directions)
+        PhaseChange = flips_x * flips_y
+
+        !Now, translate back into a lattice index
+        call LatCoordToSiteIndex_2DSquare(Ind_X,Ind_Y,LatIndOut)
 
     end subroutine FindDisplacedIndex_2DSquare
 
