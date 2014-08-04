@@ -10,7 +10,8 @@ module Globals
     integer :: nSites   !The number of sites in the full system
     integer :: nSites_x   !The number of sites in the x direction
     integer :: nSites_y   !The number of sites in the y direction
-    integer :: tTiltedLattice   !Whether the lattice (and impurity cluster) is tilted
+    integer :: iImpRepeats  !The number of repeats of the impurites striped through the system
+    logical :: tTiltedLattice   !Whether the lattice (and impurity cluster) is tilted
     integer :: nImp     !The number of impurity sites
     integer :: nImp_x,nImp_y    !Number of impurities in each direction for the 2D system
     real(dp) :: U       !Hubbard U
@@ -100,6 +101,7 @@ module Globals
 
     integer , allocatable :: TD_Imp_Lat(:,:),TD_Imp_Phase(:,:)  !Parameterization of the orbital space for 2D hubbard
     integer , allocatable :: ImpSites(:)    !The list of site indices for the impurity sites
+    integer , allocatable :: StripedImpIndices(:,:) !The index of the impurity repeats (nImp,iImpRepeats)
     integer , allocatable :: Perm_dir(:),Perm_indir(:)  !Mappings between the two indexing orders
     real(dp), allocatable :: U_Vals(:)      !The list of U_Values to loop over
     integer , allocatable :: allowed_occs(:)   !The list of CS occupations for the mean-field solution

@@ -15,6 +15,8 @@ module mat_tools
     !Setup arrays and indices needed to define a 2D square, non-tilted lattice
     subroutine Setup2DLattice_Square()
         implicit none
+        integer :: nSitesOrig,nSites_x_low,nSites_x_high,nBelowSitesChange
+        integer :: i,j,k,nAboveSitesChange,PhaseChange,StartInd
         character(len=*), parameter :: t_r='Setup2DLattice_Square'
 
         write(6,"(A)") "Setting up a non-tilted square lattice..."
@@ -53,7 +55,9 @@ module mat_tools
         nSites_y = nSites_x     !Non-tilted square lattice
         nSites = nSites**2
 
-        if(nSites.ne.nSitesOrig) write(6,"(A)") "Total number of sites changed to ensure square number and commensurate with impurity cluster"
+        if(nSites.ne.nSitesOrig) then
+            write(6,"(A)") "Total number of sites changed to ensure square number and commensurate with impurity cluster"
+        endif
         write(6,"(A)") "Total number of sites: ",nSites
 
         !Now, set up ImpSites array, which gives the indices of the impurity cluster
@@ -92,10 +96,10 @@ module mat_tools
         do k = 1,iImpRepeats
             do i = 1,nImp_x
                 do j = 1,nImp_y
-                    call FindDisplacedIndex_2DSquare(StartInd,DeltaX-1,DeltaY-1,StripedImpIndices(((i-1)*nImp_x)+j,k),PhaseChange)
+                    call FindDisplacedIndex_2DSquare(StartInd,i-1,j-1,StripedImpIndices(((i-1)*nImp_x)+j,k),PhaseChange)
 
                     !Check that we never have any boundary conditions since we should never have left the supercell
-                    if(PhaseChange.ne.1) call stop_all(t_r,'Should not be leaving supercell, so should not be changing phase!'
+                    if(PhaseChange.ne.1) call stop_all(t_r,'Should not be leaving supercell, so should not be changing phase!')
                 enddo
             enddo
             StartInd = StartInd + nSites_y*nImp_x + nImp_y
@@ -156,7 +160,7 @@ module mat_tools
         call SiteIndexToLatCoord_2DSquare(LatIndOut,Ind_X,Ind_Y)
 
         Ind_X = Ind_X + DeltaX
-        Ind_Y = IndY + DeltaY
+        Ind_Y = Ind_Y + DeltaY
 
         !Now, we may need to map back into the supercell
         IndX_folded = py_mod(Ind_X,nSites_X)
