@@ -39,6 +39,7 @@ Program RealHub
         StartU = 0.0_dp
         EndU = 4.1_dp
         UStep = 1.0_dp
+        tTiltedLattice = .true.
         tPeriodic = .false.
         tAntiPeriodic = .false. 
         iMaxIterDMET = 150
@@ -198,7 +199,11 @@ Program RealHub
         endif
 
         if(LatticeDim.eq.2) then
-            call Setup2DLattice()
+            if(tTiltedLattice) then
+                call Setup2DLattice()
+            else
+                call Setup2DLattice_Square()
+            endif
         endif
 
         if(tAnderson) then
@@ -445,6 +450,8 @@ Program RealHub
                         call stop_all(t_r,'Can only deal with lattice dimensions =< 2')
                     endif
                 endif
+            case("NOTILT")
+                tTiltedLattice = .false.
             case("UHF")
                 tUHF = .true.
             case("U_VALS")

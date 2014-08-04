@@ -10,6 +10,7 @@ module Globals
     integer :: nSites   !The number of sites in the full system
     integer :: nSites_x   !The number of sites in the x direction
     integer :: nSites_y   !The number of sites in the y direction
+    integer :: tTiltedLattice   !Whether the lattice (and impurity cluster) is tilted
     integer :: nImp     !The number of impurity sites
     integer :: nImp_x,nImp_y    !Number of impurities in each direction for the 2D system
     real(dp) :: U       !Hubbard U

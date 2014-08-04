@@ -12,6 +12,116 @@ module mat_tools
 
     contains
 
+    !Setup arrays and indices needed to define a 2D square, non-tilted lattice
+    subroutine Setup2DLattice_Square()
+        implicit none
+        character(len=*), parameter :: t_r='Setup2DLattice_Square'
+
+        write(6,"(A)") "Setting up a non-tilted square lattice..."
+
+        if(LatticeDim.ne.2) call stop_all(t_r,'Should only be in here with 2D lattice')
+
+        nImp_x = nint(sqrt(real(nImp,dp)))
+        nImp_y = nImp_x
+        if((sqrt(real(nImp,dp))-nint(sqrt(real(nImp,dp)))).gt.1.0e-8_dp) then
+            !Constrain impurity cluster to have the same geometry unit cell as the 
+            !entire lattice.
+            call stop_all(t_r,'Number of impurity sites is not a square number.')
+        endif
+
+        !Right, now how many lattice sites should be have. The constraints are that 
+        !   o We need a square number
+        !   o We want nSites_x to be an integer multiple of nImp_x
+        !   o We want the total number to be as close as possible to the original value
+
+        !First, calculate the two values satisfying 1 and 2, both above and below the original value
+        nSitesOrig = nSites
+
+        nSites_x_low = nImp_x * int(sqrt(real(nSites,dp))/real(nImp_x,dp))
+        nSites_x_high = nImp_x * (int(sqrt(real(nSites,dp))/real(nImp_x,dp)) + 1)
+
+        nBelowSitesChange = abs(nSites_x_low**2 - nSites)
+        nAboveSitesChange = abs(nSites_x_high**2 - nSites)
+        if(nBelowSitesChange.lt.nAboveSitesChange) then
+            !Move number of sites down to nearest square number
+            nSites_x = int(sqrt(real(nSites,dp)))
+        else
+            !Move number of sites down to nearest square number
+            nSites_x = int(sqrt(real(nSites,dp))) + 1
+        endif
+
+        nSites_y = nSites_x     !Non-tilted square lattice
+        nSites = nSites**2
+
+        if(nSites.ne.nSitesOrig) write(6,"(A)") "Total number of sites changed to ensure square number and commensurate with impurity cluster"
+        write(6,"(A)") "Total number of sites: ",nSites
+
+        !Now, set up ImpSites array, which gives the indices of the impurity cluster
+        allocate(ImpSites(nImp))
+        ImpSites = 0
+
+        do i = 1,nImp_x
+            do j = 1,nImp_x
+                ImpSites(j+((i-1)*nImp_x)) = j + ((i-1)*nSites_x)
+            enddo
+        enddo
+        write(6,"(A)") "Impurity site indices defined as "
+        do i = 1,nImp
+            write(6,"(2I7)") i,ImpSites(i)
+        enddo
+
+        !Now, how many impurity "repeats" will there be once they are striped through the space?
+        iImpRepeats = nint(real(nSites_x,dp)/real(nImp_x,dp))
+        write(6,"(A,I6)") "Number of copied of correlation potential striped through space: ",iImpRepeats
+
+
+
+
+
+
+
+    end subroutine Setup2DLattice_Square
+
+    !Find the lattice coordinate from the site index
+    !The LatIndex has to be between 1 and nSites
+    subroutine SiteIndexToLatCoord_2DSquare(LatIndex,Ind_X,Ind_Y)
+        implicit none
+        integer, intent(in) :: LatIndex
+        integer, intent(out) :: Ind_X,Ind_Y
+        character(len=*), parameter :: t_r='SiteIndexToLatCoord_2DSquare'
+
+        if((LatIndex.lt.1).or.(LatIndex.gt.nSites)) call stop_all(t_r,'This routine must take an index inside the supercell')
+
+
+
+
+
+    end subroutine SiteIndexToLatCoord_2DSquare
+
+    !Find the index of a lattice site displaced by a vector given by (DeltaX,DeltaY), and also calculate any phase change if necessary
+    !In this scheme, the lattice is indexed by increasing in the y direction first (column major)
+    subroutine FindDisplacedIndex_2DSquare(LatIndIn,DeltaX,DeltaY,LatIndOut,PhaseChange)
+        implicit none
+        integer, intent(in) :: LatIndIn,DeltaX,DeltaY
+        integer, intent(out) :: LatIndOut
+        integer, intent(out) :: PhaseChange
+        
+        LatIndOut = LatIndIn
+        PhaseChange = 1
+
+        !Shift in x direction first
+        LatIndOut = LatIndOut + nSites_x*DeltaX
+
+        !Now map back in if necessary
+        if(LatIndOut.lt.1) then
+            LatIndOut = LatIndOut + nSites
+        elseif(LatIndOut.gt.nSites) then
+            LatIndOut = LatIndOut - nSites
+        endif
+        if((LatIndOut.gt.nSites).or.(LatIndOut.le.0)) call stop_all(t_r,'Cannot translate lattice index by more than a lattice in a dimension')
+
+    end subroutine FindDisplacedIndex_2DSquare
+
     !Find the indices for any diagonal operator, and the matrices for ...
     subroutine MakeVLocIndices()
         implicit none
