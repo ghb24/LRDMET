@@ -70,7 +70,7 @@ module SelfConsistentUtils
         if(present(SelfEnergy)) then
             !This can actually provide a correlated bandstructure with non-unit spectral weight.
             !We have to write out the whole range of frequencies for each kpoint
-            !By default, we only write out 40 kpoints, unless specified otherwise
+            !By default, we only write out 30 kpoints, unless specified otherwise
             !This can be controlled with the KPNT_CALCS option in the LINEAR_RESPONSE block
             k = 0
             do while(.true.)
