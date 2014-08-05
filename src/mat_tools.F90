@@ -53,12 +53,12 @@ module mat_tools
         endif
 
         nSites_y = nSites_x     !Non-tilted square lattice
-        nSites = nSites**2
+        nSites = nSites_x**2
 
         if(nSites.ne.nSitesOrig) then
             write(6,"(A)") "Total number of sites changed to ensure square number and commensurate with impurity cluster"
         endif
-        write(6,"(A)") "Total number of sites: ",nSites
+        write(6,"(A,I9)") "Total number of sites: ",nSites
 
         !Now, set up ImpSites array, which gives the indices of the impurity cluster
         allocate(ImpSites(nImp))
@@ -75,8 +75,8 @@ module mat_tools
         enddo
 
         !TODO: Now, work out whether we want periodic or antiperiodic boundary conditions
-        tPeriodic = .true.
-        tAntiPeriodic = .false.
+        tPeriodic = .false.
+        tAntiPeriodic = .true. 
 
         if(tPeriodic) then
             write(6,"(A)") "PERIODIC boundary conditions chosen to ensure a closed shell fermi surface"
@@ -91,11 +91,16 @@ module mat_tools
         allocate(StripedImpIndices(nImp,iImpRepeats))
         StripedImpIndices(:,:) = 0
 
+!        write(6,*) "Impurity site indices: "
         StartInd = 1    !This labels the first index of this impurity cluster
         do k = 1,iImpRepeats
             do i = 1,nImp_x
                 do j = 1,nImp_y
                     call FindDisplacedIndex_2DSquare(StartInd,i-1,j-1,StripedImpIndices(((i-1)*nImp_x)+j,k),PhaseChange)
+
+!                    write(6,*) k,((i-1)*nImp_x)+j,StripedImpIndices(((i-1)*nImp_x)+j,k)
+
+!                    call stop_all(t_r,'end')
 
                     !Check that we never have any boundary conditions since we should never have left the supercell
                     if(PhaseChange.ne.1) call stop_all(t_r,'Should not be leaving supercell, so should not be changing phase!')
@@ -103,6 +108,7 @@ module mat_tools
             enddo
             StartInd = StartInd + nSites_y*nImp_x + nImp_y
         enddo
+
 
         !Check that the first repeat is the same as the indices we have already worked out for the main impurity
         do i = 1,nImp
@@ -138,8 +144,11 @@ module mat_tools
 
         if((LatIndex.lt.1).or.(LatIndex.gt.nSites)) call stop_all(t_r,'This routine must take an index inside the supercell')
 
-        Ind_Y = mod(LatIndex,nSites_x)
-        Ind_X = (LatIndex - Ind_Y) / nSites_x
+        Ind_Y = mod(LatIndex,nSites_y)
+        if(Ind_Y.eq.0) Ind_Y = nSites_y
+!        write(6,*) "IndY: ",Ind_Y
+!        write(6,*) "Ind_X: ",((LatIndex - Ind_Y) / nSites_x) + 1,LatIndex - Ind_Y
+        Ind_X = ((LatIndex - Ind_Y) / nSites_x) + 1
 
     end subroutine SiteIndexToLatCoord_2DSquare
 
@@ -152,11 +161,15 @@ module mat_tools
         integer, intent(out) :: PhaseChange
         !local
         integer :: Ind_X,Ind_Y,IndX_folded,IndY_folded,flips_x,flips_y
-        
+
+!        write(6,*) "Calling Find displaced index. Original ind: ",LatIndIn
+!        write(6,*) "Displacement vector: ",DeltaX,DeltaY
         LatIndOut = LatIndIn
         PhaseChange = 1
 
         call SiteIndexToLatCoord_2DSquare(LatIndOut,Ind_X,Ind_Y)
+
+!        write(6,*) "Original index coordinate: ",Ind_X,Ind_Y
 
         Ind_X = Ind_X + DeltaX
         Ind_Y = Ind_Y + DeltaY
@@ -203,6 +216,9 @@ module mat_tools
 
         !Now, translate back into a lattice index
         call LatCoordToSiteIndex_2DSquare(Ind_X,Ind_Y,LatIndOut)
+
+!        write(6,*) "Final lattice index: ",LatIndOut
+!        write(6,*) "phase: ",PhaseChange
 
     end subroutine FindDisplacedIndex_2DSquare
     

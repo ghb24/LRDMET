@@ -1070,8 +1070,8 @@ Program RealHub
         if(tDiag_KSpace.and.tReadSystem) then
             call stop_all(t_r,'Cannot work in k-space if reading in the system')
         endif
-        if(tDiag_KSpace.and.LatticeDim.eq.2) then
-            call stop_all(t_r,'Cannot currently do k-space diagonalizations for 2D models. Fix me!')
+        if(tDiag_KSpace.and.(LatticeDim.eq.2).and.tTiltedLattice) then
+            call stop_all(t_r,'Cannot currently do k-space diagonalizations for 2D tilted lattices. Fix me!')
         endif
         if(tSC_LR.and.(.not.tRealSpaceSC).and.(iNonLocBlocks.ne.0)) then
             call stop_all(t_r,'Off-diagonal lattice coupling length specified, '  &
