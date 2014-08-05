@@ -1935,7 +1935,9 @@ module mat_tools
                 endif
             enddo
         elseif(LatticeDim.eq.2) then
-            if(tTiltedLattice) call stop_all(t_r,'Cannot setup k-space - impurity tiling is not same as direct lattice. Use square lattice.')
+            if(tTiltedLattice) then
+                call stop_all(t_r,'Cannot setup k-space - impurity tiling is not same as direct lattice. Use square lattice.')
+            endif
 
             !Check that the number of kpoints is a square number
             if(abs(sqrt(real(nKPnts,dp))-real(nint(sqrt(real(nKPnts,dp))),dp)).gt.1.0e-8_dp) then
@@ -2045,16 +2047,19 @@ module mat_tools
                 else
                     call SiteIndexToLatCoord_2DSquare(i,indx,indy)
                     !Since these indices are 1 indexed, we need to make them 0 indexed
-                    PrimLattVec(1) = real(indx - 1,dp)
-                    PrimLattVec(2) = real(indy - 1,dp)
-!                    write(6,"(A,I5,A,2F10.4)") "Lattice site: ",i, " has coordinate: ",PrimLattVec(:)
+                    !What is the displacement vector of the *cell* rather than the site?
+                    indx = indx - 1 - mod(indx-1,nImp_x)
+                    indy = indy - 1 - mod(indy-1,nImp_y)
+                    PrimLattVec(1) = indx   !real(indx - 1,dp)
+                    PrimLattVec(2) = indy   !real(indy - 1,dp)
+                    write(6,"(A,I5,A,2F10.4)") "Lattice site: ",i, " has coordinate: ",PrimLattVec(:)
                 endif
                 phase = ddot(LatticeDim,KPnts(:,k),1,PrimLattVec,1)
                 RtoK_Rot(i,ind_1+mod(i,nImp)) = exp(dcmplx(zero,phase))/sqrt(real(nKPnts,dp))
             enddo
         enddo
 
-        if(tWriteOut) call writematrixcomp(RtoK_Rot,'RtoK_Rot',.true.)
+        if(tWriteOut) call writematrixcomp(RtoK_Rot,'RtoK_Rot',.false.)
 
 !        if(tCheck) then
         if(.true.) then
