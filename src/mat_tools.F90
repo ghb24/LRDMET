@@ -75,8 +75,8 @@ module mat_tools
         enddo
 
         !TODO: Now, work out whether we want periodic or antiperiodic boundary conditions
-        tPeriodic = .false.
-        tAntiPeriodic = .true. 
+!        tPeriodic = .true. 
+!        tAntiPeriodic = .false. 
 
         if(tPeriodic) then
             write(6,"(A)") "PERIODIC boundary conditions chosen to ensure a closed shell fermi surface"
@@ -99,8 +99,6 @@ module mat_tools
                     call FindDisplacedIndex_2DSquare(StartInd,i-1,j-1,StripedImpIndices(((i-1)*nImp_x)+j,k),PhaseChange)
 
 !                    write(6,*) k,((i-1)*nImp_x)+j,StripedImpIndices(((i-1)*nImp_x)+j,k)
-
-!                    call stop_all(t_r,'end')
 
                     !Check that we never have any boundary conditions since we should never have left the supercell
                     if(PhaseChange.ne.1) call stop_all(t_r,'Should not be leaving supercell, so should not be changing phase!')
@@ -1876,10 +1874,12 @@ module mat_tools
     end subroutine run_hf
 
     !Setup the kpoint mesh, and other things needed to work in kspace
+    !See C. Gros, Z. Phys. B - Condensed Matter 86, 359-365 (1992) for details.
     subroutine setup_kspace()
         implicit none
         integer :: SS_Period,i,k,ind_1,ind_2,j,nKPnts_x,nKPnts_y,indx,indy,kpnt
-        real(dp) :: PrimLattVec(LatticeDim),phase,ddot,r,r2,kpntx,kpnty
+        real(dp) :: PrimLattVec(LatticeDim),phase,ddot,r,r2,kpntx,kpnty,PrimLattVec_2(LatticeDim),phase1,phase5
+        complex(dp) :: val,val2
         complex(dp) , allocatable :: temp(:,:),ham_temp(:,:),Random_CorrPot(:,:)
         character(len=*), parameter :: t_r='setup_kspace'
 
@@ -1915,6 +1915,7 @@ module mat_tools
                     tShift_Mesh = .false.
                 endif
             endif
+!            tShift_Mesh = .true. 
             if(tShift_Mesh) then
                 write(6,"(A)") "Using a Monkhorst-pack kpoint mesh of 1st BZ - Symmetric k-points around Gamma point"
             else
@@ -1942,27 +1943,23 @@ module mat_tools
             endif
             nKPnts_x = nint(sqrt(real(nKPnts,dp)))
             nKPnts_y = nint(sqrt(real(nKPnts,dp)))
-            write(6,"(A)") "Number of kpoints in each dimension: ",nKPnts_x
+            write(6,"(A,I8)") "Number of kpoints in each dimension: ",nKPnts_x
 
             !We should have already defined whether we have periodic or antiperiodic boundary conditions
             if(mod(nKPnts_x,2).eq.0) then
-                !Even number of kpoints in each dimension
-                if(tPeriodic) then
-                    !We want to use a Gamma centered mesh
-                    !i.e. include BZ boundary
-                    tShift_Mesh = .false.
-                else
-                    !Monkhorst-Pack mesh
-                    tShift_Mesh = .true.
-                endif
-                !Odd number of kpoints in each dimension
-                if(tPeriodic) then
-                    !Monkhorst-pack mesh
-                    tShift_Mesh = .true.
-                else
-                    !Gamma centered
-                    tShift_Mesh = .false.
-                endif
+                !This is correct for even kpoint meshes
+                if(tPeriodic) tShift_Mesh = .false.
+                if(.not.tPeriodic) tShift_Mesh = .true.
+            else
+                !This is correct for odd kpoint meshes
+                if(tPeriodic) tShift_Mesh = .true. 
+                if(.not.tPeriodic) tShift_Mesh = .false.
+            endif
+
+            if(tShift_Mesh) then
+                write(6,"(A)") "Using a Monkhorst-pack kpoint mesh of 1st BZ - Symmetric k-points around Gamma point"
+            else
+                write(6,"(A)") "Using a gamma-centered kpoint mesh of 1st BZ - BZ boundary included"
             endif
 
             !Reciprocal lattice vector in the x direction, defining a square grid
@@ -1983,8 +1980,8 @@ module mat_tools
                 do j = 1,nKPnts_y
                     kpnt = (i-1)*nKPnts_x + j
 
-                    kpnty = -RecipLattVecs(2,2)/2.0_dp + (j-1)*RecipLattVecs(2,2)/nKPnts_y
-                    if(tShift_Mesh) kpnty = kpnty + RecipLattVecs(2,2)/(2.0_dp*real(nKPnts_y,dp))
+                    kpnty = RecipLattVecs(2,2)/2.0_dp - (j-1)*RecipLattVecs(2,2)/nKPnts_y
+                    if(tShift_Mesh) kpnty = kpnty - RecipLattVecs(2,2)/(2.0_dp*real(nKPnts_y,dp))
 
                     KPnts(1,kpnt) = kpntx
                     KPnts(2,kpnt) = kpnty
@@ -1999,9 +1996,39 @@ module mat_tools
 !        if(tWriteOut) then
         write(6,"(A)") "Writing out kpoint mesh: "
         do k=1,nKPnts
-            write(6,*) "KPnt ",k,KPnts(:,k)
+            if(LatticeDim.eq.1) then
+                write(6,*) "KPnt ",k,KPnts(1,k),KPnts(1,k)*(nImp/pi)
+            else
+                write(6,"(A,I5,4F13.5)") "KPnt ",k,KPnts(:,k),KPnts(:,k)*(nImp_x/pi)
+            endif
         enddo
 !        endif
+
+        !test
+        val = zzero
+        val2 = zzero
+        do k = 1,nKPnts
+            call SiteIndexToLatCoord_2DSquare(1,indx,indy)
+            PrimLattVec(1) = real(indx - 1,dp)
+            PrimLattVec(2) = real(indy - 1,dp)   !r1
+            phase1 = ddot(LatticeDim,KPnts(:,k),1,PrimLattVec,1)
+            
+            call SiteIndexToLatCoord_2DSquare(5,indx,indy)
+            PrimLattVec_2(1) = real(indx - 1,dp)
+            PrimLattVec_2(2) = real(indy - 1,dp)   !r5
+            phase5 = ddot(LatticeDim,KPnts(:,k),1,PrimLattVec_2,1)
+ 
+            PrimLattVec(:) = PrimLattVec_2(:) - PrimLattVec(:)   !r5 - r1
+            write(6,*) "r5 - r1: ",PrimLattVec(:)
+            phase = ddot(LatticeDim,KPnts(:,k),1,PrimLattVec,1)
+ 
+            val = val + exp(dcmplx(zero,phase))
+            val2 = val2 + exp(dcmplx(zero,-phase1))*exp(dcmplx(zero,phase5))
+        enddo
+        val = val / nKPnts
+        val2 = val2 / nKPnts
+        write(6,*) "Value for the 1,5 C*C matrix element: ",val,val2
+
 
         !Setup rotation matrix from site basis to k-space
         !First index r, second k
@@ -2018,11 +2045,11 @@ module mat_tools
                 else
                     call SiteIndexToLatCoord_2DSquare(i,indx,indy)
                     !Since these indices are 1 indexed, we need to make them 0 indexed
-                    PrimLattVec(1) = indx - 1
-                    PrimLattVec(2) = indy - 1
+                    PrimLattVec(1) = real(indx - 1,dp)
+                    PrimLattVec(2) = real(indy - 1,dp)
+!                    write(6,"(A,I5,A,2F10.4)") "Lattice site: ",i, " has coordinate: ",PrimLattVec(:)
                 endif
                 phase = ddot(LatticeDim,KPnts(:,k),1,PrimLattVec,1)
-                !TODO: Is the prefactor still sqrt nKPnts here, or should it be some other power?
                 RtoK_Rot(i,ind_1+mod(i,nImp)) = exp(dcmplx(zero,phase))/sqrt(real(nKPnts,dp))
             enddo
         enddo
@@ -2034,32 +2061,33 @@ module mat_tools
             !Now, is RtoK_Rot unitary?
             allocate(temp(nSites,nSites))
             !Check unitarity of matrix
-            call ZGEMM('C','N',nSites,nSites,nSites,zone,RtoK_Rot,nSites,RtoK_Rot,nSites,zzero,temp,nSites) 
-            do i = 1,nSites
-                do j = 1,nSites
-                    if((i.eq.j).and.(abs(temp(i,j)-zone).gt.1.0e-7_dp)) then
-                        write(6,*) "i,j: ",i,j
-                        call writematrixcomp(temp,'Identity?',.true.)
-                        call stop_all(t_r,'Rotation matrix not unitary')
-                    elseif((i.ne.j).and.(abs(temp(j,i)).gt.1.0e-7_dp)) then
-                        write(6,*) "i,j: ",i,j
-                        call writematrixcomp(temp,'Identity?',.true.)
-                        call stop_all(t_r,'Rotation matrix not unitary 2')
-                    endif
-                enddo
-            enddo
+!            call ZGEMM('C','N',nSites,nSites,nSites,zone,RtoK_Rot,nSites,RtoK_Rot,nSites,zzero,temp,nSites) 
+!            do i = 1,nSites
+!                do j = 1,nSites
+!                    if((i.eq.j).and.(abs(temp(i,j)-zone).gt.1.0e-7_dp)) then
+!                        call writematrixcomp(temp,'Identity?',.false.)
+!                        write(6,*) "i,j: ",i,j,temp(i,j)
+!                        call stop_all(t_r,'Rotation matrix not unitary 1')
+!                    elseif((i.ne.j).and.(abs(temp(j,i)).gt.1.0e-7_dp)) then
+!                        call writematrixcomp(temp,'Identity?',.false.)
+!                        write(6,*) "i,j: ",i,j,temp(i,j)
+!                        call stop_all(t_r,'Rotation matrix not unitary 2')
+!                    endif
+!                enddo
+!            enddo
+!            call stop_all(t_r,'end?')
             !Try other way...
             call ZGEMM('N','C',nSites,nSites,nSites,zone,RtoK_Rot,nSites,RtoK_Rot,nSites,zzero,temp,nSites) 
             do i = 1,nSites
                 do j = 1,nSites
                     if((i.eq.j).and.(abs(temp(i,j)-zone).gt.1.0e-7_dp)) then
-                        write(6,*) "i,j: ",i,j
                         call writematrixcomp(temp,'Identity?',.true.)
-                        call stop_all(t_r,'Rotation matrix not unitary')
+                        write(6,*) "i,j: ",i,j,temp(i,j)
+                        call stop_all(t_r,'Rotation matrix not unitary 3')
                     elseif((i.ne.j).and.(abs(temp(j,i)).gt.1.0e-7_dp)) then
-                        write(6,*) "i,j: ",i,j
                         call writematrixcomp(temp,'Identity?',.true.)
-                        call stop_all(t_r,'Rotation matrix not unitary 2')
+                        write(6,*) "i,j: ",i,j,temp(j,i)
+                        call stop_all(t_r,'Rotation matrix not unitary 4')
                     endif
                 enddo
             enddo
@@ -2069,6 +2097,7 @@ module mat_tools
 
         !Right, just as a sanity check, see if this rotation block diagonalizes the hopping matrix
         allocate(ham_temp(nSites,nSites))
+!        call writematrix(h0,'h0',.true.)
         do i = 1,nSites
             do j = 1,nSites
                 ham_temp(j,i) = cmplx(h0(j,i),zero,dp)
@@ -2090,7 +2119,7 @@ module mat_tools
             enddo
         enddo
         call MakeBlockHermitian(Random_CorrPot,nImp)
-        call add_localpot_comp_inplace(ham_temp,Random_CorrPot,tAdd=.true.)
+!        call add_localpot_comp_inplace(ham_temp,Random_CorrPot,tAdd=.true.)
         allocate(temp(nSites,nSites))
         call ZGEMM('C','N',nSites,nSites,nSites,zone,RtoK_Rot,nSites,ham_temp,nSites,zzero,temp,nSites)
         call ZGEMM('N','N',nSites,nSites,nSites,zone,temp,nSites,RtoK_Rot,nSites,zzero,ham_temp,nSites)
@@ -2105,6 +2134,7 @@ module mat_tools
         do i = 1,nSites
             do j = 1,nSites
                 if(abs(ham_temp(j,i)).gt.1.0e-7_dp) then
+                    call writematrixcomp(ham_temp,'zero matrix',.true.)
                     write(6,*) "i,j: ",j,i
                     write(6,*) "ham in kspace: ",ham_temp(j,i)
                     call stop_all(t_r,'kspace rotations not correctly set up. ' &
