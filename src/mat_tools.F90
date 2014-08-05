@@ -32,14 +32,14 @@ module mat_tools
         endif
 
         !Right, now how many lattice sites should be have. The constraints are that 
-        !   o We need a square number
+        !   o We need nSites to be a square number. We also need nSites/nImp to be a square number (number of kpoints).
         !   o We want nSites_x to be an integer multiple of nImp_x
         !   o We want the total number to be as close as possible to the original value
 
         !First, calculate the two values satisfying 1 and 2, both above and below the original value
         nSitesOrig = nSites
 
-        nSites_x_low = nImp_x * int(sqrt(real(nSites,dp))/real(nImp_x,dp))
+        nSites_x_low = nImp_x * int(sqrt(real(nSites,dp))/real(nImp_x,dp))  !This is essentially giving the number of kpoints in each dimension.
         nSites_x_high = nImp_x * (int(sqrt(real(nSites,dp))/real(nImp_x,dp)) + 1)
 
         nBelowSitesChange = abs(nSites_x_low**2 - nSites)
@@ -90,7 +90,6 @@ module mat_tools
 
         allocate(StripedImpIndices(nImp,iImpRepeats))
         StripedImpIndices(:,:) = 0
-
 
         StartInd = 1    !This labels the first index of this impurity cluster
         do k = 1,iImpRepeats
@@ -206,6 +205,120 @@ module mat_tools
         call LatCoordToSiteIndex_2DSquare(Ind_X,Ind_Y,LatIndOut)
 
     end subroutine FindDisplacedIndex_2DSquare
+    
+    !Setup the lattice for the tilted unit cell
+    subroutine Setup2DLattice_Tilt()
+        implicit none
+        real(dp) :: dWidth
+        integer :: TDLat_Width,x,y,dx,dy,ci,cj,site_imp
+        integer :: i,j,k
+        character(len=*), parameter :: t_r='Setup2DLattice'
+
+        !Work out an appropriate width, and an actual nSites
+        dWidth = sqrt(nSites*2.0_dp)
+        TDLat_Width = 2 * nint(dWidth/2.0_dp)
+
+        !There are two lattices, an x, y lattice, and an i, j lattice. These have had their axes rotated by 45 degrees.
+        !2DLat_Ni is the width of each lattice (there are two interlocking in the (i,j) representation
+        TDLat_Ni = TDLat_Width / 2
+        !2DLat_Nj is the width of the lattice in the (x,y) representation
+        TDLat_Nj = TDLat_Width
+
+        !Actual nSites. 
+        nSites = TDLat_Ni * TDLat_Nj
+
+        write(6,*) "Updated number of sites in the 2D hubbard model will be: ",nSites
+        
+        if(mod(TDLat_Width/2,2).eq.0) then
+            !Use anti-periodic boundary conditions
+            !HF ground state only unique if Width=2*odd_number (direct PBC)
+            !or if Width=2*even_number (anti-PBC)
+            tAntiperiodic = .true.
+            tPeriodic = .false.
+        else
+            tAntiperiodic = .false.
+            tPeriodic = .true.
+        endif
+        if(tPeriodic) then
+            write(6,*) "Periodic boundary conditions now in use"
+        else
+            write(6,*) "Anti-Periodic boundary conditions now in use"
+        endif
+
+        !Now to set up the impurity
+        if(nImp.eq.1) then
+            nImp_x = 1
+            nImp_y = 1
+        elseif(nImp.eq.2) then
+            nImp_x = 1
+            nImp_y = 2
+        elseif(nImp.eq.4) then
+            nImp_x = 2
+            nImp_y = 2
+        else
+            call stop_all(t_r,'Cannot deal with impurities > 4')
+        endif
+
+        !Find the x,y coordinates for the middle of the array. This will be used to
+        !define the corner site of the impurity
+        call ij2xy(TDLat_Ni/2,TDLat_Nj/2,x,y)
+
+        !Setup the impurity space, and how to tile the impurity through the space.
+        !This creates the matrices TD_Imp_Lat and TD_Imp_Phase
+        !If the correlation potential is a matrix of nImp x nImp, then TD_Imp_Lat
+        !gives the index of that correlation potential which corresponds to the tiled
+        !correlation potential through the space.
+        !(TD_Imp_Lat(site,site)-1)/nImp + 1 gives the impurity index of that site. 
+
+        call MakeVLocIndices()
+
+        !Create the impurity cluster
+        allocate(ImpSites(nImp))
+        ImpSites = 0
+        do dx = 0,nImp_x-1
+            do dy = 0,nImp_y-1
+                call xy2ij(x+dx,y+dy,ci,cj)
+                !Remember - our sites are 1 indexed
+                site_imp = ci + TDLat_Ni*cj + 1     !No need to take mods. We certainly shouldn't exceed the bounds of the ij lattice
+                !write(6,*) "***",dx,dy,site_imp,(TD_Imp_Lat(site_imp,site_imp)),((TD_Imp_Lat(site_imp,site_imp)-1)/nImp) + 1
+                ImpSites(((TD_Imp_Lat(site_imp,site_imp)-1)/nImp) + 1) = site_imp
+            enddo
+        enddo
+
+        write(6,*) "Impurity sites defined as: ",ImpSites(:)
+
+        !We now want to define a mapping, from the standard site indexing to an impurity ordering of the sites, such that
+        ! Perm_indir(site) = Imp_site_index
+        ! Perm_dir(Imp_site_index) = site       The first index maps you onto the original impurity sites
+        ! Therefore, Perm_indir(site)%nImp = impurity site it maps to which repeat of the impurity you are on
+
+        !In the impurity ordering (indirect), the impurity sites are first, followed by the repetitions of the striped
+        !impurity space.
+        !The direct space is the normal lattice ordering
+        allocate(Perm_indir(nSites))
+        allocate(Perm_dir(nSites))
+        Perm_indir(:) = 0
+        Perm_dir(:) = 0
+        Perm_dir(1:nImp) = ImpSites(:)
+        k = nImp+1
+        loop: do i = 1,nSites
+            do j = 1,nImp 
+                if(i.eq.ImpSites(j)) then
+                    cycle loop
+                endif
+            enddo
+            Perm_dir(k) = i
+            k = k + 1
+        enddo loop
+        if(k.ne.nSites+1) call stop_all(t_r,"Error here")
+
+        do i=1,nSites
+            Perm_indir(Perm_dir(i)) = i
+        enddo
+        !write(6,*) "Perm_dir: ",Perm_dir(:)
+        !write(6,*) "Perm_indir: ",Perm_indir(:)
+
+    end subroutine Setup2DLattice_Tilt
 
     !Find the indices for any diagonal operator, and the matrices for ...
     subroutine MakeVLocIndices()
@@ -342,7 +455,7 @@ module mat_tools
         use DetTools, only: tospat
         use utils, only: get_free_unit
         implicit none
-        integer :: i,j,k,x,y,li,lj,ij_link,site,dx,dy,iunit
+        integer :: i,j,k,x,y,li,lj,ij_link,site,dx,dy,iunit,iphase
         real(dp) :: phase,t
         real(dp), allocatable :: temp(:)
         logical :: exists
@@ -456,63 +569,97 @@ module mat_tools
 
         elseif(LatticeDim.eq.2) then
 
-            do site = 0,nSites-1
-                call site2ij(site,i,j)
-                !Now for coordinates on the original tilted lattice. This is the one where distances are not distorted
-                call ij2xy(i,j,x,y)
-                !write(6,*) "site: ",site," i,j: ",i,j,"x,y: ",x,y
-                !call flush(6)
+            if(tTiltedLattice) then
+                !Tilted lattices. No k-space coded up
 
-                do k = 1,4
-                    !Move in all four possible directions
-                    if(k.eq.1) then
-                        dx = 1
-                        dy = 0
-                    elseif(k.eq.2) then
-                        dx = 0
-                        dy = 1
-                    elseif(k.eq.3) then
-                        dx = 0
-                        dy = -1
-                    elseif(k.eq.4) then
-                        dx = -1
-                        dy = 0
-                    endif
-                    !Move in the appropriate direction, and see where we wrap around to, by transforming into the i,j representation, where boundary conditions are easier
-                    call xy2ij(x+dx,y+dy,li,lj)
-                    phase = 1.0_dp
-                    if(tAntiPeriodic) then
-                        !We have to multiply the phase by a factor of -1 for every boundary condition we wrap around
-                        if((li.lt.0).or.(li.ge.TDLat_Ni)) phase = -phase
-                        if((lj.lt.0).or.(lj.ge.TDLat_Nj)) phase = -phase
-                    endif
+                do site = 0,nSites-1
+                    call site2ij(site,i,j)
+                    !Now for coordinates on the original tilted lattice. This is the one where distances are not distorted
+                    call ij2xy(i,j,x,y)
+                    !write(6,*) "site: ",site," i,j: ",i,j,"x,y: ",x,y
+                    !call flush(6)
 
-                    !Take our position modulo the axes
-                    li = py_mod(li,TDLat_Ni) 
-                    lj = py_mod(lj,TDLat_Nj) 
-                    ij_link = li + TDLat_Ni*lj  !Now find the site number of the connecing lattice
-                    h0(site+1,ij_link+1) = t * phase
-                    h0(ij_link+1,site+1) = t * phase
+                    do k = 1,4
+                        !Move in all four possible directions
+                        if(k.eq.1) then
+                            dx = 1
+                            dy = 0
+                        elseif(k.eq.2) then
+                            dx = 0
+                            dy = 1
+                        elseif(k.eq.3) then
+                            dx = 0
+                            dy = -1
+                        elseif(k.eq.4) then
+                            dx = -1
+                            dy = 0
+                        endif
+                        !Move in the appropriate direction, and see where we wrap around to, by transforming into the i,j representation, where boundary conditions are easier
+                        call xy2ij(x+dx,y+dy,li,lj)
+                        phase = 1.0_dp
+                        if(tAntiPeriodic) then
+                            !We have to multiply the phase by a factor of -1 for every boundary condition we wrap around
+                            if((li.lt.0).or.(li.ge.TDLat_Ni)) phase = -phase
+                            if((lj.lt.0).or.(lj.ge.TDLat_Nj)) phase = -phase
+                        endif
+
+                        !Take our position modulo the axes
+                        li = py_mod(li,TDLat_Ni) 
+                        lj = py_mod(lj,TDLat_Nj) 
+                        ij_link = li + TDLat_Ni*lj  !Now find the site number of the connecing lattice
+                        h0(site+1,ij_link+1) = t * phase
+                        h0(ij_link+1,site+1) = t * phase
+                    enddo
                 enddo
-            enddo
 
-            !Change the ordering of the hopping hamiltonian, such that the impurity sites are defined firust, and then repeated in the order of the impurty tiling
-!            write(6,*) "Hopping matrix in lattice ordering: "
-!            do i = 1,nSites
-!                do j = 1,nSites
-!                    write(6,"(F7.3)",advance='no') h0(j,i)
+                !Change the ordering of the hopping hamiltonian, such that the impurity sites are defined firust, and then repeated in the order of the impurty tiling
+!                write(6,*) "Hopping matrix in lattice ordering: "
+!                do i = 1,nSites
+!                    do j = 1,nSites
+!                        write(6,"(F7.3)",advance='no') h0(j,i)
+!                    enddo
+!                    write(6,*) ""
 !                enddo
-!                write(6,*) ""
-!            enddo
-            call Mat_to_imp_order(h0)
+                call Mat_to_imp_order(h0)
+            else
+                !Non-tilted lattice - square
+                do i=1,nSites
+                    !Run through all sites
+                    do k = 1,4
+                        !Move in all four possible directions
+                        if(k.eq.1) then
+                            dx = 1
+                            dy = 0
+                        elseif(k.eq.2) then
+                            dx = 0
+                            dy = 1
+                        elseif(k.eq.3) then
+                            dx = 0
+                            dy = -1
+                        elseif(k.eq.4) then
+                            dx = -1
+                            dy = 0
+                        endif
+
+                        !Find the index of the displaced lattice site
+                        call FindDisplacedIndex_2DSquare(i,dx,dy,j,iphase)
+
+                        if((h0(i,j).ne.zero).and.(abs(h0(i,j)-(t*iphase)).gt.1.0e-8_dp)) then
+                            call stop_all(t_r,'Error in constructing h0 matrix')
+                        endif
+                        if((h0(j,i).ne.zero).and.(abs(h0(j,i)-(t*iphase)).gt.1.0e-8_dp)) then
+                            call stop_all(t_r,'Error in constructing h0 matrix')
+                        endif
+
+                        h0(i,j) = t*iphase
+                        h0(j,i) = t*iphase
+                    enddo
+                enddo
+
+            endif
         else
             call stop_all(t_r,'Higher dimensional models not coded up')
         endif
-
-!        if(tUHF) then
-!            !TODO: THIS IS JUST FOR TESTING!!
-!            h0_b(:,:) = h0(:,:)
-!        endif
 
     end subroutine make_hop_mat
             
@@ -889,7 +1036,7 @@ module mat_tools
         real(dp) , intent(out), optional :: core_v_b(nSites,nSites)
         real(dp) , intent(in), optional :: CorrPot_b(nImp,nImp)
         real(dp), allocatable :: temp(:,:)
-        integer :: i,j,k,a,b
+        integer :: i,j,k,a,b,indi,indj
         logical :: tAdd_
         character(len=*) , parameter :: t_r='add_localpot'
 
@@ -955,45 +1102,14 @@ module mat_tools
         elseif(LatticeDim.eq.2) then
             !2D lattices.
 
-            allocate(temp(nSites,nSites))
-            temp(:,:) = core(:,:)
-            call Mat_to_lattice_order(temp)
-            
-            !Add correlation potential to Core_v
-            Core_v(:,:) = temp(:,:)
-
-            !Tile through space
-            do i = 1,nSites
-                do j = 1,nSites
-                    !TD_Imp_Lat gives the element of the v_loc which should be added here
-                    !(Row major)
-                    if(TD_Imp_Lat(j,i).ne.0) then
-
-                        !Convert these into the actual values of each dimension
-                        b = mod(TD_Imp_Lat(j,i)-1,nImp) + 1
-                        a = ((TD_Imp_Lat(j,i)-1)/nImp) + 1
-                        !write(6,*) TD_Imp_Lat(j,i),
-                        !write(6,*) "a: ",a
-                        !write(6,*) "b: ",b
-
-                        if(tAdd_) then
-                            Core_v(j,i) = Core_v(j,i) + CorrPot(a,b)*TD_Imp_Phase(j,i)
-                        else
-                            Core_v(j,i) = Core_v(j,i) - CorrPot(a,b)*TD_Imp_Phase(j,i)
-                        endif
-                    endif
-                enddo
-            enddo
-
-            !Transform both core_v and core back to the impurity ordering
-            call Mat_to_imp_order(Core_v)
-
-            if(tUHF) then
-                temp(:,:) = core_b(:,:)
+            if(tTiltedLattice) then
+               
+                allocate(temp(nSites,nSites))
+                temp(:,:) = core(:,:)
                 call Mat_to_lattice_order(temp)
                 
                 !Add correlation potential to Core_v
-                Core_v_b(:,:) = temp(:,:)
+                Core_v(:,:) = temp(:,:)
 
                 !Tile through space
                 do i = 1,nSites
@@ -1001,6 +1117,7 @@ module mat_tools
                         !TD_Imp_Lat gives the element of the v_loc which should be added here
                         !(Row major)
                         if(TD_Imp_Lat(j,i).ne.0) then
+
                             !Convert these into the actual values of each dimension
                             b = mod(TD_Imp_Lat(j,i)-1,nImp) + 1
                             a = ((TD_Imp_Lat(j,i)-1)/nImp) + 1
@@ -1009,20 +1126,82 @@ module mat_tools
                             !write(6,*) "b: ",b
 
                             if(tAdd_) then
-                                Core_v_b(j,i) = Core_v_b(j,i) + CorrPot_b(a,b)*TD_Imp_Phase(j,i)
+                                Core_v(j,i) = Core_v(j,i) + CorrPot(a,b)*TD_Imp_Phase(j,i)
                             else
-                                Core_v_b(j,i) = Core_v_b(j,i) - CorrPot_b(a,b)*TD_Imp_Phase(j,i)
+                                Core_v(j,i) = Core_v(j,i) - CorrPot(a,b)*TD_Imp_Phase(j,i)
                             endif
                         endif
                     enddo
                 enddo
 
                 !Transform both core_v and core back to the impurity ordering
-                call Mat_to_imp_order(Core_v_b)
+                call Mat_to_imp_order(Core_v)
+
+                if(tUHF) then
+                    temp(:,:) = core_b(:,:)
+                    call Mat_to_lattice_order(temp)
+                    
+                    !Add correlation potential to Core_v
+                    Core_v_b(:,:) = temp(:,:)
+
+                    !Tile through space
+                    do i = 1,nSites
+                        do j = 1,nSites
+                            !TD_Imp_Lat gives the element of the v_loc which should be added here
+                            !(Row major)
+                            if(TD_Imp_Lat(j,i).ne.0) then
+                                !Convert these into the actual values of each dimension
+                                b = mod(TD_Imp_Lat(j,i)-1,nImp) + 1
+                                a = ((TD_Imp_Lat(j,i)-1)/nImp) + 1
+                                !write(6,*) TD_Imp_Lat(j,i),
+                                !write(6,*) "a: ",a
+                                !write(6,*) "b: ",b
+
+                                if(tAdd_) then
+                                    Core_v_b(j,i) = Core_v_b(j,i) + CorrPot_b(a,b)*TD_Imp_Phase(j,i)
+                                else
+                                    Core_v_b(j,i) = Core_v_b(j,i) - CorrPot_b(a,b)*TD_Imp_Phase(j,i)
+                                endif
+                            endif
+                        enddo
+                    enddo
+
+                    !Transform both core_v and core back to the impurity ordering
+                    call Mat_to_imp_order(Core_v_b)
+
+                endif
+
+                deallocate(temp)
+            else
+                !Square lattice
+
+                core_v(:,:) = core(:,:)
+                if(tUHF) core_v_b(:,:) = core_b(:,:)
+
+                do k = 1,iImpRepeats
+                    do i = 1,nImp
+                        Indi = StripedImpIndices(i,k)
+                        do j = 1,nImp
+                            Indj = StripedImpIndices(j,k)
+
+                            if(tAdd_) then
+                                Core_v(indj,indi) = Core_v(indj,indi) + CorrPot(j,i)
+                            else
+                                Core_v(indj,indi) = Core_v(indj,indi) - CorrPot(j,i)
+                            endif
+
+                            if(tUHF) then
+                                if(tAdd_) then
+                                    core_v_b(indj,indi) = core_v_b(indj,indi) + CorrPot_b(j,i)
+                                else
+                                    core_v_b(indj,indi) = core_v_b(indj,indi) - CorrPot_b(j,i)
+                                endif
+                            endif
+                        enddo
+                    enddo
+                enddo
 
             endif
-
-            deallocate(temp)
         endif
 
     end subroutine add_localpot
@@ -1036,7 +1215,7 @@ module mat_tools
         complex(dp) , intent(inout) :: core_v(nSites,nSites)
         complex(dp) , intent(in) :: CorrPot(nImp,nImp)
         logical , intent(in), optional :: tAdd
-        integer :: i,j,k,a,b
+        integer :: i,j,k,a,b,indi,indj
         logical :: tAdd_
 
         if(tReadSystem) then
@@ -1064,29 +1243,53 @@ module mat_tools
             enddo
         elseif(LatticeDim.eq.2) then
 
-            call Mat_to_lattice_order_comp(core_v)
+            if(tTiltedLattice) then
 
-            do i = 1,nSites
-                do j = 1,nSites
-                    if(TD_Imp_Lat(j,i).ne.0) then
-                        !Convert these into the actual values of each dimension
-                        b = mod(TD_Imp_Lat(j,i)-1,nImp) + 1
-                        a = ((TD_Imp_Lat(j,i)-1)/nImp) + 1
-                        !write(6,*) TD_Imp_Lat(j,i),
-                        !write(6,*) "a: ",a
-                        !write(6,*) "b: ",b
+                call Mat_to_lattice_order_comp(core_v)
 
-                        if(tAdd_) then
-                            Core_v(j,i) = Core_v(j,i) + CorrPot(a,b)*TD_Imp_Phase(j,i)
-                        else
-                            Core_v(j,i) = Core_v(j,i) - CorrPot(a,b)*TD_Imp_Phase(j,i)
+                do i = 1,nSites
+                    do j = 1,nSites
+                        if(TD_Imp_Lat(j,i).ne.0) then
+                            !Convert these into the actual values of each dimension
+                            b = mod(TD_Imp_Lat(j,i)-1,nImp) + 1
+                            a = ((TD_Imp_Lat(j,i)-1)/nImp) + 1
+                            !write(6,*) TD_Imp_Lat(j,i),
+                            !write(6,*) "a: ",a
+                            !write(6,*) "b: ",b
+
+                            if(tAdd_) then
+                                Core_v(j,i) = Core_v(j,i) + CorrPot(a,b)*TD_Imp_Phase(j,i)
+                            else
+                                Core_v(j,i) = Core_v(j,i) - CorrPot(a,b)*TD_Imp_Phase(j,i)
+                            endif
                         endif
-                    endif
+                    enddo
                 enddo
-            enddo
 
-            !Transform both core_v and core back to the impurity ordering
-            call Mat_to_imp_order_comp(Core_v)
+                !Transform both core_v and core back to the impurity ordering
+                call Mat_to_imp_order_comp(Core_v)
+            else
+                !Square lattice
+                
+                do k = 1,iImpRepeats
+                    do i = 1,nImp
+                        Indi = StripedImpIndices(i,k)
+                        do j = 1,nImp
+
+                            Indj = StripedImpIndices(j,k)
+
+                            if(tAdd_) then
+                                Core_v(indj,indi) = Core_v(indj,indi) + CorrPot(j,i)
+                            else
+                                Core_v(indj,indi) = Core_v(indj,indi) - CorrPot(j,i)
+                            endif
+
+                        enddo
+                    enddo
+                enddo
+
+
+            endif
 
         endif
 
@@ -1102,7 +1305,7 @@ module mat_tools
         complex(dp) , intent(in) :: CorrPot(nImp,nImp)
         logical , intent(in), optional :: tAdd
         complex(dp), allocatable :: temp(:,:)
-        integer :: i,j,k,a,b
+        integer :: i,j,k,a,b,indi,indj
         logical :: tAdd_
 
         if(tReadSystem) then
@@ -1139,37 +1342,61 @@ module mat_tools
             enddo
         elseif(LatticeDim.eq.2) then
 
-            allocate(temp(nSites,nSites))
-            temp(:,:) = core(:,:)
-            call Mat_to_lattice_order_comp(temp)
+            if(tTiltedLattice) then
 
-            Core_v(:,:) = temp(:,:)
-            !Tile through space
-            do i = 1,nSites
-                do j = 1,nSites
-                    !TD_Imp_Lat gives the element of the v_loc which should be added here
-                    !(Row major)
-                    if(TD_Imp_Lat(j,i).ne.0) then
+                allocate(temp(nSites,nSites))
+                temp(:,:) = core(:,:)
+                call Mat_to_lattice_order_comp(temp)
 
-                        !Convert these into the actual values of each dimension
-                        b = mod(TD_Imp_Lat(j,i)-1,nImp) + 1
-                        a = ((TD_Imp_Lat(j,i)-1)/nImp) + 1
-                        !write(6,*) TD_Imp_Lat(j,i),
-                        !write(6,*) "a: ",a
-                        !write(6,*) "b: ",b
+                Core_v(:,:) = temp(:,:)
+                !Tile through space
+                do i = 1,nSites
+                    do j = 1,nSites
+                        !TD_Imp_Lat gives the element of the v_loc which should be added here
+                        !(Row major)
+                        if(TD_Imp_Lat(j,i).ne.0) then
 
-                        if(tAdd_) then
-                            Core_v(j,i) = Core_v(j,i) + CorrPot(a,b)*TD_Imp_Phase(j,i)
-                        else
-                            Core_v(j,i) = Core_v(j,i) - CorrPot(a,b)*TD_Imp_Phase(j,i)
+                            !Convert these into the actual values of each dimension
+                            b = mod(TD_Imp_Lat(j,i)-1,nImp) + 1
+                            a = ((TD_Imp_Lat(j,i)-1)/nImp) + 1
+                            !write(6,*) TD_Imp_Lat(j,i),
+                            !write(6,*) "a: ",a
+                            !write(6,*) "b: ",b
+
+                            if(tAdd_) then
+                                Core_v(j,i) = Core_v(j,i) + CorrPot(a,b)*TD_Imp_Phase(j,i)
+                            else
+                                Core_v(j,i) = Core_v(j,i) - CorrPot(a,b)*TD_Imp_Phase(j,i)
+                            endif
                         endif
-                    endif
+                    enddo
                 enddo
-            enddo
 
-            !Transform both core_v and core back to the impurity ordering
-            call Mat_to_imp_order_comp(Core_v)
-            deallocate(temp)
+                !Transform both core_v and core back to the impurity ordering
+                call Mat_to_imp_order_comp(Core_v)
+                deallocate(temp)
+            else
+                !2D Square lattice
+                core_v(:,:) = core(:,:)
+
+                do k = 1,iImpRepeats
+                    do i = 1,nImp
+                        Indi = StripedImpIndices(i,k)
+                        do j = 1,nImp
+                            Indj = StripedImpIndices(j,k)
+
+                            if(tAdd_) then
+                                Core_v(indj,indi) = Core_v(indj,indi) + CorrPot(j,i)
+                            else
+                                Core_v(indj,indi) = Core_v(indj,indi) - CorrPot(j,i)
+                            endif
+
+                        enddo
+                    enddo
+                enddo
+
+
+            endif
         endif
 
     end subroutine add_localpot_comp
@@ -1635,8 +1862,8 @@ module mat_tools
     !Setup the kpoint mesh, and other things needed to work in kspace
     subroutine setup_kspace()
         implicit none
-        integer :: SS_Period,i,k,ind_1,ind_2,j
-        real(dp) :: PrimLattVec(LatticeDim),phase,ddot,r,r2
+        integer :: SS_Period,i,k,ind_1,ind_2,j,nKPnts_x,nKPnts_y,indx,indy,kpnt
+        real(dp) :: PrimLattVec(LatticeDim),phase,ddot,r,r2,kpntx,kpnty
         complex(dp) , allocatable :: temp(:,:),ham_temp(:,:),Random_CorrPot(:,:)
         character(len=*), parameter :: t_r='setup_kspace'
 
@@ -1665,7 +1892,7 @@ module mat_tools
             else
                 !Odd number of k-points
                 if(tPeriodic) then
-                    !We want to use a Gamma centered mesh
+                    !We want to use a Monkhorst pack mesh
                     tShift_Mesh = .true. 
                 else
                     !Gamma-centered mesh (i.e. include BZ boundary)
@@ -1691,41 +1918,63 @@ module mat_tools
                 endif
             enddo
         elseif(LatticeDim.eq.2) then
-            call stop_all(t_r,'Cannot do k-space diagonalizations - impurity site tiling is not same as direct lattice')
-            !Below is commented out code to ostensibly create 2D kpoint mesh
-!            if(SS_Period.le.2) then
-!                !1/2 impurity. Tilted lattice with real space lattice vector (1,1) and (1,-1)
-!                !Always have 2 sites per direct unit cell
-!                RecipLattVecs(:,1) = pi
-!                RecipLattVecs(1,2) = pi
-!                RecipLattVecs(2,2) = -pi
-!
-!                tShift = .false.
-!
-!                !Is it a regular grid?
-!                kPerDim = nint(sqrt(real(nKPnts,dp)))
-!                if(abs(real(kPerDim**2,dp)-real(nKPnts,dp)).gt.1.0e-8_dp) then
-!                    write(6,*) "k-points per dimension: ",sqrt(real(nKPnts,dp))
-!                    write(6,*) "Bands (needs to be square number for uniform mesh): ",nKPnts
-!                    call stop_all(t_r,'Cannot do k-space diagonalization with non-uniform mesh (currently?)')
-!                endif
-!
-!                do i = 1,kPerDim
-!                    do j = 1,kPerDim
-!                        kpnt = (i-1)*kPerDim + j
-!
-!                        KPnts(1,kpnt) = -pi    !Start at RHS of tilted FBZ
-!                        KPnts(:,kpnt) = KPnts(:,kpnt) + (i-1)*RecipLattVecs(:,1)/kPerDim + (j-1)*RecipLattVecs(:,2)/kPerDim
-!                        if(tShift) then
-!                            KPnts(:,kpnt) = KPnts(:,kpnt) + RecipLattVecs(:,1)/(2.0_dp*real(kPerDim,dp)) + &
-!                                RecipLattVecs(:,2)/(2.0_dp*real(kPerDim,dp))
-!                        endif
-!                        write(6,*) "KPnt ",kpnt,KPnts(:,kpnt)
-!                    enddo
-!                enddo
-!!            else
-!!                call stop_all(t_r,'Cannot deal with > 2 impurities with k-space diagonalization atm')
-!            endif
+            if(tTiltedLattice) call stop_all(t_r,'Cannot setup k-space - impurity tiling is not same as direct lattice. Use square lattice.')
+
+            !Check that the number of kpoints is a square number
+            if(abs(sqrt(real(nKPnts,dp))-real(nint(sqrt(real(nKPnts,dp))),dp)).gt.1.0e-8_dp) then
+                call stop_all(t_r,'Number of kpoints is not a square number')
+            endif
+            nKPnts_x = nint(sqrt(real(nKPnts,dp)))
+            nKPnts_y = nint(sqrt(real(nKPnts,dp)))
+            write(6,"(A)") "Number of kpoints in each dimension: ",nKPnts_x
+
+            !We should have already defined whether we have periodic or antiperiodic boundary conditions
+            if(mod(nKPnts_x,2).eq.0) then
+                !Even number of kpoints in each dimension
+                if(tPeriodic) then
+                    !We want to use a Gamma centered mesh
+                    !i.e. include BZ boundary
+                    tShift_Mesh = .false.
+                else
+                    !Monkhorst-Pack mesh
+                    tShift_Mesh = .true.
+                endif
+                !Odd number of kpoints in each dimension
+                if(tPeriodic) then
+                    !Monkhorst-pack mesh
+                    tShift_Mesh = .true.
+                else
+                    !Gamma centered
+                    tShift_Mesh = .false.
+                endif
+            endif
+
+            !Reciprocal lattice vector in the x direction, defining a square grid
+            RecipLattVecs(1,1) = 2.0_dp*pi/real(nImp_x,dp)
+            RecipLattVecs(2,1) = 0.0_dp
+            !Reciprocal lattice vector in the y-direction
+            RecipLattVecs(1,2) = 0.0_dp
+            RecipLattVecs(2,2) = 2.0_dp*pi/real(nImp_y,dp)
+            BZVol = (2.0_dp*pi/real(nImp_x,dp))*(2.0_dp*pi/real(nImp_y,dp))
+
+            !Now, to define the kpoints in each dimension
+            do i = 1,nKPnts_x
+
+                !Which x-coordinate do we have for this y cut of kpoints
+                kpntx = -RecipLattVecs(1,1)/2.0_dp + (i-1)*RecipLattVecs(1,1)/nKPnts_x
+                if(tShift_Mesh) kpntx = kpntx + RecipLattVecs(1,1)/(2.0_dp*real(nKPnts_x,dp))
+
+                do j = 1,nKPnts_y
+                    kpnt = (i-1)*nKPnts_x + j
+
+                    kpnty = -RecipLattVecs(2,2)/2.0_dp + (j-1)*RecipLattVecs(2,2)/nKPnts_y
+                    if(tShift_Mesh) kpnty = kpnty + RecipLattVecs(2,2)/(2.0_dp*real(nKPnts_y,dp))
+
+                    KPnts(1,kpnt) = kpntx
+                    KPnts(2,kpnt) = kpnty
+
+                enddo
+            enddo
         else
             !Quoi?
             call stop_all(t_r,'Error here')
@@ -1751,9 +2000,13 @@ module mat_tools
                 if(LatticeDim.eq.1) then
                     PrimLattVec(1) = real(i-1,dp)   !The real-space translation to this site
                 else
-                    call stop_all(t_r,'Error')
+                    call SiteIndexToLatCoord_2DSquare(i,indx,indy)
+                    !Since these indices are 1 indexed, we need to make them 0 indexed
+                    PrimLattVec(1) = indx - 1
+                    PrimLattVec(2) = indy - 1
                 endif
                 phase = ddot(LatticeDim,KPnts(:,k),1,PrimLattVec,1)
+                !TODO: Is the prefactor still sqrt nKPnts here, or should it be some other power?
                 RtoK_Rot(i,ind_1+mod(i,nImp)) = exp(dcmplx(zero,phase))/sqrt(real(nKPnts,dp))
             enddo
         enddo
