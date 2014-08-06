@@ -17,6 +17,7 @@ module mat_tools
         implicit none
         integer :: nSitesOrig,nSites_x_low,nSites_x_high,nBelowSitesChange
         integer :: i,j,k,nAboveSitesChange,PhaseChange,StartInd
+        integer :: indx,indy,indx_folded,indy_folded,index_2
         character(len=*), parameter :: t_r='Setup2DLattice_Square'
 
         write(6,"(A)") "Setting up a non-tilted square lattice..."
@@ -41,15 +42,18 @@ module mat_tools
 
         nSites_x_low = nImp_x * int(sqrt(real(nSites,dp))/real(nImp_x,dp))  !This is essentially giving the number of kpoints in each dimension.
         nSites_x_high = nImp_x * (int(sqrt(real(nSites,dp))/real(nImp_x,dp)) + 1)
+!        write(6,*) "nImp_x: ",nImp_x
+!        write(6,*) "nSites_x_low: ",nSites_x_low
+!        write(6,*) "nSites_x_high: ",nSites_x_high
 
         nBelowSitesChange = abs(nSites_x_low**2 - nSites)
         nAboveSitesChange = abs(nSites_x_high**2 - nSites)
         if(nBelowSitesChange.lt.nAboveSitesChange) then
             !Move number of sites down to nearest square number
-            nSites_x = int(sqrt(real(nSites,dp)))
+            nSites_x = nSites_x_low
         else
             !Move number of sites down to nearest square number
-            nSites_x = int(sqrt(real(nSites,dp))) + 1
+            nSites_x = nSites_x_high   
         endif
 
         nSites_y = nSites_x     !Non-tilted square lattice
@@ -85,7 +89,7 @@ module mat_tools
         endif
 
         !Now, how many impurity "repeats" will there be once they are striped through the space?
-        iImpRepeats = nint(real(nSites_x,dp)/real(nImp_x,dp))
+        iImpRepeats = nint(real(nSites,dp)/real(nImp,dp))
         write(6,"(A,I6)") "Number of copied of correlation potential striped through space: ",iImpRepeats
 
         allocate(StripedImpIndices(nImp,iImpRepeats))
@@ -104,7 +108,37 @@ module mat_tools
                     if(PhaseChange.ne.1) call stop_all(t_r,'Should not be leaving supercell, so should not be changing phase!')
                 enddo
             enddo
-            StartInd = StartInd + nSites_y*nImp_x + nImp_y
+
+            if(k.lt.iImpRepeats) then
+                !We want to move onto the next supercell index. 
+                !What are the lattice coordinates here?
+                call SiteIndexToLatCoord_2DSquare(StartInd,indx,indy)
+!                write(6,"(A,3I7)") "Current supercell index: ",StartInd,indx,indy
+                !Move indy nImp_y further down
+                indy = indy + nImp_y
+!                write(6,"(A,I7)") "Increasing y coordinate to: ",indy
+                !Map back in to the supercell
+                IndX_folded = py_mod(indx,nSites_X)
+                IndY_folded = py_mod(indy,nSites_Y)
+                if(IndX_folded.eq.0) IndX_folded = nSites_X
+                if(IndY_folded.eq.0) IndY_folded = nSites_Y
+                !Convert this back into a site index
+                call LatCoordToSiteIndex_2DSquare(IndX_folded,IndY_folded,Index_2)
+!                write(6,"(A,2I7)") "Mapped back into the supercell, such that index is now: ",indx_folded,indy_folded
+                if(Index_2.lt.StartInd) then
+                    !We have gone backwards. Move to the next column
+                    IndX_folded = IndX_folded + nImp_x
+!                    write(6,"(A,I7)") "We have actually mapped onto a previous supercell. Move to next column. New x coordinate: ",indx_folded
+                    if(IndX_folded.gt.nSites_x) call stop_all(t_r,'Error indexing')
+                    !Now, convert this back into a new lattice index
+                    call LatCoordToSiteIndex_2DSquare(IndX_folded,IndY_folded,Index_2)
+                    if(Index_2.lt.StartInd) call stop_all(t_r,'Error in indexing')
+                    if(Index_2.gt.nSites) call stop_all(t_r,'Error in indexing')
+                    StartInd = Index_2
+                else
+                    StartInd = Index_2
+                endif
+            endif
         enddo
 
 
@@ -1874,10 +1908,11 @@ module mat_tools
     end subroutine run_hf
 
     !Setup the kpoint mesh, and other things needed to work in kspace
-    !See C. Gros, Z. Phys. B - Condensed Matter 86, 359-365 (1992) for details.
+    !See C. Gros, Z. Phys. B - Condensed Matter 86, 359-365 (1992) for details for 1 unit cell.
+    !Alternatively, for multi-band models, we need an additional unitary matrix, which we take to be the unit matrix 
     subroutine setup_kspace()
         implicit none
-        integer :: SS_Period,i,k,ind_1,ind_2,j,nKPnts_x,nKPnts_y,indx,indy,kpnt
+        integer :: SS_Period,i,k,ind_1,ind_2,j,nKPnts_x,nKPnts_y,indx,indy,kpnt,n
         real(dp) :: PrimLattVec(LatticeDim),phase,ddot,r,r2,kpntx,kpnty,PrimLattVec_2(LatticeDim),phase1,phase5
         complex(dp) :: val,val2
         complex(dp) , allocatable :: temp(:,:),ham_temp(:,:),Random_CorrPot(:,:)
@@ -2006,32 +2041,6 @@ module mat_tools
         enddo
 !        endif
 
-        !test
-        val = zzero
-        val2 = zzero
-        do k = 1,nKPnts
-            call SiteIndexToLatCoord_2DSquare(1,indx,indy)
-            PrimLattVec(1) = real(indx - 1,dp)
-            PrimLattVec(2) = real(indy - 1,dp)   !r1
-            phase1 = ddot(LatticeDim,KPnts(:,k),1,PrimLattVec,1)
-            
-            call SiteIndexToLatCoord_2DSquare(5,indx,indy)
-            PrimLattVec_2(1) = real(indx - 1,dp)
-            PrimLattVec_2(2) = real(indy - 1,dp)   !r5
-            phase5 = ddot(LatticeDim,KPnts(:,k),1,PrimLattVec_2,1)
- 
-            PrimLattVec(:) = PrimLattVec_2(:) - PrimLattVec(:)   !r5 - r1
-            write(6,*) "r5 - r1: ",PrimLattVec(:)
-            phase = ddot(LatticeDim,KPnts(:,k),1,PrimLattVec,1)
- 
-            val = val + exp(dcmplx(zero,phase))
-            val2 = val2 + exp(dcmplx(zero,-phase1))*exp(dcmplx(zero,phase5))
-        enddo
-        val = val / nKPnts
-        val2 = val2 / nKPnts
-        write(6,*) "Value for the 1,5 C*C matrix element: ",val,val2
-
-
         !Setup rotation matrix from site basis to k-space
         !First index r, second k
         allocate(RtoK_Rot(nSites,nSites))
@@ -2041,46 +2050,53 @@ module mat_tools
             !Construct rotation
             ind_1 = ((k-1)*nImp) + 1
             ind_2 = nImp*k
-            do i = 1,nSites
-                if(LatticeDim.eq.1) then
-                    PrimLattVec(1) = real(i-1,dp)   !The real-space translation to this site
-                else
-                    call SiteIndexToLatCoord_2DSquare(i,indx,indy)
-                    !Since these indices are 1 indexed, we need to make them 0 indexed
-                    !What is the displacement vector of the *cell* rather than the site?
-                    indx = indx - 1 - mod(indx-1,nImp_x)
-                    indy = indy - 1 - mod(indy-1,nImp_y)
-                    PrimLattVec(1) = indx   !real(indx - 1,dp)
-                    PrimLattVec(2) = indy   !real(indy - 1,dp)
-                    write(6,"(A,I5,A,2F10.4)") "Lattice site: ",i, " has coordinate: ",PrimLattVec(:)
-                endif
-                phase = ddot(LatticeDim,KPnts(:,k),1,PrimLattVec,1)
-                RtoK_Rot(i,ind_1+mod(i,nImp)) = exp(dcmplx(zero,phase))/sqrt(real(nKPnts,dp))
+            do n = 0,nImp-1 !Run over bands in a given kpoint
+
+                do i = 1,nSites
+                    if(LatticeDim.eq.1) then
+                        if(mod(i-1,nImp).ne.n) cycle    !This is the unit rotation between n and m
+                        PrimLattVec(1) = real(i-1-mod(i-1,nImp))    !The real-space translation to the supercell
+!                        PrimLattVec(1) = real(i-1,dp)               !The real-space translation to this site
+                    else
+                        call SiteIndexToLatCoord_2DSquare(i,indx,indy)
+                        !Since these indices are 1 indexed, we need to make them 0 indexed
+                        !The *Basis* displacement vectors are indx-1 and indy-1. 
+                        !The *Supercell* displacement vectors are indx-1-mod(indx-1,nImp_x) and the y version.
+                        if(((mod(indx-1,nImp_x)*nImp_x)+mod(indy-1,nImp_y)).ne.n) cycle
+                        PrimLattVec(1) = real(indx - 1 - mod(indx-1,nImp_x),dp)
+                        PrimLattVec(2) = real(indy - 1 - mod(indy-1,nImp_y),dp)
+!                        PrimLattVec(1) = real(indx - 1,dp)
+!                        PrimLattVec(2) = real(indy - 1,dp)
+!                        write(6,"(A,I5,A,2F10.4)") "Lattice site: ",i, " has coordinate: ",PrimLattVec(:)
+                    endif
+                    phase = ddot(LatticeDim,KPnts(:,k),1,PrimLattVec,1)
+!                    RtoK_Rot(i,ind_1+mod(i,nImp)) = exp(dcmplx(zero,phase))/sqrt(real(nKPnts,dp))
+                    RtoK_Rot(i,ind_1+n) = exp(dcmplx(zero,phase))/sqrt(real(nKPnts,dp))
+                enddo
             enddo
         enddo
 
-        if(tWriteOut) call writematrixcomp(RtoK_Rot,'RtoK_Rot',.false.)
+        if(tWriteOut) call writematrixcomp(RtoK_Rot,'RtoK_Rot',.true.)
 
 !        if(tCheck) then
         if(.true.) then
             !Now, is RtoK_Rot unitary?
             allocate(temp(nSites,nSites))
             !Check unitarity of matrix
-!            call ZGEMM('C','N',nSites,nSites,nSites,zone,RtoK_Rot,nSites,RtoK_Rot,nSites,zzero,temp,nSites) 
-!            do i = 1,nSites
-!                do j = 1,nSites
-!                    if((i.eq.j).and.(abs(temp(i,j)-zone).gt.1.0e-7_dp)) then
-!                        call writematrixcomp(temp,'Identity?',.false.)
-!                        write(6,*) "i,j: ",i,j,temp(i,j)
-!                        call stop_all(t_r,'Rotation matrix not unitary 1')
-!                    elseif((i.ne.j).and.(abs(temp(j,i)).gt.1.0e-7_dp)) then
-!                        call writematrixcomp(temp,'Identity?',.false.)
-!                        write(6,*) "i,j: ",i,j,temp(i,j)
-!                        call stop_all(t_r,'Rotation matrix not unitary 2')
-!                    endif
-!                enddo
-!            enddo
-!            call stop_all(t_r,'end?')
+            call ZGEMM('C','N',nSites,nSites,nSites,zone,RtoK_Rot,nSites,RtoK_Rot,nSites,zzero,temp,nSites) 
+            do i = 1,nSites
+                do j = 1,nSites
+                    if((i.eq.j).and.(abs(temp(i,j)-zone).gt.1.0e-7_dp)) then
+                        call writematrixcomp(temp,'Identity?',.false.)
+                        write(6,*) "i,j: ",i,j,temp(i,j)
+                        call stop_all(t_r,'Rotation matrix not unitary 1')
+                    elseif((i.ne.j).and.(abs(temp(j,i)).gt.1.0e-7_dp)) then
+                        call writematrixcomp(temp,'Identity?',.false.)
+                        write(6,*) "i,j: ",i,j,temp(i,j)
+                        call stop_all(t_r,'Rotation matrix not unitary 2')
+                    endif
+                enddo
+            enddo
             !Try other way...
             call ZGEMM('N','C',nSites,nSites,nSites,zone,RtoK_Rot,nSites,RtoK_Rot,nSites,zzero,temp,nSites) 
             do i = 1,nSites
@@ -2124,7 +2140,22 @@ module mat_tools
             enddo
         enddo
         call MakeBlockHermitian(Random_CorrPot,nImp)
-!        call add_localpot_comp_inplace(ham_temp,Random_CorrPot,tAdd=.true.)
+        call add_localpot_comp_inplace(ham_temp,Random_CorrPot,tAdd=.true.)
+!        call writematrixcomp(ham_temp,'h0 with corrpot',.false.)
+        !Check hermitian
+        do i = 1,nSites
+            do j = 1,nSites
+                if(i.eq.j) then
+                    if(abs(aimag(ham_temp(i,i))).gt.1.0e-8_dp) then
+                        call stop_all(t_r,'Matrix not diagonal real')
+                    endif
+                else
+                    if(abs(ham_temp(j,i)-conjg(ham_temp(i,j))).gt.1.0e-8_dp) then
+                        call stop_all(t_r,'Matrix not hermitian')
+                    endif
+                endif
+            enddo
+        enddo
         allocate(temp(nSites,nSites))
         call ZGEMM('C','N',nSites,nSites,nSites,zone,RtoK_Rot,nSites,ham_temp,nSites,zzero,temp,nSites)
         call ZGEMM('N','N',nSites,nSites,nSites,zone,temp,nSites,RtoK_Rot,nSites,zzero,ham_temp,nSites)
