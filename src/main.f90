@@ -1228,8 +1228,6 @@ Program RealHub
             !Get occupations with unique GS
             call find_occs()
 
-            call stop_all(t_r,'End of test')
-
             !Loop over occupation numbers 
             do Occ=1,N_Occs
 
@@ -1283,6 +1281,8 @@ Program RealHub
                     call DumpFCIDUMP()
                     call halt_timer(FCIDUMP)
                 endif
+
+                !call stop_all(t_r,'End of test')
 
                 !Calculate single reference linear response - non-interacting, TDA and RPA
                 if(tMFResponse) then

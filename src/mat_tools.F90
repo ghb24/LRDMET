@@ -10,6 +10,11 @@ module mat_tools
         module procedure DiagOneEOp_z
     end interface
 
+    interface CheckRealSpaceTransInvar
+        module procedure CheckRealSpaceTransInvar_r
+        module procedure CheckRealSpaceTransInvar_z
+    end interface
+
     contains
 
     !Setup arrays and indices needed to define a 2D square, non-tilted lattice
@@ -1910,6 +1915,9 @@ module mat_tools
     !Setup the kpoint mesh, and other things needed to work in kspace
     !See C. Gros, Z. Phys. B - Condensed Matter 86, 359-365 (1992) for details for 1 unit cell.
     !Alternatively, for multi-band models, we need an additional unitary matrix, which we take to be the unit matrix 
+    !psi_(n,k) = 1/sqrt(N) \sum_(R,m) exp(ik.R) U_nm phi_m(r-R)
+    !where psi_(n,k) are kspace orbitals, R is the unit cell lattice vectors, r is the basis function distance vector, k is kpoint.
+    !U_nm is an arbitrary unitary matrix, which determines the mixing between the bands in a given kpoint
     subroutine setup_kspace()
         implicit none
         integer :: SS_Period,i,k,ind_1,ind_2,j,nKPnts_x,nKPnts_y,indx,indy,kpnt,n
@@ -2055,13 +2063,13 @@ module mat_tools
                 do i = 1,nSites
                     if(LatticeDim.eq.1) then
                         if(mod(i-1,nImp).ne.n) cycle    !This is the unit rotation between n and m
-                        PrimLattVec(1) = real(i-1-mod(i-1,nImp))    !The real-space translation to the supercell
+                        PrimLattVec(1) = real(i-1-mod(i-1,nImp))    !The real-space translation to the cell
 !                        PrimLattVec(1) = real(i-1,dp)               !The real-space translation to this site
                     else
                         call SiteIndexToLatCoord_2DSquare(i,indx,indy)
                         !Since these indices are 1 indexed, we need to make them 0 indexed
-                        !The *Basis* displacement vectors are indx-1 and indy-1. 
-                        !The *Supercell* displacement vectors are indx-1-mod(indx-1,nImp_x) and the y version.
+                        !The *site* displacement vectors are indx-1 and indy-1. 
+                        !The *cell* displacement vectors are indx-1-mod(indx-1,nImp_x) and the y version.
                         if(((mod(indx-1,nImp_x)*nImp_x)+mod(indy-1,nImp_y)).ne.n) cycle
                         PrimLattVec(1) = real(indx - 1 - mod(indx-1,nImp_x),dp)
                         PrimLattVec(2) = real(indy - 1 - mod(indy-1,nImp_y),dp)
@@ -2891,6 +2899,200 @@ module mat_tools
 
     end subroutine AddPeriodicImpCoupling_RealSpace
 
+!Take a real-space hamiltonian on the lattice, and check that it obeys translational symmetry of the unit cells,
+!whose size is given by the impurity size. Use through interface for real and imaginary hamiltonians.
+    subroutine CheckRealSpaceTransInvar_z(ham)
+        implicit none
+        complex(dp), intent(in) :: ham(nSites,nSites)
+        integer :: i,j,ind_1,ind_2,phase,LatInd_UC,k,ind_kx,ind_ky,transvec_x,transvec_y
+        integer :: Curr_UCx,Curr_UCy,Curr_UC,p,Index_2,k_trans,PhaseChange
+        character(len=*), parameter :: t_r='CheckRealSpaceTransInvar_z'
+
+        !Check for translational invariance of the system
+        !That is: is each supercell row equivalent when translated to the supercell ajacent to it?
+        if(LatticeDim.eq.1) then
+            do j = 1,nSites
+                do i = 1,nSites
+                    ind_1 = i
+                    ind_2 = j
+                    !Translate a supercell down
+                    ind_1 = i + nImp
+                    ind_2 = j + nImp
+                    phase = 1
+                    if(ind_1.gt.nSites) then
+                        ind_1 = ind_1 - nSites
+                        if(tAntiPeriodic) phase = -1 * phase
+                    endif
+                    if(ind_2.gt.nSites) then
+                        ind_2 = ind_2 - nSites
+                        if(tAntiPeriodic) phase = -1 * phase
+                    endif
+                    if(abs(ham(i,j)-(cmplx(real(phase,dp),zero)*ham(ind_1,ind_2))).gt.1.0e-7_dp) then
+                        write(6,"(2I6,A,2I6)") i,j," -> ",ind_1,ind_2
+                        write(6,*) "Phase change: ",phase
+                        write(6,*) ham(i,j),phase*ham(ind_1,ind_2)
+                        call writematrixcomp(ham,'real space ham',.true.)
+                        call stop_all(t_r,'Translational symmetry not maintained in real-space hamiltonian')
+                    endif
+                enddo
+            enddo
+        else
+            !2D. Remember that lattice is organised as  1 3
+            !                                           2 4
+            do i = 1,nImp_x
+                do j = 1,nImp_y
+                    !Loop through first cell
+                    call LatCoordToSiteIndex_2DSquare(i,j,LatInd_UC)
+                    !This has coordinates (i,j) and a site index LatInd_UC 
+                    do k = 1,nSites
+                        !Look at all the coupling from the sites in the first cell, to all others in the system.
+                        !This matrix element is (LatInd_UC,k)
+                        if(abs(ham(LatInd_UC,k)-conjg(ham(k,LatInd_UC))).gt.1.0e-8_dp) then
+                            call stop_all(t_r,'Hamiltonian matrix not hermitian')
+                        endif
+                        !What is the translation vector to site k?
+                        call SiteIndexToLatCoord_2DSquare(k,ind_kx,ind_ky)
+                        transvec_x = ind_kx - i
+                        transvec_y = ind_ky - j
+                        !(transvec_x,transvec_y) gives translation vector from site in unit cell to k
+                        Curr_UCx = i !This is the chosen site of the first unit cell
+                        Curr_UCy = j
+                        Curr_UC = LatInd_UC
+                        do p = 1,iImpRepeats-1
+                            !Is this the same coupling as the one between the unit cell
+                            !p away?
+                            !Find the index for (i,j) translated by p unit cells. 
+                            !See the Setup2DLattice_Square for how this is done 
+                            Curr_UCy = Curr_UCy + nImp_y
+                            Curr_UCy = py_mod(Curr_UCy,nSites_y)
+                            if(Curr_UCy.eq.0) Curr_UCy = nSites_y
+                            call LatCoordToSiteIndex_2DSquare(Curr_UCx,Curr_UCy,Index_2)
+                            if(Index_2.lt.Curr_UC) then
+                                Curr_UCx = Curr_UCx + nImp_x
+                                if(Curr_UCx.gt.nSites_x) call stop_all(t_r,'error')
+                                call LatCoordToSiteIndex_2DSquare(Curr_UCx,Curr_UCy,Index_2)
+                                if(Index_2.lt.LatInd_UC) call stop_all(t_r,'error')
+                                if(Index_2.gt.nSites) call stop_all(t_r,'error')
+                            endif
+                            Curr_UC = Index_2
+
+                            !Curr_UC index and coordinates (Curr_UCx,Curr_UCy) is (i,j) displaced by p unit cells.
+                            !Translate by (transvec_x,transvec_y)
+                            call FindDisplacedIndex_2DSquare(Curr_UC,transvec_x,transvec_y,k_trans,PhaseChange)
+                            !ham(LatInd_UC,k) should = PhaseChange * ham(Curr_UC,k_trans)
+                            if(abs(ham(LatInd_UC,k)-(cmplx(real(PhaseChange,dp),zero)*ham(Curr_UC,k_trans))).gt.1.0e-7_dp) then
+                                write(6,"(2I6,A,2I6)") LatInd_UC,k," -> ",Curr_UC,k_trans
+                                write(6,*) "Phase change: ",PhaseChange
+                                write(6,*) ham(LatInd_UC,k),cmplx(real(PhaseChange,dp),zero)*ham(Curr_UC,k_trans)
+                                call writematrixcomp(ham,'real space ham',.true.)
+                                call stop_all(t_r,'Translational symmetry not maintained in real-space hamiltonian')
+                            endif
+                        enddo
+                    enddo
+                enddo
+            enddo
+        endif
+        write(6,"(A)") "Lattice system appropriately periodic in real space"
+
+    end subroutine CheckRealSpaceTransInvar_z
+
+!Take a real-space hamiltonian on the lattice, and check that it obeys translational symmetry of the unit cells,
+!whose size is given by the impurity size. Use through interface for real and imaginary hamiltonians.
+    subroutine CheckRealSpaceTransInvar_r(ham)
+        implicit none
+        real(dp), intent(in) :: ham(nSites,nSites)
+        integer :: i,j,ind_1,ind_2,phase,LatInd_UC,k,ind_kx,ind_ky,transvec_x,transvec_y
+        integer :: Curr_UCx,Curr_UCy,Curr_UC,p,Index_2,k_trans,PhaseChange
+        character(len=*), parameter :: t_r='CheckRealSpaceTransInvar_r'
+
+        !Check for translational invariance of the system
+        !That is: is each supercell row equivalent when translated to the supercell ajacent to it?
+        if(LatticeDim.eq.1) then
+            do j = 1,nSites
+                do i = 1,nSites
+                    ind_1 = i
+                    ind_2 = j
+                    !Translate a supercell down
+                    ind_1 = i + nImp
+                    ind_2 = j + nImp
+                    phase = 1
+                    if(ind_1.gt.nSites) then
+                        ind_1 = ind_1 - nSites
+                        if(tAntiPeriodic) phase = -1 * phase
+                    endif
+                    if(ind_2.gt.nSites) then
+                        ind_2 = ind_2 - nSites
+                        if(tAntiPeriodic) phase = -1 * phase
+                    endif
+                    if(abs(ham(i,j)-(phase*ham(ind_1,ind_2))).gt.1.0e-7_dp) then
+                        write(6,"(2I6,A,2I6)") i,j," -> ",ind_1,ind_2
+                        write(6,*) "Phase change: ",phase
+                        write(6,*) ham(i,j),phase*ham(ind_1,ind_2)
+                        call writematrix(ham,'real space ham',.true.)
+                        call stop_all(t_r,'Translational symmetry not maintained in real-space hamiltonian')
+                    endif
+                enddo
+            enddo
+        else
+            !2D. Remember that lattice is organised as  1 3
+            !                                           2 4
+            do i = 1,nImp_x
+                do j = 1,nImp_y
+                    !Loop through first cell
+                    call LatCoordToSiteIndex_2DSquare(i,j,LatInd_UC)
+                    !This has coordinates (i,j) and a site index LatInd_UC 
+                    do k = 1,nSites
+                        !Look at all the coupling from the sites in the first cell, to all others in the system.
+                        !This matrix element is (LatInd_UC,k)
+                        if(abs(ham(LatInd_UC,k)-ham(k,LatInd_UC)).gt.1.0e-8_dp) then
+                            call stop_all(t_r,'Hamiltonian matrix not hermitian')
+                        endif
+                        !What is the translation vector to site k?
+                        call SiteIndexToLatCoord_2DSquare(k,ind_kx,ind_ky)
+                        transvec_x = ind_kx - i
+                        transvec_y = ind_ky - j
+                        !(transvec_x,transvec_y) gives translation vector from site in unit cell to k
+                        Curr_UCx = i !This is the chosen site of the first unit cell
+                        Curr_UCy = j
+                        Curr_UC = LatInd_UC
+                        do p = 1,iImpRepeats-1
+                            !Is this the same coupling as the one between the unit cell
+                            !p away?
+                            !Find the index for (i,j) translated by p unit cells. 
+                            !See the Setup2DLattice_Square for how this is done 
+                            Curr_UCy = Curr_UCy + nImp_y
+                            Curr_UCy = py_mod(Curr_UCy,nSites_y)
+                            if(Curr_UCy.eq.0) Curr_UCy = nSites_y
+                            call LatCoordToSiteIndex_2DSquare(Curr_UCx,Curr_UCy,Index_2)
+                            if(Index_2.lt.Curr_UC) then
+                                Curr_UCx = Curr_UCx + nImp_x
+                                if(Curr_UCx.gt.nSites_x) call stop_all(t_r,'error')
+                                call LatCoordToSiteIndex_2DSquare(Curr_UCx,Curr_UCy,Index_2)
+                                if(Index_2.lt.LatInd_UC) call stop_all(t_r,'error')
+                                if(Index_2.gt.nSites) call stop_all(t_r,'error')
+                            endif
+                            Curr_UC = Index_2
+
+                            !Curr_UC index and coordinates (Curr_UCx,Curr_UCy) is (i,j) displaced by p unit cells.
+                            !Translate by (transvec_x,transvec_y)
+                            call FindDisplacedIndex_2DSquare(Curr_UC,transvec_x,transvec_y,k_trans,PhaseChange)
+                            !ham(LatInd_UC,k) should = PhaseChange * ham(Curr_UC,k_trans)
+                            if(abs(ham(LatInd_UC,k)-(PhaseChange*ham(Curr_UC,k_trans))).gt.1.0e-7_dp) then
+                                write(6,"(2I6,A,2I6)") LatInd_UC,k," -> ",Curr_UC,k_trans
+                                write(6,*) "Phase change: ",PhaseChange
+                                write(6,*) ham(LatInd_UC,k),phase*ham(Curr_UC,k_trans)
+                                call writematrix(ham,'real space ham',.true.)
+                                call stop_all(t_r,'Translational symmetry not maintained in real-space hamiltonian')
+                            endif
+                        enddo
+                    enddo
+                enddo
+            enddo
+        endif
+        write(6,"(A)") "Lattice system appropriately periodic in real space"
+
+    end subroutine CheckRealSpaceTransInvar_r
+
     !Routine to diagonalize a 1-electron, real operator, with the lattice periodicity.
     !the SS_Period is the size of the supercell repeating unit (e.g. the coupling correlation potential)
     !This will be equivalent to the number of bands per kpoint
@@ -2924,8 +3126,8 @@ module mat_tools
         endif
 
         if(tKSpace_Diag) then
-            if(LatticeDim.eq.2) then
-                call stop_all(t_r,'Cannot do k-space diagonalizations - impurity site tiling is not same as direct lattice')
+            if(tTiltedLattice.and.(LatticeDim.eq.2)) then
+                call stop_all(t_r,'Cannot do k-space diagonalizations with tilted lattice - impurity site tiling is not same as direct lattice')
             endif
 
             !Testing of the long range coupling code
@@ -2939,65 +3141,8 @@ module mat_tools
 !                deallocate(Couplings)
 !                call writematrix(Ham,'Ham_realspace',.true.)
 !            endif
-
-            if(tCheck.and.LatticeDim.eq.1) then
-                !Check for translational invariance of the system
-                !That is: is each supercell row equivalent when translated to the supercell ajacent to it?
-                do j = 1,nLat
-                    do i = 1,nLat
-                        ind_1 = i
-                        ind_2 = j
-                        !Translate a supercell down
-                        ind_1 = i + SS_Period
-                        ind_2 = j + SS_Period
-                        phase = 1
-                        if(ind_1.gt.nLat) then
-                            ind_1 = ind_1 - nLat
-                            if(tAntiPeriodic) phase = -1 * phase
-                        endif
-                        if(ind_2.gt.nLat) then
-                            ind_2 = ind_2 - nLat
-                            if(tAntiPeriodic) phase = -1 * phase
-                        endif
-                        if(abs(ham(i,j)-(phase*ham(ind_1,ind_2))).gt.1.0e-7_dp) then
-                            write(6,"(2I6,A,2I6)") i,j," -> ",ind_1,ind_2
-                            write(6,*) "Phase change: ",phase
-                            write(6,*) ham(i,j),phase*ham(ind_1,ind_2)
-                            call writematrix(ham,'real space ham',.true.)
-                            call stop_all(t_r,'Translational symmetry not maintained in real-space hamiltonian')
-                        endif
-                    enddo
-                enddo
-!                do i=1,nLat,SS_Period
-!                    do j=1,SS_Period
-!                        do k=1,nLat
-!                            MappedInd = mod(i+j-1+SS_Period,nLat)
-!                            if(MappedInd.eq.0) MappedInd = nLat
-!                            if(MappedInd.ne.(i+j-1+SS_Period)) then
-!                                !We have wrapped around the lattice
-!                                tWrapped=.true.
-!                            else
-!                                tWrapped=.false.
-!                            endif
-!
-!                            MappedInd2 = mod(k+SS_Period,nLat)
-!                            if(MappedInd2.eq.0) MappedInd2 = nLat
-!                            if(MappedInd2.ne.(k+SS_Period)) then
-!                                !We have wrapped around the chain
-!                                tWrapped=.true.
-!                            endif
-!
-!                            if(abs(Ham(i+j-1,k)-Ham(MappedInd,MappedInd2)).gt.1.0e-7_dp) then
-!                                if(.not.(tWrapped.and.tAntiPeriodic.and.    &
-!                                    (abs(Ham(i+j-1,k)+Ham(MappedInd,MappedInd2))).gt.1.0e-7_dp)) then
-!                                    call writematrix(ham,'real space ham',.true.)
-!                                    call stop_all(t_r,'Translational symmetry not maintained in real-space hamiltonian')
-!                                endif
-!                            endif
-!                        enddo
-!                    enddo
-!                enddo
-                write(6,"(A)") "Lattice system appropriately periodic in real space"
+            if(tCheck) then
+                if(nLat.eq.nSites) call CheckRealSpaceTransInvar(Ham)
             endif
 
             allocate(CompHam(nLat,nLat))
@@ -3107,8 +3252,6 @@ module mat_tools
             !HACK!!
             !Just rotate them together in equal quantities. We should only ever have mixtures of +-K, which should
             !be taken as the positive and negative LC. e^ik.r = cos k.r + i sin k.r     We want these trig functions
-            allocate(Vec_temp(nLat))
-            allocate(Vec_temp2(nLat))
             i = 1
             do while(i.le.(nLat-1))
                 j = i + 1
@@ -3118,21 +3261,30 @@ module mat_tools
                 enddo
                 if((j-i).gt.1) then
                     !Degeneracy
-                    if((j-i).gt.2) then
-                        !More than two fold degenerate. How do we rotate these??
-                        call stop_all(t_r,'Cannot handle more than 2x degeneracy in the k-space hamiltonian')
+                    !Originally, (for 1D systems?), if we had a degeneracy of two, we could assume that 
+                    if((j-i).eq.1) then
+                        !it was an equal linear combination of the two vectors
+!                        if((j-i).gt.2) then
+!                            !More than two fold degenerate. How do we rotate these??
+!                            call stop_all(t_r,'Cannot handle more than 2x degeneracy in the k-space hamiltonian')
+!                        endif
+                        allocate(Vec_temp(nLat))
+                        allocate(Vec_temp2(nLat))
+                        !Degeneracy is between i and i + 1 (or i and j - 1)
+                        if((i+1).ne.(j-1)) call stop_all(t_r,'Indexing error')
+                        !Rotate these vectors together in positive and negative linear combinations
+                        Vec_temp(:) = (r_vecs(:,i) + r_vecs(:,i+1)) / sqrt(2.0_dp)
+                        Vec_temp2(:) = (r_vecs(:,i) - r_vecs(:,i+1)) / sqrt(2.0_dp)
+                        r_vecs(:,i) = Vec_temp(:)
+                        r_vecs(:,i+1) = Vec_temp2(:)
+                        deallocate(Vec_temp,Vec_temp2)
+                    else
+                        !Brute force search for unitary rotation to make these vectors real
+                        call FindUnitaryRotToRealVecs(r_vecs(:,i:j-1),nLat,j-i)
                     endif
-                    !Degeneracy is between i and i + 1 (or i and j - 1)
-                    if((i+1).ne.(j-1)) call stop_all(t_r,'Indexing error')
-                    !Rotate these vectors together in positive and negative linear combinations
-                    Vec_temp(:) = (r_vecs(:,i) + r_vecs(:,i+1)) / sqrt(2.0_dp)
-                    Vec_temp2(:) = (r_vecs(:,i) - r_vecs(:,i+1)) / sqrt(2.0_dp)
-                    r_vecs(:,i) = Vec_temp(:)
-                    r_vecs(:,i+1) = Vec_temp2(:)
                 endif
                 i = j 
             enddo
-            deallocate(Vec_temp,Vec_temp2)
 
             allocate(r_vecs_real(nLat,nLat))
             r_vecs_real(:,:) = zero
@@ -3180,270 +3332,6 @@ module mat_tools
 
             Ham(:,:) = r_vecs_real(:,:)
             deallocate(CompHam,r_vecs_real)
-            return
-
-
-
-
-
-
-
-
-
-                
-!            allocate(RotMat(SS_Period,nLat))
-!            do k = 1,nKPnts
-!                !Construct the rotation matrix for each kpoint
-!                !First index are the bands at that kpoint. Second index in the real-space basis
-!                RotMat(:,:) = zzero
-!
-!                do i = 1,nLat
-!                    if(LatticeDim.eq.1) then
-!                        TransVec(1) = real(i-1,dp)  !Translation vector to this unit cell
-!                    endif
-!                    do j = 1,SS_Period  !Bands per kpoint
-!
-!                        Expo = ddot(LatticeDim,KPnts(:,k),1,TransVec(:),1)
-!                        RotMat(j,i) = (1.0_dp/sqrt(real(nLat,dp))) * exp(dcmplx(0.0_dp,Expo))
-!                    enddo
-!                enddo
-!
-!
-!            enddo
-
-!            call writematrix(Ham,'Real space matrix',.true.)
-
-            !Do incredibly naievly to start with by creating the entire rotation matrix and rotating
-            !First index in k-space, second in r-space
-            allocate(RotMat(nLat,nLat))
-            RotMat(:,:) = zzero
-
-            do i = 1,nLat
-                if(LatticeDim.eq.1) then
-                    !TransVec(1) = real(i-1,dp)  !/real(SS_Period,dp)
-                    PrimLattVec(1) = real((i-1)/SS_Period,dp)*real(SS_Period,dp)  !All sites in the same lattice translation have the same primitive lattice vector
-                    SiteVec(1) = real(mod(i-1,SS_Period),dp)    !Vector within the lattice to this basis function
-                    impsite = mod(i,SS_Period)
-                else
-                    !which impurity site do they belong to?
-                    call site2ij(i-1,ii,jj)
-                    call ij2xy(ii,jj,xb,yb)
-                    impx = py_mod(xb,nImp_x)
-                    impy = py_mod(yb,nImp_y)
-                    impsite = impy*nImp_y + impx
-                    write(6,*) "Site located at impurity location: ",i,impx,impy,impsite
-                endif
-!                write(6,*) "Cell Translation: ",PrimLattVec(:)
-!                write(6,*) "Site Vector: ",SiteVec(:)
-
-                do k = 1,nKPnts
-
-                    do j = 1,SS_Period  !Bands per kpoint
-
-                        kSpace_ind = SS_Period*(k-1) + j
-
-                        !Ensure that we only want to loop over bands corresponding to this lattice repeat, not all sites
-                        if(mod(j,SS_Period).ne.impsite) cycle
-
-                        Expo = ddot(LatticeDim,KPnts(:,k),1,PrimLattVec(:),1)
-!                        phase = ddot(LatticeDim,KPnts(:,k),1,SiteVec(:),1)
-
-                        RotMat(kSpace_ind,i) = (1.0_dp/sqrt(real(nLat/SS_Period,dp))) *     &
-                            exp(dcmplx(0.0_dp,Expo)) !* exp(dcmplx(0.0_dp,phase))
-                    enddo
-                enddo
-            enddo
-
-            allocate(temp(nLat,nLat))
-            !Check unitarity of matrix
-            call ZGEMM('C','N',nLat,nLat,nLat,zone,RotMat,nLat,RotMat,nLat,zzero,temp,nLat) 
-            do i = 1,nLat
-                do j = 1,nLat
-                    if((i.eq.j).and.(abs(temp(i,j)-zone).gt.1.0e-7_dp)) then
-                        write(6,*) "i,j: ",i,j
-                        call writematrixcomp(temp,'Identity?',.true.)
-                        call stop_all(t_r,'Rotation matrix not unitary')
-                    elseif((i.ne.j).and.(abs(temp(j,i)).gt.1.0e-7_dp)) then
-                        write(6,*) "i,j: ",i,j
-                        call writematrixcomp(temp,'Identity?',.true.)
-                        call stop_all(t_r,'Rotation matrix not unitary 2')
-                    endif
-                enddo
-            enddo
-            !Try other way...
-            call ZGEMM('N','C',nLat,nLat,nLat,zone,RotMat,nLat,RotMat,nLat,zzero,temp,nLat) 
-            do i = 1,nLat
-                do j = 1,nLat
-                    if((i.eq.j).and.(abs(temp(i,j)-zone).gt.1.0e-7_dp)) then
-                        write(6,*) "i,j: ",i,j
-                        call writematrixcomp(temp,'Identity?',.true.)
-                        call stop_all(t_r,'Rotation matrix not unitary')
-                    elseif((i.ne.j).and.(abs(temp(j,i)).gt.1.0e-7_dp)) then
-                        write(6,*) "i,j: ",i,j
-                        call writematrixcomp(temp,'Identity?',.true.)
-                        call stop_all(t_r,'Rotation matrix not unitary 2')
-                    endif
-                enddo
-            enddo
-            write(6,*) "Rotation matrix unitary... :)"
-
-            allocate(CompHam(nLat,nLat))
-            allocate(CompHam_2(nLat,nLat))
-            allocate(RotHam(nLat,nLat))
-            !Store the hamiltonian in complex form, so we can act on it
-            do i = 1,nLat
-                do j = 1,nLat
-                    CompHam(j,i) = dcmplx(Ham(j,i),0.0_dp)
-                    CompHam_2(j,i) = dcmplx(Ham(j,i),0.0_dp)
-                enddo
-            enddo
-
-            !Now, simply transform the hamiltonian to k-space brute force
-            call ZGEMM('N','N',nLat,nLat,nLat,zone,RotMat,nLat,CompHam,nLat,zzero,temp,nLat)
-            call ZGEMM('N','C',nLat,nLat,nLat,zone,temp,nLat,RotMat,nLat,zzero,RotHam,nLat)
-
-            if(tWriteOut) call writematrixcomp(RotHam,'k-space hamiltonian',.true.)
-            
-            !Is this now block diagonal?
-            do ki = 1,nKPnts
-                do bandi = 1,SS_Period
-                    Ind_i = SS_Period*(ki-1) + bandi
-                    do kj = 1,nKpnts
-                        do bandj = 1,SS_Period
-                            Ind_j = SS_Period*(kj-1) + bandj
-
-                            if((ki.ne.kj).and.(abs(RotHam(Ind_j,Ind_i)).gt.1.0e-7_dp)) then
-                                call stop_all(t_r,'Translational symmetry not conserved')
-                            endif
-                            if((Ind_j.eq.Ind_i).and.(aimag(RotHam(Ind_j,Ind_i)).gt.1.0e-7_dp)) then
-                                call stop_all(t_r,'k-space hamiltonian not hermitian')
-                            elseif((Ind_j.ne.Ind_i).and.(abs(RotHam(Ind_j,Ind_i)-dconjg(RotHam(Ind_i,Ind_j))).gt.1.0e-7_dp)) then
-                                call stop_all(t_r,'k-space hamiltonian not hermitian')
-                            endif
-                        enddo
-                    enddo
-                enddo
-            enddo
-
-            !Now, bizarrely, just diagonalize the whole thing!
-            CompHam(:,:) = RotHam(:,:)
-            lWork = max(1,2*nLat-1)
-            allocate(cWork(lWork))
-            allocate(Work(max(1,3*nLat-2)))
-            info = 0
-            call ZHEEV('V','U',nLat,RotHam,nLat,Vals,cWork,lWork,Work,info)
-            if(info.ne.0) call stop_all(t_r,'Diag failed')
-            deallocate(cWork,Work)
-                        
-            if(tWriteOut) call writematrixcomp(RotHam,'k-space Eigenvectors',.true.)
-
-            !Are the eigenvectors meaningful?
-            allocate(cWork(nLat))
-            do i = 1,nLat
-                call ZGEMV('N',nLat,nLat,zone,CompHam,nLat,RotHam(:,i),1,zzero,cWork,1)
-                do j = 1,nLat
-                    if(abs(cWork(j)-(Vals(i)*RotHam(j,i))).gt.1.0e-8_dp) then
-                        call stop_all(t_r,'Eigensystem not computed correctly')
-                    endif
-                enddo
-            enddo
-            deallocate(cWork)
-    
-            !Now, rotate eigenvectors back into real-space basis
-            !call ZGEMM('C','N',nLat,nLat,nLat,zone,RotMat,nLat,RotHam,nLat,zzero,temp,nLat)
-            !call ZGEMM('N','N',nLat,nLat,nLat,zone,temp,nLat,RotMat,nLat,zzero,RotHam,nLat)
-            do i = 1,nLat
-                !Rotate each eigenvector in turn
-                call ZGEMV('C',nLat,nLat,zone,RotMat,nLat,RotHam(:,i),1,zzero,temp(:,i),1)
-            enddo
-
-            if(tWriteOut) then
-                !Temp now contains the (complex) eigenvectors in r-space
-                call writevector(Vals,'Eigenvalues')
-                call writematrixcomp(temp,'r-space Eigenvectors',.true.)
-            endif
-            
-            !Are the eigenvectors meaningful in real space compared to original hamiltonian?
-            allocate(cWork(nLat))
-            do i = 1,nLat
-                call ZGEMV('N',nLat,nLat,zone,CompHam_2,nLat,temp(:,i),1,zzero,cWork,1)
-                do j = 1,nLat
-                    if(abs(cWork(j)-(Vals(i)*temp(j,i))).gt.1.0e-8_dp) then
-                        call stop_all(t_r,'Eigensystem not computed correctly in real basis')
-                    endif
-                enddo
-            enddo
-            deallocate(cWork)
-
-            do i = 1,nLat
-                phase = 0.0_dp
-                if(tWriteOut) write(6,*) "Rotating eigenvector : ",i
-                do j = 1,nLat
-                    if((abs(aimag(temp(j,i))).gt.1.0e-9_dp).and.(abs(temp(j,i)).gt.1.0e-7_dp)) then
-                        !Find the phase factor for this eigenvector
-                        phase = atan(aimag(temp(j,i))/real(temp(j,i)))
-                        if(tWriteOut) write(6,*) "Eigenvector: ",i,j,phase,temp(j,i) * exp(dcmplx(0.0_dp,-phase))
-                        !temp(j,i) = temp(j,i) * exp(dcmplx(0.0_dp,-phase))
-                        !exit
-                    endif
-                enddo
-!                if(j.le.nLat) then
-!                    write(6,*) "phase computed from component: ",j,abs(temp(j,i))
-!                    write(6,*) "phase computed to be: ",phase
-!                else
-!                    write(6,*) "No imaginary component in eigenvector found - no phase being applied"
-!                    if(phase.ne.0.0_dp) call stop_all(t_r,'Error here')
-!                endif
-!
-!                !Apply the same phase to all components of the eigenvector
-!                do j = 1,nLat
-!                    if(abs(phase-(atan(aimag(temp(j,i))/real(temp(j,i))))).gt.1.0e-8_dp) then
-!                        write(6,*) "Eigenvector: ",i," component: ",j
-!                        write(6,*) phase,atan(aimag(temp(j,i))/real(temp(j,i))),abs(phase-(atan(aimag(temp(j,i))/real(temp(j,i)))))
-!                        write(6,*) temp(j,i)
-!                        call stop_all(t_r,'A consistent phase cannot be found for this eigenvector')
-!                    endif
-!                    temp(j,i) = temp(j,i) * exp(dcmplx(0.0_dp,-phase))
-!                enddo
-            enddo
-
-            !call stop_all(t_r,'stop')
-            
-            if(tWriteOut) call writematrixcomp(temp,'rotated r-space Eigenvectors',.true.)
-            
-            !Are the eigenvectors still meaningful?
-            allocate(cWork(nLat))
-            !Get back the r-space hamiltonian
-            do i = 1,nLat
-                do j = 1,nLat
-                    CompHam(j,i) = dcmplx(Ham(j,i),0.0_dp)
-                enddo
-            enddo
-            do i = 1,nLat
-                call ZGEMV('N',nLat,nLat,zone,CompHam,nLat,temp(:,i),1,zzero,cWork,1)
-                do j = 1,nLat
-                    if(abs(cWork(j)-(Vals(i)*temp(j,i))).gt.1.0e-8_dp) then
-                        call writevectorcomp(cWork,'H x vec')
-                        call writevectorcomp(Vals(i)*temp(:,i),'RHS')
-                        call stop_all(t_r,'Eigensystem not computed correctly 2')
-                    endif
-                enddo
-            enddo
-            deallocate(cWork)
-
-            !Are the eigenvectors real now?
-            Ham(:,:) = zero
-            do i = 1,nLat
-                do j = 1,nLat
-                    if(aimag(temp(j,i)).gt.1.0e-8_dp) then
-                        call writematrixcomp(temp,'Eigenvectors',.true.)
-                        call stop_all(t_r,'Eigenvectors complex...')
-                    endif
-                    Ham(j,i) = real(temp(j,i),dp)
-                enddo
-            enddo
-
-            deallocate(CompHam,temp,RotMat,RotHam)
         else
             !Normal real space diagonalization
             Vals(:) = 0.0_dp
@@ -3462,6 +3350,435 @@ module mat_tools
         endif
 
     end subroutine DiagOneEOp_r
+                    
+    !Find a unitary rotation of the vectors in Vecs, such that they are made to be real
+    subroutine FindUnitaryRotToRealVecs(Vecs,nLat,nVecs)
+        use MinAlgos
+        implicit none
+        integer, intent(in) :: nLat,nVecs
+        complex(dp), intent(inout) :: Vecs(nLat,nVecs)
+        !Local variables
+        integer :: nParams
+        real(dp), allocatable :: vars(:)    !The independent variables for the X matrix
+        real(dp), allocatable :: step(:),var(:)
+        complex(dp), allocatable :: UnitMat(:,:),X_Mat(:,:),NewVecs(:,:),VecPair(:,:)
+        integer :: maxf,iprint,nloop,iquad,ierr,i,j,ind,iter
+        real(dp) :: stopcr,simp,FinalErr,FuncValue,r,r2
+        logical :: tfirst
+        logical, parameter :: TwoByTwoRots = .false.
+        character(len=*), parameter :: t_r='FindUnitaryRotToRealVecs'
+
+        if(TwoByTwoRots) then
+            !Just use simplex to do a line-search - silly
+            !Actually, I'm not sure that searching for real vectors is possible in this way! Arrgh!
+            call stop_all(t_r,'This will not work. Although it mixes, it cannot provide an arbitrary U(1) rotation of the orbitals')
+                        
+            nParams = 1
+            allocate(vars(nParams))
+            allocate(VecPair(nLat,2))
+            allocate(step(nParams))
+            allocate(var(nParams))
+            step(:) = 0.05_dp
+            if(tWriteOut) then
+                iprint = 50
+            else
+                iprint = -1
+            endif
+            !Fit a quadratic surface to be sure a minimum has been found
+            iquad = 1
+            !As function value is being evaluated in real(dp), it should
+            !be accurate to about 15 dp. If we set simp = 1.d-6, we should
+            !get about 9dp accuracy in fitting the surface
+            simp = 1.0e-6_dp
+            !Set value for stopping criterion. Stopping occurs when the 
+            !standard deviation of the values of the objective function at
+            !the points of the current simplex < stopcr
+            stopcr = 1.0e-7_dp
+            nloop = 2*nParams !This is how often the stopping criterion is checked
+            iter = 0
+
+            do while(.true.)
+                iter = iter + 1
+                do i = 1,nVecs
+                    do j = i+1,nVecs
+
+                        VecPair(:,1) = Vecs(:,i)
+                        VecPair(:,2) = Vecs(:,j)
+
+                        vars(:) = zero  !Initial rotation angle
+
+                        !Set max no of function evaluations. Default = 50*variables, print every 25
+                        maxf = 5000*nParams
+
+                        !Now call minim to do the work
+                        tfirst = .true.
+                        do while(.true.)
+                            call minim_3(vars, step, nParams, FinalErr, maxf, iprint, stopcr, nloop, &
+                                iquad, simp, var, MinComplexOrbPair, ierr, nLat, VecPair)
+
+                            if(ierr.eq.0) exit
+                            if(.not.tFirst) exit
+                            tFirst = .false.    !We have found a minimum, but run again with a small number of iterations to check it is stable
+                            maxf = 3*nParams
+                        enddo
+
+                        !On output, Err is the minimized objective function, var contains the diagonal of the inverse of the information matrix, whatever that is
+                        if(ierr.eq.0) then
+                            write(6,"(A)") "Simplex optimization successful."
+                            write(6,"(A,F14.7)") "Minimized residual: ",FinalErr
+                        elseif(ierr.eq.4) then
+                            call stop_all(t_r,'nloop < 1')
+                        elseif(ierr.eq.3) then
+                            call stop_all(t_r,'nParams < 1')
+                        elseif(ierr.eq.2) then
+                            call warning(t_r,'Information matrix is not +ve semi-definite')
+                            write(6,"(A,F14.7)") "Final residual: ",FinalErr
+                        elseif(ierr.eq.1) then
+                            call warning(t_r,'Max number of Simplex function evaluations reached.')
+                            write(6,"(A,F14.7)") "Final residual: ",FinalErr
+                        endif
+
+                        !Update vectors
+                        Vecs(:,i) = cos(vars(1))*VecPair(:,1) + sin(vars(1))*VecPair(:,2)
+                        Vecs(:,j) = -sin(vars(1))*VecPair(:,1) + cos(vars(1))*VecPair(:,2)
+
+                    enddo
+                enddo
+                !Check for convergence
+                !Now, how complex are these vectors?
+                FuncValue = zero
+                do i = 1,nVecs
+                    do j = 1,nLat
+                        FuncValue = FuncValue + abs(aimag(Vecs(j,i)))
+                    enddo
+                enddo
+                if(FuncValue.gt.1.0e-7_dp) then
+!                    write(6,*) "Sum of imaginary components of degenerate orbitals: ",FuncValue
+                    write(6,*) "After macroiteration ",iter," objective function is: ",FuncValue
+                else
+                    exit    !Convergence successful
+                endif
+
+            enddo
+
+            deallocate(step,var,VecPair,vars)
+
+        else
+            !Try to optimize full unitary matrix all in one go
+
+            !How many free parameters do we have?
+            nParams = nVecs*(nVecs-1) + nVecs
+
+            allocate(vars(nParams))
+            !Starting values for anti-hermitian rotation matrix
+            vars(:) = zero
+            allocate(step(nParams))
+            allocate(var(nParams))
+            step(:) = 0.05_dp
+
+            !Set max no of function evaluations. Default = 50*variables, print every 25
+            maxf = 5000*nParams
+            if(tWriteOut) then
+                iprint = 50
+            else
+                iprint = -1
+            endif
+
+            !Set value for stopping criterion. Stopping occurs when the 
+            !standard deviation of the values of the objective function at
+            !the points of the current simplex < stopcr
+            stopcr = 1.0e-7_dp
+            nloop = 2*nParams !This is how often the stopping criterion is checked
+
+            !Fit a quadratic surface to be sure a minimum has been found
+            iquad = 1
+
+            !As function value is being evaluated in real(dp), it should
+            !be accurate to about 15 dp. If we set simp = 1.d-6, we should
+            !get about 9dp accuracy in fitting the surface
+            simp = 1.0e-6_dp
+
+            iter = 0
+            do while(.true.)
+                iter = iter + 1
+                    
+                !Now call minim to do the work
+                tfirst = .true.
+                do while(.true.)
+                    call minim_2(vars, step, nParams, FinalErr, maxf, iprint, stopcr, nloop, &
+                        iquad, simp, var, MinComplexOrbs, ierr, nLat, nVecs, Vecs)
+
+                    if(ierr.eq.0) exit
+                    if(.not.tFirst) exit
+                    tFirst = .false.    !We have found a minimum, but run again with a small number of iterations to check it is stable
+                    maxf = 3*nParams
+                enddo
+
+                if(FinalErr.lt.1.0e-7_dp) then
+                    !Converged
+                    !On output, Err is the minimized objective function, var contains the diagonal of the inverse of the information matrix, whatever that is
+                    if(ierr.eq.0) then
+                        write(6,"(A)") "Simplex optimization successful."
+                        write(6,"(A,F14.7)") "Minimized residual: ",FinalErr
+                    elseif(ierr.eq.4) then
+                        call stop_all(t_r,'nloop < 1')
+                    elseif(ierr.eq.3) then
+                        call stop_all(t_r,'nParams < 1')
+                    elseif(ierr.eq.2) then
+                        call warning(t_r,'Information matrix is not +ve semi-definite')
+                        write(6,"(A,F14.7)") "Final residual: ",FinalErr
+                    elseif(ierr.eq.1) then
+                        call warning(t_r,'Max number of Simplex function evaluations reached.')
+                        write(6,"(A,F14.7)") "Final residual: ",FinalErr
+                    endif
+
+                    !Now, do a final rotation of the orbitals, and check that they are real
+                    allocate(X_Mat(nVecs,nVecs))
+                    X_Mat(:,:) = zzero
+
+                    do i = 1,nVecs
+                        !The first values are the real diagonals
+                        X_Mat(i,i) = cmplx(vars(i),zero,dp)
+                    enddo
+
+                    !Now, for the hermitian off-diagonals
+                    ind = nVecs+1
+                    do i = 1,nVecs
+                        do j = i+1,nVecs
+                            X_Mat(j,i) = cmplx(vars(ind),vars(ind+1),dp)
+                            X_Mat(i,j) = conjg(X_Mat(j,i))
+                            ind = ind + 2
+                        enddo
+                    enddo
+                    if((ind-1).ne.nParams) call stop_all(t_r,'Error in indexing')
+                    allocate(UnitMat(nVecs,nVecs))
+                    call FindUnitaryMatrix(nVecs,X_Mat,UnitMat)
+                    
+                    !Now, rotate the vectors into a new basis!
+                    allocate(NewVecs(nLat,nVecs))
+                    call ZGEMM('N','N',nLat,nVecs,nVecs,zone,Vecs,nLat,UnitMat,nVecs,zzero,NewVecs,nLat)
+
+                    !Now, how complex are these vectors?
+                    FuncValue = zero
+                    do i = 1,nVecs
+                        do j = 1,nLat
+                            FuncValue = FuncValue + abs(aimag(NewVecs(j,i)))
+                        enddo
+                    enddo
+                    if(FuncValue.gt.1.0e-7_dp) then
+                        write(6,*) "Sum of imaginary components of degenerate orbitals: ",FuncValue
+                        call stop_all(t_r,'Orbitals still complex')
+                    endif
+                    !Update vectors
+                    Vecs(:,:) = NewVecs(:,:)
+
+                    deallocate(NewVecs,X_Mat,UnitMat)
+                    exit
+                else
+                    !We know that strictly real eigenvectors are possible. Start from a new random matrix and search again!
+                    write(6,*) "Restarting from random unitary matrix"
+                    do i = 1,nParams
+                        call random_number(r)
+                        if(r.gt.0.5_dp) then
+                            call random_number(r2)
+                            vars(i) = r2*pi
+                        else
+                            call random_number(r2)
+                            vars(i) = -r2*pi
+                        endif
+                    enddo
+                endif
+            enddo
+            deallocate(step,var,vars)
+        endif
+
+    end subroutine FindUnitaryRotToRealVecs
+    
+    !Given the parameters for a complex anti-hermitian matrix, calculate the imaginary component of the
+    !resultant orbitals once rotated into the basis via the unitary transform.
+    subroutine MinComplexOrbPair(vars,FuncValue,nParams,nLat,VecPair)
+        implicit none
+        integer, intent(in) :: nLat,nParams
+        real(dp), intent(in) :: vars(nParams)
+        real(dp), intent(out) :: FuncValue
+        complex(dp), intent(in) :: VecPair(nLat,2)
+        !Local variables
+        complex(dp), allocatable :: NewVecs(:,:)
+        integer :: i,j
+        integer, parameter :: iPwr = 1
+        character(len=*), parameter :: t_r='MinComplexOrbPair'
+
+        if(nParams.ne.1) call stop_all(t_r,'Error')
+
+        !Now, rotate the vectors into a new basis!
+        allocate(NewVecs(nLat,2))
+
+        NewVecs(:,1) = cos(vars(1))*VecPair(:,1) + sin(vars(1))*VecPair(:,2)
+        NewVecs(:,2) = -sin(vars(1))*VecPair(:,1) + cos(vars(1))*VecPair(:,2)
+
+        !Now, how complex are these vectors?
+        FuncValue = zero
+        do i = 1,2    
+            do j = 1,nLat
+                FuncValue = FuncValue + abs(aimag(NewVecs(j,i)))**iPwr
+            enddo
+        enddo
+
+        deallocate(NewVecs)
+
+    end subroutine MinComplexOrbPair
+
+    !Given the parameters for a complex anti-hermitian matrix, calculate the imaginary component of the
+    !resultant orbitals once rotated into the basis via the unitary transform.
+    subroutine MinComplexOrbs(vars,FuncValue,nParams,nLat,nVecs,Vecs)
+        implicit none
+        integer, intent(in) :: nLat,nVecs,nParams
+        real(dp), intent(in) :: vars(nParams)
+        real(dp), intent(out) :: FuncValue
+        complex(dp), intent(in) :: Vecs(nLat,nVecs)
+        !Local variables
+        complex(dp), allocatable :: X_Mat(:,:),UnitMat(:,:)
+        complex(dp), allocatable :: NewVecs(:,:)
+        integer :: i,ind,j,b
+        integer, parameter :: iPwr = 1
+        character(len=*), parameter :: t_r='MinComplexOrbs'
+
+        allocate(X_Mat(nVecs,nVecs))
+        X_Mat(:,:) = zzero
+
+        do i = 1,nVecs
+            !The first values are the real diagonals
+            X_Mat(i,i) = cmplx(vars(i),zero,dp)
+        enddo
+
+        !Now, for the hermitian off-diagonals
+        ind = nVecs+1
+        do i = 1,nVecs
+            do j = i+1,nVecs
+                X_Mat(j,i) = cmplx(vars(ind),vars(ind+1),dp)
+                X_Mat(i,j) = conjg(X_Mat(j,i))
+                ind = ind + 2
+            enddo
+        enddo
+        if((ind-1).ne.nParams) call stop_all(t_r,'Error in indexing')
+
+        allocate(UnitMat(nVecs,nVecs))
+        call FindUnitaryMatrix(nVecs,X_Mat,UnitMat)
+
+        !Now, rotate the vectors into a new basis!
+        allocate(NewVecs(nLat,nVecs))
+        call ZGEMM('N','N',nLat,nVecs,nVecs,zone,Vecs,nLat,UnitMat,nVecs,zzero,NewVecs,nLat)
+
+        !Now, how complex are these vectors?
+        FuncValue = zero
+        do i = 1,nVecs
+            do j = 1,nLat
+                FuncValue = FuncValue + abs(aimag(NewVecs(j,i)))**iPwr
+            enddo
+        enddo
+
+        deallocate(NewVecs,X_Mat,UnitMat)
+
+    end subroutine MinComplexOrbs
+        
+    !Find the unitary matrix resulting from a hermitian matrix X_Mat as exp(-iX)
+    subroutine FindUnitaryMatrix(nVecs,X_Mat,UnitMat)
+        implicit none
+        integer, intent(in) :: nVecs
+        complex(dp), intent(in) :: X_Mat(nVecs,nVecs)
+        complex(dp), intent(out) :: UnitMat(nVecs,nVecs)
+        complex(dp), allocatable :: EigenVecs(:,:)
+        integer :: i,j,b,lWork,info
+        complex(dp), allocatable :: cWork(:),ztemp(:,:)
+        real(dp), allocatable :: EValues(:),Work(:)
+        character(len=*), parameter :: t_r='FindUnitaryMatrix'
+
+        if(tCheck) then
+            !Check it is hermitian
+            do i = 1,nVecs
+                do j = 1,nVecs
+                    if(abs(X_Mat(i,j)-conjg(X_Mat(j,i))).gt.1.0e-8_dp) then
+                        call stop_all(t_r,'Matrix not hermitian')
+                    endif
+                enddo
+                if(abs(aimag(X_Mat(i,i))).gt.1.0e-8_dp) then
+                    call stop_all(t_r,'Matrix not hermitian')
+                endif
+            enddo
+        endif
+
+        !Diagonalize
+        allocate(EigenVecs(nVecs,nVecs))
+        EigenVecs(:,:) = X_Mat(:,:)
+        allocate(EValues(nVecs))
+        EValues(:) = zero
+        allocate(cWork(1))
+        allocate(Work(max(1,3*nVecs-2)))
+        lWork = -1
+        info = 0
+!        write(6,*) "nVecs: ",nVecs
+!        call writematrixcomp(EigenVecs,'X_Mat',.false.)
+!        write(6,*) "EValues: ",EValues
+        call zheev('V','U',nVecs,EigenVecs,nVecs,EValues,cWork,lWork,Work,info)
+        if(info.ne.0) call stop_all(t_r,'Workspace query failed')
+        lwork=int(abs(work(1)))+2 
+        if(lwork.lt.max(1,2*nVecs-1)) lwork = max(1,2*nVecs-1)
+        deallocate(cwork)
+        allocate(cwork(lwork))
+!        write(6,*) "lWork: ",lWork
+!        write(6,*) "info: ",info
+        call zheev('V','U',nVecs,EigenVecs,nVecs,EValues,cWork,lWork,Work,info)
+        if(info.ne.0) then
+            write(6,*) "info: ", info
+            call stop_all(t_r,'Diag failed')
+        endif
+        deallocate(work,cwork)
+
+        !Create diagonal complex matrix with -i*evalues on diagonal
+        !Multiply this straight away by V*
+        do b = 1,nVecs
+            do i = 1,nVecs
+                UnitMat(i,b) = exp(cmplx(zero,-EValues(i),dp))*conjg(EigenVecs(b,i))
+            enddo
+        enddo
+        !Now the final rotation back into the original space
+        deallocate(EValues)
+        allocate(ztemp(nVecs,nVecs))
+        call ZGEMM('N','N',nVecs,nVecs,nVecs,zone,EigenVecs,nVecs,UnitMat,nVecs,zzero,ztemp,nVecs)
+        UnitMat(:,:) = ztemp(:,:)
+
+        if(tCheck) then
+            !Verify that this matrix is unitary
+            call ZGEMM('C','N',nVecs,nVecs,nVecs,zone,UnitMat,nVecs,UnitMat,nVecs,zzero,ztemp,nVecs)
+            !ztemp should be the unit matrix
+            do i = 1,nVecs
+                ztemp(i,i) = ztemp(i,i) - zone
+            enddo
+            !Check this is now the zero matrix
+            do i = 1,nVecs
+                do j = 1,nVecs
+                    if(abs(ztemp(j,i)).gt.1.0e-7_dp) then
+                        call stop_all(t_r,'Not created unitary matrix')
+                    endif
+                enddo
+            enddo
+            !For completeness, check the other way around
+            call ZGEMM('N','C',nVecs,nVecs,nVecs,zone,UnitMat,nVecs,UnitMat,nVecs,zzero,ztemp,nVecs)
+            !ztemp should be the unit matrix
+            do i = 1,nVecs
+                ztemp(i,i) = ztemp(i,i) - zone
+            enddo
+            !Check this is now the zero matrix
+            do i = 1,nVecs
+                do j = 1,nVecs
+                    if(abs(ztemp(j,i)).gt.1.0e-7_dp) then
+                        call stop_all(t_r,'Not created unitary matrix 2')
+                    endif
+                enddo
+            enddo
+        endif
+        deallocate(ztemp,EigenVecs)
+    end subroutine FindUnitaryMatrix
     
     !Routine to diagonalize a 1-electron, complex operator, with the lattice periodicity.
     !the SS_Period is the size of the supercell repeating unit (e.g. the coupling correlation potential)
@@ -3494,39 +3811,12 @@ module mat_tools
         endif
 
         if(tKSpace_Diag) then
-            if(LatticeDim.eq.2) then
+            if(tTiltedLattice.and.(LatticeDim.eq.2)) then
                 call stop_all(t_r,'Cannot do k-space diagonalizations - impurity site tiling is not same as direct lattice')
             endif
 
-            if(tCheck.and.LatticeDim.eq.1) then
-                !Check for translational invariance of the system
-                !That is: is each supercell row equivalent when translated to the supercell ajacent to it?
-                do j = 1,nLat
-                    do i = 1,nLat
-                        ind_1 = i
-                        ind_2 = j
-                        !Translate a supercell down
-                        ind_1 = i + SS_Period
-                        ind_2 = j + SS_Period
-                        phase = 1
-                        if(ind_1.gt.nLat) then
-                            ind_1 = ind_1 - nLat
-                            if(tAntiPeriodic) phase = -1 * phase
-                        endif
-                        if(ind_2.gt.nLat) then
-                            ind_2 = ind_2 - nLat
-                            if(tAntiPeriodic) phase = -1 * phase
-                        endif
-                        if(abs(ham(i,j)-(phase*ham(ind_1,ind_2))).gt.1.0e-7_dp) then
-                            write(6,"(2I6,A,2I6)") i,j," -> ",ind_1,ind_2
-                            write(6,*) "Phase change: ",phase
-                            write(6,*) ham(i,j),phase*ham(ind_1,ind_2)
-                            call writematrixcomp(ham,'real space ham',.true.)
-                            call stop_all(t_r,'Translational symmetry not maintained in real-space hamiltonian')
-                        endif
-                    enddo
-                enddo
-                write(6,"(A)") "Lattice system appropriately periodic in real space"
+            if(tCheck) then
+                if(nLat.eq.nSites) call CheckRealSpaceTransInvar(Ham)
             endif
 
             allocate(CompHam(nLat,nLat))
