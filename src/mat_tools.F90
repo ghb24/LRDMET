@@ -3127,7 +3127,8 @@ module mat_tools
 
         if(tKSpace_Diag) then
             if(tTiltedLattice.and.(LatticeDim.eq.2)) then
-                call stop_all(t_r,'Cannot do k-space diagonalizations with tilted lattice - impurity site tiling is not same as direct lattice')
+                call stop_all(t_r,'Cannot do k-space diagonalizations with tilted lattice '     &
+                  //'- impurity site tiling is not same as direct lattice')
             endif
 
             !Testing of the long range coupling code
