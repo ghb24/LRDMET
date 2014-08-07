@@ -3281,6 +3281,7 @@ module mat_tools
                         deallocate(Vec_temp,Vec_temp2)
                     else
                         !Brute force search for unitary rotation to make these vectors real
+                        write(6,"(A,I6,A)") "Degenerate set of: ",j-i,' vectors.'
                         call FindUnitaryRotToRealVecs(r_vecs(:,i:j-1),nLat,j-i)
                     endif
                 endif
@@ -3322,7 +3323,7 @@ module mat_tools
                 do i = 1,nLat
                     call DGEMV('N',nLat,nLat,one,Ham,nLat,r_vecs_real(:,i),1,zero,Work,1)
                     do j = 1,nLat
-                        if(abs(Work(j)-(Vals(i)*r_vecs_real(j,i))).gt.1.0e-8_dp) then
+                        if(abs(Work(j)-(Vals(i)*r_vecs_real(j,i))).gt.1.0e-7_dp) then
                             call stop_all(t_r,'Eigensystem not computed correctly in real real basis')
                         endif
                     enddo
@@ -3340,7 +3341,7 @@ module mat_tools
             lWork=-1
             info=0
             call dsyev('V','L',nLat,Ham,nLat,Vals,Work,lWork,info)
-            if(info.ne.0) call stop_all(t_r,'Workspace queiry failed')
+            if(info.ne.0) call stop_all(t_r,'Workspace query failed')
             lwork=int(work(1))+1
             deallocate(work)
             allocate(work(lwork))
@@ -3364,49 +3365,64 @@ module mat_tools
         real(dp), allocatable :: step(:),var(:)
         complex(dp), allocatable :: UnitMat(:,:),X_Mat(:,:),NewVecs(:,:),VecPair(:,:)
         integer :: maxf,iprint,nloop,iquad,ierr,i,j,ind,iter
-        real(dp) :: stopcr,simp,FinalErr,FuncValue,r,r2
+        real(dp) :: stopcr,simp,FinalErr,FuncValue,r,r2,rhoend,rhobeg,initialval
         logical :: tfirst
-        logical, parameter :: TwoByTwoRots = .false.
+        logical, allocatable :: tExclude(:)
+        logical, parameter :: TwoByTwoRots = .true. 
+        logical, parameter :: tSimplex = .false.
         character(len=*), parameter :: t_r='FindUnitaryRotToRealVecs'
 
         if(TwoByTwoRots) then
             !Just use simplex to do a line-search - silly
-            !Actually, I'm not sure that searching for real vectors is possible in this way! Arrgh!
-            call stop_all(t_r,'This will not work. Although it mixes, it cannot provide an arbitrary U(1) rotation of the orbitals')
+
+            !First, just rotate the orbitals on their own. If they can be made real, then exclude them from the set.
+            allocate(tExclude(nVecs))
+            tExclude(:) = .false.
+            !Its own brent algorithm to try to optimize.
                         
-            nParams = 1
+            nParams = 3
             allocate(vars(nParams))
             allocate(VecPair(nLat,2))
             allocate(step(nParams))
             allocate(var(nParams))
-            step(:) = 0.05_dp
             if(tWriteOut) then
                 iprint = 50
             else
                 iprint = -1
             endif
-            !Fit a quadratic surface to be sure a minimum has been found
-            iquad = 1
-            !As function value is being evaluated in real(dp), it should
-            !be accurate to about 15 dp. If we set simp = 1.d-6, we should
-            !get about 9dp accuracy in fitting the surface
-            simp = 1.0e-6_dp
-            !Set value for stopping criterion. Stopping occurs when the 
-            !standard deviation of the values of the objective function at
-            !the points of the current simplex < stopcr
-            stopcr = 1.0e-7_dp
-            nloop = 2*nParams !This is how often the stopping criterion is checked
             iter = 0
 
             do while(.true.)
                 iter = iter + 1
                 do i = 1,nVecs
+                    if(tExclude(i)) cycle
                     do j = i+1,nVecs
+                        if(tExclude(i)) cycle
+
+                        write(6,"(A,2I7)") "Rotating together vectors: ",i,j
 
                         VecPair(:,1) = Vecs(:,i)
                         VecPair(:,2) = Vecs(:,j)
 
                         vars(:) = zero  !Initial rotation angle
+                        step(:) = 0.1_dp
+                        !Fit a quadratic surface to be sure a minimum has been found
+                        iquad = 1
+                        !As function value is being evaluated in real(dp), it should
+                        !be accurate to about 15 dp. If we set simp = 1.d-6, we should
+                        !get about 9dp accuracy in fitting the surface
+                        simp = 5.0e-7_dp
+                        !Set value for stopping criterion. Stopping occurs when the 
+                        !standard deviation of the values of the objective function at
+                        !the points of the current simplex < stopcr
+                        stopcr = 1.0e-7_dp
+                        nloop = 2*nParams !This is how often the stopping criterion is checked
+                        call MinComplexOrbPair(vars,InitialVal,nParams,nLat,VecPair)
+                        write(6,"(A,G25.13)") "Initial function value for this pair: ",InitialVal
+                        if(InitialVal.lt.1.0e-7_dp) then
+                            write(6,"(A)") "Skipping optimization of this pair - pair are already real!"
+                            cycle
+                        endif
 
                         !Set max no of function evaluations. Default = 50*variables, print every 25
                         maxf = 5000*nParams
@@ -3440,8 +3456,17 @@ module mat_tools
                         endif
 
                         !Update vectors
-                        Vecs(:,i) = cos(vars(1))*VecPair(:,1) + sin(vars(1))*VecPair(:,2)
-                        Vecs(:,j) = -sin(vars(1))*VecPair(:,1) + cos(vars(1))*VecPair(:,2)
+                        if(((InitialVal-FinalErr).gt.(InitialVal*0.05_dp)).or.((InitialVal-FinalErr).gt.0.001)) then
+                            !Only update if change is more than 10% of initial error
+                            write(6,"(A)") "Updating vector pair."
+                            write(6,"(A,3F15.7)") "Rotation angle: ",vars(1),cos(vars(1)),sin(vars(1))
+                            Vecs(:,i) = exp(cmplx(zero,vars(2),dp))*(cos(vars(1))*VecPair(:,1) + sin(vars(1))*VecPair(:,2))
+                            Vecs(:,j) = exp(cmplx(zero,vars(3),dp))*(-sin(vars(1))*VecPair(:,1) + cos(vars(1))*VecPair(:,2))
+                        else
+                            write(6,"(A)") "Function has not decreased materially. Not updating."
+                        endif
+
+                        !TODO: Check if each vector is real. If it is, then add to the exclude list.
 
                     enddo
                 enddo
@@ -3453,7 +3478,7 @@ module mat_tools
                         FuncValue = FuncValue + abs(aimag(Vecs(j,i)))
                     enddo
                 enddo
-                if(FuncValue.gt.1.0e-7_dp) then
+                if(FuncValue.gt.(1.0e-6_dp*nVecs)) then
 !                    write(6,*) "Sum of imaginary components of degenerate orbitals: ",FuncValue
                     write(6,*) "After macroiteration ",iter," objective function is: ",FuncValue
                 else
@@ -3462,7 +3487,7 @@ module mat_tools
 
             enddo
 
-            deallocate(step,var,VecPair,vars)
+            deallocate(step,var,VecPair,vars,tExclude)
 
         else
             !Try to optimize full unitary matrix all in one go
@@ -3473,53 +3498,62 @@ module mat_tools
             allocate(vars(nParams))
             !Starting values for anti-hermitian rotation matrix
             vars(:) = zero
-            allocate(step(nParams))
-            allocate(var(nParams))
-            step(:) = 0.05_dp
-
-            !Set max no of function evaluations. Default = 50*variables, print every 25
             maxf = 5000*nParams
-            if(tWriteOut) then
-                iprint = 50
+
+            if(tSimplex) then
+                allocate(step(nParams))
+                allocate(var(nParams))
+                step(:) = 0.05_dp
+                !Set max no of function evaluations. Default = 50*variables, print every 25
+                if(tWriteOut) then
+                    iprint = 50
+                else
+                    iprint = -1
+                endif
+                !Set value for stopping criterion. Stopping occurs when the 
+                !standard deviation of the values of the objective function at
+                !the points of the current simplex < stopcr
+                stopcr = 1.0e-6_dp
+                nloop = 2*nParams !This is how often the stopping criterion is checked
+                !Fit a quadratic surface to be sure a minimum has been found
+                iquad = 1
+                !As function value is being evaluated in real(dp), it should
+                !be accurate to about 15 dp. If we set simp = 1.d-6, we should
+                !get about 9dp accuracy in fitting the surface
+                simp = 1.0e-6_dp
             else
-                iprint = -1
+                !Brent
+                rhobeg = 0.05_dp
+                rhoend = 1.0e-6_dp
+                iprint = 2
             endif
-
-            !Set value for stopping criterion. Stopping occurs when the 
-            !standard deviation of the values of the objective function at
-            !the points of the current simplex < stopcr
-            stopcr = 1.0e-7_dp
-            nloop = 2*nParams !This is how often the stopping criterion is checked
-
-            !Fit a quadratic surface to be sure a minimum has been found
-            iquad = 1
-
-            !As function value is being evaluated in real(dp), it should
-            !be accurate to about 15 dp. If we set simp = 1.d-6, we should
-            !get about 9dp accuracy in fitting the surface
-            simp = 1.0e-6_dp
 
             iter = 0
             do while(.true.)
                 iter = iter + 1
                     
-                !Now call minim to do the work
-                tfirst = .true.
-                do while(.true.)
-                    call minim_2(vars, step, nParams, FinalErr, maxf, iprint, stopcr, nloop, &
-                        iquad, simp, var, MinComplexOrbs, ierr, nLat, nVecs, Vecs)
+                if(tSimplex) then
+                    !Now call minim to do the work
+                    tfirst = .true.
+                    do while(.true.)
+                        call minim_2(vars, step, nParams, FinalErr, maxf, iprint, stopcr, nloop, &
+                            iquad, simp, var, MinComplexOrbs, ierr, nLat, nVecs, Vecs)
 
-                    if(ierr.eq.0) exit
-                    if(.not.tFirst) exit
-                    tFirst = .false.    !We have found a minimum, but run again with a small number of iterations to check it is stable
-                    maxf = 3*nParams
-                enddo
+                        if(ierr.eq.0) exit
+                        if(.not.tFirst) exit
+                        tFirst = .false.    !We have found a minimum, but run again with a small number of iterations to check it is stable
+                        maxf = 3*nParams
+                    enddo
+                else
+                    call uobyqa_2(nParams,vars,rhobeg,rhoend,iprint,maxf,FinalErr,MinComplexOrbs,nLat,nVecs,Vecs)
+                    ierr = 0
+                endif
 
-                if(FinalErr.lt.1.0e-7_dp) then
+                if(FinalErr.lt.1.0e-6_dp) then
                     !Converged
                     !On output, Err is the minimized objective function, var contains the diagonal of the inverse of the information matrix, whatever that is
                     if(ierr.eq.0) then
-                        write(6,"(A)") "Simplex optimization successful."
+                        write(6,"(A)") "Minimization successful."
                         write(6,"(A,F14.7)") "Minimized residual: ",FinalErr
                     elseif(ierr.eq.4) then
                         call stop_all(t_r,'nloop < 1')
@@ -3566,7 +3600,7 @@ module mat_tools
                             FuncValue = FuncValue + abs(aimag(NewVecs(j,i)))
                         enddo
                     enddo
-                    if(FuncValue.gt.1.0e-7_dp) then
+                    if(FuncValue.gt.1.0e-6_dp) then
                         write(6,*) "Sum of imaginary components of degenerate orbitals: ",FuncValue
                         call stop_all(t_r,'Orbitals still complex')
                     endif
@@ -3590,7 +3624,8 @@ module mat_tools
                     enddo
                 endif
             enddo
-            deallocate(step,var,vars)
+            if(tSimplex) deallocate(step,var)
+            deallocate(vars)
         endif
 
     end subroutine FindUnitaryRotToRealVecs
@@ -3609,13 +3644,13 @@ module mat_tools
         integer, parameter :: iPwr = 1
         character(len=*), parameter :: t_r='MinComplexOrbPair'
 
-        if(nParams.ne.1) call stop_all(t_r,'Error')
+        if(nParams.ne.3) call stop_all(t_r,'Error')
 
         !Now, rotate the vectors into a new basis!
         allocate(NewVecs(nLat,2))
 
-        NewVecs(:,1) = cos(vars(1))*VecPair(:,1) + sin(vars(1))*VecPair(:,2)
-        NewVecs(:,2) = -sin(vars(1))*VecPair(:,1) + cos(vars(1))*VecPair(:,2)
+        NewVecs(:,1) = exp(cmplx(zero,vars(2),dp))*(cos(vars(1))*VecPair(:,1) + sin(vars(1))*VecPair(:,2))
+        NewVecs(:,2) = exp(cmplx(zero,vars(3),dp))*(-sin(vars(1))*VecPair(:,1) + cos(vars(1))*VecPair(:,2))
 
         !Now, how complex are these vectors?
         FuncValue = zero
