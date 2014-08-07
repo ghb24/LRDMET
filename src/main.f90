@@ -1282,7 +1282,7 @@ Program RealHub
                     call halt_timer(FCIDUMP)
                 endif
 
-                !call stop_all(t_r,'End of test')
+                call stop_all(t_r,'End of test')
 
                 !Calculate single reference linear response - non-interacting, TDA and RPA
                 if(tMFResponse) then

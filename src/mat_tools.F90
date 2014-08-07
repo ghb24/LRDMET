@@ -3262,7 +3262,7 @@ module mat_tools
                 if((j-i).gt.1) then
                     !Degeneracy
                     !Originally, (for 1D systems?), if we had a degeneracy of two, we could assume that 
-                    if((j-i).eq.1) then
+                    if((j-i).eq.2) then
                         !it was an equal linear combination of the two vectors
 !                        if((j-i).gt.2) then
 !                            !More than two fold degenerate. How do we rotate these??
