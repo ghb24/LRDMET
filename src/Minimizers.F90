@@ -4,7 +4,7 @@ use Globals, only: nImp
 
 IMPLICIT NONE
 PRIVATE
-PUBLIC :: minim, uobyqa, uobyqa_2,minim_2, minim_3
+PUBLIC :: minim, uobyqa, uobyqa_2,minim_2, minim_3,golden
 !minim: Simplex (no gradients required) (Bottom of file)
 !uobyqa: Powell (no gradients required) (First routines)
 
@@ -3847,6 +3847,86 @@ END DO
 RETURN
 
 END SUBROUTINE print_tri_matrix
+
+
+FUNCTION golden(ax,bx,cx,fun,tol,xmin,n_dum,Vecs_dum)
+implicit none
+REAL(dp) golden,ax,bx,cx,tol,xmin,f,R,C,xarr(1)
+integer :: n_dum
+complex(dp), intent(in) :: Vecs_dum(n_dum,1)
+!EXTERNAL f
+PARAMETER (R=.61803399,C=1.-R)
+!Given a function f, and given a bracketing triplet of abscissas ax, bx, cx
+!(such that bx is between ax and cx, and f(bx) is less than both f(ax) and
+!f(cx)), this routine performs a golden section search for the minimum, 
+!isolating it to a fractional precision of about tol. The abscissa of 
+!the minimum is returned as xmin, and the minimum function value
+!is returned as golden, the returned function value.
+!Parameters: The golden ratios.
+REAL(dp) f1,f2,x0,x1,x2,x3
+interface
+  subroutine fun(x,f,n,n_dum,n2_dum,vecs_dum)
+    use const, only: dp
+    implicit none
+    integer, intent(in) :: n,n_dum,n2_dum
+    real(dp), intent(in) :: x(n)
+    real(dp), intent(out) :: f
+    complex(dp), intent(in) :: vecs_dum(n_dum,n2_dum)
+    end subroutine fun
+end interface
+x0=ax
+!At any given time we will keep track of four points, x0,x1,x2,x3.
+x3=cx
+if(abs(cx-bx).gt.abs(bx-ax))then
+!Make x0 to x1 the smaller segment,
+x1=bx
+x2=bx+C*(cx-bx)
+!and fill in the new point to be tried.
+else
+x2=bx
+x1=bx-C*(bx-ax)
+endif
+xarr(1) = x1
+call fun(xarr,f1,1,n_dum,1,vecs_dum)  !f1=f(x1)
+!The initial function evaluations. Note that we never need to
+!evaluate the function at the original endpoints.
+xarr(1) = x2
+call fun(xarr,f2,1,n_dum,1,vecs_dum)  !f2=f(x2)
+1 if(abs(x3-x0).gt.tol*(abs(x1)+abs(x2))) then
+!Do-while loop: we keep returning here.
+if(f2.lt.f1)then
+!One possible outcome,
+x0=x1
+!its housekeeping,
+x1=x2
+x2=R*x1+C*x3
+f1=f2
+xarr(1) = x2
+call fun(xarr,f2,1,n_dum,1,vecs_dum)  !f2=f(x2)
+!and a new function evaluation.
+else
+!The other outcome,
+x3=x2
+x2=x1
+x1=R*x2+C*x0
+f2=f1
+xarr(1) = x1
+call fun(xarr,f1,1,n_dum,1,vecs_dum)  !f1=f(x1)
+!and its new function evaluation.
+endif
+goto 1
+!Back to see if we are done.
+endif
+if(f1.lt.f2)then
+!We are done. Output the best of the two current values.
+golden=f1
+xmin=x1
+else
+golden=f2
+xmin=x2
+endif
+return
+END FUNCTION golden
 
 END MODULE MinAlgos    
 

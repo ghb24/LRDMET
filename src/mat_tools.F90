@@ -3125,7 +3125,7 @@ module mat_tools
             endif
         endif
 
-        if(tKSpace_Diag) then
+        if(tKSpace_Diag.and.(LatticeDim.eq.1)) then
             if(tTiltedLattice.and.(LatticeDim.eq.2)) then
                 call stop_all(t_r,'Cannot do k-space diagonalizations with tilted lattice '     &
                   //'- impurity site tiling is not same as direct lattice')
@@ -3256,7 +3256,7 @@ module mat_tools
             i = 1
             do while(i.le.(nLat-1))
                 j = i + 1
-                do while(abs(Vals(i)-Vals(j)).lt.1.0e-8)
+                do while(abs(Vals(i)-Vals(j)).lt.1.0e-8_dp)
                     j = j + 1
                     if(j.gt.nLat) exit
                 enddo
@@ -3364,9 +3364,10 @@ module mat_tools
         real(dp), allocatable :: vars(:)    !The independent variables for the X matrix
         real(dp), allocatable :: step(:),var(:)
         complex(dp), allocatable :: UnitMat(:,:),X_Mat(:,:),NewVecs(:,:),VecPair(:,:)
-        integer :: maxf,iprint,nloop,iquad,ierr,i,j,ind,iter
-        real(dp) :: stopcr,simp,FinalErr,FuncValue,r,r2,rhoend,rhobeg,initialval
-        logical :: tfirst
+        integer :: maxf,iprint,nloop,iquad,ierr,i,j,ind,iter,k,l
+        real(dp) :: stopcr,simp,FinalErr,FuncValue,r,r2,rhoend,rhobeg,initialval,FinalErr_2
+        real(dp) :: FinalErr_3,ax,bx,cx,phase
+        logical :: tfirst,PosSuc
         logical, allocatable :: tExclude(:)
         logical, parameter :: TwoByTwoRots = .true. 
         logical, parameter :: tSimplex = .false.
@@ -3378,11 +3379,98 @@ module mat_tools
             !First, just rotate the orbitals on their own. If they can be made real, then exclude them from the set.
             allocate(tExclude(nVecs))
             tExclude(:) = .false.
-            !Its own brent algorithm to try to optimize.
+            allocate(vars(1))
+            do i = 1,nVecs
+                nParams = 1
+                vars(1) = zero
+                !Find bracket
+                call MinComplexOrbs(vars,FinalErr,1,nLat,1,Vecs(:,i))
+                if(FinalErr.lt.1.0e-7_dp) then
+                    tExclude(i) = .true.
+                    cycle
+                endif
+                ax = vars(1)
+                vars(1) = 2*pi  !This should be the same value
+                call MinComplexOrbs(vars,FinalErr_2,1,nLat,1,Vecs(:,i))
+                if(abs(FinalErr-FinalErr_2).gt.1.0e-7_dp) call stop_all(t_r,'Error here')
+                vars(1) = zero
+                do j = 1,9
+                    !Coarse search
+                    vars(1) = vars(1) + (2.0_dp*pi)*real(j,dp)/10.0_dp
+                    call MinComplexOrbs(vars,FinalErr_3,1,nLat,1,Vecs(:,i))
+                    if(FinalErr_3.lt.FinalErr_2) then
+                        FinalErr_2 = FinalErr_3
+                        bx = vars(1)
+                    endif
+                enddo
+                if(FinalErr_3.lt.FinalErr) then
+                    !Bracketed
+
+                    ax = zero
+                    cx = 2.0_dp*pi
+                    FinalErr = golden(ax,bx,cx,MinComplexOrbs,1.0e-7_dp,vars(1),nLat,Vecs(:,i)) 
+!                    call uobyqa_2(nParams,vars,rhobeg,rhoend,iprint,maxf,FinalErr,MinComplexOrbs,nLat,1,Vecs(:,i))
+                    if(abs(FinalErr).lt.1.0e-6_dp) then
+                        !This vector can be rotated real on its own
+                        !Don't rotate it here though - it will be done later on.
+                        tExclude(i) = .true.
+                    endif
+                endif
+            enddo
+
+            !Now, attempt to rotate all pairs by a fixed linear combination
+            allocate(VecPair(nLat,2))
+            do i = 1,nVecs
+                if(tExclude(i)) cycle
+                do j = i+1,nVecs
+                    if(tExclude(j)) cycle
+                    VecPair(:,1) = (Vecs(:,i) + Vecs(:,j)) / sqrt(2.0_dp)
+                    VecPair(:,2) = (Vecs(:,i) - Vecs(:,j)) / sqrt(2.0_dp)
+
+                    !Can VecPair vectors be made to be real?
+                    phase = zero
+                    do l = 1,nLat
+                        if((abs(aimag(VecPair(l,1))).gt.1.0e-5_dp).and.(abs(VecPair(l,1)).gt.1.0e-5_dp)) then
+                            phase = atan(aimag(VecPair(l,1))/real(VecPair(l,1)))
+                            exit
+                        endif
+                    enddo
+                    VecPair(:,1) = VecPair(:,1)*exp(cmplx(zero,-phase,dp))
+                    !Check the vector is real
+                    FinalErr = zero
+                    do l = 1,nLat
+                        FinalErr = FinalErr + abs(aimag(VecPair(l,1)))
+                    enddo
+                    if(FinalErr.lt.1.0e-7_dp) then
+                        write(6,"(A,2I6)") "Via trivial rotation, two eigenvectors made real: ",i,j
+                        Vecs(:,i) = VecPair(:,1)
+
+                        phase = zero
+                        do l = 1,nLat
+                            if((abs(aimag(VecPair(l,2))).gt.1.0e-5_dp).and.(abs(VecPair(l,2)).gt.1.0e-5_dp)) then 
+                                phase = atan(aimag(VecPair(l,2))/real(VecPair(l,2)))
+                                exit
+                            endif
+                        enddo
+                        VecPair(:,2) = VecPair(:,2)*exp(cmplx(zero,-phase,dp))
+                        FinalErr = zero
+                        do l = 1,nLat
+                            FinalErr = FinalErr + abs(aimag(VecPair(l,2)))
+                        enddo
+                        if(FinalErr.gt.1.0e-6_dp) then
+                            call stop_all(t_r,'Cannot have one rotation allowed?')
+                        endif
+                        Vecs(:,j) = VecPair(:,2)
+                        tExclude(i) = .true.
+                        tExclude(j) = .true.
+                    endif
+
+                enddo
+            enddo
+            deallocate(vars)
                         
             nParams = 3
             allocate(vars(nParams))
-            allocate(VecPair(nLat,2))
             allocate(step(nParams))
             allocate(var(nParams))
             if(tWriteOut) then
@@ -3397,7 +3485,7 @@ module mat_tools
                 do i = 1,nVecs
                     if(tExclude(i)) cycle
                     do j = i+1,nVecs
-                        if(tExclude(i)) cycle
+                        if(tExclude(j)) cycle
 
                         write(6,"(A,2I7)") "Rotating together vectors: ",i,j
 
@@ -3405,7 +3493,7 @@ module mat_tools
                         VecPair(:,2) = Vecs(:,j)
 
                         vars(:) = zero  !Initial rotation angle
-                        step(:) = 0.1_dp
+                        step(:) = 0.05_dp
                         !Fit a quadratic surface to be sure a minimum has been found
                         iquad = 1
                         !As function value is being evaluated in real(dp), it should
@@ -3456,7 +3544,7 @@ module mat_tools
                         endif
 
                         !Update vectors
-                        if(((InitialVal-FinalErr).gt.(InitialVal*0.05_dp)).or.((InitialVal-FinalErr).gt.0.001)) then
+                        if(((InitialVal-FinalErr).gt.(InitialVal*0.1_dp)).or.((InitialVal-FinalErr).gt.0.2)) then
                             !Only update if change is more than 10% of initial error
                             write(6,"(A)") "Updating vector pair."
                             write(6,"(A,3F15.7)") "Rotation angle: ",vars(1),cos(vars(1)),sin(vars(1))
@@ -3466,7 +3554,15 @@ module mat_tools
                             write(6,"(A)") "Function has not decreased materially. Not updating."
                         endif
 
-                        !TODO: Check if each vector is real. If it is, then add to the exclude list.
+                        !Check if each vector is real. If it is, then add to the exclude list.
+                        FinalErr = zero
+                        FinalErr_2 = zero
+                        do k = 1,nLat
+                            FinalErr = FinalErr + abs(aimag(Vecs(k,i)))
+                            FinalErr_2 = FinalErr_2 + abs(aimag(Vecs(k,j)))
+                        enddo
+                        if(FinalErr.lt.1.0e-6) tExclude(i) = .true.
+                        if(FinalErr_2.lt.1.0e-6) tExclude(j) = .true.
 
                     enddo
                 enddo
@@ -3649,6 +3745,7 @@ module mat_tools
         !Now, rotate the vectors into a new basis!
         allocate(NewVecs(nLat,2))
 
+!        write(6,*) vars(1),vars(2),exp(cmplx(zero,vars(2),dp))
         NewVecs(:,1) = exp(cmplx(zero,vars(2),dp))*(cos(vars(1))*VecPair(:,1) + sin(vars(1))*VecPair(:,2))
         NewVecs(:,2) = exp(cmplx(zero,vars(3),dp))*(-sin(vars(1))*VecPair(:,1) + cos(vars(1))*VecPair(:,2))
 
@@ -3679,41 +3776,50 @@ module mat_tools
         integer, parameter :: iPwr = 1
         character(len=*), parameter :: t_r='MinComplexOrbs'
 
-        allocate(X_Mat(nVecs,nVecs))
-        X_Mat(:,:) = zzero
-
-        do i = 1,nVecs
-            !The first values are the real diagonals
-            X_Mat(i,i) = cmplx(vars(i),zero,dp)
-        enddo
-
-        !Now, for the hermitian off-diagonals
-        ind = nVecs+1
-        do i = 1,nVecs
-            do j = i+1,nVecs
-                X_Mat(j,i) = cmplx(vars(ind),vars(ind+1),dp)
-                X_Mat(i,j) = conjg(X_Mat(j,i))
-                ind = ind + 2
-            enddo
-        enddo
-        if((ind-1).ne.nParams) call stop_all(t_r,'Error in indexing')
-
-        allocate(UnitMat(nVecs,nVecs))
-        call FindUnitaryMatrix(nVecs,X_Mat,UnitMat)
-
-        !Now, rotate the vectors into a new basis!
-        allocate(NewVecs(nLat,nVecs))
-        call ZGEMM('N','N',nLat,nVecs,nVecs,zone,Vecs,nLat,UnitMat,nVecs,zzero,NewVecs,nLat)
-
-        !Now, how complex are these vectors?
-        FuncValue = zero
-        do i = 1,nVecs
+        if(nVecs.eq.1) then
+            !Just a global phase factor
+            if(nParams.ne.1) call stop_all(t_r,'error')
+            FuncValue = zero
             do j = 1,nLat
-                FuncValue = FuncValue + abs(aimag(NewVecs(j,i)))**iPwr
+                FuncValue = FuncValue + abs(aimag(exp(cmplx(zero,-vars(1),dp))*Vecs(j,1)))**iPwr
             enddo
-        enddo
+        else
+            allocate(X_Mat(nVecs,nVecs))
+            X_Mat(:,:) = zzero
 
-        deallocate(NewVecs,X_Mat,UnitMat)
+            do i = 1,nVecs
+                !The first values are the real diagonals
+                X_Mat(i,i) = cmplx(vars(i),zero,dp)
+            enddo
+
+            !Now, for the hermitian off-diagonals
+            ind = nVecs+1
+            do i = 1,nVecs
+                do j = i+1,nVecs
+                    X_Mat(j,i) = cmplx(vars(ind),vars(ind+1),dp)
+                    X_Mat(i,j) = conjg(X_Mat(j,i))
+                    ind = ind + 2
+                enddo
+            enddo
+            if((ind-1).ne.nParams) call stop_all(t_r,'Error in indexing')
+
+            allocate(UnitMat(nVecs,nVecs))
+            call FindUnitaryMatrix(nVecs,X_Mat,UnitMat)
+
+            !Now, rotate the vectors into a new basis!
+            allocate(NewVecs(nLat,nVecs))
+            call ZGEMM('N','N',nLat,nVecs,nVecs,zone,Vecs,nLat,UnitMat,nVecs,zzero,NewVecs,nLat)
+
+            !Now, how complex are these vectors?
+            FuncValue = zero
+            do i = 1,nVecs
+                do j = 1,nLat
+                    FuncValue = FuncValue + abs(aimag(NewVecs(j,i)))**iPwr
+                enddo
+            enddo
+
+            deallocate(NewVecs,X_Mat,UnitMat)
+        endif
 
     end subroutine MinComplexOrbs
         
