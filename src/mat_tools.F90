@@ -1843,7 +1843,7 @@ module mat_tools
         HFOrbs(:,:) = Fock(:,:)
         if(tChemPot.and.tAnderson) HFOrbs(1,1) = HFOrbs(1,1) + U/2.0_dp
         HFEnergies(:) = zero  
-        if(tDiag_kspace) then
+        if(tDiag_kspace.and.(LatticeDim.eq.1)) then
             call DiagOneEOp(HFOrbs,HFEnergies,nImp,nSites,tDiag_kspace)
         else
             call DiagOneEOp(HFOrbs,HFEnergies,nImp,nSites,.false.)
@@ -1851,7 +1851,7 @@ module mat_tools
         if(tUHF) then
             HFOrbs_b(:,:) = Fock_b(:,:)
             HFEnergies_b(:) = zero
-            if(tDiag_kspace) then
+            if(tDiag_kspace.and.(LatticeDim.eq.1)) then
                 call DiagOneEOp(HFOrbs_b,HFEnergies_b,nImp,nSites,tDiag_kspace)
             else
                 call DiagOneEOp(HFOrbs_b,HFEnergies_b,nImp,nSites,.false.)
@@ -3953,6 +3953,9 @@ module mat_tools
         endif
 
         if(tKSpace_Diag) then
+            if(tRealVectors_.and.(LatticeDim.eq.2)) then
+                call stop_all(t_r,'Cannot provide real eigenvectors for 2D systems. Sorry!')
+            endif
             if(tTiltedLattice.and.(LatticeDim.eq.2)) then
                 call stop_all(t_r,'Cannot do k-space diagonalizations - impurity site tiling is not same as direct lattice')
             endif

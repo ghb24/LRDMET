@@ -10,53 +10,6 @@ module LRDriver
     implicit none
 
     contains
-
-    subroutine SelfConsistent_MR_LR()
-        implicit none
-
-!        if(tRealSpaceSC) then
-!            call SC_Mom_LR_NoDyson()
-            !Old, real frequency self-consistent DMET implementations
-            !call SC_Mom_LR()
-            !call SC_Mom_LR_Z()
-!        else
-            !Self-consistency on the imaginary axis
-            !Direct application of Dysons equation on the Im axis
-            !call SC_Imaginary_Dyson()
-            !Fitting of a frequency independent lattice coupling
-!            if(tOptGF_EVals) then
-!                call SC_FitLatticeGF_Im()
-!            else
-            if(iFitStyle.eq.1) then
-                call SC_Spectrum_Opt()
-            else
-                call SC_Spectrum_Opt_DMFT()
-            endif
-!            endif
-            !DMFT-style fitting of a lattice & matsubara self-energy
-            !call SC_FitLat_and_SE_Im() 
-        !endif
-
-    end subroutine SelfConsistent_MR_LR
-    
-    !This is the high level routine to work out how we want to do the linear response
-    !These functions are for single-reference (generally non-interacting) spectral functions, but using the correlated one-electron potential in their calculation.
-    !Therefore, they should be pretty good around the ground state.
-    subroutine Correlated_SR_LR()
-        implicit none
-        !character(len=*), parameter :: t_r='Correlated_SR_LR'
-
-        if(tCorrNI_LocGF) then
-            call CorrNI_LocalGF()
-        endif
-        if(tCorrNI_LocDD) then
-            call CorrNI_LocalDD()
-        endif
-        if(tCorrNI_MomGF) then
-            call CorrNI_MomGF()
-        endif
-
-    end subroutine Correlated_SR_LR
     
     !   Really work out difference between non-interacting LR, TDA and RPA, and look at how quality changes in response functions as U increased
     !   Look at difference in quality between TDA-type and RPA-type MCLR methods 
@@ -113,6 +66,54 @@ module LRDriver
 !        call RPA_MCLR()
 
     end subroutine MR_LinearResponse
+
+    subroutine SelfConsistent_MR_LR()
+        implicit none
+
+!        if(tRealSpaceSC) then
+!            call SC_Mom_LR_NoDyson()
+            !Old, real frequency self-consistent DMET implementations
+            !call SC_Mom_LR()
+            !call SC_Mom_LR_Z()
+!        else
+            !Self-consistency on the imaginary axis
+            !Direct application of Dysons equation on the Im axis
+            !call SC_Imaginary_Dyson()
+            !Fitting of a frequency independent lattice coupling
+!            if(tOptGF_EVals) then
+!                call SC_FitLatticeGF_Im()
+!            else
+            if(iFitStyle.eq.1) then
+                call SC_Spectrum_Opt()
+            else
+                call SC_Spectrum_Opt_DMFT()
+            endif
+!            endif
+            !DMFT-style fitting of a lattice & matsubara self-energy
+            !call SC_FitLat_and_SE_Im() 
+        !endif
+
+    end subroutine SelfConsistent_MR_LR
+    
+    !This is the high level routine to work out how we want to do the linear response
+    !These functions are for single-reference (generally non-interacting) spectral functions, but using the correlated one-electron potential in their calculation.
+    !Therefore, they should be pretty good around the ground state.
+    subroutine Correlated_SR_LR()
+        implicit none
+        !character(len=*), parameter :: t_r='Correlated_SR_LR'
+
+        if(tCorrNI_LocGF) then
+            call CorrNI_LocalGF()
+        endif
+        if(tCorrNI_LocDD) then
+            call CorrNI_LocalDD()
+        endif
+        if(tCorrNI_MomGF) then
+            call CorrNI_MomGF()
+        endif
+
+    end subroutine Correlated_SR_LR
+    
 
     !Run single reference linear response calculations, based on true HF calculation.
     subroutine SR_LinearResponse()
