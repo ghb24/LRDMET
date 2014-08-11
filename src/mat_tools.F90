@@ -39,14 +39,15 @@ module mat_tools
 
         !Right, now how many lattice sites should be have. The constraints are that 
         !   o We need nSites to be a square number. We also need nSites/nImp to be a square number (number of kpoints).
-        !   o We want nSites_x to be an integer multiple of nImp_x
+        !   o We want nSites_x to be an even integer multiple of nImp_x
         !   o We want the total number to be as close as possible to the original value
 
         !First, calculate the two values satisfying 1 and 2, both above and below the original value
         nSitesOrig = nSites
 
-        nSites_x_low = nImp_x * int(sqrt(real(nSites,dp))/real(nImp_x,dp))  !This is essentially giving the number of kpoints in each dimension.
-        nSites_x_high = nImp_x * (int(sqrt(real(nSites,dp))/real(nImp_x,dp)) + 1)
+        i = int(sqrt(real(nSites,dp))/real(nImp_x,dp))
+        nSites_x_low = nImp_x * (i - mod(i,2))  !This is essentially giving the number of kpoints in each dimension.
+        nSites_x_high = nImp_x * (i+1 + mod(i+1,2))
 !        write(6,*) "nImp_x: ",nImp_x
 !        write(6,*) "nSites_x_low: ",nSites_x_low
 !        write(6,*) "nSites_x_high: ",nSites_x_high
@@ -2037,6 +2038,7 @@ module mat_tools
             !Quoi?
             call stop_all(t_r,'Error here')
         endif
+        write(6,"(A,L1)") "tShift_Mesh: ",tShift_Mesh
 
 !        if(tWriteOut) then
         write(6,"(A)") "Writing out kpoint mesh: "

@@ -195,7 +195,7 @@ module SelfConsistentUtils
     subroutine SetLatticeParams(iLatParams)
         implicit none
         integer, intent(out) :: iLatParams
-        integer :: ks,params_per_k,i,MaxBlocks
+        integer :: ks,params_per_k,i,MaxBlocks,k,nIndKPnts_Constrain,nKPnts_x
         character(len=*), parameter :: t_r='SetLatticeParams'
 
         if(tRealSpaceSC) then
@@ -234,21 +234,39 @@ module SelfConsistentUtils
             
             if(tConstrainKSym) then
                 !e(k) = e(-k), and we are always using a uniform mesh
-                if(mod(nKPnts,2).eq.0) then
-                    !Even number of kpoints 
-                    !If gamma-centered mesh, then have nSites/2 + 1 independent parameters 
-                    !(we are sampling k=0 and BZ boundary which dont pair)
-                    !If Shifted mesh, then we have nSites/2 independent parameters
-                    if(tShift_Mesh) then
-                        nIndKPnts = nKPnts/2
+                if(LatticeDim.eq.2) then
+                    nKPnts_x = nint(sqrt(real(nKPnts,dp)))
+                    !In 2D, this means that we are optimizing the LHS of the brillouin zone
+                    if(mod(nKPnts_x,2).eq.0) then
+                        if(tShift_Mesh) then
+                            nIndKPnts = nKPnts/2
+                        else
+                            !Want to include the column of kpoints at kx=0 including the gamma point
+                            nIndKPnts = nKPnts/2 + nKPnts_x
+                        endif
                     else
-                        nIndKPnts = (nKPnts/2) + 1
+                        if(tShift_Mesh) then
+                            nIndKPnts = ((nKPnts_x + 1)/2)*nKPnts_x - (nKPnts_x-1)/2
+                        else
+                            nIndKPnts = ((nKPnts_x + 1)/2)*nKPnts_x + (nKPnts_x-1)/2 
+                        endif
                     endif
                 else
-                    !This is independent of whether we have a shifted mesh or not
-                    nIndKPnts = (nKPnts+1)/2    
+                    if(mod(nKPnts,2).eq.0) then
+                        !Even number of kpoints 
+                        !If gamma-centered mesh, then have nSites/2 + 1 independent parameters 
+                        !(we are sampling k=0 and BZ boundary which dont pair)
+                        !If Shifted mesh, then we have nSites/2 independent parameters
+                        if(tShift_Mesh) then
+                            nIndKPnts = nKPnts/2
+                        else
+                            nIndKPnts = (nKPnts/2) + 1
+                        endif
+                    else
+                        !This is independent of whether we have a shifted mesh or not
+                        nIndKPnts = (nKPnts+1)/2    
+                    endif
                 endif
-
             else
                 nIndKPnts = nKPnts
             endif
@@ -257,6 +275,7 @@ module SelfConsistentUtils
                 !First nImp is the first column
                 !Second nImp-2 is the second column (taking into account herm)
                 !etc...
+                if(LatticeDim.eq.2) call stop_all(t_r,'Cannot constrain ph sym with 2D lattice')
                 params_per_k = 0
                 do i = nImp,0,-2
                     params_per_k = params_per_k + i
@@ -272,9 +291,224 @@ module SelfConsistentUtils
             write(6,"(A,I8)") "Total number of independent (real) parameters per kpoint: ",params_per_k
             write(6,"(A,I8)") "Total number of (real) adjustable parameters in non-local couplings: ",iLatParams
 
-        endif
+            allocate(KBlock_to_KInd(nKPnts))    !Given a kpoint index, which set of k-indexed variables does it correspond to
+            allocate(KInd_to_KBlock(nIndKPnts)) !The kpoint index for the *sampled* kpoints -> which physical kpoint index are we looking at
+            allocate(KPointSampled(nKPnts))     !A logical indicating whether the kpoint is explicitly sampled
+            KPointSampled(:) = .false.
+            KInd_to_KBlock(:) = 0
+            KBlock_to_KInd(:) = 0
+
+            if(.not.tConstrainKSym) then
+                !Trivial 1-to-1 mapping in all dimensions
+                do k = 1,nIndKPnts
+                    KInd_to_KBlock(k) = k
+                enddo
+                do k = 1,nKPnts
+                    KBlock_to_KInd(k) = k
+                enddo
+                if(tImposeKSym) then
+                    !If we are imposing the symmetry, we also need these maps
+                    if(LatticeDim.eq.2) then
+                        nKPnts_x = nint(sqrt(real(nKPnts,dp)))
+                        !In 2D, this means that we are optimizing the LHS of the brillouin zone
+                        if(mod(nKPnts_x,2).eq.0) then
+                            if(tShift_Mesh) then
+                                nIndKPnts_Constrain = nKPnts/2
+                            else
+                                !Want to include the column of kpoints at kx=0 including the gamma point
+                                nIndKPnts_Constrain = nKPnts/2 + nKPnts_x
+                            endif
+                        else
+                            if(tShift_Mesh) then
+                                nIndKPnts_Constrain = ((nKPnts_x + 1)/2)*nKPnts_x - (nKPnts_x-1)/2
+                            else
+                                nIndKPnts_Constrain = ((nKPnts_x + 1)/2)*nKPnts_x + (nKPnts_x-1)/2 
+                            endif
+                        endif
+                    else
+                        if(mod(nKPnts,2).eq.0) then
+                            !Even number of kpoints 
+                            !If gamma-centered mesh, then have nSites/2 + 1 independent parameters 
+                            !(we are sampling k=0 and BZ boundary which dont pair)
+                            !If Shifted mesh, then we have nSites/2 independent parameters
+                            if(tShift_Mesh) then
+                                nIndKPnts_Constrain = nKPnts/2
+                            else
+                                nIndKPnts_Constrain = (nKPnts/2) + 1
+                            endif
+                        else
+                            !This is independent of whether we have a shifted mesh or not
+                            nIndKPnts_Constrain = (nKPnts+1)/2    
+                        endif
+                    endif
+                    allocate(KBlock_to_KInd_Constrain(nKPnts))
+                    allocate(KInd_to_KBlock_Constrain(nIndKPnts_Constrain))
+                    allocate(KPointSampled_Constrain(nKPnts))
+                    KBlock_to_KInd_Constrain(:) = 0
+                    KInd_to_KBlock_Constrain(:) = 0
+                    KPointSampled_Constrain(:) = .false.
+
+                    call CalcConstrainedK_Maps(KBlock_to_KInd_Constrain,KInd_to_KBlock_Constrain,KPointSampled_Constrain,nIndKPnts_Constrain)
+                endif
+            else
+                call CalcConstrainedK_Maps(KBlock_to_KInd,KInd_to_KBlock,KPointSampled,nIndKPnts)
+                if(tWriteOut) then
+                    write(6,*) "KBlock_to_KInd, KInd_to_KBlock: "
+                    do i = 1,nKPnts
+                        if(i.le.nIndKPnts) then
+                            write(6,"(3I10,A,L1)") i,KBlock_to_KInd(i),KInd_to_KBlock(i),"  ",KPointSampled(i)
+                        else
+                            write(6,"(2I10,A,L1)") i,KBlock_to_KInd(i),"            ",KPointSampled(i)
+                        endif
+                    enddo
+                endif
+            endif
+        endif   !Endif realspace optimization
 
     end subroutine SetLatticeParams
+
+    subroutine CalcConstrainedK_Maps(KBlock_to_KInd_loc,KInd_to_KBlock_loc,KPointSampled_loc,nIndKPnts_loc)
+        implicit none
+        integer, intent(in) :: nIndKPnts_loc
+        integer, intent(out) :: KBlock_to_KInd_loc(nKPnts)
+        integer, intent(out) :: KInd_to_KBlock_loc(nIndKPnts_loc)
+        logical, intent(out) :: KPointSampled_loc(nKPnts)
+        integer :: i,k,nKPnts_x,ind,ind_2
+        character(len=*), parameter :: t_r='CalcConstrainedK_Maps'
+
+        if(LatticeDim.eq.1) then
+            !A simple mapping
+            do k = 1,nIndKPnts_loc
+                KInd_to_KBlock_loc(k) = k
+                KBlock_to_KInd_loc(k) = k
+            enddo
+            if(mod(nKPnts,2).eq.0) then
+                if(tShift_Mesh) then
+                    do i = 1,nIndKPnts_loc
+                        KBlock_to_KInd_loc(i+nIndKPnts_loc) = nIndKPnts_loc-i+1
+                    enddo
+                else
+                    do i = 2,nIndKPnts_loc-1
+                        KBlock_to_KInd_loc(i+nIndKPnts_loc-1) = nIndKPnts_loc-i+1
+                    enddo
+                endif
+            else
+                do i = 1,nIndKPnts_loc
+                    if(tShift_Mesh) then
+                        KBlock_to_KInd_loc(i+nIndKPnts_loc) = nIndKPnts_loc-i
+                    else
+                        KBlock_to_KInd_loc(i+nIndKPnts_loc) = nIndKPnts_loc-i+1
+                    endif
+                enddo
+            endif
+        else
+            nKPnts_x = nint(sqrt(real(nKPnts,dp)))
+            !2D system
+            if(mod(nKPnts_x,2).eq.0) then
+                if(tShift_Mesh) then
+                    !This is simple
+                    do k = 1,nIndKPnts_loc
+                        KInd_to_KBlock_loc(k) = k
+                    enddo
+                    do k = 1,nIndKPnts_loc
+                        KBlock_to_KInd_loc(k) = k
+                        KBlock_to_KInd_loc(k+nIndKPnts_loc) = nIndKPnts_loc-k+1
+                    enddo
+                else
+                    !This is more complicated
+                    i = nKPnts/2 + nKPnts_x/2 + 1
+                    if(abs(KPnts(1,i)).gt.1.0e-8_dp) call stop_all(t_r,'Error here 1')
+                    if(abs(KPnts(2,i)).gt.1.0e-8_dp) call stop_all(t_r,'Error here 2')
+                    do k = 1,i
+                        !This should take us up to the gamma point
+                        KInd_to_KBlock_loc(k) = k
+                    enddo
+                    do k = 1,nKPnts_x/2 - 1
+                        KInd_to_KBlock_loc(k + i) = nKPnts - (k*nKPnts_x) + 1
+                    enddo
+                    if(i+k-1.ne.nIndKPnts_loc) call stop_all(t_r,'Error here 3')
+
+                    !Now for the mapping the other way
+                    do k = 1,i
+                        KBlock_to_KInd_loc(k) = k
+                    enddo
+                    ind = i
+                    do k = 1,nKPnts_x/2 - 1
+                        ind = ind + 1
+                        KBlock_to_KInd_loc(ind) = i - k
+                    enddo
+
+                    !The top right row
+                    do k = 1,nKPnts_x/2 - 1
+                        KBlock_to_KInd_loc(nKPnts-(k*nKPnts_x) + 1) = i + k
+                    enddo
+
+                    !The non-sampled kpoints (values for 6x6 mesh)
+                    do k = nKPnts_x/2 + 2, nKPnts_x     !k = 5,6
+                        ind = ((k-1)*nKPnts_x)+1        !ind = 25,31
+                        ind_2 = ((nKPnts_x/2 - (k-(nKPnts_x/2 + 2)))*nKPnts_x)+1  !ind_2 = 19,13
+                        do i = 1,nKPnts_x-1
+                            KBlock_to_KInd_loc(ind+i) = ind_2 - i
+                        enddo
+                    enddo
+                endif
+            else
+                !Odd number of kpoints in each dimension
+                if(tShift_Mesh) then
+                    if(abs(KPnts(1,nIndKPnts_loc)).gt.1.0e-8_dp) call stop_all(t_r,'Error here 1')
+                    if(abs(KPnts(2,nIndKPnts_loc)).gt.1.0e-8_dp) call stop_all(t_r,'Error here 2')
+                    do k = 1,nIndKPnts_loc
+                        KInd_to_KBlock_loc(k) = k
+                        KBlock_to_KInd_loc(k) = k
+                    enddo
+                    ind = nIndKPnts_loc
+                    do k = nIndKPnts_loc-1,1,-1
+                        ind = ind + 1
+                        KBlock_to_KInd_loc(ind) = k
+                    enddo
+                    if(KBlock_to_KInd_loc(nKPnts).ne.1) call stop_all(t_r,'Error here a')
+                else
+                    do k = 1,((nKPnts_x+1)/2)*nKPnts_x
+                        kInd_to_KBlock_loc(k) = k
+                        KBlock_to_KInd_loc(k) = k
+                    enddo
+                    i = ((nKPnts_x+1)/2)*nKPnts_x
+                    !Top right
+                    do k = 1,(nKPnts_x-1)/2 
+                        KInd_to_KBlock_loc(k + i) = nKPnts - (k*nKPnts_x) + 1
+                    enddo
+                    !Other way
+                    do k = 1,(nKPnts_x-1)/2
+                        KBlock_to_KInd_loc(nKPnts-(k*nKPnts_x) + 1) = i + k
+                    enddo
+                    !The non-sampled kpoints (values for 7x7 mesh)
+                    do k = (nKPnts_x+1)/2 + 1, nKPnts_x !k = 5,6,7
+                        ind = ((k-1)*nKPnts_x)+1    !29, 36, 43
+                        ind_2 = (((nKPnts_x+1)/2 - (k-((nKPnts_x+1)/2 + 1)))*nKPnts_x)+1  !29, 20, 13
+                        do i = 1,nKPnts_x-1
+                            KBlock_to_KInd_loc(ind+i) = ind_2 - i
+                        enddo
+                    enddo
+                endif
+            endif   !Even/odd kpoints in each dimension
+        endif   !End if 2D
+
+        !Tests
+        do i = 1,nIndKPnts_loc
+            if(KBlock_to_KInd_loc(KInd_to_KBlock_loc(i)).ne.i) then
+                call stop_all(t_r,'Error here 4')
+            endif
+        enddo
+        do i = 1,nKPnts
+            if((KBlock_to_KInd_loc(i).lt.1).or.(KBlock_to_KInd_loc(i).gt.nIndKPnts_loc)) then
+                call stop_all(t_r,'Error here 5')
+            endif
+        enddo
+        !Set up the logical array
+        do i = 1,nIndKPnts_loc
+            KPointSampled_loc(KInd_to_KBlock_loc(i)) = .true.
+        enddo
+    end subroutine CalcConstrainedK_Maps
 
     subroutine WriteLatticeParams(iLatParams,LatParams)
         implicit none
@@ -661,12 +895,12 @@ module SelfConsistentUtils
                         do j = i,nImp-i+1
                             if(i.eq.j) then
                                 if(ind.gt.iLatParams) call stop_all(t_r,'Incorrect indexing')
-                                LatParams(ind) = real(KBlocks(j,i,k),dp)
+                                LatParams(ind) = real(KBlocks(j,i,KInd_to_KBlock(k)),dp)
                                 ind = ind + 1
                             else
                                 if((ind+1).gt.iLatParams) call stop_all(t_r,'Incorrect indexing')
-                                LatParams(ind) = real(KBlocks(j,i,k),dp)
-                                LatParams(ind+1) = aimag(KBlocks(j,i,k))
+                                LatParams(ind) = real(KBlocks(j,i,KInd_to_KBlock(k)),dp)
+                                LatParams(ind+1) = aimag(KBlocks(j,i,KInd_to_KBlock(k)))
                                 ind = ind + 2
                             endif
                         enddo
@@ -678,12 +912,12 @@ module SelfConsistentUtils
                             !Run through rows
                             if(i.eq.j) then
                                 if(ind.gt.iLatParams) call stop_all(t_r,'Incorrect indexing')
-                                LatParams(ind) = real(KBlocks(j,i,k),dp)
+                                LatParams(ind) = real(KBlocks(j,i,KInd_to_KBlock(k)),dp)
                                 ind = ind + 1
                             else
                                 if((ind+1).gt.iLatParams) call stop_all(t_r,'Incorrect indexing')
-                                LatParams(ind) = real(KBlocks(j,i,k),dp)
-                                LatParams(ind+1) = aimag(KBlocks(j,i,k))
+                                LatParams(ind) = real(KBlocks(j,i,KInd_to_KBlock(k)),dp)
+                                LatParams(ind+1) = aimag(KBlocks(j,i,KInd_to_KBlock(k)))
                                 ind = ind + 2
                             endif
                         enddo
@@ -792,7 +1026,6 @@ module SelfConsistentUtils
             !TODO: ph symmetry imposed?
         else
             !k-space hamiltonian optimization
-            
             ind = 1
             do k = 1,nIndKPnts
                 if(tConstrainphsym) then
@@ -800,17 +1033,17 @@ module SelfConsistentUtils
                         do j = i,nImp-i+1
                             if(i.eq.j) then
                                 if(ind.gt.iLatParams) call stop_all(t_r,'Incorrect indexing')
-                                KBlocks(j,i,k) = cmplx(LatParams(ind),zero,dp)
+                                KBlocks(j,i,KInd_to_KBlock(k)) = cmplx(LatParams(ind),zero,dp)
                                 ind = ind + 1
                                 !For the diagonals, we want to flip the energy about the chemical potential
-                                KBlocks((nImp-i)+1,(nImp-j)+1,k) = cmplx(2.0_dp*mu,zero,dp) - KBlocks(j,i,k)
+                                KBlocks((nImp-i)+1,(nImp-j)+1,KInd_to_KBlock(k)) = cmplx(2.0_dp*mu,zero,dp) - KBlocks(j,i,KInd_to_KBlock(k))
                             else
                                 if((ind+1).gt.iLatParams) call stop_all(t_r,'Incorrect indexing')
-                                KBlocks(j,i,k) = cmplx(LatParams(ind),LatParams(ind+1),dp)
+                                KBlocks(j,i,KInd_to_KBlock(k)) = cmplx(LatParams(ind),LatParams(ind+1),dp)
                                 ind = ind + 2
                                 !Put in the same coupling
                                 !Swap indices & reverse order
-                                KBlocks((nImp-i)+1,(nImp-j)+1,k) = KBlocks(j,i,k)
+                                KBlocks((nImp-i)+1,(nImp-j)+1,KInd_to_KBlock(k)) = KBlocks(j,i,KInd_to_KBlock(k))
                             endif
                         enddo
                     enddo
@@ -827,54 +1060,74 @@ module SelfConsistentUtils
                                     write(6,*) "iLatParams: ",iLatParams
                                     call stop_all(t_r,'Incorrect indexing 1')
                                 endif
-                                KBlocks(j,i,k) = cmplx(LatParams(ind),zero,dp)
+!                                write(6,*) "Writing to block: ",KInd_to_KBlock(k)
+                                KBlocks(j,i,KInd_to_KBlock(k)) = cmplx(LatParams(ind),zero,dp)
                                 ind = ind + 1
                             else
                                 if((ind+1).gt.iLatParams) call stop_all(t_r,'Incorrect indexing 2')
-                                KBlocks(j,i,k) = cmplx(LatParams(ind),LatParams(ind+1),dp)
+!                                write(6,*) "Writing to block: ",KInd_to_KBlock(k)
+                                KBlocks(j,i,KInd_to_KBlock(k)) = cmplx(LatParams(ind),LatParams(ind+1),dp)
                                 ind = ind + 2
                             endif
                         enddo
                     enddo
                 endif
-                call MakeBlockHermitian(KBlocks(:,:,k),nImp)
+!                write(6,*) "Hermitizing block: ",KInd_to_KBlock(k)
+                call MakeBlockHermitian(KBlocks(:,:,KInd_to_KBlock(k)),nImp)
             enddo
 
             if(tConstrainKSym) then
                 !We have only filled up half the states. Fill the others.
                 !Update this so that it uses a function to map to equivalent kpoints
-                !Currently this is only going to work for 1D
-
-                if(mod(nKPnts,2).eq.0) then
-                    !Even number of kpoints
-                    if(tShift_Mesh) then
-                        !No gamma point sampled. All k-points symmetric.
-                        !Mirror the k-space hamiltonian
-                        do i = 1,nIndKPnts
-                            KBlocks(:,:,i+nIndKPnts) = dconjg(KBlocks(:,:,nIndKPnts-i+1))
-                        enddo
-                    else
-                        !Mirror the kpoints, but ignore the gamma point and BZ boundary
-                        do i = 2,nIndKPnts-1
-                            KBlocks(:,:,i+nIndKPnts-1) = dconjg(KBlocks(:,:,nIndKPnts-i+1))
-                        enddo
-                    endif
-                else
-                    !Odd number of kpoints
-                    !This means that we can never actually sample the chemical potential
-                    !tShift=T will mean that we sample the Gamma point (and it has no equivalent point)
-                    !tShift=F will mean that we sample the BZ boundary (and it has no equivalent point)
-                    do i = 1,nIndKPnts-1
-                        if(tShift_Mesh) then
-                            KBlocks(:,:,i+nIndKPnts) = dconjg(KBlocks(:,:,nIndKPnts-i))
-                        else
-                            KBlocks(:,:,i+nIndKPnts) = dconjg(KBlocks(:,:,nIndKPnts-i+1))
+                do i = 1,nKPnts
+                    if(.not.KPointSampled(i)) then
+                        !Check the kpoint block is zero
+                        if(abs(KBlocks(1,1,i)).gt.1.0e-8_dp) then
+                            write(6,*) "Already written to kblock: ",i,KBlocks(1,1,i)
+                            call stop_all(t_r,'Error here')
                         endif
-                    enddo
-                endif
+                        KBlocks(:,:,i) = dconjg(KBlocks(:,:,KBlock_to_KInd(i)))
+                    endif
+                enddo
             endif
-
         endif
+!
+!
+!                if(mod(nKPnts,2).eq.0) then
+!                    !Even number of kpoints
+!                    if(tShift_Mesh) then
+!                        !No gamma point sampled. All k-points symmetric.
+!                        !Mirror the k-space hamiltonian
+!                        do i = 1,nIndKPnts
+!                            KBlocks(:,:,i+nIndKPnts) = dconjg(KBlocks(:,:,nIndKPnts-i+1))
+!                        enddo
+!                    else
+!                        !Mirror the kpoints, but ignore the gamma point and BZ boundary
+!                        !HERE
+!                        if(LatticeDim.eq.1) then
+!                            do i = 2,nIndKPnts-1
+!                                KBlocks(:,:,i+nIndKPnts-1) = dconjg(KBlocks(:,:,nIndKPnts-i+1))
+!                            enddo
+!                        else
+!
+!
+!                        endif
+!                    endif
+!                else
+!                    !Odd number of kpoints
+!                    !This means that we can never actually sample the chemical potential
+!                    !tShift=T will mean that we sample the Gamma point (and it has no equivalent point)
+!                    !tShift=F will mean that we sample the BZ boundary (and it has no equivalent point)
+!                    do i = 1,nIndKPnts-1
+!                        if(tShift_Mesh) then
+!                            KBlocks(:,:,i+nIndKPnts) = dconjg(KBlocks(:,:,nIndKPnts-i))
+!                        else
+!                            KBlocks(:,:,i+nIndKPnts) = dconjg(KBlocks(:,:,nIndKPnts-i+1))
+!                        endif
+!                    enddo
+!                endif
+!            endif
+!        endif
 
     end subroutine LatParams_to_KBlocks
 
@@ -1427,41 +1680,56 @@ module SelfConsistentUtils
             !We should not be able to be constraining any syms
             if(tRealSpaceSC) call stop_all(t_r,'K symmetry should be automatically conserved rather '   &
                 &   //'than imposed with real-space lattice opt')
-            if(mod(nKPnts,2).eq.0) then
-                !Even number of kpoints
-                if(tShift_Mesh) then
-                    do i = 1,nIndKPnts  !nKPnts/2
-                        KBlock(:,:) = (KBlocks(:,:,i) + dconjg(KBlocks(:,:,nKPnts-i+1))) / 2.0_dp
-                        KBlocks(:,:,i) = KBlock(:,:)
-                        KBlocks(:,:,nKPnts-i+1) = dconjg(KBlock(:,:))
-                    enddo
-                else
-                    do i = 2,nIndKPnts-1
-                        KBlock(:,:) = (KBlocks(:,:,i) + dconjg(KBlocks(:,:,nKPnts-i+2))) / 2.0_dp
-                        KBlocks(:,:,i) = KBlock(:,:)
-                        KBlocks(:,:,nKPnts-i+2) = dconjg(KBlock(:,:))
-                    enddo
-                endif
-            else
-                if(tShift_Mesh) then
-                    do i = 1,nIndKPnts-1
-                        KBlock(:,:) = (KBlocks(:,:,i) + dconjg(KBlocks(:,:,nKPnts-i+1))) / 2.0_dp
-                        KBlocks(:,:,i) = KBlock(:,:)
-                        KBlocks(:,:,nKPnts-i+1) = dconjg(KBlock(:,:))
-                    enddo
-                else
-                    do i = 2,nIndKPnts
-                        KBlock(:,:) = (KBlocks(:,:,i) + dconjg(KBlocks(:,:,nKPnts-i+2))) / 2.0_dp
-                        KBlocks(:,:,i) = KBlock(:,:)
-                        KBlocks(:,:,nKPnts-i+2) = dconjg(KBlock(:,:))
-                    enddo
-                endif
+
+            if(.not.allocated(KBlock_to_KInd_constrain)) then
+                call stop_all(t_r,'Maps not correctly allocated')
             endif
+            do i = 1,nKPnts
+                if(.not.KPointSampled_Constrain(i)) then
+                    !Find the two kpoints
+!                    write(6,*) "Symmetrizing kblocks: ",KBlock_to_KInd_Constrain(i),i
+                    KBlock(:,:) = (KBlocks(:,:,KBlock_to_KInd_Constrain(i)) + dconjg(KBlocks(:,:,i))) / 2.0_dp
+                    KBlocks(:,:,KBlock_to_KInd_Constrain(i)) = KBlock(:,:)
+                    KBlocks(:,:,i) = dconjg(KBlock(:,:))
+                endif
+            enddo
+
+!            if(mod(nKPnts,2).eq.0) then
+!                !Even number of kpoints
+!                if(tShift_Mesh) then
+!                    do i = 1,nIndKPnts  !nKPnts/2
+!                        KBlock(:,:) = (KBlocks(:,:,i) + dconjg(KBlocks(:,:,nKPnts-i+1))) / 2.0_dp
+!                        KBlocks(:,:,i) = KBlock(:,:)
+!                        KBlocks(:,:,nKPnts-i+1) = dconjg(KBlock(:,:))
+!                    enddo
+!                else
+!                    do i = 2,nIndKPnts-1
+!                        KBlock(:,:) = (KBlocks(:,:,i) + dconjg(KBlocks(:,:,nKPnts-i+2))) / 2.0_dp
+!                        KBlocks(:,:,i) = KBlock(:,:)
+!                        KBlocks(:,:,nKPnts-i+2) = dconjg(KBlock(:,:))
+!                    enddo
+!                endif
+!            else
+!                if(tShift_Mesh) then
+!                    do i = 1,nIndKPnts-1
+!                        KBlock(:,:) = (KBlocks(:,:,i) + dconjg(KBlocks(:,:,nKPnts-i+1))) / 2.0_dp
+!                        KBlocks(:,:,i) = KBlock(:,:)
+!                        KBlocks(:,:,nKPnts-i+1) = dconjg(KBlock(:,:))
+!                    enddo
+!                else
+!                    do i = 2,nIndKPnts
+!                        KBlock(:,:) = (KBlocks(:,:,i) + dconjg(KBlocks(:,:,nKPnts-i+2))) / 2.0_dp
+!                        KBlocks(:,:,i) = KBlock(:,:)
+!                        KBlocks(:,:,nKPnts-i+2) = dconjg(KBlock(:,:))
+!                    enddo
+!                endif
+!            endif
         endif
 
         if(tImposephsym) then
         
 !            write(6,*) "*** IMPOSING PH SYMMETRY ***",mu
+            if(LatticeDim.eq.2) call stop_all(t_r,'Imposephsym not coded up for 2D systems')
             if(mod(nImp,2).eq.0) then
                 !Multiple of two bands per kpoint. Constrain them so that they are in pairs
 !$OMP PARALLEL DO PRIVATE(KBlock,cWork,rWork,lWork,ierr,Bands_k,DistFromMu,KBlock2,cTemp)

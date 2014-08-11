@@ -278,6 +278,7 @@ module LinearResponse
         nCore = nOcc-nImp
         nVirt = nSites-nOcc-nImp   
         if(tHalfFill.and.(nCore.ne.nVirt)) then
+            write(6,*) "nCore, nVirt: ",nCore,nVirt
             call stop_all(t_r,'Error in setting up half filled lattice')
         endif
 
