@@ -4041,8 +4041,152 @@ module mat_tools
 !            call writevector(Vals,'Vals')
 !            call writematrixcomp(r_vecs,'r_vecs',.true.)
             
-            !Order the vectors, such that the are in order of increasing eigenvalue
-            call sort_d_a_c(Vals,r_vecs,nSites,nSites)
+            if(tNetZeroMomDet) then
+                !Order according to energy, *but* keep the kpoint label!
+                if((LatticeDim.ne.2).and.tShift_Mesh) call stop_all(t_r,'Error here')
+                allocate(kPnts_tmp(LatticeDim,nKPnts))
+                KPnts_tmp(:,:) = KPnts(:,:) 
+                call sort_d_a_c_a_r(Vals,r_vecs,kPnts_tmp,nSites,nSites,LatticeDim)
+
+                !Is there a degeneracy around nOcc? If so, we need to ensure that we order the kpoints such that
+                !the net momentum of the occupied orbitals in the degenerate set = 0.
+                j = nOcc + 1
+                do while(abs(Vals(nOcc)-Vals(j)).lt.1.0e-8_dp)
+                    j = j + 1
+                    if(j.gt.nLat) exit
+                enddo
+                UpperDegenInd = j - 1
+                j = nOcc - 1
+                do while(abs(Vals(nOcc)-Vals(j)).lt.1.0e-8_dp)
+                    j = j - 1
+                    if(j.lt.1) exit
+                enddo
+                LowerDegenInd = j + 1
+                if(UpperDegenInd-nOcc.gt.0) then
+                    !Unfortunately, we have a degeneracy at the fermi surface.
+                    !Choose a determinant which has a net zero momentum, and hope for the best.
+                    !At least then it will have the right density.
+                    nDegenOcc = nOcc - LowerDegenInd + 1            !Number of occupied pairs to have
+                    nDegenOrbs = UpperDegenInd - LowerDegenInd + 1  !Number of degenerate orbitals
+                    !Count the number of unique kpoints
+                    nDegenKPnts = 0
+                    do i = LowerDegenInd,UpperDegenInd
+                        do j = LowerDegenInd,i-1
+                            tSame = .true.
+                            do l = 1,LatticeDim
+                                tSame = tSame.and.(abs(KPnts_tmp(l,i)-KPnts_tmp(l,j)).lt.1.0e-8_dp)
+                            enddo
+                            if(tSame) exit
+                        enddo
+                        !If tSame then we have found a kpoint already sampled
+                        if(.not.tSame) nDegenKPnts = nDegenKPnts + 1
+                    enddo
+                    write(6,*) "Number of degenerate kpoints at the fermi surface = ",nDegenKPnts
+
+                    allocate(PickedDegenerateOrbs(nDegenOcc))
+                    PickedDegenerateOrbs(:) = 0 !The index of the orbitals to pick
+
+                    if(tShift_Mesh) then
+                        !We should always have all four equivalent kpoints occupied.
+                        !Therefore, just find them all, such that the net contribution is always zero
+                        ind = LowerDegenInd - 1
+                        ind_found = 0
+                        do while(ind_found.lt.nDegenOcc)
+                            ind = ind + 1
+                            if(ind.gt.UpperDegenInd) call stop_all(t_r,'Indexing problem')
+                            kPnt_(:) = KPnts_tmp(:,ind)
+                            ind_found = ind_found + 1
+                            if(ind_found.gt.nDegenOcc) call stop_all(t_r,'Indexing error')
+                            PickedDegenerateOrbs(ind_found) = ind
+
+                            !Now, find the three other equivalent degenerate orbitals to this one
+                            kPnt_1(1) = kPnt_(2)
+                            kPnt_1(2) = -kPnt_(1)
+                            !Search for a degenerate orbital at this kpoint, ensuring that it is not an orbital we have picked already
+                            do j = LowerDegenInd,UpperDegenInd
+                                tSame = .true.
+                                do l = 1,LatticeDim
+                                    tSame = tSame.and.(abs(KPnts_tmp(l,j)-KPnt_1(l)).lt.1.0e-8_dp)
+                                enddo
+                                if(tSame) then
+                                    !Now check it is not an orbital we have already picked
+                                    do l = 1,ind_found
+                                        if(PickedDegenerateOrbs(l).eq.j) then
+                                            tSame = .false.
+                                            exit
+                                        endif
+                                    enddo
+                                endif
+                                if(tSame) exit
+                            enddo
+                            if(.not.tSame) call stop_all(t_r,'Could not find equivalent kpoint')
+                            ind_found = ind_found + 1
+                            if(ind_found.gt.nDegenOcc) call stop_all(t_r,'Indexing error')
+                            PickedDegenerateOrbs(ind_found) = j
+                            
+                            kPnt_1(1) = -kPnt_(2)
+                            kPnt_1(2) = kPnt_(1)
+                            !Search for a degenerate orbital at this kpoint, ensuring that it is not an orbital we have picked already
+                            do j = LowerDegenInd,UpperDegenInd
+                                tSame = .true.
+                                do l = 1,LatticeDim
+                                    tSame = tSame.and.(abs(KPnts_tmp(l,j)-KPnt_1(l)).lt.1.0e-8_dp)
+                                enddo
+                                if(tSame) then
+                                    !Now check it is not an orbital we have already picked
+                                    do l = 1,ind_found
+                                        if(PickedDegenerateOrbs(l).eq.j) then
+                                            tSame = .false.
+                                            exit
+                                        endif
+                                    enddo
+                                endif
+                                if(tSame) exit
+                            enddo
+                            if(.not.tSame) call stop_all(t_r,'Could not find equivalent kpoint')
+                            ind_found = ind_found + 1
+                            if(ind_found.gt.nDegenOcc) call stop_all(t_r,'Indexing error')
+                            PickedDegenerateOrbs(ind_found) = j
+
+                            kPnt_1(1) = -kPnt_(1)
+                            kPnt_1(2) = -kPnt_(2)
+                            !Search for a degenerate orbital at this kpoint, ensuring that it is not an orbital we have picked already
+                            do j = LowerDegenInd,UpperDegenInd
+                                tSame = .true.
+                                do l = 1,LatticeDim
+                                    tSame = tSame.and.(abs(KPnts_tmp(l,j)-KPnt_1(l)).lt.1.0e-8_dp)
+                                enddo
+                                if(tSame) then
+                                    !Now check it is not an orbital we have already picked
+                                    do l = 1,ind_found
+                                        if(PickedDegenerateOrbs(l).eq.j) then
+                                            tSame = .false.
+                                            exit
+                                        endif
+                                    enddo
+                                endif
+                                if(tSame) exit
+                            enddo
+                            if(.not.tSame) call stop_all(t_r,'Could not find equivalent kpoint')
+                            ind_found = ind_found + 1
+                            if(ind_found.gt.nDegenOcc) call stop_all(t_r,'Indexing error')
+                            PickedDegenerateOrbs(ind_found) = j
+
+                        enddo
+
+                        !Now, we have a list of PickedDegenOrbs, of length nDegenOcc.
+                        !These want to be the first ones in the degenerate set.
+                    else
+                        call stop_all(t_r,'Must be using Monkhorst-Pack mesh')
+                    endif   !tShift_Mesh
+
+                endif   !Open shell at Fermi surface
+                deallocate(kPnts_tmp)
+            else
+                !Order the vectors, such that the are in order of increasing eigenvalue
+                call sort_d_a_c(Vals,r_vecs,nSites,nSites)
+            endif
+
             
             !write(6,*) "After sorting..."
             !call writevector(Vals,'Vals')

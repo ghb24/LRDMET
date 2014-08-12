@@ -570,6 +570,181 @@ module sort_mod
         enddo
 
     end subroutine sort_d_i
+    
+    subroutine sort_d_a_c_a_r (arr, arr2, arr3, length, length2, length3)
+        implicit none
+
+        ! sort needs auxiliary storage of length 2*log_2(n).
+        integer, parameter :: nStackMax = 50
+        integer, parameter :: nInsertionSort = 7
+        integer, parameter :: nskip_ = 1
+        integer, intent(in) :: length, length2, length3
+
+        real(dp), intent(inout) :: arr(length)
+        complex(dp), intent(inout) :: arr2(length2,length)
+        real(dp), intent(inout) :: arr3(length3,length)
+
+        ! Oh, how lovely it would be to be able to use push/pop and not need
+        ! to guess a size of the stack to start with
+        integer :: stack(nStackMax), nstack
+        integer :: pivot, lo, hi, n, i, j
+        ! n.b. This size statement is removed if type1 is scalar ...
+        real(dp) :: a
+        complex(dp) :: a2(size(arr2(:,1)))
+        real(dp) :: a3(size(arr3(:,1)))
+
+        ! Temporary variables for swapping
+        real(dp) :: tmp1
+        complex(dp) :: tmp2(size(arr2(:,1)))
+        real(dp) :: temp3(size(arr3(:,1)))
+        character(*), parameter :: this_routine = 'sort_d_a_c_a_r'
+
+
+        ! The size of the array to sort. 
+        ! N.B. Use zero based indices. To obtain ! the entry into the actual 
+        ! array, multiply indices by nskip and add ! 1 (hence zero based)
+        ! **** See local macro srt_ind() ******
+        lo = lbound(arr, 1) - 1
+        n = ((ubound(arr, 1) - lo -1)/nskip_) + 1
+        hi = lo + n - 1
+
+        nstack = 0
+        do while (.true.)
+            ! If the section/partition we are looking at is smaller than
+            ! nInsertSort then perform an insertion sort 
+            if (hi - lo < nInsertionSort) then
+                do j = lo + 1, hi
+                    a = arr(srt_ind(j))
+                    a2 = arr2(:,srt_ind(j))
+                    a3 = arr3(:,srt_ind(j))
+                    do i = j - 1, 0, -1
+                        if (arr(srt_ind(i)) < a) exit
+                        arr(srt_ind(i+1)) = arr(srt_ind(i))
+                        arr2(:,srt_ind(i+1)) = arr2(:,srt_ind(i))
+                        arr3(:,srt_ind(i+1)) = arr3(:,srt_ind(i))
+                    enddo
+                    arr(srt_ind(i+1)) = a
+                    arr2(:,srt_ind(i+1)) = a2
+                    arr3(:,srt_ind(i+1)) = a3
+                enddo
+
+                if (nstack == 0) exit
+                hi = stack(nstack)
+                lo = stack(nstack-1)
+                nstack = nstack - 2
+
+            ! Otherwise start partitioning with quicksort. 
+            else
+                ! Pick a partitioning element, and arrange such that
+                ! arr(lo) <= arr(lo+1) <= arr(hi) 
+                pivot = (lo + hi) / 2
+                tmp1 = arr(srt_ind(pivot))
+                arr(srt_ind(pivot)) = arr(srt_ind(lo + 1))
+                arr(srt_ind(lo + 1)) = tmp1
+                 tmp2 = arr2(:,srt_ind(pivot))
+                 tmp3 = arr3(:,srt_ind(pivot))
+                 arr2(:,srt_ind(pivot)) = arr2(:,srt_ind(lo+1))
+                 arr3(:,srt_ind(pivot)) = arr3(:,srt_ind(lo+1))
+                 arr2(:,srt_ind(lo+1)) = tmp2
+                 arr3(:,srt_ind(lo+1)) = tmp3
+
+                if (arr(srt_ind(lo)) > arr(srt_ind(hi))) then
+                    tmp1 = arr(srt_ind(lo))
+                    arr(srt_ind(lo)) = arr(srt_ind(hi))
+                    arr(srt_ind(hi)) = tmp1
+                     tmp2 = arr2(:,srt_ind(lo))
+                     arr2(:,srt_ind(lo)) = arr2(:,srt_ind(hi))
+                     arr2(:,srt_ind(hi)) = tmp2
+                     tmp3 = arr3(:,srt_ind(lo))
+                     arr3(:,srt_ind(lo)) = arr3(:,srt_ind(hi))
+                     arr3(:,srt_ind(hi)) = tmp3
+                endif
+                if (arr(srt_ind(lo+1)) > arr(srt_ind(hi))) then
+                    tmp1 = arr(srt_ind(lo+1))
+                    arr(srt_ind(lo+1)) = arr(srt_ind(hi))
+                    arr(srt_ind(hi)) = tmp1
+                     tmp2 = arr2(:,srt_ind(lo+1))
+                     arr2(:,srt_ind(lo+1)) = arr2(:,srt_ind(hi))
+                     arr2(:,srt_ind(hi)) = tmp2
+                     tmp3 = arr3(:,srt_ind(lo+1))
+                     arr3(:,srt_ind(lo+1)) = arr3(:,srt_ind(hi))
+                     arr3(:,srt_ind(hi)) = tmp3
+                endif
+                if (arr(srt_ind(lo)) > arr(srt_ind(lo+1))) then
+                    tmp1 = arr(srt_ind(lo))
+                    arr(srt_ind(lo)) = arr(srt_ind(lo+1))
+                    arr(srt_ind(lo+1)) = tmp1
+                     tmp2 = arr2(:,srt_ind(lo))
+                     arr2(:,srt_ind(lo)) = arr2(:,srt_ind(lo+1))
+                     arr2(:,srt_ind(lo+1)) = tmp2
+                     tmp3 = arr3(:,srt_ind(lo))
+                     arr3(:,srt_ind(lo)) = arr3(:,srt_ind(lo+1))
+                     arr3(:,srt_ind(lo+1)) = tmp3
+                endif
+
+                i = lo + 1
+                j = hi
+                a = arr(srt_ind(lo + 1)) !! a is the pivot value
+                 a2 = arr2(:,srt_ind(lo + 1))
+                 a3 = arr3(:,srt_ind(lo + 1))
+                do while (.true.)
+                    ! Scand down list to find element > a 
+                    i = i + 1
+                    do while (arr(srt_ind(i)) < a)
+                        i = i + 1
+                    enddo
+
+                    ! Scan down list to find element < a 
+                    j = j - 1
+                    do while (arr(srt_ind(j)) > a)
+                        j = j - 1
+                    enddo
+
+                    ! When the pointers crossed, partitioning is complete. 
+                    if (j < i) exit
+
+                    ! Swap the elements, so that all elements < a end up
+                    ! in lower indexed variables. 
+                    tmp1 = arr(srt_ind(i))
+                    arr(srt_ind(i)) = arr(srt_ind(j))
+                    arr(srt_ind(j)) = tmp1
+                     tmp2 = arr2(:,srt_ind(i))
+                     arr2(:,srt_ind(i)) = arr2(:,srt_ind(j))
+                     arr2(:,srt_ind(j)) = tmp2
+                     tmp3 = arr3(:,srt_ind(i))
+                     arr3(:,srt_ind(i)) = arr3(:,srt_ind(j))
+                     arr3(:,srt_ind(j)) = tmp3
+                enddo;
+
+                ! Insert partitioning element 
+                arr(srt_ind(lo + 1)) = arr(srt_ind(j))
+                arr(srt_ind(j)) = a
+                 arr2(:,srt_ind(lo + 1)) = arr2(:,srt_ind(j))
+                 arr2(:,srt_ind(j)) = a2
+                 arr3(:,srt_ind(lo + 1)) = arr3(:,srt_ind(j))
+                 arr3(:,srt_ind(j)) = a3
+
+                ! Push the larger of the partitioned sections onto the stack
+                ! of sections to look at later.
+                ! --> need fewest stack elements. 
+                nstack = nstack + 2
+                if (nstack > nStackMax) then
+                        call stop_all (this_routine, &
+                                        "parameter nStackMax too small")
+                endif
+                if (hi - i + 1 >= j - lo) then
+                    stack(nstack) = hi
+                    stack(nstack-1) = i
+                    hi = j - 1
+                else
+                    stack(nstack) = j - 1
+                    stack(nstack-1) = lo
+                    lo = i
+                endif
+            endif
+        enddo
+
+    end subroutine sort_d_a_c_a_r
 
     subroutine sort_d_a_c (arr, arr2, length, length2)
         implicit none
