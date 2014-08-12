@@ -4079,6 +4079,7 @@ module mat_tools
                     !Count the number of unique kpoints
                     nDegenKPnts = 0
                     do i = LowerDegenInd,UpperDegenInd
+                        tSame = .false.
                         do j = LowerDegenInd,i-1
                             tSame = .true.
                             do l = 1,LatticeDim
@@ -4201,10 +4202,13 @@ module mat_tools
                         do i = 1,nDegenOcc
                             !Swap index PickedDegenOrbs(i) with i
                             cWork(:) = r_vecs(:,i)
+                            phase = Vals(i)
                             kPnt_(:) = kPnts_tmp(:,i)
                             r_vecs(:,i) = r_vecs(:,PickedDegenerateOrbs(i))
+                            Vals(i) = Vals(PickedDegenerateOrbs(i))
                             kPnts_tmp(:,i) = kPnts_tmp(:,PickedDegenerateOrbs(i))
                             r_vecs(:,PickedDegenerateOrbs(i)) = cWork(:)
+                            Vals(PickedDegenerateOrbs(i)) = phase
                             kPnts_tmp(:,PickedDegenerateOrbs(i)) = kPnt_(:)
                             do j = i+1,nDegenOcc
                                 if(PickedDegenerateOrbs(j).eq.i) then
