@@ -596,7 +596,7 @@ module sort_mod
         ! Temporary variables for swapping
         real(dp) :: tmp1
         complex(dp) :: tmp2(size(arr2(:,1)))
-        real(dp) :: temp3(size(arr3(:,1)))
+        real(dp) :: tmp3(size(arr3(:,1)))
         character(*), parameter :: this_routine = 'sort_d_a_c_a_r'
 
 

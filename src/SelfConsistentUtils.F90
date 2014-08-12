@@ -348,7 +348,8 @@ module SelfConsistentUtils
                     KInd_to_KBlock_Constrain(:) = 0
                     KPointSampled_Constrain(:) = .false.
 
-                    call CalcConstrainedK_Maps(KBlock_to_KInd_Constrain,KInd_to_KBlock_Constrain,KPointSampled_Constrain,nIndKPnts_Constrain)
+                    call CalcConstrainedK_Maps(KBlock_to_KInd_Constrain,KInd_to_KBlock_Constrain,   &
+                        KPointSampled_Constrain,nIndKPnts_Constrain)
                 endif
             else
                 call CalcConstrainedK_Maps(KBlock_to_KInd,KInd_to_KBlock,KPointSampled,nIndKPnts)
@@ -1036,7 +1037,8 @@ module SelfConsistentUtils
                                 KBlocks(j,i,KInd_to_KBlock(k)) = cmplx(LatParams(ind),zero,dp)
                                 ind = ind + 1
                                 !For the diagonals, we want to flip the energy about the chemical potential
-                                KBlocks((nImp-i)+1,(nImp-j)+1,KInd_to_KBlock(k)) = cmplx(2.0_dp*mu,zero,dp) - KBlocks(j,i,KInd_to_KBlock(k))
+                                KBlocks((nImp-i)+1,(nImp-j)+1,KInd_to_KBlock(k)) = cmplx(2.0_dp*mu,zero,dp) &
+                                    - KBlocks(j,i,KInd_to_KBlock(k))
                             else
                                 if((ind+1).gt.iLatParams) call stop_all(t_r,'Incorrect indexing')
                                 KBlocks(j,i,KInd_to_KBlock(k)) = cmplx(LatParams(ind),LatParams(ind+1),dp)

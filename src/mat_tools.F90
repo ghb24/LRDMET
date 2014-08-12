@@ -3929,7 +3929,7 @@ module mat_tools
     !This will be equivalent to the number of bands per kpoint
     !Ham returns the eigenvectors (in real space).
     subroutine DiagOneEOp_z(Ham,Vals,SS_Period,nLat,tKSpace_Diag,tRealVectors)
-        use sort_mod, only: sort_d_a_c
+        use sort_mod, only: sort_d_a_c,sort_d_a_c_a_r
         implicit none
         integer, intent(in) :: nLat
         logical, intent(in) :: tKSpace_Diag
@@ -3937,13 +3937,16 @@ module mat_tools
         complex(dp), intent(inout) :: Ham(nLat,nLat)
         real(dp), intent(out) :: Vals(nLat)
         logical, intent(in), optional :: tRealVectors
-        real(dp), allocatable :: Work(:),r_vecs_real(:,:)
-        real(dp) :: phase
+        real(dp), allocatable :: Work(:),r_vecs_real(:,:),kPnts_tmp(:,:)
+        real(dp) :: phase,kPnt_(LatticeDim),kPnt_1(LatticeDim),kPnt_2(LatticeDim),kPnt_3(LatticeDim)
         complex(dp), allocatable :: RotMat(:,:),CompHam(:,:),cWork(:),vec_temp(:)
         complex(dp), allocatable :: ztemp(:,:),k_Ham(:,:),k_vecs(:,:),vec_temp2(:)
         complex(dp), allocatable :: r_vecs(:,:)
-        integer :: lWork,info,i,j,k,kSpace_ind,ind_1,ind_2
-        logical :: tRealVectors_
+        integer, allocatable :: PickedDegenerateOrbs(:)
+        integer :: lWork,info,i,j,k,l,kSpace_ind,ind_1,ind_2,LowerDegenInd,UpperDegenInd
+        integer :: nDegenOcc,nDegenOrbs,nDegenKPnts,ind,ind_found
+        logical :: tRealVectors_,tSame
+        logical :: tNetZeroMomDet
         character(len=*), parameter :: t_r='DiagOneEOp_z'
 
         write(6,*) "Entered DiagOneEOp_z..."
@@ -3960,6 +3963,11 @@ module mat_tools
             endif
             if(tTiltedLattice.and.(LatticeDim.eq.2)) then
                 call stop_all(t_r,'Cannot do k-space diagonalizations - impurity site tiling is not same as direct lattice')
+            endif
+            if((LatticeDim.eq.2).and.(tShift_Mesh)) then
+                tNetZeroMomDet = .true.
+            else
+                tNetZeroMomDet = .false.
             endif
 
             if(tCheck) then
@@ -4124,13 +4132,13 @@ module mat_tools
                             if(ind_found.gt.nDegenOcc) call stop_all(t_r,'Indexing error')
                             PickedDegenerateOrbs(ind_found) = j
                             
-                            kPnt_1(1) = -kPnt_(2)
-                            kPnt_1(2) = kPnt_(1)
+                            kPnt_2(1) = -kPnt_(2)
+                            kPnt_2(2) = kPnt_(1)
                             !Search for a degenerate orbital at this kpoint, ensuring that it is not an orbital we have picked already
                             do j = LowerDegenInd,UpperDegenInd
                                 tSame = .true.
                                 do l = 1,LatticeDim
-                                    tSame = tSame.and.(abs(KPnts_tmp(l,j)-KPnt_1(l)).lt.1.0e-8_dp)
+                                    tSame = tSame.and.(abs(KPnts_tmp(l,j)-KPnt_2(l)).lt.1.0e-8_dp)
                                 enddo
                                 if(tSame) then
                                     !Now check it is not an orbital we have already picked
@@ -4148,13 +4156,13 @@ module mat_tools
                             if(ind_found.gt.nDegenOcc) call stop_all(t_r,'Indexing error')
                             PickedDegenerateOrbs(ind_found) = j
 
-                            kPnt_1(1) = -kPnt_(1)
-                            kPnt_1(2) = -kPnt_(2)
+                            kPnt_3(1) = -kPnt_(1)
+                            kPnt_3(2) = -kPnt_(2)
                             !Search for a degenerate orbital at this kpoint, ensuring that it is not an orbital we have picked already
                             do j = LowerDegenInd,UpperDegenInd
                                 tSame = .true.
                                 do l = 1,LatticeDim
-                                    tSame = tSame.and.(abs(KPnts_tmp(l,j)-KPnt_1(l)).lt.1.0e-8_dp)
+                                    tSame = tSame.and.(abs(KPnts_tmp(l,j)-KPnt_3(l)).lt.1.0e-8_dp)
                                 enddo
                                 if(tSame) then
                                     !Now check it is not an orbital we have already picked
@@ -4171,16 +4179,54 @@ module mat_tools
                             ind_found = ind_found + 1
                             if(ind_found.gt.nDegenOcc) call stop_all(t_r,'Indexing error')
                             PickedDegenerateOrbs(ind_found) = j
+
+                            kPnt_(:) = kPnt_(:) + kPnt_1(:) + kPnt_2(:) + kPnt_3(:)
+                            do l = 1,LatticeDim
+                                if(abs(kPnt_(l)).gt.1.0e-8_dp) call stop_all(t_r,'Not found translationally symmetric set')
+                            enddo
 
                         enddo
 
-                        !Now, we have a list of PickedDegenOrbs, of length nDegenOcc.
+                        do i = 1,nDegenOcc
+                            do j = 1,nDegenOcc
+                                if((i.ne.j).and.(PickedDegenerateOrbs(i).eq.PickedDegenerateOrbs(j))) then
+                                    call stop_all(t_r,'Error here')
+                                endif
+                            enddo
+                        enddo
+
+                        !Now, we have a list of PickedDegenerateOrbs, of length nDegenOcc.
                         !These want to be the first ones in the degenerate set.
+                        allocate(cWork(nSites))
+                        do i = 1,nDegenOcc
+                            !Swap index PickedDegenOrbs(i) with i
+                            cWork(:) = r_vecs(:,i)
+                            kPnt_(:) = kPnts_tmp(:,i)
+                            r_vecs(:,i) = r_vecs(:,PickedDegenerateOrbs(i))
+                            kPnts_tmp(:,i) = kPnts_tmp(:,PickedDegenerateOrbs(i))
+                            r_vecs(:,PickedDegenerateOrbs(i)) = cWork(:)
+                            kPnts_tmp(:,PickedDegenerateOrbs(i)) = kPnt_(:)
+                            do j = i+1,nDegenOcc
+                                if(PickedDegenerateOrbs(j).eq.i) then
+                                    !i has swapped with PickedDegenerateOrbs(i)
+                                    PickedDegenerateOrbs(j) = PickedDegenerateOrbs(j)
+                                    exit
+                                endif
+                            enddo
+                        enddo
+                        deallocate(cWork)
                     else
                         call stop_all(t_r,'Must be using Monkhorst-Pack mesh')
                     endif   !tShift_Mesh
 
                 endif   !Open shell at Fermi surface
+                kPnt_(:) = zero
+                do i = 1,nOcc
+                    kPnt_(:) = kPnt_(:) + kPnts_tmp(:,i)
+                enddo
+                do l = 1,LatticeDim
+                    if(abs(kPnt_(l)).gt.1.0e-8_dp) call stop_all(t_r,'Non zero momentum determinant chosen')
+                enddo
                 deallocate(kPnts_tmp)
             else
                 !Order the vectors, such that the are in order of increasing eigenvalue
