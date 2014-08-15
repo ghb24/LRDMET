@@ -4196,33 +4196,52 @@ module mat_tools
                             enddo
                         enddo
 
+!                        write(6,*) "List of orbitals and kpoints: "
+!                        do i = 1,nSites
+!                            write(6,"(I5,3F20.10)") i,Vals(i),kPnts_tmp(:,i)/pi
+!                        enddo
+!                        write(6,*) "Reordering vector: "
+!                        do i = 1,nDegenOcc
+!                            write(6,*) i,PickedDegenerateOrbs(i)
+!                        enddo
+
                         !Now, we have a list of PickedDegenerateOrbs, of length nDegenOcc.
                         !These want to be the first ones in the degenerate set.
                         allocate(cWork(nSites))
-                        do i = 1,nDegenOcc
+                        do i = LowerDegenInd,LowerDegenInd+nDegenOcc-1
                             !Swap index PickedDegenOrbs(i) with i
+                            !write(6,"(A,I8,A,I5)") "Swapping orbital ",PickedDegenerateOrbs(i)," and ",i
+!                            write(6,*) "Swapping orbital ",PickedDegenerateOrbs(i-LowerDegenInd+1)," and ",i
                             cWork(:) = r_vecs(:,i)
                             phase = Vals(i)
                             kPnt_(:) = kPnts_tmp(:,i)
-                            r_vecs(:,i) = r_vecs(:,PickedDegenerateOrbs(i))
-                            Vals(i) = Vals(PickedDegenerateOrbs(i))
-                            kPnts_tmp(:,i) = kPnts_tmp(:,PickedDegenerateOrbs(i))
-                            r_vecs(:,PickedDegenerateOrbs(i)) = cWork(:)
-                            Vals(PickedDegenerateOrbs(i)) = phase
-                            kPnts_tmp(:,PickedDegenerateOrbs(i)) = kPnt_(:)
-                            do j = i+1,nDegenOcc
+                            r_vecs(:,i) = r_vecs(:,PickedDegenerateOrbs(i-LowerDegenInd+1))
+                            Vals(i) = Vals(PickedDegenerateOrbs(i-LowerDegenInd+1))
+                            kPnts_tmp(:,i) = kPnts_tmp(:,PickedDegenerateOrbs(i-LowerDegenInd+1))
+                            r_vecs(:,PickedDegenerateOrbs(i-LowerDegenInd+1)) = cWork(:)
+                            Vals(PickedDegenerateOrbs(i-LowerDegenInd+1)) = phase
+                            kPnts_tmp(:,PickedDegenerateOrbs(i-LowerDegenInd+1)) = kPnt_(:)
+                            do j = i-LowerDegenInd+2,nDegenOcc
+                                !Run through rest of swaps
                                 if(PickedDegenerateOrbs(j).eq.i) then
                                     !i has swapped with PickedDegenerateOrbs(i)
-                                    PickedDegenerateOrbs(j) = PickedDegenerateOrbs(j)
+!                                    write(6,*) "Slot ",j," changing to pick ",PickedDegenerateOrbs(i-LowerDegenInd+1)," rather than ",PickedDegenerateOrbs(j)
+                                    PickedDegenerateOrbs(j) = PickedDegenerateOrbs(i-LowerDegenInd+1)
                                     exit
                                 endif
                             enddo
+!                            write(6,*) "After first swap, degenerate space is: "
+!                            write(6,*) "List of orbitals and kpoints: "
+!                            do j = LowerDegenInd,UpperDegenInd
+!                                write(6,"(I5,3F20.10)") j,Vals(j),kPnts_tmp(:,j)/pi
+!                            enddo
                         enddo
                         deallocate(cWork)
                     else
                         call stop_all(t_r,'Must be using Monkhorst-Pack mesh')
                     endif   !tShift_Mesh
 
+                    deallocate(PickedDegenerateOrbs)
                 endif   !Open shell at Fermi surface
                 kPnt_(:) = zero
                 do i = 1,nOcc
@@ -4230,6 +4249,13 @@ module mat_tools
                 enddo
                 do l = 1,LatticeDim
                     if(abs(kPnt_(l)).gt.1.0e-8_dp) call stop_all(t_r,'Non zero momentum determinant chosen')
+                enddo
+                kPnt_(:) = zero
+                do i = nOcc+1,nSites
+                    kPnt_(:) = kPnt_(:) + kPnts_tmp(:,i)
+                enddo
+                do l = 1,LatticeDim
+                    if(abs(kPnt_(l)).gt.1.0e-8_dp) call stop_all(t_r,'Non zero momentum virtual space')
                 enddo
                 deallocate(kPnts_tmp)
             else
