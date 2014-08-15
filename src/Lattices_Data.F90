@@ -1,0 +1,3 @@
+module LatticesData
+
+end module
