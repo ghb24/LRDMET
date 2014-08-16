@@ -13,7 +13,7 @@ module Lattices
         character(len=*), parameter :: t_r='Setup_Lattice'
 
         if(LatticeDim.eq.2) then
-            if(tSquare) then
+            if(tSquareLatt) then
                 if(CellShape.eq.1) then
                     !Original tilted cell
 !                    if(tTiltedLattice) then
@@ -43,6 +43,7 @@ module Lattices
         implicit none
         integer :: SS_Period,i,k,ind_1,ind_2,j,nKPnts_x,nKPnts_y,indx,indy,kpnt,n
         real(dp) :: PrimLattVec(LatticeDim),phase,ddot,r,r2,kpntx,kpnty,PrimLattVec_2(LatticeDim),phase1,phase5
+        real(dp) :: tmp1,tmp2,tmp3,tmp4
         complex(dp) :: val,val2
         complex(dp) , allocatable :: temp(:,:),ham_temp(:,:),Random_CorrPot(:,:)
         character(len=*), parameter :: t_r='setup_kspace'
@@ -184,15 +185,13 @@ module Lattices
         endif
         write(6,"(A,L1)") "tShift_Mesh: ",tShift_Mesh
 
-        !UPTOHERE
-
 !        if(tWriteOut) then
         write(6,"(A)") "Writing out kpoint mesh: "
         do k=1,nKPnts
             if(LatticeDim.eq.1) then
-                write(6,*) "KPnt ",k,KPnts(1,k),KPnts(1,k)/RecipLattVecs
+                write(6,*) "KPnt ",k,KPnts(1,k),KPnts(1,k)/RecipLattVecs(1,1)
             else
-                write(6,"(A,I5,4F13.5)") "KPnt ",k,KPnts(:,k),KPnts(:,k)/(nImp_x/pi)
+                write(6,"(A,I5,2F13.5)") "KPnt ",k,KPnts(:,k)
             endif
         enddo
 !        endif
@@ -208,27 +207,47 @@ module Lattices
             ind_2 = nImp*k
             do n = 0,nImp-1 !Run over bands in a given kpoint
 
-                do i = 1,nSites
-                    if(LatticeDim.eq.1) then
-                        if(mod(i-1,nImp).ne.n) cycle    !This is the unit rotation between n and m
-                        PrimLattVec(1) = real(i-1-mod(i-1,nImp))    !The real-space translation to the cell
-!                        PrimLattVec(1) = real(i-1,dp)               !The real-space translation to this site
-                    else
-                        call SiteIndexToLatCoord_2DSquare(i,indx,indy)
-                        !Since these indices are 1 indexed, we need to make them 0 indexed
-                        !The *site* displacement vectors are indx-1 and indy-1. 
-                        !The *cell* displacement vectors are indx-1-mod(indx-1,nImp_x) and the y version.
-                        if(((mod(indx-1,nImp_x)*nImp_x)+mod(indy-1,nImp_y)).ne.n) cycle
-                        PrimLattVec(1) = real(indx - 1 - mod(indx-1,nImp_x),dp)
-                        PrimLattVec(2) = real(indy - 1 - mod(indy-1,nImp_y),dp)
-!                        PrimLattVec(1) = real(indx - 1,dp)
-!                        PrimLattVec(2) = real(indy - 1,dp)
-!                        write(6,"(A,I5,A,2F10.4)") "Lattice site: ",i, " has coordinate: ",PrimLattVec(:)
-                    endif
-                    phase = ddot(LatticeDim,KPnts(:,k),1,PrimLattVec,1)
-!                    RtoK_Rot(i,ind_1+mod(i,nImp)) = exp(dcmplx(zero,phase))/sqrt(real(nKPnts,dp))
-                    RtoK_Rot(i,ind_1+n) = exp(dcmplx(zero,phase))/sqrt(real(nKPnts,dp))
-                enddo
+                if(LatticeDim.eq.1) then
+                    do j = 1,iImpRepeats
+                        site = (j-1)*nImp + n + 1
+                        PrimLattVec(1) = real((j-1)*nImp,dp)    !The real-space translation to the cell
+                        phase = ddot(LatticeDim,KPnts(:,k),1,PrimLattVec,1)
+                        RtoK_Rot(site,ind_1+n) = exp(cmplx(zero,phase,dp))/sqrt(real(nKPnts,dp))
+                    enddo
+                else
+                    do kx = 0,iImpRepeats_x-1
+                        PrimLattVec(1) = iImpRepeats_x*LatticeVector(1,1) + iImpRepeats_x*LatticeVector(1,2)
+                        do ky = 0,iImpRepeats_y-1
+                            PrimLattVec(2) = iImpRepeats_y*LatticeVector(2,1) + iImpRepeats_y*LatticeVector(2,2)
+                            !Run through all cells, with PrimLattVec being the coordinate of the cell
+                            !Choose the site of the cell = n+1
+                            site = (j-1)*nImp + n + 1
+                            phase = ddot(LatticeDim,KPnts(:,k),1,PrimLattVec,1)
+                            RtoK_Rot(site,ind_1+n) = exp(cmplx(zero,phase,dp))/sqrt(real(nKPnts,dp))
+                        enddo
+                    enddo
+                endif
+!                do i = 1,nSites
+!                    if(LatticeDim.eq.1) then
+!                        if(mod(i-1,nImp).ne.n) cycle    !This is the unit rotation between n and m
+!                        PrimLattVec(1) = real(i-1-mod(i-1,nImp))    !The real-space translation to the cell
+!!                        PrimLattVec(1) = real(i-1,dp)               !The real-space translation to this site
+!                    else
+!                        call SiteIndexToLatCoord_2DSquare(i,indx,indy)
+!                        !Since these indices are 1 indexed, we need to make them 0 indexed
+!                        !The *site* displacement vectors are indx-1 and indy-1. 
+!                        !The *cell* displacement vectors are indx-1-mod(indx-1,nImp_x) and the y version.
+!                        if(((mod(indx-1,nImp_x)*nImp_x)+mod(indy-1,nImp_y)).ne.n) cycle
+!                        PrimLattVec(1) = real(indx - 1 - mod(indx-1,nImp_x),dp)
+!                        PrimLattVec(2) = real(indy - 1 - mod(indy-1,nImp_y),dp)
+!!                        PrimLattVec(1) = real(indx - 1,dp)
+!!                        PrimLattVec(2) = real(indy - 1,dp)
+!!                        write(6,"(A,I5,A,2F10.4)") "Lattice site: ",i, " has coordinate: ",PrimLattVec(:)
+!                    endif
+!                    phase = ddot(LatticeDim,KPnts(:,k),1,PrimLattVec,1)
+!!                    RtoK_Rot(i,ind_1+mod(i,nImp)) = exp(dcmplx(zero,phase))/sqrt(real(nKPnts,dp))
+!                    RtoK_Rot(i,ind_1+n) = exp(dcmplx(zero,phase))/sqrt(real(nKPnts,dp))
+!                enddo
             enddo
         enddo
 
@@ -448,6 +467,7 @@ module Lattices
         write(6,"(A,I6)") "Number of copied of correlation potential striped through space: ",iImpRepeats
         if((iImpRepeats_x*iImpRepeats_y).ne.iImpRepeats) call stop_all(t_r,'Error here')
 
+        !TODO: Check that this has the same order as simply the site index
         allocate(StripedImpIndices(nImp,iImpRepeats))
         StripedImpIndices(:,:) = 0
 
@@ -458,7 +478,6 @@ module Lattices
                 dispy = iImpRepeats_y*LatticeVector(2,1) + iImpRepeats_y*LatticeVector(2,2)
                 do i = 1,nImp
                     !What is the displaced coordinate?
-                    ImpSites(i)
                     if(abs(indx-real(nint(indx),dp)).gt.1.0e-8_dp) call stop_all(t_r,'Error here x')
                     if(abs(indy-real(nint(indy),dp)).gt.1.0e-8_dp) call stop_all(t_r,'Error here y')
                     call FindDisplacedIndex_2DSquare(ImpSites(i),dispx,dispy,StripedImpIndices(i,(kx*iImpRepeats_x)+ky+1),PhaseChange,.false.)

@@ -3,6 +3,7 @@ module mat_tools
     use const
     use errors, only: stop_all, warning
     use globals
+    use LatticesData
     implicit none
 
     interface DiagOneEOp
@@ -669,7 +670,7 @@ module mat_tools
         elseif(LatticeDim.eq.2) then
             !2D lattices.
 
-            if(tTiltedLattice) then
+            if(CellShape.eq.1) then
                
                 allocate(temp(nSites,nSites))
                 temp(:,:) = core(:,:)
@@ -810,7 +811,7 @@ module mat_tools
             enddo
         elseif(LatticeDim.eq.2) then
 
-            if(tTiltedLattice) then
+            if(CellShape.eq.1) then
 
                 call Mat_to_lattice_order_comp(core_v)
 
@@ -909,7 +910,7 @@ module mat_tools
             enddo
         elseif(LatticeDim.eq.2) then
 
-            if(tTiltedLattice) then
+            if(CellShape.eq.1) then
 
                 allocate(temp(nSites,nSites))
                 temp(:,:) = core(:,:)
@@ -2361,7 +2362,7 @@ module mat_tools
         endif
 
         if(tKSpace_Diag.and.(LatticeDim.eq.1)) then
-            if(tTiltedLattice.and.(LatticeDim.eq.2)) then
+            if((CellShape.eq.1).and.(LatticeDim.eq.2)) then
                 call stop_all(t_r,'Cannot do k-space diagonalizations with tilted lattice '     &
                   //'- impurity site tiling is not same as direct lattice')
             endif
@@ -3194,7 +3195,7 @@ module mat_tools
             if(tRealVectors_.and.(LatticeDim.eq.2)) then
                 call stop_all(t_r,'Cannot provide real eigenvectors for 2D systems. Sorry!')
             endif
-            if(tTiltedLattice.and.(LatticeDim.eq.2)) then
+            if((CellShape.eq.1).and.(LatticeDim.eq.2)) then
                 call stop_all(t_r,'Cannot do k-space diagonalizations - impurity site tiling is not same as direct lattice')
             endif
             if((LatticeDim.eq.2).and.(tShift_Mesh)) then
