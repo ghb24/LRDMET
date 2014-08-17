@@ -1,7 +1,8 @@
 module Davidson
     use const
     use errors, only: stop_all,warning
-    use mat_tools, only: WriteVector,WriteMatrix,WriteVectorComp,WriteMatrixComp,znrm2
+    use mat_tools, only: znrm2
+    use writedata
     use Globals, only: tCheck
     implicit none
 

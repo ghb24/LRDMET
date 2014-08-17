@@ -3,8 +3,9 @@ module MomSpectra
     use timing
     use globals
     use errors, only: stop_all,warning
-    use mat_tools, only: WriteVector,WriteMatrix,WriteVectorInt,WriteMatrixComp,WriteVectorComp,znrm2,add_localpot_comp_inplace
+    use mat_tools, only: znrm2
     use mat_tools, only: CreateKHamBlocks
+    use Lattices, only: add_localpot_comp_inplace
     use LRSolvers
     implicit none
 
@@ -550,7 +551,7 @@ module MomSpectra
                         write(6,*) "Using Overlap_p"
                         S_EigVec(:,:) = Overlap_p(:,:)
                     endif
-                    !call writematrixcomp(S_EigVec,'S_EigVec',.true.)
+                    !call writematrix(S_EigVec,'S_EigVec',.true.)
                     allocate(Work(max(1,3*nLinearSystem-2)))
                     allocate(tempc(1))
                     lWork = -1
@@ -603,10 +604,10 @@ module MomSpectra
                         LinSize = VStatIndex-1
                         allocate(DynamicLS(LinSize,LinSize))
                         DynamicLS(:,:) = LinearSystem_h(1:LinSize,1:LinSize)
-                        !call writematrixcomp(DynamicLS,'Hole Hamil',.true.)
-                        !call writevectorcomp(Psi1_h(1:LinSize),'V0_Ann')
+                        !call writematrix(DynamicLS,'Hole Hamil',.true.)
+                        !call writevector(Psi1_h(1:LinSize),'V0_Ann')
                         call SolveCompLinearSystem(DynamicLS,Psi1_h(1:LinSize),LinSize,info)
-                        !call writevectorcomp(Psi1_h(1:LinSize),'|1>')
+                        !call writevector(Psi1_h(1:LinSize),'|1>')
                         deallocate(DynamicLS)
                     else
                         LinSize = nLinearSystem
@@ -752,8 +753,8 @@ module MomSpectra
         V0_Cre(:) = zzero
         V0_Ann(:) = zzero
 
-        !call writevectorcomp(Psi_0,'Psi_0')
-        !call writevectorcomp(StatickGF_Ann_Emb_Ket(:,1),'Statick_Ann_Emb')
+        !call writevector(Psi_0,'Psi_0')
+        !call writevector(StatickGF_Ann_Emb_Ket(:,1),'Statick_Ann_Emb')
 
         !Projection onto Block 1 of V0
         do K = 1,nFCIDet
@@ -775,7 +776,7 @@ module MomSpectra
             V0_Ann(K+nNm1bFCIDet+nFCIDet) = sqrt(CStatNorm)*Psi_0(K)
         enddo
 
-        !call writevectorcomp(V0_Ann,'V0_Ann')
+        !call writevector(V0_Ann,'V0_Ann')
 
         !Creation operator
         do K = 1,nFCIDet
@@ -850,8 +851,8 @@ module MomSpectra
             endif 
         enddo
 
-        !call writevectorcomp(HFPertBasis_Cre,'HFPertBasis_Cre')
-        !call writevectorcomp(HFPertBasis_Ann,'HFPertBasis_Ann')
+        !call writevector(HFPertBasis_Cre,'HFPertBasis_Cre')
+        !call writevector(HFPertBasis_Ann,'HFPertBasis_Ann')
         
         !Now rotate from the HF vectors, to the Schmidt basis
         StatickGF_Ann_Ket(:,:) = zzero
@@ -880,8 +881,8 @@ module MomSpectra
         StatickGF_Cre_Emb_Bra(:,1) = dconjg(StatickGF_Cre_Emb_Ket(:,1))
         StatickGF_Ann_Emb_Bra(:,1) = dconjg(StatickGF_Ann_Emb_Ket(:,1))
 
-        !call writevectorcomp(StatickGF_Ann_Ket(:,1),'StatickGF_Ann_Ket')
-        !call writevectorcomp(StatickGF_Cre_Ket(:,1),'StatickGF_Cre_Ket')
+        !call writevector(StatickGF_Ann_Ket(:,1),'StatickGF_Ann_Ket')
+        !call writevector(StatickGF_Cre_Ket(:,1),'StatickGF_Cre_Ket')
 
         deallocate(HFPertBasis_Ann,HFPertBasis_Cre)
 
@@ -940,8 +941,8 @@ module MomSpectra
             endif
         enddo
 
-        !call writevectorcomp(HFPertBasis_Cre,'HFPertBasis_Cre')
-        !call writevectorcomp(HFPertBasis_Ann,'HFPertBasis_Ann')
+        !call writevector(HFPertBasis_Cre,'HFPertBasis_Cre')
+        !call writevector(HFPertBasis_Ann,'HFPertBasis_Ann')
 
         !Now rotate from the HF vectors, to the Schmidt basis
         SchmidtkGF_Ann_Ket(:,:) = zzero
@@ -960,7 +961,7 @@ module MomSpectra
         SchmidtkGF_Ann_Bra(:,:) = dconjg(SchmidtkGF_Ann_Ket(:,:))
         SchmidtkGF_Cre_Bra(:,:) = dconjg(SchmidtkGF_Cre_Ket(:,:))
         
-        !call writevectorcomp(SchmidtkGF_Ann_Ket(:,1),'SchmidtkGF_Ann_Ket')
+        !call writevector(SchmidtkGF_Ann_Ket(:,1),'SchmidtkGF_Ann_Ket')
 
         deallocate(HFPertBasis_Ann,HFPertBasis_Cre)
         

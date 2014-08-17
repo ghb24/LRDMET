@@ -2,7 +2,8 @@ module LinearResponse
     use const
     use timing
     use errors, only: stop_all,warning
-    use mat_tools, only: WriteVector,WriteMatrix,WriteVectorInt,WriteMatrixComp,WriteVectorComp,znrm2
+    use writedata
+    use mat_tools, only: znrm2
     use mat_tools, only: DiagNonHermLatticeHam,DiagOneeOp,add_localpot_comp_inplace,add_localpot
     use globals
     use LRSolvers
@@ -849,7 +850,7 @@ module LinearResponse
                         enddo
                     enddo
 
-    !                call writematrixcomp(LinearSystem_p(1:nNp1FCIDet,VIndex:nLinearSystem),'OffDiagBlock',.true.)
+    !                call writematrix(LinearSystem_p(1:nNp1FCIDet,VIndex:nLinearSystem),'OffDiagBlock',.true.)
 
                     !Block 3 for hole hamiltonian
                     do J = 1,nNm1bFCIDet
@@ -960,7 +961,7 @@ module LinearResponse
                         endif
                     enddo
                 endif
-!                call writematrixcomp(LinearSystem_p,'LinearSystem_p',.false.)
+!                call writematrix(LinearSystem_p,'LinearSystem_p',.false.)
 
                 !Now solve these linear equations
                 if(tMinRes_NonDir) then
@@ -1022,7 +1023,7 @@ module LinearResponse
                         cycle
                     endif
                 endif
-                !call writevectorcomp(Psi1_p,'Psi1_p')
+                !call writevector(Psi1_p,'Psi1_p')
 
                 !Now solve the LR for the hole addition
                 if(tCompressedMats) then
@@ -1042,7 +1043,7 @@ module LinearResponse
                         endif
                     enddo
                 endif
-!                call writematrixcomp(LinearSystem_h,'LinearSystem_h',.false.)
+!                call writematrix(LinearSystem_h,'LinearSystem_h',.false.)
 
                 if(tMinRes_NonDir) then
                     !NB: There is a bug in ifort, if using array bounds checking and multiple openmp threads.
@@ -1118,7 +1119,7 @@ module LinearResponse
                     enddo
                 enddo
             enddo   !End do over pertsite. We now have all the greens funtions 
-            !call writevectorcomp(Cre_0(:,1),'Cre_0')
+            !call writevector(Cre_0(:,1),'Cre_0')
 
             !Sum them
             G_Mat(:,:,OmegaVal) = ResponseFn_p(:,:) + ResponseFn_h(:,:)
@@ -1500,7 +1501,7 @@ module LinearResponse
             call stop_all(t_r,'Fit lattice hamiltonian in static bath, but not external space??')
         endif
         
-        !call writematrixcomp(cham,'real space ham in LR',.true.)
+        !call writematrix(cham,'real space ham in LR',.true.)
         maxminres_iter = iMinRes_MaxIter
         iters_p = 0
         iters_h = 0
@@ -2191,7 +2192,7 @@ module LinearResponse
                     enddo
                 enddo
 
-!                call writematrixcomp(LinearSystem_p(1:nNp1FCIDet,VIndex:nLinearSystem),'OffDiagBlock',.true.)
+!                call writematrix(LinearSystem_p(1:nNp1FCIDet,VIndex:nLinearSystem),'OffDiagBlock',.true.)
 
                 !Block 3 for hole hamiltonian
                 do J = 1,nNm1bFCIDet
@@ -2280,7 +2281,7 @@ module LinearResponse
 !                    write(6,"(A,G20.10,A,G20.10,A)") "Reoptimized ground state energy is: ",GSEnergy, &  
 !                        " (old = ",HL_Energy,")"
 !                    !call writevector(HL_Vec(:),'Old Psi_0')
-!                    !call writevectorcomp(Psi_0,'New Psi_0')
+!                    !call writevector(Psi_0,'New Psi_0')
 !                else
 !                    GSEnergy = HL_Energy
 !                endif
@@ -2302,14 +2303,14 @@ module LinearResponse
                         LinearSystem_p(i,i) = LinearSystem_p(i,i) + dcmplx(Omega+GFChemPot+GSEnergy,dDelta)
                     endif
                 enddo
-!                call writematrixcomp(LinearSystem_p,'LinearSystem_p',.false.)
+!                call writematrix(LinearSystem_p,'LinearSystem_p',.false.)
 
                 !Now solve these linear equations
-                !call writevectorcomp(Psi1_p,'Cre_0')
+                !call writevector(Psi1_p,'Cre_0')
                 if(tMinRes_NonDir) then
 !                        zShift = dcmplx(-Omega-mu-GFChemPot,-dDelta)
                     zDirMV_Mat => LinearSystem_p
-!                        call writematrixcomp(LinearSystem_p,'LinearSystem_p',.true.)
+!                        call writematrix(LinearSystem_p,'LinearSystem_p',.true.)
                     call setup_RHS(nLinearSystem,Cre_0(:,pertsite),RHS)
                     maxminres_iter_ip = int(maxminres_iter,ip)
                     minres_unit_ip = int(minres_unit,ip)
@@ -2344,7 +2345,7 @@ module LinearResponse
                         cycle
                     endif
                 endif
-                !call writevectorcomp(Psi1_p,'Psi1_p')
+                !call writevector(Psi1_p,'Psi1_p')
 
                 !Now solve the LR for the hole addition
                 do i = 1,nLinearSystem
@@ -2354,11 +2355,11 @@ module LinearResponse
                         LinearSystem_h(i,i) = dcmplx(Omega+GFChemPot-GSEnergy,dDelta) + LinearSystem_h(i,i)
                     endif
                 enddo
-!                call writematrixcomp(LinearSystem_h,'LinearSystem_h',.false.)
+!                call writematrix(LinearSystem_h,'LinearSystem_h',.false.)
                 if(tMinRes_NonDir) then
                     !zShift = dcmplx(-Omega-mu+GFChemPot,-dDelta)
                     zDirMV_Mat => LinearSystem_h
-!                        call writematrixcomp(LinearSystem_h,'LinearSystem_h',.true.)
+!                        call writematrix(LinearSystem_h,'LinearSystem_h',.true.)
                     call setup_RHS(nLinearSystem,Ann_0(:,pertsite),RHS)
                     maxminres_iter_ip = int(maxminres_iter,ip)
                     minres_unit_ip = int(minres_unit,ip)
@@ -2412,7 +2413,7 @@ module LinearResponse
 
             enddo   !End do over pertsite. We now have all the greens funtions 
 
-            !call writevectorcomp(Cre_0(:,1),'Cre_0')
+            !call writevector(Cre_0(:,1),'Cre_0')
 
             !Sum them
             ResponseFn_Mat(:,:) = ResponseFn_p(:,:) + ResponseFn_h(:,:)
@@ -2421,10 +2422,10 @@ module LinearResponse
             if(present(Lat_G_Mat)) then
                 Lat_G_Mat(:,:,OmegaVal) = ni_lr_Mat(:,:)
             endif
-!            call writematrixcomp(ResponseFn_p,'ResponseFn_p',.true.)
-!            call writematrixcomp(ResponseFn_h,'ResponseFn_h',.true.)
-!            call writematrixcomp(ni_lr_Mat,'NI_LR',.true.)
-!            call writematrixcomp(ResponseFn_Mat,'ResponseMat',.true.)
+!            call writematrix(ResponseFn_p,'ResponseFn_p',.true.)
+!            call writematrix(ResponseFn_h,'ResponseFn_h',.true.)
+!            call writematrix(ni_lr_Mat,'NI_LR',.true.)
+!            call writematrix(ResponseFn_Mat,'ResponseMat',.true.)
 
             !Now, calculate NI and interacting response function as trace over diagonal parts of the local greens functions
             !This is the isotropic average of the local greens function
@@ -4128,8 +4129,8 @@ module LinearResponse
         endif
 
 !        if(tWriteOut) then
-!            call writevectorcomp(NFCIHam_cmps,'NFCIHam_cmps')
-!            call writevectorcomp(Np1FCIHam_cmps,'Np1FCIHam_cmps')
+!            call writevector(NFCIHam_cmps,'NFCIHam_cmps')
+!            call writevector(Np1FCIHam_cmps,'Np1FCIHam_cmps')
 !        endif
         
         !If doing full optimization of the GS problem
@@ -4232,7 +4233,7 @@ module LinearResponse
                 call ApplySP_PertGS_EC(Psi_0(1:nFCIDet),nFCIDet,Cre_0(:,i),Ann_0(:,i),  &
                     nLinearSystem,i,tLR_ReoptGS,tSwapExcits=tBetaExcit)
             enddo
-!            call writevectorcomp(Ann_0(:,1),'Ann Vec')
+!            call writevector(Ann_0(:,1),'Ann Vec')
         endif
         
         !Store the fock matrix in complex form, so that we can ZGEMM easily
@@ -4377,12 +4378,12 @@ module LinearResponse
             !sum_i Ga_i^bra F_xi (Annihilation)
             call ZGEMM('N','N',EmbSize,nImp_GF,nCore,zone,FockSchmidt_SE_XC(ActiveStart:ActiveEnd,1:CoreEnd),EmbSize,    &
                 SchmidtPertGF_Ann_Bra(1:nCore,:),nCore,zzero,Ga_i_F_xi_Bra,EmbSize)
-!                call writematrixcomp(FockSchmidt_SE_XC,'FockSchmidt_SE_XC',.false.)
-!                call writevectorcomp(SchmidtPertGF_Ann_Bra(:,1),'SchmidtPertGF_Ann_Bra')
-!                call writevectorcomp(Ga_i_F_xi_Bra(:,1),'Ga_i_F_xi_Bra')
+!                call writematrix(FockSchmidt_SE_XC,'FockSchmidt_SE_XC',.false.)
+!                call writevector(SchmidtPertGF_Ann_Bra(:,1),'SchmidtPertGF_Ann_Bra')
+!                call writevector(Ga_i_F_xi_Bra(:,1),'Ga_i_F_xi_Bra')
             call ZGEMM('T','N',EmbSize,nImp_GF,nCore,zone,FockSchmidt_SE_CX(1:CoreEnd,ActiveStart:ActiveEnd),nCore,    &
                 SchmidtPertGF_Ann_Ket(1:nCore,:),nCore,zzero,Ga_i_F_xi_Ket,EmbSize)
-!                call writevectorcomp(Ga_i_F_xi_Bra(:,1),'Ga_i_F_xi_Ket')
+!                call writevector(Ga_i_F_xi_Bra(:,1),'Ga_i_F_xi_Ket')
             !sum_i Ga_i F_ij (Annihilation)
             call ZGEMM('T','N',nCore,nImp_GF,nCore,zone,FockSchmidt_SE_CC(:,:),nCore,SchmidtPertGF_Ann_Ket(:,:),nCore,zzero, &
                 Ga_i_F_ij,nCore)
@@ -4541,9 +4542,9 @@ module LinearResponse
 
                 !Solve particle GF to start
                 !The V|0> for particle and hole perturbations are held in Cre_0 and Ann_0
-                !call writevectorcomp(Psi_0,'Psi_0')
-                !call writevectorcomp(Cre_0(:,1),'Ann_0')
-                !call writevectorcomp(Ann_0,'Ann_0')
+                !call writevector(Psi_0,'Psi_0')
+                !call writevector(Cre_0(:,1),'Ann_0')
+                !call writevector(Ann_0,'Ann_0')
                 
                 LinearSystemc_p(:) = -LinearSystemc_p(:)
                 !Offset matrix
@@ -4552,7 +4553,7 @@ module LinearResponse
                 enddo
 
                 !Now solve these linear equations
-                !call writevectorcomp(Psi1_p,'Cre_0')
+                !call writevector(Psi1_p,'Cre_0')
                 zDirMV_Mat_cmprs => LinearSystemc_p
                 zDirMV_Mat_cmprs_inds => LinearSystem_p_inds
                 if(tMinRes_NonDir) then
@@ -4582,7 +4583,7 @@ module LinearResponse
                 endif
                 zDirMV_Mat_cmprs => null() 
                 zDirMV_Mat_cmprs_inds => null() 
-                !call writevectorcomp(Psi1_p,'Psi1_p')
+                !call writevector(Psi1_p,'Psi1_p')
 
                 !Now solve the LR for the hole addition
                 do i = 1,nLinearSystem
@@ -4948,7 +4949,7 @@ module LinearResponse
 !            call writevector(HL_Vec(:),'Psi_0')
             do i = 1,nImp_GF
                 call ApplySP_PertGS_EC(Psi_0(1:nFCIDet),nFCIDet,Cre_0(:,i),Ann_0(:,i),nLinearSystem,i,tLR_ReoptGS)
-!                call writevectorcomp(Ann_0(:,1),'Ann_0')
+!                call writevector(Ann_0(:,1),'Ann_0')
             enddo
         endif
         
@@ -5154,12 +5155,12 @@ module LinearResponse
                 !sum_i Ga_i^bra F_xi (Annihilation)
                 call ZGEMM('N','N',EmbSize,nImp_GF,nCore,zone,FockSchmidt_SE_XC(ActiveStart:ActiveEnd,1:CoreEnd),EmbSize,    &
                     SchmidtPertGF_Ann_Bra(1:nCore,:),nCore,zzero,Ga_i_F_xi_Bra,EmbSize)
-!                call writematrixcomp(FockSchmidt_SE_XC,'FockSchmidt_SE_XC',.false.)
-!                call writevectorcomp(SchmidtPertGF_Ann_Bra(:,1),'SchmidtPertGF_Ann_Bra')
-!                call writevectorcomp(Ga_i_F_xi_Bra(:,1),'Ga_i_F_xi_Bra')
+!                call writematrix(FockSchmidt_SE_XC,'FockSchmidt_SE_XC',.false.)
+!                call writevector(SchmidtPertGF_Ann_Bra(:,1),'SchmidtPertGF_Ann_Bra')
+!                call writevector(Ga_i_F_xi_Bra(:,1),'Ga_i_F_xi_Bra')
                 call ZGEMM('T','N',EmbSize,nImp_GF,nCore,zone,FockSchmidt_SE_CX(1:CoreEnd,ActiveStart:ActiveEnd),nCore,    &
                     SchmidtPertGF_Ann_Ket(1:nCore,:),nCore,zzero,Ga_i_F_xi_Ket,EmbSize)
-!                call writevectorcomp(Ga_i_F_xi_Bra(:,1),'Ga_i_F_xi_Ket')
+!                call writevector(Ga_i_F_xi_Bra(:,1),'Ga_i_F_xi_Ket')
                 !sum_i Ga_i F_ij (Annihilation)
                 call ZGEMM('T','N',nCore,nImp_GF,nCore,zone,FockSchmidt_SE_CC(:,:),nCore,SchmidtPertGF_Ann_Ket(:,:),nCore,zzero, &
                     Ga_i_F_ij,nCore)
@@ -5279,8 +5280,8 @@ module LinearResponse
                         enddo
                     enddo
                     
-                    !call writematrixcomp(LinearSystem_p,'LinearSystem_p',.false.)
-                    !call writematrixcomp(LinearSystem_h,'LinearSystem_h',.false.)
+                    !call writematrix(LinearSystem_p,'LinearSystem_p',.false.)
+                    !call writematrix(LinearSystem_h,'LinearSystem_h',.false.)
 
                     if(.not.tSC_LR) then
                         !Now, check hessian is hermitian
@@ -5342,7 +5343,7 @@ module LinearResponse
                         write(6,"(A,G20.10,A,G20.10,A)") "Reoptimized ground state energy is: ",GFChemPot, &  
                             " (old = ",HL_Energy,")"
                         !call writevector(HL_Vec(:),'Old Psi_0')
-                        !call writevectorcomp(Psi_0,'New Psi_0')
+                        !call writevector(Psi_0,'New Psi_0')
                     endif
                     !write(6,*) "E0: ",GFChemPot+CoreEnergy
 
@@ -5352,29 +5353,29 @@ module LinearResponse
                     !Solve particle GF to start
                     !The V|0> for particle and hole perturbations are held in Cre_0 and Ann_0
                     !If we have reoptimized the ground state, we will need to recompute these
-                    !call writevectorcomp(Psi_0,'Psi_0')
+                    !call writevector(Psi_0,'Psi_0')
                     if(tLR_ReoptGS) then
                         !Since we are only keeping these one at a time, we don't actually need to store all pertsite vectors
                         call ApplySP_PertGS_EC(Psi_0,nGSSpace,Cre_0(:,pertsite),Ann_0(:,pertsite),  &
                             nLinearSystem,pertsite,tLR_ReoptGS)
                     endif
-                    !call writevectorcomp(Psi_0,'Psi_0')
-                    !call writevectorcomp(Cre_0(:,1),'Ann_0')
-                    !call writevectorcomp(Ann_0,'Ann_0')
+                    !call writevector(Psi_0,'Psi_0')
+                    !call writevector(Cre_0(:,1),'Ann_0')
+                    !call writevector(Ann_0,'Ann_0')
                     
                     LinearSystem_p(:,:) = -LinearSystem_p(:,:)
                     !Offset matrix
                     do i = 1,nLinearSystem
                         LinearSystem_p(i,i) = LinearSystem_p(i,i) + dcmplx(Omega+mu+GFChemPot,dDelta)
                     enddo
-!                    call writematrixcomp(LinearSystem_p,'LinearSystem_p',.false.)
+!                    call writematrix(LinearSystem_p,'LinearSystem_p',.false.)
 
                     !Now solve these linear equations
-                    !call writevectorcomp(Psi1_p,'Cre_0')
+                    !call writevector(Psi1_p,'Cre_0')
                     if(tMinRes_NonDir) then
 !                        zShift = dcmplx(-Omega-mu-GFChemPot,-dDelta)
                         zDirMV_Mat => LinearSystem_p
-!                        call writematrixcomp(LinearSystem_p,'LinearSystem_p',.true.)
+!                        call writematrix(LinearSystem_p,'LinearSystem_p',.true.)
                         call setup_RHS(nLinearSystem,Cre_0(:,pertsite),RHS)
                         maxminres_iter_ip = int(maxminres_iter,ip)
                         minres_unit_ip = int(minres_unit,ip)
@@ -5409,17 +5410,17 @@ module LinearResponse
                             cycle
                         endif
                     endif
-                    !call writevectorcomp(Psi1_p,'Psi1_p')
+                    !call writevector(Psi1_p,'Psi1_p')
 
                     !Now solve the LR for the hole addition
                     do i = 1,nLinearSystem
                         LinearSystem_h(i,i) = dcmplx(Omega+mu,dDelta) + (LinearSystem_h(i,i) - dcmplx(GFChemPot,0.0_dp))
                     enddo
-!                    call writematrixcomp(LinearSystem_h,'LinearSystem_h',.false.)
+!                    call writematrix(LinearSystem_h,'LinearSystem_h',.false.)
                     if(tMinRes_NonDir) then
                         !zShift = dcmplx(-Omega-mu+GFChemPot,-dDelta)
                         zDirMV_Mat => LinearSystem_h
-!                        call writematrixcomp(LinearSystem_h,'LinearSystem_h',.true.)
+!                        call writematrix(LinearSystem_h,'LinearSystem_h',.true.)
                         call setup_RHS(nLinearSystem,Ann_0(:,pertsite),RHS)
                         maxminres_iter_ip = int(maxminres_iter,ip)
                         minres_unit_ip = int(minres_unit,ip)
@@ -5534,7 +5535,7 @@ module LinearResponse
                         call Fit_SE(SE_Change,Var_SE,Error_GF,nNR_Iters,ResponseFn_Mat,Omega+mu,SE_Fit_Iter,ni_lr_Mat)
                         !Write out
                         write(6,"(2I7,7G20.10)") SE_Fit_Iter,nNR_Iters,Var_SE,Error_GF,Diff_GF,ni_lr,ResponseFn
-                        !call writematrixcomp(SE_Change,'SE_Change',.true.)
+                        !call writematrix(SE_Change,'SE_Change',.true.)
 !                        if(Var_SE.gt.1.0e4_dp) then
 !                            !The self-energy has diverged
 !                            write(6,*) "DIVERGENT SELF-ENERGY TERM. Skipping frequency."
@@ -5599,7 +5600,7 @@ module LinearResponse
                     -aimag(ni_lr_p),real(ni_lr_h),-aimag(ni_lr_h),SpectralWeight,iters_p,iters_h,   &
                     real(TR_SE),aimag(TR_SE)
 
-                call writematrixcomp(SelfEnergy_Imp,'Self Energy',.true.)
+                call writematrix(SelfEnergy_Imp,'Self Energy',.true.)
                 if(.not.tSCFFailed) then
                     Prev_SE_Saved(:,:) = SelfEnergy_Imp(:,:)    !Save the self-energy contribution from the previous iteration
                 else
@@ -5741,10 +5742,10 @@ module LinearResponse
         call GenDets(Elec,EmbSize,.true.,.true.,.true.) 
         write(6,*) "Number of determinants in {N,N+1,N-1} FCI space: ",ECoupledSpace
 
-        !if(allocated(Nm1BitList)) call writevectorint(Nm1BitList,'Nm1BitList')
-        !if(allocated(Nm1bBitList)) call writevectorint(Nm1bBitList,'Nm1bBitList')
-        !if(allocated(Np1BitList)) call writevectorint(Np1BitList,'Np1BitList')
-        !if(allocated(Np1bBitList)) call writevectorint(Np1bBitList,'Np1bBitList')
+        !if(allocated(Nm1BitList)) call writevector(Nm1BitList,'Nm1BitList')
+        !if(allocated(Nm1bBitList)) call writevector(Nm1bBitList,'Nm1bBitList')
+        !if(allocated(Np1BitList)) call writevector(Np1BitList,'Np1BitList')
+        !if(allocated(Np1bBitList)) call writevector(Np1bBitList,'Np1bBitList')
 
         !Construct FCI hamiltonians for the N, N-1_alpha, N-1_beta, N+1_alpha and N+1_beta spaces
         !N electron
@@ -6024,7 +6025,7 @@ module LinearResponse
             !First, find the non-interacting solution expressed in the schmidt basis
             call FindSchmidtPert(.false.,Omega,ni_lr)
 
-            !call writematrixcomp(SchmidtPert,'SchmidtPert',.true.)
+            !call writematrix(SchmidtPert,'SchmidtPert',.true.)
             !write(6,"(A)",advance='no') "Constructing hessian matrix..."
 
             !First, construct useful intermediates
@@ -6090,7 +6091,7 @@ module LinearResponse
             enddo
             !call R_C_Copy_2D(LinearSystem(1:nFCIDet,1:nFCIDet),NFCIHam(:,:),nFCIDet,nFCIDet)
             !LinearSystem(1:nFCIDet,1:nFCIDet) = NFCIHam(:,:)
-            !call writematrixcomp(LinearSystem(1:nFCIDet,1:nFCIDet),'N-electron hamil',.true.)
+            !call writematrix(LinearSystem(1:nFCIDet,1:nFCIDet),'N-electron hamil',.true.)
 
             !****************************************************************************
             !*********    CORE-VIRTUAL EXCITATION BLOCK *********************************
@@ -6653,12 +6654,12 @@ module LinearResponse
                 allocate(OrthogHam(nSpan,nSpan))
                 deallocate(tempc)
                 allocate(tempc(nLinearSystem,nSpan))
-                !call writematrixcomp(CanTrans,'CanTrans',.true.)
+                !call writematrix(CanTrans,'CanTrans',.true.)
                 call ZGEMM('N','N',nLinearSystem,nSpan,nLinearSystem,dcmplx(1.0_dp,0.0_dp),    &
                     LinearSystem,nLinearSystem,CanTrans,nLinearSystem,dcmplx(0.0_dp,0.0_dp),tempc,nLinearSystem)
                 call ZGEMM('C','N',nSpan,nSpan,nLinearSystem,dcmplx(1.0_dp,0.0_dp),    &
                     CanTrans,nLinearSystem,tempc,nLinearSystem,dcmplx(0.0_dp,0.0_dp),OrthogHam,nSpan)
-                !call writematrixcomp(OrthogHam,'OrthogHam',.true.)
+                !call writematrix(OrthogHam,'OrthogHam',.true.)
 
                 !Rediagonalize this new hamiltonian
                 allocate(Work(max(1,3*nSpan-2)))
@@ -6822,8 +6823,8 @@ module LinearResponse
                 allocate(temp_vecc(nLinearSystem))
                 call ApplyDensityPert_EC(Psi_0,temp_vecc,nLinearSystem)
             endif
-            !call writevectorcomp(Psi_0,'Psi_0')
-            !call writevectorcomp(temp_vecc,'V|0>')
+            !call writevector(Psi_0,'Psi_0')
+            !call writevector(temp_vecc,'V|0>')
 
             !Now, calculate -QV|0> and put into VGS
             if(tOrthogBasis) then
@@ -9967,8 +9968,8 @@ module LinearResponse
             Trans_V0(:) = V0(:)
         else
 
-!            call writevectorint(zDirMV_Mat_cmprs_inds,'zDirMV_Mat_cmprs_inds')
-!            call writevectorcomp(zDirMV_Mat_cmprs,'zDirMV_Mat_cmprs')
+!            call writevector(zDirMV_Mat_cmprs_inds,'zDirMV_Mat_cmprs_inds')
+!            call writevector(zDirMV_Mat_cmprs,'zDirMV_Mat_cmprs')
 
 !            Trans_V0(:) = V0(:)
 !            call ZGEMV('C',n,n,zone,zDirMV_Mat,n,V0,1,-dconjg(zShift),Trans_V0,1)
@@ -10217,7 +10218,7 @@ module LinearResponse
 !                if(i.eq.j) cycle
 !                if(abs(dconjg(SE(i,j))-SE(j,i)).gt.1.0e-6_dp) then
 !                    write(6,*) "Losing off-diagonal hermiticity of the self-energy"
-!                    call writematrixcomp(SelfEnergy_Imp,'Self Energy',.true.)
+!                    call writematrix(SelfEnergy_Imp,'Self Energy',.true.)
 !                endif
 !            enddo
 !        enddo
@@ -10270,7 +10271,7 @@ module LinearResponse
 !                !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
 !                !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
 !!                call Order_zgeev_vecs(W_Vals,LVec,RVec)
-!                !call writevectorcomp(W_Vals,'Eigenvalues ordered')
+!                !call writevector(W_Vals,'Eigenvalues ordered')
 !                !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
 !!                call Orthonorm_zgeev_vecs(SS_Period,W_Vals,LVec,RVec)
 !
@@ -10317,7 +10318,7 @@ module LinearResponse
 !        !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
 !        !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
 !        call Order_zgeev_vecs(EVals_R,LVec_R,RVec_R)
-!        !call writevectorcomp(W_Vals,'Eigenvalues ordered')
+!        !call writevector(W_Vals,'Eigenvalues ordered')
 !        !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
 !        call Orthonorm_zgeev_vecs(nSites,EVals_R,LVec_R,RVec_R)
 !        
@@ -10477,7 +10478,7 @@ module LinearResponse
                 if(i.eq.j) cycle
                 if(abs(dconjg(SE(i,j))-SE(j,i)).gt.1.0e-6_dp) then
                     write(6,*) "Losing off-diagonal hermiticity of the self-energy"
-                    call writematrixcomp(SelfEnergy_Imp,'Self Energy',.true.)
+                    call writematrix(SelfEnergy_Imp,'Self Energy',.true.)
                 endif
             enddo
         enddo
@@ -10558,13 +10559,13 @@ module LinearResponse
 !        call ZGEMM('N','C',nSites,nSites,nSites,zone,mat,nSites,LVec_R,nSites,zzero,mat2,nSites)
 !        call ZGEMM('N','N',nSites,nSites,nSites,zone,RVec_R,nSites,mat2,nSites,zzero,mat,nSites)
 !
-!        call writematrixcomp(mat,'real space ham 2',.true.)
-!        !call writematrixcomp(NI_LRMat_Cre + NI_LRMat_Ann,'Calc NI GF',.true.)
-!        call writevectorcomp(EVals_R,'EVals_nonhermdiag')
-!        call writevectorcomp(LVec_R(:,1),'LVec(:,1)')
-!        call writevectorcomp(RVec_R(:,1),'RVec(:,1)')
-!        call writevectorcomp(LVec_R(:,2),'LVec(:,2)')
-!        call writevectorcomp(RVec_R(:,2),'RVec(:,2)')
+!        call writematrix(mat,'real space ham 2',.true.)
+!        !call writematrix(NI_LRMat_Cre + NI_LRMat_Ann,'Calc NI GF',.true.)
+!        call writevector(EVals_R,'EVals_nonhermdiag')
+!        call writevector(LVec_R(:,1),'LVec(:,1)')
+!        call writevector(RVec_R(:,1),'RVec(:,1)')
+!        call writevector(LVec_R(:,2),'LVec(:,2)')
+!        call writevector(RVec_R(:,2),'RVec(:,2)')
 
         !Schmidt basis bounds
         nVirt = nSites-nOcc-nImp   
@@ -10697,8 +10698,8 @@ module LinearResponse
 !                do j=1,EmbSize
 !                    !The bath orbitals, and coupling to the impurity site blocks of the one-electron hamiltonain should now agree between FockSchmidt_SE and Emb_h0v_SE surely?
 !                    if(abs(Emb_h0v_SE(j,i)-FockSchmidt_SE(nOcc-nImp+j,nOcc-nImp+i)).gt.1.0e-8_dp) then
-!                        call writematrixcomp(Emb_h0v_SE,'Emb_h0v_SE',.true.)
-!                        call writematrixcomp(FockSchmidt_SE(nOcc-nImp+1:nOcc+nImp,nOcc-nImp+1:nOcc+nImp),   &
+!                        call writematrix(Emb_h0v_SE,'Emb_h0v_SE',.true.)
+!                        call writematrix(FockSchmidt_SE(nOcc-nImp+1:nOcc+nImp,nOcc-nImp+1:nOcc+nImp),   &
 !                            'Fock_SE Embedded system',.true.)
 !                        write(6,*) "The above should be the same in the bath and coupling blocks"
 !                        write(6,*) "j,i: ",j,i,Emb_h0v_SE(j,i),FockSchmidt_SE(nOcc-nImp+j,nOcc-nImp+i), &
@@ -10767,7 +10768,7 @@ module LinearResponse
 !                if(i.eq.j) cycle
 !                if(abs(dconjg(SelfEnergy_Imp(i,j))-SelfEnergy_Imp(j,i)).gt.1.0e-6_dp) then
 !                    write(6,*) "Losing off-diagonal hermiticity of the self-energy"
-!                    call writematrixcomp(SelfEnergy_Imp,'Self Energy',.true.)
+!                    call writematrix(SelfEnergy_Imp,'Self Energy',.true.)
 !                endif
 !            enddo
 !        enddo
@@ -10801,7 +10802,7 @@ module LinearResponse
         !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
         !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
         call Order_zgeev_vecs(W_Vals,LVec,RVec)
-        !call writevectorcomp(W_Vals,'Eigenvalues ordered')
+        !call writevector(W_Vals,'Eigenvalues ordered')
         !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
         call Orthonorm_zgeev_vecs(nSites,W_Vals,LVec,RVec)
 
@@ -10809,8 +10810,8 @@ module LinearResponse
             !*** TEST ***
             allocate(temp(nSites,nSites))
             allocate(temp2(nSites,nSites))
-            !call writematrixcomp(SelfEnergy_Imp,'SelfEnergy',.true.)
-            !call writevectorcomp(W_Vals,'Eigenvalues')
+            !call writematrix(SelfEnergy_Imp,'SelfEnergy',.true.)
+            !call writevector(W_Vals,'Eigenvalues')
 !            AO_OneE_Ham(:,:) = zzero
 !            call add_localpot_comp(h0v,AO_OneE_Ham,SelfEnergy_Imp,tAdd=.false.)
             AO_OneE_Ham(:,:) = h0v_SE(:,:)
@@ -10861,11 +10862,11 @@ module LinearResponse
                 enddo
             enddo
 
-    !        call writevectorcomp(W_Vals,'Eigenvalues ordered and orthonormed')
-            !call writematrixcomp(AO_OneE_Ham,'h0v',.false.)
+    !        call writevector(W_Vals,'Eigenvalues ordered and orthonormed')
+            !call writematrix(AO_OneE_Ham,'h0v',.false.)
             call zGEMM('C','N',nSites,nSites,nSites,zone,LVec,nSites,AO_OneE_Ham,nSites,zzero,temp,nSites)
             call zGEMM('N','N',nSites,nSites,nSites,zone,temp,nSites,RVec,nSites,zzero,temp2,nSites)
-    !        call writematrixcomp(temp2,'L* H R ordered and orthonormed',.false.)
+    !        call writematrix(temp2,'L* H R ordered and orthonormed',.false.)
             do i = 1,nSites
                 do j = 1,nSites
                     if((i.ne.j).and.abs(temp2(j,i)).gt.1.0e-9_dp) then
@@ -10873,7 +10874,7 @@ module LinearResponse
                         call stop_all(t_r,'L* H R does not reproduce diagonal matrix')
                     elseif((i.eq.j).and.(abs(temp2(j,i)-W_Vals(j))).gt.1.0e-9_dp) then
                         write(6,*) "i,j: ",i,j,temp2(j,i),W_Vals(j),abs(temp2(j,i)-W_Vals(j))
-                        call writevectorcomp(W_Vals,'Ordered eigenvalues')
+                        call writevector(W_Vals,'Ordered eigenvalues')
                         call stop_all(t_r,'L* H R does not reproduce eigenvalues')
                     endif
                 enddo
@@ -10885,8 +10886,8 @@ module LinearResponse
         NI_LRMat_Cre(:,:) = zzero
         NI_LRMat_Ann(:,:) = zzero 
 
-!        call writevectorcomp(W_Vals,'HF energies')
-!        call writematrixcomp(RVec,'Orbitals',.false.)
+!        call writevector(W_Vals,'HF energies')
+!        call writematrix(RVec,'Orbitals',.false.)
         
         !Schmidt basis bounds
         nVirt = nSites-nOcc-nImp   
@@ -10907,7 +10908,7 @@ module LinearResponse
         HFPertBasis_Ann_Ket(:,:) = zzero
         HFPertBasis_Cre_Ket(:,:) = zzero
             
-        !call writematrixcomp(RVec(1:nImp,1:nSites),'RVec(1:nImp,1:nOcc) - LR',.true.)
+        !call writematrix(RVec(1:nImp,1:nSites),'RVec(1:nImp,1:nOcc) - LR',.true.)
         !Now, form the non-interacting greens functions (but with u *and* self-energy)
         do pertsite = 1,nImp
             !Form the set of non-interacting first order wavefunctions from the new one-electron h for both Bra and Ket versions
@@ -11040,8 +11041,8 @@ module LinearResponse
                 do j=1,EmbSize
                     !The bath orbitals, and coupling to the impurity site blocks of the one-electron hamiltonain should now agree between FockSchmidt_SE and Emb_h0v_SE surely?
                     if(abs(Emb_h0v_SE(j,i)-FockSchmidt_SE(nOcc-nImp+j,nOcc-nImp+i)).gt.1.0e-8_dp) then
-                        call writematrixcomp(Emb_h0v_SE,'Emb_h0v_SE',.true.)
-                        call writematrixcomp(FockSchmidt_SE(nOcc-nImp+1:nOcc+nImp,nOcc-nImp+1:nOcc+nImp),   &
+                        call writematrix(Emb_h0v_SE,'Emb_h0v_SE',.true.)
+                        call writematrix(FockSchmidt_SE(nOcc-nImp+1:nOcc+nImp,nOcc-nImp+1:nOcc+nImp),   &
                             'Fock_SE Embedded system',.true.)
                         write(6,*) "The above should be the same in the bath and coupling blocks"
                         write(6,*) "j,i: ",j,i,Emb_h0v_SE(j,i),FockSchmidt_SE(nOcc-nImp+j,nOcc-nImp+i), &
@@ -11079,8 +11080,8 @@ module LinearResponse
         deallocate(FullSchmidtTrans_C,AO_OneE_Ham,W_Vals,HFPertBasis_Ann_Bra,HFPertBasis_Cre_Bra)
         deallocate(HFPertBasis_Ann_Ket,HFPertBasis_Cre_Ket,LVec,RVec)
 
-        !call writevectorcomp(SchmidtPertGF_Cre_Ket(:,1),'SchmidtPertGF_Cre')
-        !call writevectorcomp(SchmidtPertGF_Ann_Ket(:,1),'SchmidtPertGF_Ann')
+        !call writevector(SchmidtPertGF_Cre_Ket(:,1),'SchmidtPertGF_Cre')
+        !call writevector(SchmidtPertGF_Ann_Ket(:,1),'SchmidtPertGF_Ann')
 
     end subroutine FindNI_Charged
 
@@ -11144,7 +11145,7 @@ module LinearResponse
             enddo
         endif
 
-!        call writevectorcomp(HFPertBasis_Cre,'HFPertBasis_Cre')
+!        call writevector(HFPertBasis_Cre,'HFPertBasis_Cre')
         SchmidtPertGF_Cre_Ket(:,1) = zzero 
         SchmidtPertGF_Ann_Ket(:,1) = zzero 
 
@@ -11176,8 +11177,8 @@ module LinearResponse
         SchmidtPertGF_Cre_Bra(:,:) = dconjg(SchmidtPertGF_Cre_Ket(:,:))
         SchmidtPertGF_Ann_Bra(:,:) = dconjg(SchmidtPertGF_Ann_Ket(:,:))
 
-!        call writevectorcomp(SchmidtPertGF_Ann_Ket(:,1),'SchmidtPertGF_Ann_Ket')
-!        call writevectorcomp(SchmidtPertGF_Ann_Bra(:,1),'SchmidtPertGF_Ann_Bra')
+!        call writevector(SchmidtPertGF_Ann_Ket(:,1),'SchmidtPertGF_Ann_Ket')
+!        call writevector(SchmidtPertGF_Ann_Bra(:,1),'SchmidtPertGF_Ann_Bra')
         deallocate(HFPertBasis_Ann,HFPertBasis_Cre)
 
     end subroutine FindSchmidtPert_Charged
@@ -11226,7 +11227,7 @@ module LinearResponse
         enddo
         ni_lr = ni_lr * 2.0_dp
 
-        !call writematrixcomp(HFPertBasis,'Perturbation in HF basis',.true.)
+        !call writematrix(HFPertBasis,'Perturbation in HF basis',.true.)
         !write(6,*) "Transforming non-interacting response operator into full schmidt basis..."
 
         allocate(temp(nSites,nSites))
@@ -11262,7 +11263,7 @@ module LinearResponse
 
         !SchmidtPert is now the perturbation in the schmidt basis
         !call writematrix(SchmidtPert,'Perturbation in schmidt basis',.true.)
-        !call writematrixcomp(SchmidtPert,'Perturbation in schmidt basis',.true.)
+        !call writematrix(SchmidtPert,'Perturbation in schmidt basis',.true.)
         !call stop_all('sdg','sdf')
 
     end subroutine FindSchmidtPert

@@ -2,7 +2,7 @@ module solvers
     use const
     use errors, only: stop_all
     use globals
-    use mat_tools, only: WriteVector,WriteMatrix,writematrixcomp
+    use writedata
     implicit none
 
     contains
@@ -1316,7 +1316,7 @@ module solvers
 !        endif
         if(tWriteOut) then
             if(tComp_) then
-                call writematrixcomp(tmat_comp,'tmat_comp',.true.)
+                call writematrix(tmat_comp,'tmat_comp',.true.)
             else
                 call writematrix(tmat,'tmat',.true.)
             endif

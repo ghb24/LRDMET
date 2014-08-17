@@ -2,7 +2,8 @@ module SingRefLR
     use const
     use timing
     use errors, only: stop_all,warning
-    use mat_tools, only: WriteVector,WriteMatrix,WriteVectorInt,WriteMatrixComp,WriteVectorComp,znrm2
+    use mat_tools, only: znrm2
+    use writedata
     use globals
 
     contains

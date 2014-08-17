@@ -2,6 +2,8 @@ module readinput
     use input
     use const
     use globals
+    use LatticesData, only: CellShape
+    use errors, only: stop_all,warning
     implicit none
 
     contains
@@ -26,7 +28,7 @@ module readinput
         StartU = 0.0_dp
         EndU = 4.1_dp
         UStep = 1.0_dp
-        tTiltedLattice = .true.
+        CellShape = 0
         tPeriodic = .false.
         tAntiPeriodic = .false. 
         iMaxIterDMET = 150
@@ -260,8 +262,8 @@ module readinput
                         call stop_all(t_r,'Can only deal with lattice dimensions =< 2')
                     endif
                 endif
-            case("NOTILT")
-                tTiltedLattice = .false.
+            case("CELLSHAPE")
+                call readi(CellShape)
             case("UHF")
                 tUHF = .true.
             case("U_VALS")
@@ -878,8 +880,8 @@ module readinput
         if(tDiag_KSpace.and.tReadSystem) then
             call stop_all(t_r,'Cannot work in k-space if reading in the system')
         endif
-        if(tDiag_KSpace.and.(LatticeDim.eq.2).and.tTiltedLattice) then
-            call stop_all(t_r,'Cannot currently do k-space diagonalizations for 2D tilted lattices. Fix me!')
+        if(tDiag_KSpace.and.(LatticeDim.eq.2).and.(CellShape.eq.1)) then
+            call stop_all(t_r,'Cannot currently do k-space diagonalizations for CellShape = 1.')
         endif
         if(tSC_LR.and.(.not.tRealSpaceSC).and.(iNonLocBlocks.ne.0)) then
             call stop_all(t_r,'Off-diagonal lattice coupling length specified, '  &
@@ -917,6 +919,9 @@ module readinput
         endif
         if(tSC_LR.and.tRemakeStaticBath.and.(.not.tLR_ReoptGS)) then
             call stop_all(t_r,'If remaking static bath space, should really reoptimize GS too')
+        endif
+        if((LatticeDim.eq.2).and.(CellShape.eq.0)) then
+            call stop_all(t_r,'No Unit Cell shape specified for 2D square lattice')
         endif
 
     end subroutine check_input

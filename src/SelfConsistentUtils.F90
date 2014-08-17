@@ -4,10 +4,11 @@ module SelfConsistentUtils
     use Globals
     use utils, only: get_free_unit,append_ext
     use SC_Data
-    use mat_tools, only: MakeBlockHermitian,writematrixcomp,writevector
+    use mat_tools, only: MakeBlockHermitian
     use mat_tools, only: Add_Nonlocal_comp_inplace,var_to_couplingind
     use matrixops, only: mat_inv
     use LRSolvers, only: GetNextkval
+    use writedata
     implicit none
 
     contains
@@ -1457,7 +1458,7 @@ module SelfConsistentUtils
                 !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
                 !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
                 call Order_zgeev_vecs(W_Vals,LVec,RVec)
-                !call writevectorcomp(W_Vals,'Eigenvalues ordered')
+                !call writevector(W_Vals,'Eigenvalues ordered')
                 !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
                 call Orthonorm_zgeev_vecs(nImp,W_Vals,LVec,RVec)
                 !Calculate greens function for this k-vector
@@ -1753,7 +1754,7 @@ module SelfConsistentUtils
                     deallocate(cWork)
 
                     !write(6,*) "For k point: ",k
-                    !call writematrixcomp(KBlocks(:,:,k),'k-space ham',.true.)
+                    !call writematrix(KBlocks(:,:,k),'k-space ham',.true.)
                     !call writevector(Bands_k,'eigenvalues at kpoint')
 
                     !Now pair up the bands in this kblock
@@ -1772,7 +1773,7 @@ module SelfConsistentUtils
                     enddo
                     call ZGEMM('N','N',nImp,nImp,nImp,zone,KBlock,nImp,KBlock2,nImp,zzero,cTemp,nImp)
                     call ZGEMM('N','C',nImp,nImp,nImp,zone,cTemp,nImp,KBlock,nImp,zzero,KBlocks(:,:,k),nImp)
-                    !call writematrixcomp(KBlocks(:,:,k),'new k-space ham',.true.)
+                    !call writematrix(KBlocks(:,:,k),'new k-space ham',.true.)
                     deallocate(rWork)
                 enddo
 !$OMP END PARALLEL DO

@@ -8,6 +8,7 @@ module SelfConsistentLR2
     use SC_Data                  
     use SelfConsistentUtils
     use matrixops, only: mat_inv
+    use writedata
     implicit none
 
     contains
@@ -67,7 +68,7 @@ module SelfConsistentLR2
         allocate(DiffImpCorrFn(nImp,nImp,nFitPoints))
         CorrFn_HL(:,:,:) = zzero
 
-!        call writematrixcomp(h_lat_fit,'Initial real space matrix',.true.)
+!        call writematrix(h_lat_fit,'Initial real space matrix',.true.)
         call CalcLatticeSpectrum(iCorrFnTag,nFitPoints,CorrFn_Fit,GFChemPot,tMatbrAxis=tFitMatAxis, &
             iLatParams=iLatParams,LatParams=LatParams,FreqPoints=FreqPoints)
 
@@ -83,7 +84,7 @@ module SelfConsistentLR2
 
             CorrFn_HL_Old(:,:,:) = CorrFn_HL(:,:,:)
             if(iCorrFnTag.eq.1) then
-!                call writematrixcomp(h_lat_fit,'real space matrix sent to LR',.true.)
+!                call writematrix(h_lat_fit,'real space matrix sent to LR',.true.)
                 call SchmidtGF_FromLat(CorrFn_HL,GFChemPot,nFitPoints,tFitMatAxis,  &
                     h_lat_fit,FreqPoints)
 !                    h_lat_fit,FreqPoints,Lat_G_Mat=Debug_Lat_CorrFn_Fit)
@@ -328,8 +329,8 @@ module SelfConsistentLR2
 !        allocate(EVecs(nImp,nImp,nKPnts))
 !        allocate(EVals(nSites))
 !        call KBlocks_to_diag(KBlocks,EVecs,EVals)
-!        call writematrixcomp(hamtmp,'real space ham',.true.)
-!        call writevectorcomp(EVals,'EVals')
+!        call writematrix(hamtmp,'real space ham',.true.)
+!        call writevector(EVals,'EVals')
 !        deallocate(EVecs,EVals)
 !        hamtmp = zzero
 !        do i = 1,nKPnts
@@ -347,7 +348,7 @@ module SelfConsistentLR2
 
 !        do i = 1,nKPnts
 !            write(6,*) "KBlock: ",i
-!            call writematrixcomp(KBlocks(:,:,i),'k-ham',.true.)
+!            call writematrix(KBlocks(:,:,i),'k-ham',.true.)
 !        enddo
 !
 !        allocate(EVecs(nImp,nImp,nKPnts))
@@ -402,7 +403,7 @@ module SelfConsistentLR2
                     enddo
                     call mat_inv(InvMat,InvMat2,nImp)
                 
-!                    call writematrixcomp(InvMat2,'Inverse matrix from mat_inv',.true.)
+!                    call writematrix(InvMat2,'Inverse matrix from mat_inv',.true.)
 !                    write(6,"(A,I6,A,G25.10)") "For kpoint: ",k," (w-h)^-1 Off diagonal hermiticity: ",abs(InvMat2(1,2)-dconjg(InvMat2(2,1)))
 !                    do ii = 1,nImp
 !                        do jj = 1,nImp
@@ -410,8 +411,8 @@ module SelfConsistentLR2
 !                                cycle
 !                            else
 !                                if(abs(aimag(InvMat2(ii,jj))+aimag(InvMat2(jj,ii))).gt.1.0e-6_dp) then
-!                                    call writematrixcomp(InvMat,'Mat',.true.)
-!                                    call writematrixcomp(InvMat2,'InvMat',.true.)
+!                                    call writematrix(InvMat,'Mat',.true.)
+!                                    call writematrix(InvMat2,'InvMat',.true.)
 !                                    write(6,*) "Omega: ",Omega
 !                                    write(6,*) "k: ",k
 !                                    write(6,*) "Error is: ",abs(aimag(InvMat2(ii,jj))+aimag(InvMat2(jj,ii)))
@@ -1349,7 +1350,7 @@ module SelfConsistentLR2
                 enddo
 !                write(6,*) "imp: ",j
 !                write(6,*) "CoupParam: ",i
-!                call writematrixcomptoreal(ham_temp,'Deriv of B',.true.)
+!                call writematrixtoreal(ham_temp,'Deriv of B',.true.)
 
                 !Right, now we can get the full derivative of the inverse of B (i.e. the greens function wrt changing the coefficients).
                 !This currently does not use/require any periodicity. However, the matrix inverse could be improved with periodicity.

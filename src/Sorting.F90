@@ -937,8 +937,8 @@ module sort_mod
                 LVec(:,R) = LVec(:,R) / dconjg(norm)
             enddo
 
-            !call writematrixcomp(LVec(:,StartingInd:i),'LVecs',.true.)
-            !call writematrixcomp(RVec(:,StartingInd:i),'RVecs',.true.)
+            !call writematrix(LVec(:,StartingInd:i),'LVecs',.true.)
+            !call writematrix(RVec(:,StartingInd:i),'RVecs',.true.)
 
     !        !The degenerate set goes from StartingInd to i
     !        !Orthogonalize the R vectors against the L vectors

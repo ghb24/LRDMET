@@ -3,7 +3,6 @@ module LRSolvers
     use globals
     use errors, only: stop_all,warning
     use LR_Data
-!    use mat_tools, only: writevector,writematrixcomp
 !$  use omp_lib
     implicit none
     !Parameters for matrix-vector multiplications within iterative solvers
@@ -342,7 +341,7 @@ module LRSolvers
 !            enddo
 
             !write(6,*) "LHS hermitian"
-!            call writematrixcomp(TempH,'Hessian (wo broadening)',.true.) 
+!            call writematrix(TempH,'Hessian (wo broadening)',.true.) 
             allocate(Work(max(1, 3*nLinearSystem-2)))
             allocate(Real_W(nLinearSystem))
             Real_W(:) = zero
@@ -360,7 +359,7 @@ module LRSolvers
 
             !Eigenvalues of Hessian at this frequency:
 !            call writevector(Real_W,'Hessian eigenvalues')
-!            call writematrixcomp(TempH,'Hessian eigenvectors',.true.)
+!            call writematrix(TempH,'Hessian eigenvectors',.true.)
 
 
             !Now, find inverse in eigenbasis (adding back in the broadening)

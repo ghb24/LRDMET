@@ -4,6 +4,8 @@ module mat_tools
     use errors, only: stop_all, warning
     use globals
     use LatticesData
+    use Lattices
+    use writedata
     implicit none
 
     interface DiagOneEOp
@@ -320,164 +322,6 @@ module mat_tools
 
     end subroutine Read_TwoBandLatt
 
-    !Permute the ordering of a real matrix in the lattice ordering, such that it turns into a matrix
-    !in the impurity ordering, such that the impurities are defined first.
-    subroutine Mat_to_imp_order(h)
-        implicit none
-        real(dp) , intent(inout) :: h(nSites,nSites)
-        real(dp) , allocatable :: temp(:,:)
-        integer :: i
-        
-        allocate(temp(nSites,nSites))
-        temp(:,:) = zero
-
-        !Permute the columns
-        do i = 1,nSites
-            temp(:,i) = h(:,Perm_dir(i))
-        enddo
-
-        h(:,:) = zero
-        !Permute the rows, and overwrite original matrix
-        do i = 1,nSites
-            h(i,:) = temp(Perm_dir(i),:)
-        enddo
-        deallocate(temp)
-
-    end subroutine Mat_to_imp_order
-
-    subroutine Mat_to_lattice_order(h)
-        implicit none
-        real(dp), intent(inout) :: h(nSites,nSites)
-        real(dp) , allocatable :: temp(:,:)
-        integer :: i
-
-        allocate(temp(nSites,nSites))
-        temp(:,:) = zero
-        do i = 1,nSites
-            temp(:,i) = h(:,Perm_indir(i))
-        enddo
-        h(:,:) = 0.0_dp
-        do i = 1,nSites
-            h(i,:) = temp(Perm_indir(i),:)
-        enddo
-        deallocate(temp)
-
-    end subroutine Mat_to_lattice_order
-    
-    subroutine Mat_to_imp_order_comp(h)
-        implicit none
-        complex(dp) , intent(inout) :: h(nSites,nSites)
-        complex(dp) , allocatable :: temp(:,:)
-        integer :: i
-        
-        allocate(temp(nSites,nSites))
-        temp(:,:) = zzero
-        !Permute the columns
-        do i = 1,nSites
-            temp(:,i) = h(:,Perm_dir(i))
-        enddo
-
-        h(:,:) = zzero
-        !Permute the rows, and overwrite original matrix
-        do i = 1,nSites
-            h(i,:) = temp(Perm_dir(i),:)
-        enddo
-        deallocate(temp)
-
-    end subroutine Mat_to_imp_order_comp
-
-    subroutine Mat_to_lattice_order_comp(h)
-        implicit none
-        complex(dp), intent(inout) :: h(nSites,nSites)
-        complex(dp) , allocatable :: temp(:,:)
-        integer :: i
-
-        allocate(temp(nSites,nSites))
-        temp(:,:) = zzero
-        do i = 1,nSites
-            temp(:,i) = h(:,Perm_indir(i))
-        enddo
-        h(:,:) = zzero
-        do i = 1,nSites
-            h(i,:) = temp(Perm_indir(i),:)
-        enddo
-        deallocate(temp)
-
-    end subroutine Mat_to_lattice_order_comp
-
-    !Care needed with these functions. Python 'floors' the result, whereas fortran will truncate towards zero. Therefore
-    !the results will be the same when x .ge. y, but not otherwise.
-    !Also, the modulo function in python always returns the same sign as the divisor, and also when dividing a negative number also truncates to -inf.
-    !See http://stackoverflow.com/questions/1907565/c-python-different-behaviour-of-the-modulo-operation
-
-    !Function to return the same value as the python modulo function
-    !Will be the same if both arguments are positive
-    elemental function py_mod(n,M) result(res)
-        implicit none
-        integer, intent(in) :: n,M
-        integer :: res
-        res = mod(mod(n,M) + M,M)
-    end function py_mod
-
-    pure subroutine xy2ij(x,y,i,j)
-        implicit none
-        integer, intent(in) :: x,y
-        integer, intent(out) :: i,j
-
-        if(x.ge.y) then
-            i = (x-y)/2
-        else
-            if(mod(x-y,2).eq.0) then
-                i = (x-y)/2
-            else
-                i = ( (x-y)/2 ) - 1
-            endif
-        endif
-        j = x+y
-
-    end subroutine xy2ij
-                
-    pure subroutine ij2xy(i,j,x,y)
-        implicit none
-        integer, intent(in) :: i,j
-        integer, intent(out) :: x,y
-
-        if(j.ge.0) then
-            x = i + (j/2) + py_mod(j,2)
-            y = (j/2) - i
-        else
-            if(mod(j,2).eq.0) then
-                x = i + (j/2)
-                y = (j/2) - i
-            else
-                x = i + (j/2) - 1 + py_mod(j,2)
-                y = (j/2) - i
-            endif
-        endif
-
-    end subroutine ij2xy
-
-    pure subroutine ij2site(i,j,site)
-        implicit none
-        integer , intent(in) :: i,j
-        integer , intent(out) :: site
-
-        site = py_mod(i,TDLat_Ni) + TDLat_Ni*py_mod(j,TDLat_Nj)
-    end subroutine ij2site
-    pure subroutine site2ij(site,i,j)
-        implicit none
-        integer , intent(in) :: site
-        integer , intent(out) :: i,j
-
-        i = py_mod(site,TDLat_Ni)
-        j = site/TDLat_Ni
-        if(site.lt.0) then 
-            if(mod(site,TDLat_Ni).ne.0) then
-                j = site/TDLat_Ni - 1
-            endif
-        endif
-    end subroutine site2ij
-    
     !Diagonalizes the core hamiltonian, and stores the allowed CS occupations in terms of
     !number of fully occupied sites.
     subroutine find_occs()
@@ -590,384 +434,6 @@ module mat_tools
         write(6,"(A,I6,A,I6,A)") "Connections of impurity sites via t: ",nHoppingsImp," within imp, ",nHoppingsEnv," to env"
 
     end subroutine find_occs
-
-    !Add the local potential striped across the core hamiltonian 
-    !(only possible with translational invariance)
-    !If tAdd, then the correlation potential is added to the core potential, otherwise it is subtracted
-    subroutine add_localpot(core,core_v,CorrPot,tAdd,core_b,core_v_b,CorrPot_b)
-        implicit none
-        real(dp) , intent(in) :: core(nSites,nSites)
-        real(dp) , intent(out) :: core_v(nSites,nSites)
-        real(dp) , intent(in) :: CorrPot(nImp,nImp)
-        logical , intent(in), optional :: tAdd
-        real(dp) , intent(in), optional :: core_b(nSites,nSites)
-        real(dp) , intent(out), optional :: core_v_b(nSites,nSites)
-        real(dp) , intent(in), optional :: CorrPot_b(nImp,nImp)
-        real(dp), allocatable :: temp(:,:)
-        integer :: i,j,k,a,b,indi,indj
-        logical :: tAdd_
-        character(len=*) , parameter :: t_r='add_localpot'
-
-        if(tReadSystem) then
-            return
-        endif
-            
-        core_v(:,:) = 0.0_dp
-        if(tUHF) then
-            if(.not.(present(core_b).and.present(core_v_b).and.present(CorrPot_b))) then
-                call stop_all(t_r,'If using UHF, should be passing these through')
-            endif
-        endif
-
-        if(present(tAdd)) then
-            tAdd_ = tAdd
-        else
-            tAdd_ = .true.
-        endif
-
-        if(LatticeDim.eq.1) then
-            !Construct new hamiltonian which is block diagonal in the local potential
-            do k=0,(nSites/nImp)-1
-                do i=1,nImp
-                    do j=1,nImp
-                        if(tAdd_) then
-                            core_v((k*nImp)+i,(k*nImp)+j)=CorrPot(i,j)
-                        else
-                            core_v((k*nImp)+i,(k*nImp)+j)=-CorrPot(i,j)
-                        endif
-                    enddo
-                enddo
-            enddo
-
-            !Add this to the original mean-field hamiltonian
-            do i=1,nSites
-                do j=1,nSites
-                    core_v(i,j) = core_v(i,j) + core(i,j)
-                enddo
-            enddo
-
-            if(tUHF) then
-                do k=0,(nSites/nImp)-1
-                    do i=1,nImp
-                        do j=1,nImp
-                            if(tAdd_) then
-                                core_v_b((k*nImp)+i,(k*nImp)+j)=CorrPot_b(i,j)
-                            else
-                                core_v_b((k*nImp)+i,(k*nImp)+j)=-CorrPot_b(i,j)
-                            endif
-                        enddo
-                    enddo
-                enddo
-
-                !Add this to the original mean-field hamiltonian
-                do i=1,nSites
-                    do j=1,nSites
-                        core_v_b(i,j) = core_v_b(i,j) + core_b(i,j)
-                    enddo
-                enddo
-            endif
-
-        elseif(LatticeDim.eq.2) then
-            !2D lattices.
-
-            if(CellShape.eq.1) then
-               
-                allocate(temp(nSites,nSites))
-                temp(:,:) = core(:,:)
-                call Mat_to_lattice_order(temp)
-                
-                !Add correlation potential to Core_v
-                Core_v(:,:) = temp(:,:)
-
-                !Tile through space
-                do i = 1,nSites
-                    do j = 1,nSites
-                        !TD_Imp_Lat gives the element of the v_loc which should be added here
-                        !(Row major)
-                        if(TD_Imp_Lat(j,i).ne.0) then
-
-                            !Convert these into the actual values of each dimension
-                            b = mod(TD_Imp_Lat(j,i)-1,nImp) + 1
-                            a = ((TD_Imp_Lat(j,i)-1)/nImp) + 1
-                            !write(6,*) TD_Imp_Lat(j,i),
-                            !write(6,*) "a: ",a
-                            !write(6,*) "b: ",b
-
-                            if(tAdd_) then
-                                Core_v(j,i) = Core_v(j,i) + CorrPot(a,b)*TD_Imp_Phase(j,i)
-                            else
-                                Core_v(j,i) = Core_v(j,i) - CorrPot(a,b)*TD_Imp_Phase(j,i)
-                            endif
-                        endif
-                    enddo
-                enddo
-
-                !Transform both core_v and core back to the impurity ordering
-                call Mat_to_imp_order(Core_v)
-
-                if(tUHF) then
-                    temp(:,:) = core_b(:,:)
-                    call Mat_to_lattice_order(temp)
-                    
-                    !Add correlation potential to Core_v
-                    Core_v_b(:,:) = temp(:,:)
-
-                    !Tile through space
-                    do i = 1,nSites
-                        do j = 1,nSites
-                            !TD_Imp_Lat gives the element of the v_loc which should be added here
-                            !(Row major)
-                            if(TD_Imp_Lat(j,i).ne.0) then
-                                !Convert these into the actual values of each dimension
-                                b = mod(TD_Imp_Lat(j,i)-1,nImp) + 1
-                                a = ((TD_Imp_Lat(j,i)-1)/nImp) + 1
-                                !write(6,*) TD_Imp_Lat(j,i),
-                                !write(6,*) "a: ",a
-                                !write(6,*) "b: ",b
-
-                                if(tAdd_) then
-                                    Core_v_b(j,i) = Core_v_b(j,i) + CorrPot_b(a,b)*TD_Imp_Phase(j,i)
-                                else
-                                    Core_v_b(j,i) = Core_v_b(j,i) - CorrPot_b(a,b)*TD_Imp_Phase(j,i)
-                                endif
-                            endif
-                        enddo
-                    enddo
-
-                    !Transform both core_v and core back to the impurity ordering
-                    call Mat_to_imp_order(Core_v_b)
-
-                endif
-
-                deallocate(temp)
-            else
-                !Square lattice
-
-                core_v(:,:) = core(:,:)
-                if(tUHF) core_v_b(:,:) = core_b(:,:)
-
-                do k = 1,iImpRepeats
-                    do i = 1,nImp
-                        Indi = StripedImpIndices(i,k)
-                        do j = 1,nImp
-                            Indj = StripedImpIndices(j,k)
-
-                            if(tAdd_) then
-                                Core_v(indj,indi) = Core_v(indj,indi) + CorrPot(j,i)
-                            else
-                                Core_v(indj,indi) = Core_v(indj,indi) - CorrPot(j,i)
-                            endif
-
-                            if(tUHF) then
-                                if(tAdd_) then
-                                    core_v_b(indj,indi) = core_v_b(indj,indi) + CorrPot_b(j,i)
-                                else
-                                    core_v_b(indj,indi) = core_v_b(indj,indi) - CorrPot_b(j,i)
-                                endif
-                            endif
-                        enddo
-                    enddo
-                enddo
-
-            endif
-        endif
-
-    end subroutine add_localpot
-    
-    
-    !Add a *complex* local potential striped across a *real* hamiltonian 
-    !(only possible with translational invariance)
-    !If tAdd, then the correlation potential is added to the core potential, otherwise it is subtracted
-    subroutine add_localpot_comp_inplace(core_v,CorrPot,tAdd)
-        implicit none
-        complex(dp) , intent(inout) :: core_v(nSites,nSites)
-        complex(dp) , intent(in) :: CorrPot(nImp,nImp)
-        logical , intent(in), optional :: tAdd
-        integer :: i,j,k,a,b,indi,indj
-        logical :: tAdd_
-
-        if(tReadSystem) then
-            return
-        endif
-
-        if(present(tAdd)) then
-            tAdd_ = tAdd
-        else
-            tAdd_ = .true.
-        endif
-
-        if(LatticeDim.eq.1) then
-            !Construct new hamiltonian which is block diagonal in the local potential
-            do k=0,(nSites/nImp)-1
-                do i=1,nImp
-                    do j=1,nImp
-                        if(tAdd_) then
-                            core_v((k*nImp)+i,(k*nImp)+j)=core_v((k*nImp)+i,(k*nImp)+j) + CorrPot(i,j)
-                        else
-                            core_v((k*nImp)+i,(k*nImp)+j)=core_v((k*nImp)+i,(k*nImp)+j) - CorrPot(i,j)
-                        endif
-                    enddo
-                enddo
-            enddo
-        elseif(LatticeDim.eq.2) then
-
-            if(CellShape.eq.1) then
-
-                call Mat_to_lattice_order_comp(core_v)
-
-                do i = 1,nSites
-                    do j = 1,nSites
-                        if(TD_Imp_Lat(j,i).ne.0) then
-                            !Convert these into the actual values of each dimension
-                            b = mod(TD_Imp_Lat(j,i)-1,nImp) + 1
-                            a = ((TD_Imp_Lat(j,i)-1)/nImp) + 1
-                            !write(6,*) TD_Imp_Lat(j,i),
-                            !write(6,*) "a: ",a
-                            !write(6,*) "b: ",b
-
-                            if(tAdd_) then
-                                Core_v(j,i) = Core_v(j,i) + CorrPot(a,b)*TD_Imp_Phase(j,i)
-                            else
-                                Core_v(j,i) = Core_v(j,i) - CorrPot(a,b)*TD_Imp_Phase(j,i)
-                            endif
-                        endif
-                    enddo
-                enddo
-
-                !Transform both core_v and core back to the impurity ordering
-                call Mat_to_imp_order_comp(Core_v)
-            else
-                !Square lattice
-                
-                do k = 1,iImpRepeats
-                    do i = 1,nImp
-                        Indi = StripedImpIndices(i,k)
-                        do j = 1,nImp
-
-                            Indj = StripedImpIndices(j,k)
-
-                            if(tAdd_) then
-                                Core_v(indj,indi) = Core_v(indj,indi) + CorrPot(j,i)
-                            else
-                                Core_v(indj,indi) = Core_v(indj,indi) - CorrPot(j,i)
-                            endif
-
-                        enddo
-                    enddo
-                enddo
-
-
-            endif
-
-        endif
-
-    end subroutine add_localpot_comp_inplace
-
-    !Add a *complex* local potential striped across a *real* hamiltonian 
-    !(only possible with translational invariance)
-    !If tAdd, then the correlation potential is added to the core potential, otherwise it is subtracted
-    subroutine add_localpot_comp(core,core_v,CorrPot,tAdd)
-        implicit none
-        complex(dp) , intent(in) :: core(nSites,nSites)
-        complex(dp) , intent(out) :: core_v(nSites,nSites)
-        complex(dp) , intent(in) :: CorrPot(nImp,nImp)
-        logical , intent(in), optional :: tAdd
-        complex(dp), allocatable :: temp(:,:)
-        integer :: i,j,k,a,b,indi,indj
-        logical :: tAdd_
-
-        if(tReadSystem) then
-!            core_v(:,:) = core_v(:,:)
-            return
-        endif
-
-        if(present(tAdd)) then
-            tAdd_ = tAdd
-        else
-            tAdd_ = .true.
-        endif
-
-        if(LatticeDim.eq.1) then
-            !Construct new hamiltonian which is block diagonal in the local potential
-            core_v = zzero
-            do k=0,(nSites/nImp)-1
-                do i=1,nImp
-                    do j=1,nImp
-                        if(tAdd_) then
-                            core_v((k*nImp)+i,(k*nImp)+j)=CorrPot(i,j)
-                        else
-                            core_v((k*nImp)+i,(k*nImp)+j)=-CorrPot(i,j)
-                        endif
-                    enddo
-                enddo
-            enddo
-
-            !Add this to the original mean-field hamiltonian
-            do i=1,nSites
-                do j=1,nSites
-                    core_v(i,j) = core_v(i,j) + core(i,j)
-                enddo
-            enddo
-        elseif(LatticeDim.eq.2) then
-
-            if(CellShape.eq.1) then
-
-                allocate(temp(nSites,nSites))
-                temp(:,:) = core(:,:)
-                call Mat_to_lattice_order_comp(temp)
-
-                Core_v(:,:) = temp(:,:)
-                !Tile through space
-                do i = 1,nSites
-                    do j = 1,nSites
-                        !TD_Imp_Lat gives the element of the v_loc which should be added here
-                        !(Row major)
-                        if(TD_Imp_Lat(j,i).ne.0) then
-
-                            !Convert these into the actual values of each dimension
-                            b = mod(TD_Imp_Lat(j,i)-1,nImp) + 1
-                            a = ((TD_Imp_Lat(j,i)-1)/nImp) + 1
-                            !write(6,*) TD_Imp_Lat(j,i),
-                            !write(6,*) "a: ",a
-                            !write(6,*) "b: ",b
-
-                            if(tAdd_) then
-                                Core_v(j,i) = Core_v(j,i) + CorrPot(a,b)*TD_Imp_Phase(j,i)
-                            else
-                                Core_v(j,i) = Core_v(j,i) - CorrPot(a,b)*TD_Imp_Phase(j,i)
-                            endif
-                        endif
-                    enddo
-                enddo
-
-                !Transform both core_v and core back to the impurity ordering
-                call Mat_to_imp_order_comp(Core_v)
-                deallocate(temp)
-            else
-                !2D Square lattice
-                core_v(:,:) = core(:,:)
-
-                do k = 1,iImpRepeats
-                    do i = 1,nImp
-                        Indi = StripedImpIndices(i,k)
-                        do j = 1,nImp
-                            Indj = StripedImpIndices(j,k)
-
-                            if(tAdd_) then
-                                Core_v(indj,indi) = Core_v(indj,indi) + CorrPot(j,i)
-                            else
-                                Core_v(indj,indi) = Core_v(indj,indi) - CorrPot(j,i)
-                            endif
-
-                        enddo
-                    enddo
-                enddo
-
-
-            endif
-        endif
-
-    end subroutine add_localpot_comp
 
     !Run a full HF, including mean-field on-site repulsion term in the fock matrix
     !These are stored in FullHFOrbs and FullHFEnergies
@@ -1486,7 +952,7 @@ module mat_tools
 
         deallocate(TempHF_Comp)
 
-        if(tWriteOut) call writematrixcomp(HFtoKOrbs,'HFtoKOrbs(k,i)',.false.)
+        if(tWriteOut) call writematrix(HFtoKOrbs,'HFtoKOrbs(k,i)',.false.)
 
     end subroutine ProjectHFontoK
 
@@ -1545,7 +1011,7 @@ module mat_tools
                     write(6,*) k_HFEnergies(ind_1+i)
                 enddo
                 write(6,*) "Eigenvectors: "
-                call writematrixcomp(k_Ham,'Eigenvec',.true.)
+                call writematrix(k_Ham,'Eigenvec',.true.)
             endif
 
             k_vecs(:,ind_1:ind_2) = k_Ham(:,:)
@@ -1574,8 +1040,8 @@ module mat_tools
         if(tWriteOut) then
             call writevector(HFEnergies,'HFEnergies')
             call writevector(k_HFEnergies,'k_HFEnergies')
-            call writevectorint(KVec_EMapping,'kVec_EMapping')
-            call writevectorint(KVec_InvEMap,'kVec_InvEMap')
+            call writevector(KVec_EMapping,'kVec_EMapping')
+            call writevector(KVec_InvEMap,'kVec_InvEMap')
         endif
 
         do i = 1,nSites
@@ -1610,25 +1076,10 @@ module mat_tools
         call ZGEMM('C','N',nSites,nSites,nSites,zone,TempSchmidtBasis,nSites,ztemp2,nSites,zzero,k_HFtoSchmidtTransform,nSites)
         deallocate(ztemp,ztemp2,TempSchmidtBasis)
 
-        if(tWriteOut) call writematrixcomp(k_HFtoSchmidtTransform,'k_HFtoSchmidtTransform',.false.)
+        if(tWriteOut) call writematrix(k_HFtoSchmidtTransform,'k_HFtoSchmidtTransform',.false.)
 
     end subroutine GetKSpaceOrbs
                 
-    !Given the lower triangle, make this matrix hermitian
-    subroutine MakeBlockHermitian(Block,length)
-        implicit none
-        integer, intent(in) :: length
-        complex(dp), intent(inout) :: Block(length,length)
-        integer :: i,j
-
-        do i = 1,nImp
-            do j = i+1,nImp
-                Block(i,j) = dconjg(Block(j,i))
-            enddo
-        enddo
-
-    end subroutine MakeBlockHermitian
-    
     !Add a non-local periodic set of real-space lattice parameters to a complex inplace hamiltonian
     subroutine add_Nonlocal_comp_inplace(ham,NonLocCoup,NonLocCoupLength,tAdd)
         implicit none
@@ -2167,7 +1618,7 @@ module mat_tools
                         write(6,"(2I6,A,2I6)") i,j," -> ",ind_1,ind_2
                         write(6,*) "Phase change: ",phase
                         write(6,*) ham(i,j),phase*ham(ind_1,ind_2)
-                        call writematrixcomp(ham,'real space ham',.true.)
+                        call writematrix(ham,'real space ham',.true.)
                         call stop_all(t_r,'Translational symmetry not maintained in real-space hamiltonian')
                     endif
                 enddo
@@ -2220,7 +1671,7 @@ module mat_tools
                                 write(6,"(2I6,A,2I6)") LatInd_UC,k," -> ",Curr_UC,k_trans
                                 write(6,*) "Phase change: ",PhaseChange
                                 write(6,*) ham(LatInd_UC,k),cmplx(real(PhaseChange,dp),zero)*ham(Curr_UC,k_trans)
-                                call writematrixcomp(ham,'real space ham',.true.)
+                                call writematrix(ham,'real space ham',.true.)
                                 call stop_all(t_r,'Translational symmetry not maintained in real-space hamiltonian')
                             endif
                         enddo
@@ -2422,7 +1873,7 @@ module mat_tools
                         write(6,*) Vals(ind_1+i)
                     enddo
                     write(6,*) "Eigenvectors: "
-                    call writematrixcomp(k_Ham,'Eigenvec',.true.)
+                    call writematrix(k_Ham,'Eigenvec',.true.)
                 endif
 
                 k_vecs(:,ind_1:ind_2) = k_Ham(:,:)
@@ -2439,7 +1890,7 @@ module mat_tools
                 call ZGEMM('N','N',nLat,SS_Period,SS_Period,zone,RtoK_Rot(:,ind_1:ind_2),nLat,  &
                     k_vecs(:,ind_1:ind_2),SS_Period,zzero,r_vecs(:,ind_1:ind_2),nLat)
             enddo
-            if(tWriteOut) call writematrixcomp(r_vecs,'r_vecs',.true.)
+            if(tWriteOut) call writematrix(r_vecs,'r_vecs',.true.)
 
             if(tCheck) then
                 !Do these satisfy the original eigenvalue problem?
@@ -2459,14 +1910,14 @@ module mat_tools
 
 !            write(6,*) "Before sorting..."
 !            call writevector(Vals,'Vals')
-!            call writematrixcomp(r_vecs,'r_vecs',.true.)
+!            call writematrix(r_vecs,'r_vecs',.true.)
             
             !Order the vectors, such that the are in order of increasing eigenvalue
             call sort_d_a_c(Vals,r_vecs,nSites,nSites)
             
             !write(6,*) "After sorting..."
             !call writevector(Vals,'Vals')
-            !call writematrixcomp(r_vecs,'r_vecs',.true.)
+            !call writematrix(r_vecs,'r_vecs',.true.)
             
             if(tCheck) then
                 !Do these satisfy the original eigenvalue problem?
@@ -3095,7 +2546,7 @@ module mat_tools
         lWork = -1
         info = 0
 !        write(6,*) "nVecs: ",nVecs
-!        call writematrixcomp(EigenVecs,'X_Mat',.false.)
+!        call writematrix(EigenVecs,'X_Mat',.false.)
 !        write(6,*) "EValues: ",EValues
         call zheev('V','U',nVecs,EigenVecs,nVecs,EValues,cWork,lWork,Work,info)
         if(info.ne.0) call stop_all(t_r,'Workspace query failed')
@@ -3244,7 +2695,7 @@ module mat_tools
                         write(6,*) Vals(ind_1+i)
                     enddo
                     write(6,*) "Eigenvectors: "
-                    call writematrixcomp(k_Ham,'Eigenvec',.true.)
+                    call writematrix(k_Ham,'Eigenvec',.true.)
                 endif
 
                 k_vecs(:,ind_1:ind_2) = k_Ham(:,:)
@@ -3261,7 +2712,7 @@ module mat_tools
                 call ZGEMM('N','N',nLat,SS_Period,SS_Period,zone,RtoK_Rot(:,ind_1:ind_2),nLat,  &
                     k_vecs(:,ind_1:ind_2),SS_Period,zzero,r_vecs(:,ind_1:ind_2),nLat)
             enddo
-            if(tWriteOut) call writematrixcomp(r_vecs,'r_vecs',.true.)
+            if(tWriteOut) call writematrix(r_vecs,'r_vecs',.true.)
 
             if(tCheck) then
                 !Do these satisfy the original eigenvalue problem?
@@ -3281,7 +2732,7 @@ module mat_tools
 
 !            write(6,*) "Before sorting..."
 !            call writevector(Vals,'Vals')
-!            call writematrixcomp(r_vecs,'r_vecs',.true.)
+!            call writematrix(r_vecs,'r_vecs',.true.)
             
             if(tNetZeroMomDet) then
                 !Order according to energy, *but* keep the kpoint label!
@@ -3500,7 +2951,7 @@ module mat_tools
             
             !write(6,*) "After sorting..."
             !call writevector(Vals,'Vals')
-            !call writematrixcomp(r_vecs,'r_vecs',.true.)
+            !call writematrix(r_vecs,'r_vecs',.true.)
             
             if(tCheck) then
                 !Do these satisfy the original eigenvalue problem?
@@ -3758,7 +3209,7 @@ module mat_tools
         !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
         !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
         call Order_zgeev_vecs(LatVals,LatVecs_L,LatVecs_R)
-        !call writevectorcomp(W_Vals,'Eigenvalues ordered')
+        !call writevector(W_Vals,'Eigenvalues ordered')
         !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
         call Orthonorm_zgeev_vecs(nSites,LatVals,LatVecs_L,LatVecs_R)
 
@@ -3841,7 +3292,7 @@ module mat_tools
                         write(6,*) a,b,KPntHam(a,b),KPntHam(b,a)
                         call writematrix(R_Ham(1:nUnitCell,:),'Coupling in real space',.true.)
                         call writematrix(R_Ham(:,:),'R_Ham',.true.)
-                        call writematrixcomp(KPntHam,'Hamiltonian at kpoint',.true.)
+                        call writematrix(KPntHam,'Hamiltonian at kpoint',.true.)
                         call stop_all(t_r,'k-space operator not hermitian. Does input operator have periodicity')
                     endif
                 enddo
@@ -3897,7 +3348,7 @@ module mat_tools
                     k_end = k*nUnitCell
                     KPntHam(:,:) = k_Ham(k_start:k_end,k_start:k_end)
                     !Hermitian matrix diagonalization
-                    call writematrixcomp(KPntHam,'KPntHam',.true.)
+                    call writematrix(KPntHam,'KPntHam',.true.)
                     call ZHEEV('N','U',nUnitCell,KPntHam,nUnitCell,Vals,cWork,lWork,Work,info)
                     if(info.ne.0) call stop_all(t_r,'Diag Failed')
                     do j = 1,nUnitCell
@@ -3990,7 +3441,7 @@ module mat_tools
         !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
         !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
         call Order_zgeev_vecs(W_Vals,LVec,RVec)
-        !call writevectorcomp(W_Vals,'Eigenvalues ordered')
+        !call writevector(W_Vals,'Eigenvalues ordered')
         !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
         call Orthonorm_zgeev_vecs(nSites,W_Vals,LVec,RVec)
 
@@ -4038,7 +3489,7 @@ module mat_tools
 !        enddo
 !        deallocate(HF_Ann_Ket,HF_Cre_Ket)
 !
-!        call writematrixcomp(se_unpacked,'Delta SE',.true.)
+!        call writematrix(se_unpacked,'Delta SE',.true.)
 !        write(6,*) "Full NI GF: ",NI_GF_Check(:,:)
 !        write(6,*) "mkgf NI GF: ",ni_GFs(:,:)
 
@@ -4227,93 +3678,6 @@ module mat_tools
             enddo
         enddo
     end subroutine FromTriangularPacked
-
-    subroutine WriteMatrixcomp(mat,matname,tOneLine)
-        implicit none
-        complex(dp), intent(in) :: mat(:,:)
-        character(len=*), intent(in) :: matname
-        integer :: i,j
-        logical :: tOneLine
-
-        write(6,*) "Writing out matrix: ",trim(matname)
-        write(6,"(A,I7,A,I7)") "Size: ",size(mat,1)," by ",size(mat,2)
-        do i=1,size(mat,1)
-            do j=1,size(mat,2)
-                if(tOneLine) then
-                    write(6,"(2G18.7)",advance='no') mat(i,j)
-                else
-                    write(6,"(2I6,2G18.7)") i,j,mat(i,j)
-                endif
-            enddo
-            write(6,*)
-        enddo
-    end subroutine WriteMatrixcomp
-
-    subroutine WriteMatrix(mat,matname,tOneLine)
-        implicit none
-        real(dp), intent(in) :: mat(:,:)
-        character(len=*), intent(in) :: matname
-        integer :: i,j
-        logical :: tOneLine
-
-        write(6,*) "Writing out matrix: ",trim(matname)
-        write(6,"(A,I7,A,I7)") "Size: ",size(mat,1)," by ",size(mat,2)
-        do i=1,size(mat,1)
-            do j=1,size(mat,2)
-                if(tOneLine) then
-                    write(6,"(G25.10)",advance='no') mat(i,j)
-                else
-                    write(6,"(2I6,G25.10)") i,j,mat(i,j)
-                endif
-            enddo
-            write(6,*)
-        enddo
-    end subroutine WriteMatrix
-
-    subroutine WriteVector(vec,vecname)
-        implicit none
-        real(dp), intent(in) :: vec(:)
-        character(len=*), intent(in) :: vecname
-        integer :: i
-
-        write(6,*) "Writing out vector: ",trim(vecname)
-        write(6,"(A,I7,A,I7)") "Size: ",size(vec,1)
-        do i=1,size(vec,1)
-!            write(6,"(G25.10)",advance='no') vec(i)
-            write(6,"(G25.10)") vec(i)
-        enddo
-        write(6,*)
-    end subroutine WriteVector
-    
-    subroutine WriteVectorcomp(vec,vecname)
-        implicit none
-        complex(dp), intent(in) :: vec(:)
-        character(len=*), intent(in) :: vecname
-        integer :: i
-
-        write(6,*) "Writing out vector: ",trim(vecname)
-        write(6,"(A,I7,A,I7)") "Size: ",size(vec,1)
-        do i=1,size(vec,1)
-!            write(6,"(G25.10)",advance='no') vec(i)
-            write(6,"(2G25.10)") vec(i)
-        enddo
-        write(6,*)
-    end subroutine WriteVectorcomp
-    
-    subroutine WriteVectorInt(vec,vecname)
-        implicit none
-        integer, intent(in) :: vec(:)
-        character(len=*), intent(in) :: vecname
-        integer :: i
-
-        write(6,*) "Writing out vector: ",trim(vecname)
-        write(6,"(A,I7,A,I7)") "Size: ",size(vec,1)
-        do i=1,size(vec,1)
-!            write(6,"(G25.10)",advance='no') vec(i)
-            write(6,"(I12)") vec(i)
-        enddo
-        write(6,*)
-    end subroutine WriteVectorInt
 
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!

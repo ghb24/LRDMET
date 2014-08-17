@@ -8,6 +8,7 @@ module SelfConsistentLR
     use utils, only: get_free_unit,append_ext_real,append_ext
     use mat_tools, only: AddPeriodicImpCoupling_RealSpace 
     use matrixops, only: mat_inv
+    use writedata
     use SelfConsistentUtils
     implicit none
 
@@ -2579,13 +2580,13 @@ module SelfConsistentLR
 
             !call FindRealSpaceLocalMomGF(nESteps,SE,LocalMomGF)
             !We now have the updated local greens function from the 1-electron hamiltonian
-            !call writevectorcomp(LocalMomGF(1,1,:),'local FT of NI GF')
+            !call writevector(LocalMomGF(1,1,:),'local FT of NI GF')
 
             !Invert the matrix of non-interacting local greens functions.
             !write(6,*) "Inverting Local greens function"
             InvLocalMomGF(:,:,:) = LocalMomGF(:,:,:)
             call InvertLocalNonHermFunc(nESteps,InvLocalMomGF)
-            !call writevectorcomp(InvLocalMomGF(1,1,:),'inverse of local FT of NI GF')
+            !call writevector(InvLocalMomGF(1,1,:),'inverse of local FT of NI GF')
             
             !Save previous Self-energy
             OldSE(:,:,:) = SE(:,:,:)
@@ -2859,13 +2860,13 @@ module SelfConsistentLR
             call FindLocalMomGF(nESteps,SE,LocalMomGF)
             !call FindRealSpaceLocalMomGF(nESteps,SE,LocalMomGF)
             !We now have the updated local greens function from the 1-electron hamiltonian
-            !call writevectorcomp(LocalMomGF(1,1,:),'local FT of NI GF')
+            !call writevector(LocalMomGF(1,1,:),'local FT of NI GF')
 
             !Invert the matrix of non-interacting local greens functions.
             !write(6,*) "Inverting Local greens function"
             InvLocalMomGF(:,:,:) = LocalMomGF(:,:,:)
             call InvertLocalNonHermFunc(nESteps,InvLocalMomGF)
-            !call writevectorcomp(InvLocalMomGF(1,1,:),'inverse of local FT of NI GF')
+            !call writevector(InvLocalMomGF(1,1,:),'inverse of local FT of NI GF')
 
             !Now find hybridization
             !This is given by (omega + mu + idelta - e_0 - SE - InvGF)
@@ -3044,7 +3045,7 @@ module SelfConsistentLR
                 !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
                 !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
                 call Order_zgeev_vecs(W_Vals,LVec,RVec)
-                !call writevectorcomp(W_Vals,'Eigenvalues ordered')
+                !call writevector(W_Vals,'Eigenvalues ordered')
                 !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
                 call Orthonorm_zgeev_vecs(SS_Period,W_Vals,LVec,RVec)
                 !Calculate greens function for this k-vector
@@ -3906,7 +3907,7 @@ module SelfConsistentLR
 !            !k_Ham is the complex, one-electron hamiltonian (with correlation potential) for this k-point
 !
 !            !write(6,*) "For k-point: ",kPnt
-!            !call writematrixcomp(k_Ham,'k-space ham is: ',.false.)
+!            !call writematrix(k_Ham,'k-space ham is: ',.false.)
 !
 !            i = 0
 !            Omega = Start_Omega
@@ -3937,7 +3938,7 @@ module SelfConsistentLR
 !                !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
 !                !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
 !                call Order_zgeev_vecs(W_Vals,LVec,RVec)
-!                !call writevectorcomp(W_Vals,'Eigenvalues ordered')
+!                !call writevector(W_Vals,'Eigenvalues ordered')
 !                !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
 !                call Orthonorm_zgeev_vecs(SS_Period,W_Vals,LVec,RVec)
 !                !Calculate greens function for this k-vector
@@ -3953,7 +3954,7 @@ module SelfConsistentLR
 !                LocalMomGF(:,:,i) = LocalMomGF(:,:,i) + InvMat(:,:)
 !
 !                !write(6,*) "For frequency: ",Omega
-!                !call writematrixcomp(InvMat,'k-space greens function is: ',.false.)
+!                !call writematrix(InvMat,'k-space greens function is: ',.false.)
 !
 !                Omega = Omega + Omega_Step
 !            enddo   !Enddo frequency point i
@@ -4164,7 +4165,7 @@ module SelfConsistentLR
                 !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
                 !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
                 call Order_zgeev_vecs(W_Vals,LVec,RVec)
-                !call writevectorcomp(W_Vals,'Eigenvalues ordered')
+                !call writevector(W_Vals,'Eigenvalues ordered')
                 !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
                 call Orthonorm_zgeev_vecs(nImp,W_Vals,LVec,RVec)
 
@@ -4269,7 +4270,7 @@ module SelfConsistentLR
             !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
             !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
             call Order_zgeev_vecs(W_Vals,LVec,RVec)
-            !call writevectorcomp(W_Vals,'Eigenvalues ordered')
+            !call writevector(W_Vals,'Eigenvalues ordered')
             !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
             call Orthonorm_zgeev_vecs(nSites,W_Vals,LVec,RVec)
 
@@ -4337,7 +4338,7 @@ module SelfConsistentLR
 
             do i = 1,SS_Period
                 if(abs(aimag(k_ham(i,i))).gt.1.0e-7_dp) then
-                    call writematrixcomp(k_Ham,'k_ham',.false.)
+                    call writematrix(k_Ham,'k_ham',.false.)
                     call stop_all(t_r,"Real part of k-transformed hamiltonian diagonal too large")
                 else
                     k_ham(i,i) = dcmplx(real(k_ham(i,i)),zero)
@@ -4349,7 +4350,7 @@ module SelfConsistentLR
                 lWork = -1
                 info = 0 
                 !write(6,*) "KPnt: ",kPnt
-                !call writematrixcomp(k_Ham,'k_ham',.false.)
+                !call writematrix(k_Ham,'k_ham',.false.)
                 call zheev('V','U',SS_Period,k_Ham,SS_Period,EVals(ind_1:ind_2),cWork,lWork,rWork,info)
                 if(info.ne.0) then
                     write(6,*) "INFO = ", info
@@ -4608,13 +4609,13 @@ module SelfConsistentLR
             else
                 call ZGEMM('N','N',nSites,SS_Period,nSites,zone,CompHam,nSites,RtoK_Rot(:,ind_1:ind_2),nSites,zzero,ztemp,nSites)
             endif
-!            call writematrixcomp(RtoK_Rot(:,ind_1:ind_2),'Rotation',.true.)
-!            call writematrixcomp(ztemp,'Intermediate',.true.)
+!            call writematrix(RtoK_Rot(:,ind_1:ind_2),'Rotation',.true.)
+!            call writematrix(ztemp,'Intermediate',.true.)
             call ZGEMM('C','N',SS_Period,SS_Period,nSites,zone,RtoK_Rot(:,ind_1:ind_2),nSites,ztemp,nSites,zzero,k_Ham,SS_Period)
             !k_Ham is the complex, one-electron hamiltonian (with correlation potential) for this k-point
 
             !write(6,*) "For k-point: ",kPnt
-            !call writematrixcomp(k_Ham,'k-space ham is: ',.false.)
+            !call writematrix(k_Ham,'k-space ham is: ',.false.)
 
             i = 0
             do while(.true.)
@@ -4658,7 +4659,7 @@ module SelfConsistentLR
 !                !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
 !                !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
 !                call Order_zgeev_vecs(W_Vals,LVec,RVec)
-!                !call writevectorcomp(W_Vals,'Eigenvalues ordered')
+!                !call writevector(W_Vals,'Eigenvalues ordered')
 !                !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
 !                call Orthonorm_zgeev_vecs(SS_Period,W_Vals,LVec,RVec)
 !                !Calculate greens function for this k-vector
@@ -4678,7 +4679,7 @@ module SelfConsistentLR
                 LocalMomGF(:,:,i) = LocalMomGF(:,:,i) + ztemp2(:,:)
 
                 !write(6,*) "For frequency: ",Omega
-                !call writematrixcomp(InvMat,'k-space greens function is: ',.false.)
+                !call writematrix(InvMat,'k-space greens function is: ',.false.)
             enddo   !Enddo frequency point i
 
         enddo   !enddo k-point

@@ -709,10 +709,12 @@ Program RealHub
             endif
             if(LatticeDim.eq.2) then
                 write(6,"(A)") "            o 2-dimensional model" 
-                if(tTiltedLattice) then
+                if(CellShape.eq.1) then
                     write(6,"(A,I7,A,I7,A)") "            o Size of lattice: ",TDLat_Ni,' x ',TDLat_Nj,' at 45 degrees' 
-                else
+                elseif(CellShape.eq.2) then
                     write(6,"(A,I7,A,I7,A)") "            o Size of lattice: ",nSites_x,' x ',nSites_y,' without tilt' 
+                elseif(CellShape.eq.3) then
+                    write(6,"(A,I7,A,I7,A)") "            o Size of lattice: ",nSites_x,' x ',nSites_y,' at 45 degrees tilt' 
                 endif
                 write(6,"(A,I7)") "            o Total lattice sites: ",nSites
             elseif(LatticeDim.eq.1) then

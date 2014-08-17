@@ -3,7 +3,7 @@ module fitting
     use errors, only: stop_all, warning
     use globals
     use mat_tools, only: GFErr,RDMErr,FromTriangularPacked,ToTriangularPacked,FromCompPacked,ToCompPacked,znrm2,mkgf
-    use mat_tools, only: WriteMatrixcomp,add_localpot_comp_inplace
+    use Lattices, only: add_localpot_comp_inplace
     use matrixops, only: mat_inv
     implicit none
 
@@ -42,7 +42,7 @@ module fitting
             HL_GF_Inv(:,:) = zzero
             call mat_inv(HL_GF,HL_GF_Inv,nImp)
 !            HL_GF_Inv(:,:) = 1.0_dp/HL_GF(:,:)
-            !call writematrixcomp(HL_GF_Inv,'Inverse of high-level GF',.true.)
+            !call writematrix(HL_GF_Inv,'Inverse of high-level GF',.true.)
 
             it=0
             do while(.true.) 
@@ -86,7 +86,7 @@ module fitting
                 !Invert non-interacting greens functions
                 call mat_inv(NI_GF,NI_GF_Inv,nImp)
 !                NI_GF_Inv(:,:) = 1.0_dp/NI_GF(:,:)
-                !call writematrixcomp(NI_GF_Inv,'Inverse of NI GF',.true.)
+                !call writematrix(NI_GF_Inv,'Inverse of NI GF',.true.)
 
                 !Calculate difference of inverses
                 SE_Change_unpacked(:,:) = zzero
@@ -274,7 +274,7 @@ module fitting
         !zgeev does not order the eigenvalues in increasing magnitude for some reason. Ass.
         !This will order the eigenvectors according to increasing *REAL* part of the eigenvalues
         call Order_zgeev_vecs(W_Vals,LVec,RVec)
-        !call writevectorcomp(W_Vals,'Eigenvalues ordered')
+        !call writevector(W_Vals,'Eigenvalues ordered')
         !Now, bi-orthogonalize sets of vectors in degenerate sets, and normalize all L and R eigenvectors against each other.
         call Orthonorm_zgeev_vecs(nSites,W_Vals,LVec,RVec)
 
@@ -291,7 +291,7 @@ module fitting
 
         !write(6,*) "Spectrum: ",W_Vals(nOcc-1),W_Vals(nOcc)
             
-        !call writematrixcomp(RVec(1:nImp,1:nSites),'RVec(1:nImp,1:nOcc) - LR',.true.)
+        !call writematrix(RVec(1:nImp,1:nSites),'RVec(1:nImp,1:nOcc) - LR',.true.)
         !Now, form the non-interacting greens functions (but with u *and* self-energy)
         do pertsite = 1,nImp
             !Form the set of non-interacting first order wavefunctions from the new one-electron h for both Bra and Ket versions

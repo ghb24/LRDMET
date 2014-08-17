@@ -3,7 +3,7 @@ module SchmidtDecomp
     use timing
     use errors, only: stop_all
     use globals
-    use mat_tools, only: WriteVector,WriteMatrix,WriteMatrixComp
+    use writedata
     implicit none
 
     contains
@@ -41,7 +41,7 @@ module SchmidtDecomp
             do i = 1,nSites
                 do j = i+1,nSites
                     if(abs(matc(i,j)-dconjg(matc(j,i))).gt.1.0e-8_dp) then
-                        call writematrixcomp(matc,'matrix',.true.)
+                        call writematrix(matc,'matrix',.true.)
                         call stop_all(t_r,'matrix not hermitian')
                     endif
                 enddo
@@ -84,7 +84,7 @@ module SchmidtDecomp
             do i = 1,nOcc
                 do j = i+1,nOcc
                     if(abs(ProjOverlap(i,j)-dconjg(ProjOverlap(j,i))).gt.1.0e-8_dp) then
-                        call writematrixcomp(ProjOverlap,'projected overlap matrix for occupied orbitals',.true.)
+                        call writematrix(ProjOverlap,'projected overlap matrix for occupied orbitals',.true.)
                         write(6,*) "i,j: ",i,j
                         write(6,*) "ProjOverlap(i,j): ",ProjOverlap(i,j)
                         write(6,*) "ProjOverlap(j,i): ",ProjOverlap(j,i)
@@ -146,7 +146,7 @@ module SchmidtDecomp
         enddo
 
         !These states are now the bath states
-!        call writematrixcomp(RotOccOrbs(:,nOcc-nImp+1:nOcc),'Bath orbitals',.true.)
+!        call writematrix(RotOccOrbs(:,nOcc-nImp+1:nOcc),'Bath orbitals',.true.)
         
         allocate(ImpurityOrbs(nSites,nImp))
         ImpurityOrbs(:,:) = zzero
@@ -342,7 +342,7 @@ module SchmidtDecomp
             if(abs(aimag(FockSchmidt_c(i,i))).gt.1.0e-7_dp) then
                 write(6,*) "i: ",i
                 write(6,*) "FockSchmidt_c(i,i): ",FockSchmidt_c(i,i)
-                call writematrixcomp(FockSchmidt_c,'FockSchmidt',.true.)
+                call writematrix(FockSchmidt_c,'FockSchmidt',.true.)
                 call stop_all(t_r,'complex energies')
             endif
             CoreEnergy = CoreEnergy + real(FockSchmidt(i,i),dp)
