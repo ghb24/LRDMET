@@ -2023,6 +2023,7 @@ module mat_tools
             deallocate(CompHam,r_vecs_real)
         else
             !Normal real space diagonalization
+            !call writematrix(Ham,'Ham',.false.)
             Vals(:) = 0.0_dp
             allocate(Work(1))
             lWork=-1

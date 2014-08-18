@@ -554,9 +554,9 @@ module solvers
         implicit none
         integer :: pSpaceDim,i,j,iunit,pertsitealpha,pertsitebeta,UMatSize,OrbPairs
         integer :: lWork,info,ilut,pertsite
-        logical :: tParity
+        logical :: tParity,tFirst
         complex(dp) :: DDRes,GFRes,GFRes_h,GFRes_p
-        real(dp) :: ddot,Overlap,Omega,mu
+        real(dp) :: ddot,Overlap,Omega,mu,SpectralWeight,Prev_Spec
         real(dp), allocatable :: V0(:),Work(:),V0_Ann(:),V0_Cre(:),Spectrum_Np1(:)
         real(dp), allocatable :: Spectrum_Nm1b(:),FullHamil_Np1(:,:),FullHamil_Nm1b(:,:)
         character(len=64) :: filename,filename2
@@ -874,6 +874,9 @@ module solvers
                 call flush(6)
 
                 Omega = Start_Omega
+                SpectralWeight = zero
+                Prev_Spec = zero
+                tFirst = .true.
                 do while((Omega.lt.max(Start_Omega,End_Omega)+1.0e-5_dp).and.(Omega.gt.min(Start_Omega,End_Omega)-1.0e-5_dp))
             
                     if(.not.tAnderson) then
@@ -900,8 +903,14 @@ module solvers
 
                     GFRes = GFRes_p + GFRes_h
 
-                    write(iunit,"(7G22.10)") Omega,real(GFRes),-aimag(GFRes),real(GFRes_p),-aimag(GFRes_p), &
-                        real(GFRes_h),-aimag(GFRes_h)
+                    if(.not.tFirst) then
+                        SpectralWeight = SpectralWeight + Omega_Step*(Prev_Spec-aimag(GFRes))/(2.0_dp*pi)
+                        Prev_Spec = -aimag(GFRes)
+                    else
+                        tFirst = .false.
+                    endif
+                    write(iunit,"(8G22.10)") Omega,real(GFRes),-aimag(GFRes)/pi,real(GFRes_p),-aimag(GFRes_p), &
+                        real(GFRes_h),-aimag(GFRes_h),SpectralWeight
 
                     Omega = Omega + Omega_Step
                 enddo
