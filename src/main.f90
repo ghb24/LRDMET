@@ -76,6 +76,10 @@ Program RealHub
             !Calculate the core hamiltonian based on the hopping matrix of the hubbard model in real space
             !If reading in the hopping matrix, it is done here and stored in h0
             call make_hop_mat()
+        
+            if((tDiag_KSpace.or.tProjectHFKPnts.or.tKSpaceOrbs).and.(.not.allocated(KPnts))) then
+                call setup_kspace()
+            endif
 
             !Diagonalize the mean-field hamiltonian
             !Get occupations with unique GS
