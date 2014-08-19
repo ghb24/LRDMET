@@ -212,18 +212,22 @@ module Lattices
                         site = (j-1)*nImp + n + 1
                         PrimLattVec(1) = real((j-1)*nImp,dp)    !The real-space translation to the cell
                         phase = ddot(LatticeDim,KPnts(:,k),1,PrimLattVec,1)
-                        write(6,*) "Including contrib: site: ",site," k: ",ind_1+n,exp(cmplx(zero,phase,dp))/sqrt(real(nKPnts,dp))
                         RtoK_Rot(site,ind_1+n) = exp(cmplx(zero,phase,dp))/sqrt(real(nKPnts,dp))
                     enddo
                 else
+                    j = 0
                     do kx = 0,iImpRepeats_x-1
-                        PrimLattVec(1) = iImpRepeats_x*LatticeVector(1,1) + iImpRepeats_x*LatticeVector(1,2)
+                        PrimLattVec(1) = kx*LatticeVector(1,1) + kx*LatticeVector(1,2)
                         do ky = 0,iImpRepeats_y-1
-                            PrimLattVec(2) = iImpRepeats_y*LatticeVector(2,1) + iImpRepeats_y*LatticeVector(2,2)
+                            PrimLattVec(2) = ky*LatticeVector(2,1) + ky*LatticeVector(2,2)
+                            j = j + 1
                             !Run through all cells, with PrimLattVec being the coordinate of the cell
                             !Choose the site of the cell = n+1
-                            site = (j-1)*nImp + n + 1
+                            site = StripedImpIndices(n+1,j)
+!                            site = (j-1)*nImp + n + 1
                             phase = ddot(LatticeDim,KPnts(:,k),1,PrimLattVec,1)
+!                            write(6,"(A,I5,A,2F10.4)") "Lattice site: ",site, " has coordinate: ",PrimLattVec(:)
+!                            write(6,*) "Including contrib: site: ",site," k: ",ind_1+n,exp(cmplx(zero,phase,dp))/sqrt(real(nKPnts,dp))
                             RtoK_Rot(site,ind_1+n) = exp(cmplx(zero,phase,dp))/sqrt(real(nKPnts,dp))
                         enddo
                     enddo
@@ -294,7 +298,7 @@ module Lattices
 
         !Right, just as a sanity check, see if this rotation block diagonalizes the hopping matrix
         allocate(ham_temp(nSites,nSites))
-!        call writematrix(h0,'h0',.true.)
+!        call writematrix(h0,'h0',.false.)
         do i = 1,nSites
             do j = 1,nSites
                 ham_temp(j,i) = cmplx(h0(j,i),zero,dp)
@@ -316,6 +320,7 @@ module Lattices
             enddo
         enddo
         call MakeBlockHermitian(Random_CorrPot,nImp)
+!        call writematrix(Random_CorrPot,'CorrPot',.true.)
         call add_localpot_comp_inplace(ham_temp,Random_CorrPot,tAdd=.true.)
 !        call writematrix(ham_temp,'h0 with corrpot',.false.)
         !Check hermitian
@@ -428,9 +433,6 @@ module Lattices
             call stop_all(t_r,'Number of impurity sites is not a square number.')
         endif
 
-        write(6,*) "Get here 1"
-        call flush(6)
-
         allocate(LatticeVector(LatticeDim,LatticeDim))
         LatticeVector(:,:) = zero
         if(CellShape.eq.2) then
@@ -443,9 +445,6 @@ module Lattices
             LatticeVector(2,2) = one*real(nImp_x,dp)
         endif
         !TODO: Check that the area of the unit cell is = nImp
-
-        write(6,*) "Get here 2"
-        call flush(6)
 
         !Right, now how many lattice sites should be have. The constraints are that 
         !   o We need nSites to be a square number. We also need nSites/nImp to be a square number (number of kpoints).
@@ -472,8 +471,6 @@ module Lattices
             nSites_x = nSites_x_high   
         endif
 
-        write(6,*) "Get here 3"
-        call flush(6)
         nSites_y = nSites_x   
         nSites = nSites_x**2
 
@@ -485,8 +482,6 @@ module Lattices
         !Now, set up ImpSites array, which gives the indices of the impurity cluster
         allocate(ImpSites(nImp))
         ImpSites = 0
-        write(6,*) "Get here 4"
-        call flush(6)
 
         do i = 1,nImp_x
             do j = 1,nImp_x
@@ -501,8 +496,6 @@ module Lattices
         !TODO: Now, work out whether we want periodic or antiperiodic boundary conditions
 !        tPeriodic = .true. 
 !        tAntiPeriodic = .false. 
-        write(6,*) "Get here 5"
-        call flush(6)
 
         if(tPeriodic) then
             write(6,"(A)") "PERIODIC boundary conditions chosen to ensure a closed shell fermi surface"
@@ -520,14 +513,12 @@ module Lattices
         !TODO: Check that this has the same order as simply the site index
         allocate(StripedImpIndices(nImp,iImpRepeats))
         StripedImpIndices(:,:) = 0
-        write(6,*) "Get here 6"
-        call flush(6)
 
 !        write(6,*) "Impurity site indices: "
         do kx = 0,iImpRepeats_x-1
-            dispx = iImpRepeats_x*LatticeVector(1,1) + iImpRepeats_x*LatticeVector(1,2)
+            dispx = kx*LatticeVector(1,1) + kx*LatticeVector(1,2)
             do ky = 0,iImpRepeats_y-1
-                dispy = iImpRepeats_y*LatticeVector(2,1) + iImpRepeats_y*LatticeVector(2,2)
+                dispy = ky*LatticeVector(2,1) + ky*LatticeVector(2,2)
                 do i = 1,nImp
                     !What is the displaced coordinate?
                     if(abs(dispx-real(nint(dispx),dp)).gt.1.0e-8_dp) call stop_all(t_r,'Error here x')
@@ -537,8 +528,10 @@ module Lattices
                 enddo
             enddo
         enddo
-        write(6,*) "Get here 7"
-        call flush(6)
+!        write(6,*) "Impurity Site Indices: "
+!        do k = 1,iImpRepeats
+!            write(6,*) k,StripedImpIndices(:,k)
+!        enddo
 
 !        StartInd = 1    !This labels the first index of this impurity cluster
 !        do k = 1,iImpRepeats
@@ -590,8 +583,6 @@ module Lattices
         do i = 1,nImp
             if(StripedImpIndices(i,1).ne.ImpSites(i)) call stop_all(t_r,'Something wrong here')
         enddo
-        write(6,*) "Get here 8"
-        call flush(6)
 
     end subroutine Setup2DLattice_Square
 
@@ -612,7 +603,7 @@ module Lattices
 
     !Find the lattice coordinate from the site index
     !The LatIndex has to be between 1 and nSites
-    !The indexing is row major like a coordinate, i.e (1,1) (2,1)
+    !The indexing is row major like a coordinate, i.e (1,1) (1,2)
     !                                                 (2,1) (2,2)
     subroutine SiteIndexToLatCoord_2DSquare(LatIndex,Ind_X,Ind_Y)
         implicit none
