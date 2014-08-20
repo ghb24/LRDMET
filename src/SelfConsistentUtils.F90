@@ -1792,7 +1792,7 @@ module SelfConsistentUtils
         if(tImposephsym) then
         
 !            write(6,*) "*** IMPOSING PH SYMMETRY ***",mu
-            if(LatticeDim.eq.2) call stop_all(t_r,'Imposephsym not coded up for 2D systems')
+!            if(LatticeDim.eq.2) call stop_all(t_r,'Imposephsym not coded up for 2D systems')
             if(mod(nImp,2).eq.0) then
                 !Multiple of two bands per kpoint. Constrain them so that they are in pairs
 !$OMP PARALLEL DO PRIVATE(KBlock,cWork,rWork,lWork,ierr,Bands_k,DistFromMu,KBlock2,cTemp)
@@ -1839,6 +1839,7 @@ module SelfConsistentUtils
 !$OMP END PARALLEL DO
             elseif(nImp.eq.1) then
                 !If there is only one band per kpoint, then the pairs correspond to different kpoints.
+                if(LatticeDim.eq.2) call stop_all(t_r,'Cannot impose ph symmetry for 1 impurity site in 2D')
                 if(mod(nKPnts,2).eq.1) call stop_all(t_r,'Hardcoded for even number of kpoints for 1-band problem? FIXME')
                 do i = 1,nIndKPnts/2
                     DistFromMu = 0.5_dp*( (mu - real(KBlocks(1,1,nIndKPnts-i+1)) ) + (real(KBlocks(1,1,i)) - mu))
