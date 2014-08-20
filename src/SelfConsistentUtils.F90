@@ -1202,10 +1202,12 @@ module SelfConsistentUtils
                 write(6,"(A,I7)") "New number of frequency points: ",nFreqPoints
             endif
             nFreq_Im = nFreqPoints
-            write(6,"(A)") "Frequency integration points and weights: "
-            do i = 1,nFreqPoints
-                write(6,"(I9,2G20.13)") i,FreqPoints(i),Weights(i)
-            enddo
+            if(tWriteOut) then
+                write(6,"(A)") "Frequency integration points and weights: "
+                do i = 1,nFreqPoints
+                    write(6,"(I9,2G20.13)") i,FreqPoints(i),Weights(i)
+                enddo
+            endif
             !Which axis do we want to do the fitting on?
             if(tFitRealFreq) then
                 nFitPoints = nFreq_Re   

@@ -639,6 +639,36 @@ module Lattices
 
     end subroutine SiteIndexToLatCoord_2DSquare
 
+    !Find the displacement vector which takes you from LatInd1 to LatInd2
+    subroutine FindDispVectorFromIndices_2D(LatInd1,LatInd2,DeltaX,DeltaY)
+        implicit none
+        integer, intent(in) :: LatInd1,LatInd2
+        integer, intent(out) :: DeltaX,DeltaY
+        !local
+        integer :: X_1,X_2,Y_1,Y_2
+        real(dp) :: Vec1(LatticeDim),VecDiff(LatticeDim)
+        character(len=*), parameter :: t_r='FindDispVectorFromIndices_2D'
+
+        DeltaX = 0
+        DeltaY = 0
+
+        Vec1(:) = zero
+
+        !First, find the indices of the two points
+        call SiteIndexToLatCoord_2DSquare(LatInd1,X_1,Y_1)
+        call SiteIndexToLatCoord_2DSquare(LatInd2,X_2,Y_2)
+
+        if(CellShape.eq.1) call stop_all(t_r,'Should not be here')
+
+        Vec1(:) = (X_1-1)*LatticeVector(:,1)/real(nImp_x,dp) + (Y_1-1)*LatticeVector(:,2)/real(nImp_x,dp)
+        VecDiff(:) = (X_2-1)*LatticeVector(:,1)/real(nImp_x,dp) + (Y_2-1)*LatticeVector(:,2)/real(nImp_x,dp) - Vec1(:)
+        if(abs(VecDiff(1)-real(nint(VecDiff(1)),dp)).gt.1.0e-8_dp) call stop_all(t_r,'Error here x')
+        if(abs(VecDiff(2)-real(nint(VecDiff(2)),dp)).gt.1.0e-8_dp) call stop_all(t_r,'Error here y')
+        DeltaX = nint(VecDiff(1))
+        DeltaY = nint(VecDiff(2))
+
+    end subroutine FindDispVectorFromIndices_2D
+
     !Find the index of a lattice site displaced by a vector given by (DeltaX,DeltaY), and also calculate any phase change if necessary
     !In this scheme, the lattice is indexed by increasing in the y direction first (column major)
     subroutine FindDisplacedIndex_2DSquare(LatIndIn,DeltaX,DeltaY,LatIndOut,PhaseChange,tAllowWrap)

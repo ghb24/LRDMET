@@ -1588,108 +1588,10 @@ module mat_tools
 
 !Take a real-space hamiltonian on the lattice, and check that it obeys translational symmetry of the unit cells,
 !whose size is given by the impurity size. Use through interface for real and imaginary hamiltonians.
-    subroutine CheckRealSpaceTransInvar_z(ham)
-        implicit none
-        complex(dp), intent(in) :: ham(nSites,nSites)
-        integer :: i,j,ind_1,ind_2,phase,LatInd_UC,k,ind_kx,ind_ky,transvec_x,transvec_y
-        integer :: Curr_UCx,Curr_UCy,Curr_UC,p,Index_2,k_trans,PhaseChange
-        character(len=*), parameter :: t_r='CheckRealSpaceTransInvar_z'
-
-        !Check for translational invariance of the system
-        !That is: is each supercell row equivalent when translated to the supercell ajacent to it?
-        if(LatticeDim.eq.1) then
-            do j = 1,nSites
-                do i = 1,nSites
-                    ind_1 = i
-                    ind_2 = j
-                    !Translate a supercell down
-                    ind_1 = i + nImp
-                    ind_2 = j + nImp
-                    phase = 1
-                    if(ind_1.gt.nSites) then
-                        ind_1 = ind_1 - nSites
-                        if(tAntiPeriodic) phase = -1 * phase
-                    endif
-                    if(ind_2.gt.nSites) then
-                        ind_2 = ind_2 - nSites
-                        if(tAntiPeriodic) phase = -1 * phase
-                    endif
-                    if(abs(ham(i,j)-(cmplx(real(phase,dp),zero)*ham(ind_1,ind_2))).gt.1.0e-7_dp) then
-                        write(6,"(2I6,A,2I6)") i,j," -> ",ind_1,ind_2
-                        write(6,*) "Phase change: ",phase
-                        write(6,*) ham(i,j),phase*ham(ind_1,ind_2)
-                        call writematrix(ham,'real space ham',.true.)
-                        call stop_all(t_r,'Translational symmetry not maintained in real-space hamiltonian')
-                    endif
-                enddo
-            enddo
-        else
-            !2D. Remember that lattice is organised as  1 3
-            !                                           2 4
-            do i = 1,nImp_x
-                do j = 1,nImp_y
-                    !Loop through first cell
-                    call LatCoordToSiteIndex_2DSquare(i,j,LatInd_UC)
-                    !This has coordinates (i,j) and a site index LatInd_UC 
-                    do k = 1,nSites
-                        !Look at all the coupling from the sites in the first cell, to all others in the system.
-                        !This matrix element is (LatInd_UC,k)
-                        if(abs(ham(LatInd_UC,k)-conjg(ham(k,LatInd_UC))).gt.1.0e-8_dp) then
-                            call stop_all(t_r,'Hamiltonian matrix not hermitian')
-                        endif
-                        !What is the translation vector to site k?
-                        call SiteIndexToLatCoord_2DSquare(k,ind_kx,ind_ky)
-                        transvec_x = ind_kx - i
-                        transvec_y = ind_ky - j
-                        !(transvec_x,transvec_y) gives translation vector from site in unit cell to k
-                        Curr_UCx = i !This is the chosen site of the first unit cell
-                        Curr_UCy = j
-                        Curr_UC = LatInd_UC
-                        do p = 1,iImpRepeats-1
-                            !Is this the same coupling as the one between the unit cell
-                            !p away?
-                            !Find the index for (i,j) translated by p unit cells. 
-                            !See the Setup2DLattice_Square for how this is done 
-                            Curr_UCy = Curr_UCy + nImp_y
-                            Curr_UCy = py_mod(Curr_UCy,nSites_y)
-                            if(Curr_UCy.eq.0) Curr_UCy = nSites_y
-                            call LatCoordToSiteIndex_2DSquare(Curr_UCx,Curr_UCy,Index_2)
-                            if(Index_2.lt.Curr_UC) then
-                                Curr_UCx = Curr_UCx + nImp_x
-                                if(Curr_UCx.gt.nSites_x) call stop_all(t_r,'error')
-                                call LatCoordToSiteIndex_2DSquare(Curr_UCx,Curr_UCy,Index_2)
-                                if(Index_2.lt.LatInd_UC) call stop_all(t_r,'error')
-                                if(Index_2.gt.nSites) call stop_all(t_r,'error')
-                            endif
-                            Curr_UC = Index_2
-
-                            !Curr_UC index and coordinates (Curr_UCx,Curr_UCy) is (i,j) displaced by p unit cells.
-                            !Translate by (transvec_x,transvec_y)
-                            call FindDisplacedIndex_2DSquare(Curr_UC,transvec_x,transvec_y,k_trans,PhaseChange)
-                            !ham(LatInd_UC,k) should = PhaseChange * ham(Curr_UC,k_trans)
-                            if(abs(ham(LatInd_UC,k)-(cmplx(real(PhaseChange,dp),zero)*ham(Curr_UC,k_trans))).gt.1.0e-7_dp) then
-                                write(6,"(2I6,A,2I6)") LatInd_UC,k," -> ",Curr_UC,k_trans
-                                write(6,*) "Phase change: ",PhaseChange
-                                write(6,*) ham(LatInd_UC,k),cmplx(real(PhaseChange,dp),zero)*ham(Curr_UC,k_trans)
-                                call writematrix(ham,'real space ham',.true.)
-                                call stop_all(t_r,'Translational symmetry not maintained in real-space hamiltonian')
-                            endif
-                        enddo
-                    enddo
-                enddo
-            enddo
-        endif
-        write(6,"(A)") "Lattice system appropriately periodic in real space"
-
-    end subroutine CheckRealSpaceTransInvar_z
-
-!Take a real-space hamiltonian on the lattice, and check that it obeys translational symmetry of the unit cells,
-!whose size is given by the impurity size. Use through interface for real and imaginary hamiltonians.
     subroutine CheckRealSpaceTransInvar_r(ham)
         implicit none
         real(dp), intent(in) :: ham(nSites,nSites)
-        integer :: i,j,ind_1,ind_2,phase,LatInd_UC,k,ind_kx,ind_ky,transvec_x,transvec_y
-        integer :: Curr_UCx,Curr_UCy,Curr_UC,p,Index_2,k_trans,PhaseChange
+        integer :: i,j,k,p,ind_1,ind_2,phase,DeltaX,DeltaY
         character(len=*), parameter :: t_r='CheckRealSpaceTransInvar_r'
 
         !Check for translational invariance of the system
@@ -1721,57 +1623,22 @@ module mat_tools
                 enddo
             enddo
         else
-            !2D. Remember that lattice is organised as  1 3
-            !                                           2 4
-            do i = 1,nImp_x
-                do j = 1,nImp_y
-                    !Loop through first cell
-                    call LatCoordToSiteIndex_2DSquare(i,j,LatInd_UC)
-                    !This has coordinates (i,j) and a site index LatInd_UC 
-                    do k = 1,nSites
-                        !Look at all the coupling from the sites in the first cell, to all others in the system.
-                        !This matrix element is (LatInd_UC,k)
-                        if(abs(ham(LatInd_UC,k)-ham(k,LatInd_UC)).gt.1.0e-8_dp) then
-                            call stop_all(t_r,'Hamiltonian matrix not hermitian')
+            !2D. 
+            do i = 1,nImp
+                do k = 1,nSites
+                    !Now, loop through all other sites, and test their corresponding displacement vectors
+                    call FindDispVectorFromIndices_2D(ImpSites(i),k,DeltaX,DeltaY)
+                    do p = 1,nSites
+                        !Find the equivalent translation
+                        call FindDisplacedIndex_2DSquare(p,DeltaX,DeltaY,j,Phase)
+                        !h(p -> j)*Phase should be the same as h(ImpSites(i),k)
+                        if(abs(ham(ImpSites(i),k)-(Phase*ham(p,j))).gt.1.0e-7_dp) then
+                            write(6,"(2I6,A,2I6)") ImpSites(i),k," -> ",p,j
+                            write(6,*) "Phase change: ",Phase
+                            write(6,*) ham(ImpSites(i),k),Phase*ham(p,j)
+                            call writematrix(ham,'real space ham',.true.)
+                            call stop_all(t_r,'Translational symmetry not maintained in real-space hamiltonian')
                         endif
-                        !What is the translation vector to site k?
-                        call SiteIndexToLatCoord_2DSquare(k,ind_kx,ind_ky)
-                        transvec_x = ind_kx - i
-                        transvec_y = ind_ky - j
-                        !(transvec_x,transvec_y) gives translation vector from site in unit cell to k
-                        Curr_UCx = i !This is the chosen site of the first unit cell
-                        Curr_UCy = j
-                        Curr_UC = LatInd_UC
-                        do p = 1,iImpRepeats-1
-                            !Is this the same coupling as the one between the unit cell
-                            !p away?
-                            !Find the index for (i,j) translated by p unit cells. 
-                            !See the Setup2DLattice_Square for how this is done 
-                            Curr_UCy = Curr_UCy + nImp_y
-                            Curr_UCy = py_mod(Curr_UCy,nSites_y)
-                            if(Curr_UCy.eq.0) Curr_UCy = nSites_y
-                            call LatCoordToSiteIndex_2DSquare(Curr_UCx,Curr_UCy,Index_2)
-                            if(Index_2.lt.Curr_UC) then
-                                Curr_UCx = Curr_UCx + nImp_x
-                                if(Curr_UCx.gt.nSites_x) call stop_all(t_r,'error')
-                                call LatCoordToSiteIndex_2DSquare(Curr_UCx,Curr_UCy,Index_2)
-                                if(Index_2.lt.LatInd_UC) call stop_all(t_r,'error')
-                                if(Index_2.gt.nSites) call stop_all(t_r,'error')
-                            endif
-                            Curr_UC = Index_2
-
-                            !Curr_UC index and coordinates (Curr_UCx,Curr_UCy) is (i,j) displaced by p unit cells.
-                            !Translate by (transvec_x,transvec_y)
-                            call FindDisplacedIndex_2DSquare(Curr_UC,transvec_x,transvec_y,k_trans,PhaseChange)
-                            !ham(LatInd_UC,k) should = PhaseChange * ham(Curr_UC,k_trans)
-                            if(abs(ham(LatInd_UC,k)-(PhaseChange*ham(Curr_UC,k_trans))).gt.1.0e-7_dp) then
-                                write(6,"(2I6,A,2I6)") LatInd_UC,k," -> ",Curr_UC,k_trans
-                                write(6,*) "Phase change: ",PhaseChange
-                                write(6,*) ham(LatInd_UC,k),phase*ham(Curr_UC,k_trans)
-                                call writematrix(ham,'real space ham',.true.)
-                                call stop_all(t_r,'Translational symmetry not maintained in real-space hamiltonian')
-                            endif
-                        enddo
                     enddo
                 enddo
             enddo
@@ -1779,6 +1646,67 @@ module mat_tools
         write(6,"(A)") "Lattice system appropriately periodic in real space"
 
     end subroutine CheckRealSpaceTransInvar_r
+
+!Take a real-space hamiltonian on the lattice, and check that it obeys translational symmetry of the unit cells,
+!whose size is given by the impurity size. Use through interface for real and imaginary hamiltonians.
+    subroutine CheckRealSpaceTransInvar_z(ham)
+        implicit none
+        complex(dp), intent(in) :: ham(nSites,nSites)
+        integer :: i,j,k,p,ind_1,ind_2,phase,DeltaX,DeltaY
+        character(len=*), parameter :: t_r='CheckRealSpaceTransInvar_z'
+
+        !Check for translational invariance of the system
+        !That is: is each supercell row equivalent when translated to the supercell ajacent to it?
+        if(LatticeDim.eq.1) then
+            do j = 1,nSites
+                do i = 1,nSites
+                    ind_1 = i
+                    ind_2 = j
+                    !Translate a supercell down
+                    ind_1 = i + nImp
+                    ind_2 = j + nImp
+                    phase = 1
+                    if(ind_1.gt.nSites) then
+                        ind_1 = ind_1 - nSites
+                        if(tAntiPeriodic) phase = -1 * phase
+                    endif
+                    if(ind_2.gt.nSites) then
+                        ind_2 = ind_2 - nSites
+                        if(tAntiPeriodic) phase = -1 * phase
+                    endif
+                    if(abs(ham(i,j)-(phase*ham(ind_1,ind_2))).gt.1.0e-7_dp) then
+                        write(6,"(2I6,A,2I6)") i,j," -> ",ind_1,ind_2
+                        write(6,*) "Phase change: ",phase
+                        write(6,*) ham(i,j),phase*ham(ind_1,ind_2)
+                        call writematrix(ham,'real space ham',.true.)
+                        call stop_all(t_r,'Translational symmetry not maintained in real-space hamiltonian')
+                    endif
+                enddo
+            enddo
+        else
+            !2D. 
+            do i = 1,nImp
+                do k = 1,nSites
+                    !Now, loop through all other sites, and test their corresponding displacement vectors
+                    call FindDispVectorFromIndices_2D(ImpSites(i),k,DeltaX,DeltaY)
+                    do p = 1,nSites
+                        !Find the equivalent translation
+                        call FindDisplacedIndex_2DSquare(p,DeltaX,DeltaY,j,Phase)
+                        !h(p -> j)*Phase should be the same as h(ImpSites(i),k)
+                        if(abs(ham(ImpSites(i),k)-(Phase*ham(p,j))).gt.1.0e-7_dp) then
+                            write(6,"(2I6,A,2I6)") ImpSites(i),k," -> ",p,j
+                            write(6,*) "Phase change: ",Phase
+                            write(6,*) ham(ImpSites(i),k),Phase*ham(p,j)
+                            call writematrix(ham,'real space ham',.true.)
+                            call stop_all(t_r,'Translational symmetry not maintained in real-space hamiltonian')
+                        endif
+                    enddo
+                enddo
+            enddo
+        endif
+        write(6,"(A)") "Lattice system appropriately periodic in real space"
+
+    end subroutine CheckRealSpaceTransInvar_z
 
     !Routine to diagonalize a 1-electron, real operator, with the lattice periodicity.
     !the SS_Period is the size of the supercell repeating unit (e.g. the coupling correlation potential)
@@ -2650,7 +2578,7 @@ module mat_tools
             if((CellShape.eq.1).and.(LatticeDim.eq.2)) then
                 call stop_all(t_r,'Cannot do k-space diagonalizations - impurity site tiling is not same as direct lattice')
             endif
-            if((LatticeDim.eq.2).and.(tShift_Mesh)) then
+            if((LatticeDim.eq.2).and.tShift_Mesh.and.(CellShape.eq.2)) then
                 tNetZeroMomDet = .true.
             else
                 tNetZeroMomDet = .false.
