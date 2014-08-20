@@ -404,8 +404,7 @@ module Lattices
         allocate(StripedImpIndices(nImp,iImpRepeats))
         StripedImpIndices(:,:) = 0
 
-!        write(6,*) "Impurity site indices: "
-        do kx = 0,iImpRepeats
+        do kx = 0,iImpRepeats-1
             do i = 1,nImp
                 StripedImpIndices(i,kx+1) = ImpSites(i)+(kx*nImp)
             enddo

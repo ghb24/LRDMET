@@ -55,7 +55,7 @@ END INTERFACE
 PRIVATE
 PUBLIC :: item, nitems, read_line, stream, reada, readu, readl,        &
     readf, readi, getf, geta, geti, reread, input_options,             &
-    upcase, locase, report, die, assert, find_io, read_colour,         &
+    upcase, locase, die, assert, find_io, read_colour,         &
     getargs, parse, char, ir
 !  AJWT - added , ir to above
 !  Free-format input routines

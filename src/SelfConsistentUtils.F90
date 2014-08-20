@@ -235,39 +235,41 @@ module SelfConsistentUtils
             
             if(tConstrainKSym) then
                 !e(k) = e(-k), and we are always using a uniform mesh
-                if(LatticeDim.eq.2) then
-                    nKPnts_x = nint(sqrt(real(nKPnts,dp)))
-                    !In 2D, this means that we are optimizing the LHS of the brillouin zone
-                    if(mod(nKPnts_x,2).eq.0) then
-                        if(tShift_Mesh) then
-                            nIndKPnts = nKPnts/2
-                        else
-                            !Want to include the column of kpoints at kx=0 including the gamma point
-                            nIndKPnts = nKPnts/2 + nKPnts_x
-                        endif
-                    else
-                        if(tShift_Mesh) then
-                            nIndKPnts = ((nKPnts_x + 1)/2)*nKPnts_x - (nKPnts_x-1)/2
-                        else
-                            nIndKPnts = ((nKPnts_x + 1)/2)*nKPnts_x + (nKPnts_x-1)/2 
-                        endif
-                    endif
-                else
-                    if(mod(nKPnts,2).eq.0) then
-                        !Even number of kpoints 
-                        !If gamma-centered mesh, then have nSites/2 + 1 independent parameters 
-                        !(we are sampling k=0 and BZ boundary which dont pair)
-                        !If Shifted mesh, then we have nSites/2 independent parameters
-                        if(tShift_Mesh) then
-                            nIndKPnts = nKPnts/2
-                        else
-                            nIndKPnts = (nKPnts/2) + 1
-                        endif
-                    else
-                        !This is independent of whether we have a shifted mesh or not
-                        nIndKPnts = (nKPnts+1)/2    
-                    endif
-                endif
+                call CountUniqueKPnts(nIndKPnts)
+!                if(LatticeDim.eq.2) then
+!                    nKPnts_x = nint(sqrt(real(nKPnts,dp)))
+!                    !In 2D, this means that we are optimizing the LHS of the brillouin zone
+!                    if(mod(nKPnts_x,2).eq.0) then
+!                        if(tShift_Mesh) then
+!                            nIndKPnts = nKPnts/2
+!                        else
+!                            !Want to include the column of kpoints at kx=0 including the gamma point
+!                            nIndKPnts = nKPnts/2 + nKPnts_x
+!                        endif
+!                    else
+!                        if(tShift_Mesh) then
+!                            nIndKPnts = ((nKPnts_x + 1)/2)*nKPnts_x - (nKPnts_x-1)/2
+!                        else
+!                            nIndKPnts = ((nKPnts_x + 1)/2)*nKPnts_x + (nKPnts_x-1)/2 
+!                        endif
+!                    endif
+!                else
+!                    if(mod(nKPnts,2).eq.0) then
+!                        !Even number of kpoints 
+!                        !If gamma-centered mesh, then have nSites/2 + 1 independent parameters 
+!                        !(we are sampling k=0 and BZ boundary which dont pair)
+!                        !If Shifted mesh, then we have nSites/2 independent parameters
+!                        if(tShift_Mesh) then
+!                            nIndKPnts = nKPnts/2
+!                        else
+!                            nIndKPnts = (nKPnts/2) + 1
+!                        endif
+!                    else
+!                        !This is independent of whether we have a shifted mesh or not
+!                        nIndKPnts = (nKPnts+1)/2    
+!                    endif
+!                endif
+                write(6,*) "Number of unique kpoints: ",nIndKPnts
             else
                 nIndKPnts = nKPnts
             endif
@@ -368,6 +370,35 @@ module SelfConsistentUtils
         endif   !Endif realspace optimization
 
     end subroutine SetLatticeParams
+                
+    !Count the number of kpoints, not including kpoints which are related via inversion
+    subroutine CountUniqueKPnts(nUniqKPnts)
+        implicit none
+        integer, intent(out) :: nUniqKPnts
+        !local
+        integer :: k,kp,l
+        real(dp) :: kdiff(LatticeDim)
+        logical :: tZerok,tInclude
+
+        nUniqKPnts = 0
+
+        do k = 1,nKPnts
+            tInclude = .true.
+            do kp = 1,k-1
+                kdiff(:) = abs(KPnts(:,k)+KPnts(:,kp))
+                tZerok = .true.
+                do l = 1,LatticeDim
+                    tZerok = tZerok.and.(kdiff(l).lt.1.0e-7_dp)
+                enddo
+                if(tZerok) then
+                    tInclude = .false.
+                    exit
+                endif
+            enddo
+            if(tInclude) nUniqKPnts = nUniqKPnts + 1
+        enddo
+
+    end subroutine CountUniqueKPnts
 
     subroutine CalcConstrainedK_Maps(KBlock_to_KInd_loc,KInd_to_KBlock_loc,KPointSampled_loc,nIndKPnts_loc)
         implicit none

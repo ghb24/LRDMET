@@ -10,6 +10,7 @@ Program RealHub
     use mat_tools
     use readinput
     use Lattices
+    use report  
     implicit none
 
     call init_calc()
@@ -21,8 +22,6 @@ Program RealHub
     contains
     
     subroutine init_calc()
-        use report, only: environment_report
-        use timing, only: init_timing
         implicit none
 
         write(6,"(A)") "***  Starting real-space hubbard/anderson calculation  ***"
@@ -830,7 +829,6 @@ Program RealHub
     end subroutine write_output_header
     
     subroutine end_calc()
-        use timing, only: end_timing, print_timing_report
 !!$      use omp_lib
         implicit none
         real(dp) :: OpenMP_wallend 
