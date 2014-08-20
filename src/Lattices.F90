@@ -163,16 +163,28 @@ module Lattices
 
             !Now, to define the kpoints in each dimension
             do i = 1,nKPnts_x
-
-                !Which x-coordinate do we have for this y cut of kpoints
-                kpntx = -RecipLattVecs(1,1)/2.0_dp + (i-1)*RecipLattVecs(1,1)/nKPnts_x
-                if(tShift_Mesh) kpntx = kpntx + RecipLattVecs(1,1)/(2.0_dp*real(nKPnts_x,dp))
-
                 do j = 1,nKPnts_y
                     kpnt = (i-1)*nKPnts_x + j
 
-                    kpnty = RecipLattVecs(2,2)/2.0_dp - (j-1)*RecipLattVecs(2,2)/nKPnts_y
-                    if(tShift_Mesh) kpnty = kpnty - RecipLattVecs(2,2)/(2.0_dp*real(nKPnts_y,dp))
+                    kpntx = - RecipLattVecs(1,1)/2.0_dp - RecipLattVecs(1,2)/2.0_dp +   &
+                        (i-1)*RecipLattVecs(1,1)/nKPnts_x + (j-1)*RecipLattVecs(1,2)/nKPnts_y
+                    if(tShift_Mesh) kpntx = kpntx + RecipLattVecs(1,1)/real(2.0_dp*nKPnts_x,dp) +   &
+                        RecipLattVecs(1,2)/real(2.0_dp*nKPnts_y,dp)
+
+                    kpnty = -RecipLattVecs(2,1)/2.0_dp - RecipLattVecs(2,2)/2.0_dp +    &
+                        (i-1)*RecipLattVecs(2,1)/nKPnts_x + (j-1)*RecipLattVecs(2,2)/nKPnts_y
+                    if(tShift_Mesh) kpnty = kpnty + RecipLattVecs(2,1)/real(2.0_dp*nKPnts_x,dp) +   &
+                        RecipLattVecs(2,2)/real(2.0_dp*nKPnts_y,dp)
+
+!                !Which x-coordinate do we have for this y cut of kpoints
+!                kpntx = -RecipLattVecs(1,1)/2.0_dp + (i-1)*RecipLattVecs(1,1)/nKPnts_x
+!                if(tShift_Mesh) kpntx = kpntx + RecipLattVecs(1,1)/(2.0_dp*real(nKPnts_x,dp))
+!
+!                do j = 1,nKPnts_y
+!                    kpnt = (i-1)*nKPnts_x + j
+!
+!                    kpnty = RecipLattVecs(2,2)/2.0_dp - (j-1)*RecipLattVecs(2,2)/nKPnts_y
+!                    if(tShift_Mesh) kpnty = kpnty - RecipLattVecs(2,2)/(2.0_dp*real(nKPnts_y,dp))
 
                     KPnts(1,kpnt) = kpntx
                     KPnts(2,kpnt) = kpnty
@@ -217,9 +229,9 @@ module Lattices
                 else
                     j = 0
                     do kx = 0,iImpRepeats_x-1
-                        PrimLattVec(1) = kx*LatticeVector(1,1) + kx*LatticeVector(1,2)
                         do ky = 0,iImpRepeats_y-1
-                            PrimLattVec(2) = ky*LatticeVector(2,1) + ky*LatticeVector(2,2)
+                            PrimLattVec(1) = kx*LatticeVector(1,1) + ky*LatticeVector(1,2)
+                            PrimLattVec(2) = kx*LatticeVector(2,1) + ky*LatticeVector(2,2)
                             j = j + 1
                             !Run through all cells, with PrimLattVec being the coordinate of the cell
                             !Choose the site of the cell = n+1
@@ -516,9 +528,12 @@ module Lattices
 
 !        write(6,*) "Impurity site indices: "
         do kx = 0,iImpRepeats_x-1
-            dispx = kx*LatticeVector(1,1) + kx*LatticeVector(1,2)
             do ky = 0,iImpRepeats_y-1
-                dispy = ky*LatticeVector(2,1) + ky*LatticeVector(2,2)
+                dispx = kx*LatticeVector(1,1) + ky*LatticeVector(1,2)
+                dispy = kx*LatticeVector(2,1) + ky*LatticeVector(2,2)
+!                dispx = kx*LatticeVector(1,1) + kx*LatticeVector(1,2)
+!                dispy = ky*LatticeVector(2,1) + ky*LatticeVector(2,2)
+!                write(6,"(A,I5,A,2I6)") "Index to displaced cell ",(kx*iImpRepeats_x)+ky+1,"is",nint(dispx),nint(dispy)
                 do i = 1,nImp
                     !What is the displaced coordinate?
                     if(abs(dispx-real(nint(dispx),dp)).gt.1.0e-8_dp) call stop_all(t_r,'Error here x')
@@ -528,10 +543,13 @@ module Lattices
                 enddo
             enddo
         enddo
-!        write(6,*) "Impurity Site Indices: "
-!        do k = 1,iImpRepeats
-!            write(6,*) k,StripedImpIndices(:,k)
-!        enddo
+        if(tWriteOut) then
+            write(6,*) "Impurity Site Indices: "
+            do k = 1,iImpRepeats
+                write(6,*) "Indices of impurity copy ",k
+                call writevector(StripedImpIndices(:,k),'Impurity Indices')
+            enddo
+        endif
 
 !        StartInd = 1    !This labels the first index of this impurity cluster
 !        do k = 1,iImpRepeats
@@ -644,6 +662,8 @@ module Lattices
 !        write(6,*) "Displacement vector: ",DeltaX,DeltaY
         LatIndOut = LatIndIn
         PhaseChange = 1
+        flips_x = 0
+        flips_y = 0
 
         call SiteIndexToLatCoord_2DSquare(LatIndOut,Ind_X,Ind_Y)
 
@@ -694,7 +714,8 @@ module Lattices
             PhaseChange = flips_x * flips_y
 
         elseif(CellShape.eq.3) then
-
+!            write(6,*) "Lattice coordinate is: ",Ind_x,Ind_y
+!            write(6,*) "Moving it: ",DeltaX,DeltaY
             !First, translate one by one in the x direction
             do i = 1,abs(DeltaX)
                 Ind_X = Ind_X + sign(1,DeltaX)
@@ -715,6 +736,7 @@ module Lattices
                     flips_x = flips_x + 1
                 endif
             enddo
+!            write(6,*) "After moving in the X-direction, coord is: ",Ind_x,Ind_y
             do i = 1,abs(DeltaY)
                 Ind_Y = Ind_Y + sign(1,DeltaY)
                 if(Ind_Y.eq.(nSites_y+1)) then
@@ -725,8 +747,9 @@ module Lattices
                     flips_y = flips_x + 1
                 endif
             enddo
+!            write(6,*) "After moving in the Y-direction, coord is: ",Ind_x,Ind_y
             if(.not.tAllowWrap_) then
-                if((flips_x+flips_y).ne.0) call stop_all(t_r,'Moved out of supercell')
+                if(mod(flips_x+flips_y,2).ne.0) call stop_all(t_r,'Moved out of supercell')
             endif
 
             if(tPeriodic) then

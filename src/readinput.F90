@@ -483,6 +483,7 @@ module readinput
                 call readi(iMaxFitMicroIter)
             case("MAXITER_MACROFIT")
                 call readi(iMaxIter_MacroFit)
+                if(iMaxIter_MacroFit.eq.0) tSkip_Lattice_Fit = .true.
             case("READ_LATTICE_COUPLINGS")
                 tReadCouplings = .true.
                 if(item.lt.nitems) then
