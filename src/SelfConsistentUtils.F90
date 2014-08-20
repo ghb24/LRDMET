@@ -236,40 +236,7 @@ module SelfConsistentUtils
             if(tConstrainKSym) then
                 !e(k) = e(-k), and we are always using a uniform mesh
                 call CountUniqueKPnts(nIndKPnts)
-!                if(LatticeDim.eq.2) then
-!                    nKPnts_x = nint(sqrt(real(nKPnts,dp)))
-!                    !In 2D, this means that we are optimizing the LHS of the brillouin zone
-!                    if(mod(nKPnts_x,2).eq.0) then
-!                        if(tShift_Mesh) then
-!                            nIndKPnts = nKPnts/2
-!                        else
-!                            !Want to include the column of kpoints at kx=0 including the gamma point
-!                            nIndKPnts = nKPnts/2 + nKPnts_x
-!                        endif
-!                    else
-!                        if(tShift_Mesh) then
-!                            nIndKPnts = ((nKPnts_x + 1)/2)*nKPnts_x - (nKPnts_x-1)/2
-!                        else
-!                            nIndKPnts = ((nKPnts_x + 1)/2)*nKPnts_x + (nKPnts_x-1)/2 
-!                        endif
-!                    endif
-!                else
-!                    if(mod(nKPnts,2).eq.0) then
-!                        !Even number of kpoints 
-!                        !If gamma-centered mesh, then have nSites/2 + 1 independent parameters 
-!                        !(we are sampling k=0 and BZ boundary which dont pair)
-!                        !If Shifted mesh, then we have nSites/2 independent parameters
-!                        if(tShift_Mesh) then
-!                            nIndKPnts = nKPnts/2
-!                        else
-!                            nIndKPnts = (nKPnts/2) + 1
-!                        endif
-!                    else
-!                        !This is independent of whether we have a shifted mesh or not
-!                        nIndKPnts = (nKPnts+1)/2    
-!                    endif
-!                endif
-                write(6,*) "Number of unique kpoints: ",nIndKPnts
+!                write(6,*) "Number of unique kpoints: ",nIndKPnts
             else
                 nIndKPnts = nKPnts
             endif
@@ -294,7 +261,7 @@ module SelfConsistentUtils
             write(6,"(A,I8)") "Total number of independent (real) parameters per kpoint: ",params_per_k
             write(6,"(A,I8)") "Total number of (real) adjustable parameters in non-local couplings: ",iLatParams
 
-            allocate(KBlock_to_KInd(nKPnts))    !Given a kpoint index, which set of k-indexed variables does it correspond to
+            allocate(KBlock_to_KInd(nKPnts))    !Given a true kpoint index, which set of k-indexed variables does it correspond to
             allocate(KInd_to_KBlock(nIndKPnts)) !The kpoint index for the *sampled* kpoints -> which physical kpoint index are we looking at
             allocate(KPointSampled(nKPnts))     !A logical indicating whether the kpoint is explicitly sampled
             KPointSampled(:) = .false.
@@ -311,39 +278,40 @@ module SelfConsistentUtils
                 enddo
                 if(tImposeKSym) then
                     !If we are imposing the symmetry, we also need these maps
-                    if(LatticeDim.eq.2) then
-                        nKPnts_x = nint(sqrt(real(nKPnts,dp)))
-                        !In 2D, this means that we are optimizing the LHS of the brillouin zone
-                        if(mod(nKPnts_x,2).eq.0) then
-                            if(tShift_Mesh) then
-                                nIndKPnts_Constrain = nKPnts/2
-                            else
-                                !Want to include the column of kpoints at kx=0 including the gamma point
-                                nIndKPnts_Constrain = nKPnts/2 + nKPnts_x
-                            endif
-                        else
-                            if(tShift_Mesh) then
-                                nIndKPnts_Constrain = ((nKPnts_x + 1)/2)*nKPnts_x - (nKPnts_x-1)/2
-                            else
-                                nIndKPnts_Constrain = ((nKPnts_x + 1)/2)*nKPnts_x + (nKPnts_x-1)/2 
-                            endif
-                        endif
-                    else
-                        if(mod(nKPnts,2).eq.0) then
-                            !Even number of kpoints 
-                            !If gamma-centered mesh, then have nSites/2 + 1 independent parameters 
-                            !(we are sampling k=0 and BZ boundary which dont pair)
-                            !If Shifted mesh, then we have nSites/2 independent parameters
-                            if(tShift_Mesh) then
-                                nIndKPnts_Constrain = nKPnts/2
-                            else
-                                nIndKPnts_Constrain = (nKPnts/2) + 1
-                            endif
-                        else
-                            !This is independent of whether we have a shifted mesh or not
-                            nIndKPnts_Constrain = (nKPnts+1)/2    
-                        endif
-                    endif
+                    call CountUniqueKPnts(nIndKPnts_Constrain)
+!                    if(LatticeDim.eq.2) then
+!                        nKPnts_x = nint(sqrt(real(nKPnts,dp)))
+!                        !In 2D, this means that we are optimizing the LHS of the brillouin zone
+!                        if(mod(nKPnts_x,2).eq.0) then
+!                            if(tShift_Mesh) then
+!                                nIndKPnts_Constrain = nKPnts/2
+!                            else
+!                                !Want to include the column of kpoints at kx=0 including the gamma point
+!                                nIndKPnts_Constrain = nKPnts/2 + nKPnts_x
+!                            endif
+!                        else
+!                            if(tShift_Mesh) then
+!                                nIndKPnts_Constrain = ((nKPnts_x + 1)/2)*nKPnts_x - (nKPnts_x-1)/2
+!                            else
+!                                nIndKPnts_Constrain = ((nKPnts_x + 1)/2)*nKPnts_x + (nKPnts_x-1)/2 
+!                            endif
+!                        endif
+!                    else
+!                        if(mod(nKPnts,2).eq.0) then
+!                            !Even number of kpoints 
+!                            !If gamma-centered mesh, then have nSites/2 + 1 independent parameters 
+!                            !(we are sampling k=0 and BZ boundary which dont pair)
+!                            !If Shifted mesh, then we have nSites/2 independent parameters
+!                            if(tShift_Mesh) then
+!                                nIndKPnts_Constrain = nKPnts/2
+!                            else
+!                                nIndKPnts_Constrain = (nKPnts/2) + 1
+!                            endif
+!                        else
+!                            !This is independent of whether we have a shifted mesh or not
+!                            nIndKPnts_Constrain = (nKPnts+1)/2    
+!                        endif
+!                    endif
                     allocate(KBlock_to_KInd_Constrain(nKPnts))
                     allocate(KInd_to_KBlock_Constrain(nIndKPnts_Constrain))
                     allocate(KPointSampled_Constrain(nKPnts))
@@ -397,6 +365,39 @@ module SelfConsistentUtils
             enddo
             if(tInclude) nUniqKPnts = nUniqKPnts + 1
         enddo
+!        if(LatticeDim.eq.2) then
+!            nKPnts_x = nint(sqrt(real(nKPnts,dp)))
+!            !In 2D, this means that we are optimizing the LHS of the brillouin zone
+!            if(mod(nKPnts_x,2).eq.0) then
+!                if(tShift_Mesh) then
+!                    nIndKPnts = nKPnts/2
+!                else
+!                    !Want to include the column of kpoints at kx=0 including the gamma point
+!                    nIndKPnts = nKPnts/2 + nKPnts_x
+!                endif
+!            else
+!                if(tShift_Mesh) then
+!                    nIndKPnts = ((nKPnts_x + 1)/2)*nKPnts_x - (nKPnts_x-1)/2
+!                else
+!                    nIndKPnts = ((nKPnts_x + 1)/2)*nKPnts_x + (nKPnts_x-1)/2 
+!                endif
+!            endif
+!        else
+!            if(mod(nKPnts,2).eq.0) then
+!                !Even number of kpoints 
+!                !If gamma-centered mesh, then have nSites/2 + 1 independent parameters 
+!                !(we are sampling k=0 and BZ boundary which dont pair)
+!                !If Shifted mesh, then we have nSites/2 independent parameters
+!                if(tShift_Mesh) then
+!                    nIndKPnts = nKPnts/2
+!                else
+!                    nIndKPnts = (nKPnts/2) + 1
+!                endif
+!            else
+!                !This is independent of whether we have a shifted mesh or not
+!                nIndKPnts = (nKPnts+1)/2    
+!            endif
+!        endif
 
     end subroutine CountUniqueKPnts
 
@@ -406,125 +407,151 @@ module SelfConsistentUtils
         integer, intent(out) :: KBlock_to_KInd_loc(nKPnts)
         integer, intent(out) :: KInd_to_KBlock_loc(nIndKPnts_loc)
         logical, intent(out) :: KPointSampled_loc(nKPnts)
-        integer :: i,k,nKPnts_x,ind,ind_2
+        integer :: i,k,kp,l,nUniqKPnts !i,k,nKPnts_x,ind,ind_2
+        logical :: tZerok,tInclude
+        real(dp) :: kdiff(LatticeDim)
         character(len=*), parameter :: t_r='CalcConstrainedK_Maps'
 
-        if(LatticeDim.eq.1) then
-            !A simple mapping
-            do k = 1,nIndKPnts_loc
-                KInd_to_KBlock_loc(k) = k
-                KBlock_to_KInd_loc(k) = k
-            enddo
-            if(mod(nKPnts,2).eq.0) then
-                if(tShift_Mesh) then
-                    do i = 1,nIndKPnts_loc
-                        KBlock_to_KInd_loc(i+nIndKPnts_loc) = nIndKPnts_loc-i+1
-                    enddo
-                else
-                    do i = 2,nIndKPnts_loc-1
-                        KBlock_to_KInd_loc(i+nIndKPnts_loc-1) = nIndKPnts_loc-i+1
-                    enddo
-                endif
-            else
-                do i = 1,nIndKPnts_loc
-                    if(tShift_Mesh) then
-                        KBlock_to_KInd_loc(i+nIndKPnts_loc) = nIndKPnts_loc-i
-                    else
-                        KBlock_to_KInd_loc(i+nIndKPnts_loc) = nIndKPnts_loc-i+1
-                    endif
+        nUniqKPnts = 0
+        do k = 1,nKPnts
+            tInclude = .true.
+            do kp = 1,k-1
+                kdiff(:) = abs(KPnts(:,k)+KPnts(:,kp))
+                tZerok = .true.
+                do l = 1,LatticeDim
+                    tZerok = tZerok.and.(kdiff(l).lt.1.0e-7_dp)
                 enddo
-            endif
-        else
-            nKPnts_x = nint(sqrt(real(nKPnts,dp)))
-            !2D system
-            if(mod(nKPnts_x,2).eq.0) then
-                if(tShift_Mesh) then
-                    !This is simple
-                    do k = 1,nIndKPnts_loc
-                        KInd_to_KBlock_loc(k) = k
-                    enddo
-                    do k = 1,nIndKPnts_loc
-                        KBlock_to_KInd_loc(k) = k
-                        KBlock_to_KInd_loc(k+nIndKPnts_loc) = nIndKPnts_loc-k+1
-                    enddo
-                else
-                    !This is more complicated
-                    i = nKPnts/2 + nKPnts_x/2 + 1
-                    if(abs(KPnts(1,i)).gt.1.0e-8_dp) call stop_all(t_r,'Error here 1')
-                    if(abs(KPnts(2,i)).gt.1.0e-8_dp) call stop_all(t_r,'Error here 2')
-                    do k = 1,i
-                        !This should take us up to the gamma point
-                        KInd_to_KBlock_loc(k) = k
-                    enddo
-                    do k = 1,nKPnts_x/2 - 1
-                        KInd_to_KBlock_loc(k + i) = nKPnts - (k*nKPnts_x) + 1
-                    enddo
-                    if(i+k-1.ne.nIndKPnts_loc) call stop_all(t_r,'Error here 3')
-
-                    !Now for the mapping the other way
-                    do k = 1,i
-                        KBlock_to_KInd_loc(k) = k
-                    enddo
-                    ind = i
-                    do k = 1,nKPnts_x/2 - 1
-                        ind = ind + 1
-                        KBlock_to_KInd_loc(ind) = i - k
-                    enddo
-
-                    !The top right row
-                    do k = 1,nKPnts_x/2 - 1
-                        KBlock_to_KInd_loc(nKPnts-(k*nKPnts_x) + 1) = i + k
-                    enddo
-
-                    !The non-sampled kpoints (values for 6x6 mesh)
-                    do k = nKPnts_x/2 + 2, nKPnts_x     !k = 5,6
-                        ind = ((k-1)*nKPnts_x)+1        !ind = 25,31
-                        ind_2 = ((nKPnts_x/2 - (k-(nKPnts_x/2 + 2)))*nKPnts_x)+1  !ind_2 = 19,13
-                        do i = 1,nKPnts_x-1
-                            KBlock_to_KInd_loc(ind+i) = ind_2 - i
-                        enddo
-                    enddo
+                if(tZerok) then
+                    tInclude = .false.
+                    exit
                 endif
+            enddo
+            if(tInclude) then
+                nUniqKPnts = nUniqKPnts + 1
+                KBlock_to_KInd_loc(k) = nUniqKPnts
+                KInd_to_KBlock_loc(nUniqKPnts) = k
             else
-                !Odd number of kpoints in each dimension
-                if(tShift_Mesh) then
-                    if(abs(KPnts(1,nIndKPnts_loc)).gt.1.0e-8_dp) call stop_all(t_r,'Error here 1')
-                    if(abs(KPnts(2,nIndKPnts_loc)).gt.1.0e-8_dp) call stop_all(t_r,'Error here 2')
-                    do k = 1,nIndKPnts_loc
-                        KInd_to_KBlock_loc(k) = k
-                        KBlock_to_KInd_loc(k) = k
-                    enddo
-                    ind = nIndKPnts_loc
-                    do k = nIndKPnts_loc-1,1,-1
-                        ind = ind + 1
-                        KBlock_to_KInd_loc(ind) = k
-                    enddo
-                    if(KBlock_to_KInd_loc(nKPnts).ne.1) call stop_all(t_r,'Error here a')
-                else
-                    do k = 1,((nKPnts_x+1)/2)*nKPnts_x
-                        kInd_to_KBlock_loc(k) = k
-                        KBlock_to_KInd_loc(k) = k
-                    enddo
-                    i = ((nKPnts_x+1)/2)*nKPnts_x
-                    !Top right
-                    do k = 1,(nKPnts_x-1)/2 
-                        KInd_to_KBlock_loc(k + i) = nKPnts - (k*nKPnts_x) + 1
-                    enddo
-                    !Other way
-                    do k = 1,(nKPnts_x-1)/2
-                        KBlock_to_KInd_loc(nKPnts-(k*nKPnts_x) + 1) = i + k
-                    enddo
-                    !The non-sampled kpoints (values for 7x7 mesh)
-                    do k = (nKPnts_x+1)/2 + 1, nKPnts_x !k = 5,6,7
-                        ind = ((k-1)*nKPnts_x)+1    !29, 36, 43
-                        ind_2 = (((nKPnts_x+1)/2 - (k-((nKPnts_x+1)/2 + 1)))*nKPnts_x)+1  !29, 20, 13
-                        do i = 1,nKPnts_x-1
-                            KBlock_to_KInd_loc(ind+i) = ind_2 - i
-                        enddo
-                    enddo
-                endif
-            endif   !Even/odd kpoints in each dimension
-        endif   !End if 2D
+                KBlock_to_KInd_loc(k) = kp
+            endif
+        enddo
+        if(nUniqKPnts.ne.nIndKPnts_loc) call stop_all(t_r,'Error in counting independent kpoints')
+
+!        if(LatticeDim.eq.1) then
+!            !A simple mapping
+!            do k = 1,nIndKPnts_loc
+!                KInd_to_KBlock_loc(k) = k
+!                KBlock_to_KInd_loc(k) = k
+!            enddo
+!            if(mod(nKPnts,2).eq.0) then
+!                if(tShift_Mesh) then
+!                    do i = 1,nIndKPnts_loc
+!                        KBlock_to_KInd_loc(i+nIndKPnts_loc) = nIndKPnts_loc-i+1
+!                    enddo
+!                else
+!                    do i = 2,nIndKPnts_loc-1
+!                        KBlock_to_KInd_loc(i+nIndKPnts_loc-1) = nIndKPnts_loc-i+1
+!                    enddo
+!                endif
+!            else
+!                do i = 1,nIndKPnts_loc
+!                    if(tShift_Mesh) then
+!                        KBlock_to_KInd_loc(i+nIndKPnts_loc) = nIndKPnts_loc-i
+!                    else
+!                        KBlock_to_KInd_loc(i+nIndKPnts_loc) = nIndKPnts_loc-i+1
+!                    endif
+!                enddo
+!            endif
+!        else
+!            nKPnts_x = nint(sqrt(real(nKPnts,dp)))
+!            !2D system
+!            if(mod(nKPnts_x,2).eq.0) then
+!                if(tShift_Mesh) then
+!                    !This is simple
+!                    do k = 1,nIndKPnts_loc
+!                        KInd_to_KBlock_loc(k) = k
+!                    enddo
+!                    do k = 1,nIndKPnts_loc
+!                        KBlock_to_KInd_loc(k) = k
+!                        KBlock_to_KInd_loc(k+nIndKPnts_loc) = nIndKPnts_loc-k+1
+!                    enddo
+!                else
+!                    !This is more complicated
+!                    i = nKPnts/2 + nKPnts_x/2 + 1
+!                    if(abs(KPnts(1,i)).gt.1.0e-8_dp) call stop_all(t_r,'Error here 1')
+!                    if(abs(KPnts(2,i)).gt.1.0e-8_dp) call stop_all(t_r,'Error here 2')
+!                    do k = 1,i
+!                        !This should take us up to the gamma point
+!                        KInd_to_KBlock_loc(k) = k
+!                    enddo
+!                    do k = 1,nKPnts_x/2 - 1
+!                        KInd_to_KBlock_loc(k + i) = nKPnts - (k*nKPnts_x) + 1
+!                    enddo
+!                    if(i+k-1.ne.nIndKPnts_loc) call stop_all(t_r,'Error here 3')
+!
+!                    !Now for the mapping the other way
+!                    do k = 1,i
+!                        KBlock_to_KInd_loc(k) = k
+!                    enddo
+!                    ind = i
+!                    do k = 1,nKPnts_x/2 - 1
+!                        ind = ind + 1
+!                        KBlock_to_KInd_loc(ind) = i - k
+!                    enddo
+!
+!                    !The top right row
+!                    do k = 1,nKPnts_x/2 - 1
+!                        KBlock_to_KInd_loc(nKPnts-(k*nKPnts_x) + 1) = i + k
+!                    enddo
+!
+!                    !The non-sampled kpoints (values for 6x6 mesh)
+!                    do k = nKPnts_x/2 + 2, nKPnts_x     !k = 5,6
+!                        ind = ((k-1)*nKPnts_x)+1        !ind = 25,31
+!                        ind_2 = ((nKPnts_x/2 - (k-(nKPnts_x/2 + 2)))*nKPnts_x)+1  !ind_2 = 19,13
+!                        do i = 1,nKPnts_x-1
+!                            KBlock_to_KInd_loc(ind+i) = ind_2 - i
+!                        enddo
+!                    enddo
+!                endif
+!            else
+!                !Odd number of kpoints in each dimension
+!                if(tShift_Mesh) then
+!                    if(abs(KPnts(1,nIndKPnts_loc)).gt.1.0e-8_dp) call stop_all(t_r,'Error here 1')
+!                    if(abs(KPnts(2,nIndKPnts_loc)).gt.1.0e-8_dp) call stop_all(t_r,'Error here 2')
+!                    do k = 1,nIndKPnts_loc
+!                        KInd_to_KBlock_loc(k) = k
+!                        KBlock_to_KInd_loc(k) = k
+!                    enddo
+!                    ind = nIndKPnts_loc
+!                    do k = nIndKPnts_loc-1,1,-1
+!                        ind = ind + 1
+!                        KBlock_to_KInd_loc(ind) = k
+!                    enddo
+!                    if(KBlock_to_KInd_loc(nKPnts).ne.1) call stop_all(t_r,'Error here a')
+!                else
+!                    do k = 1,((nKPnts_x+1)/2)*nKPnts_x
+!                        kInd_to_KBlock_loc(k) = k
+!                        KBlock_to_KInd_loc(k) = k
+!                    enddo
+!                    i = ((nKPnts_x+1)/2)*nKPnts_x
+!                    !Top right
+!                    do k = 1,(nKPnts_x-1)/2 
+!                        KInd_to_KBlock_loc(k + i) = nKPnts - (k*nKPnts_x) + 1
+!                    enddo
+!                    !Other way
+!                    do k = 1,(nKPnts_x-1)/2
+!                        KBlock_to_KInd_loc(nKPnts-(k*nKPnts_x) + 1) = i + k
+!                    enddo
+!                    !The non-sampled kpoints (values for 7x7 mesh)
+!                    do k = (nKPnts_x+1)/2 + 1, nKPnts_x !k = 5,6,7
+!                        ind = ((k-1)*nKPnts_x)+1    !29, 36, 43
+!                        ind_2 = (((nKPnts_x+1)/2 - (k-((nKPnts_x+1)/2 + 1)))*nKPnts_x)+1  !29, 20, 13
+!                        do i = 1,nKPnts_x-1
+!                            KBlock_to_KInd_loc(ind+i) = ind_2 - i
+!                        enddo
+!                    enddo
+!                endif
+!            endif   !Even/odd kpoints in each dimension
+!        endif   !End if 2D
 
         !Tests
         do i = 1,nIndKPnts_loc
