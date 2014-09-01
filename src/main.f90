@@ -166,7 +166,15 @@ Program RealHub
                     if(tReadSystem) then
                         call read_orbitals()
                     else
-                        call run_hf(it)
+                        if(tT1SCF) then
+                            if(it.eq.1) then
+                                call run_hf(it)
+                            else
+                                call RotDet_T1(it)
+                            endif
+                        else
+                            call run_hf(it)
+                        endif
                     endif
                     call halt_timer(DiagT)
 
@@ -232,6 +240,9 @@ Program RealHub
                             write(6,"(A)") "...correlation potential converged" 
                             exit
                         endif
+                    elseif(tT1SCF) then
+                        !A new self-consistency. Find the best single determinant analytically which matches the HL vector
+                        call T1SCF()
                     else
                         !Write out stats:
                         !   Iter    E/Site  d[V]    ERR[RDM]    ERR[Filling]    mean[corr_pot]      Some RDM stuff...?
