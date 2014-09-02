@@ -11,6 +11,7 @@ Program RealHub
     use readinput
     use Lattices
     use report  
+    use DMFT
     implicit none
 
     call init_calc()
@@ -143,166 +144,170 @@ Program RealHub
                     call SR_LinearResponse()
                 endif
 
-                if(tReadInCorrPot.or.tReadSystem) then
-                    !Read in the correlation potential from another source
-                    call read_in_corrpot()
-                elseif(tExactCorrPot) then
-                    !We know the exact correlation potential for the hubbard model: U/2
-                    v_loc(:,:) = U/2.0_dp
-                endif
+                if(tDMFTCalc) then
+                    call DMFT_Driver()
+                else
+                    if(tReadInCorrPot.or.tReadSystem) then
+                        !Read in the correlation potential from another source
+                        call read_in_corrpot()
+                    elseif(tExactCorrPot) then
+                        !We know the exact correlation potential for the hubbard model: U/2
+                        v_loc(:,:) = U/2.0_dp
+                    endif
 
-                !At this point, we have h0, U and a set of system sites (the first nImp indices), as well as a local potential
-                do it=1,iMaxIterDMET
+                    !At this point, we have h0, U and a set of system sites (the first nImp indices), as well as a local potential
+                    do it=1,iMaxIterDMET
 
-                    !Write out header file for the convergence
-                    write(6,"(A,I6)") "Iteration: ",it
+                        !Write out header file for the convergence
+                        write(6,"(A,I6)") "Iteration: ",it
 
-                    !Do iMaxIterDMET microiterations to converge the DMET for this occupation number
-                    call add_localpot(h0,h0v,v_loc,core_b=h0_b,core_v_b=h0v_b,CorrPot_b=v_loc_b)
+                        !Do iMaxIterDMET microiterations to converge the DMET for this occupation number
+                        call add_localpot(h0,h0v,v_loc,core_b=h0_b,core_v_b=h0v_b,CorrPot_b=v_loc_b)
 
-                    !Now run a HF calculation by constructing and diagonalizing the fock matrix
-                    !This will also return the RDM in the AO basis
-                    call set_timer(DiagT)
-                    if(tReadSystem) then
-                        call read_orbitals()
-                    else
-                        if(tT1SCF) then
-                            if(it.eq.1) then
-                                call run_hf(it)
+                        !Now run a HF calculation by constructing and diagonalizing the fock matrix
+                        !This will also return the RDM in the AO basis
+                        call set_timer(DiagT)
+                        if(tReadSystem) then
+                            call read_orbitals()
+                        else
+                            if(tT1SCF) then
+                                if(it.eq.1) then
+                                    call run_hf(it)
+                                else
+                                    call RotDet_T1(it)
+                                endif
                             else
-                                call RotDet_T1(it)
+                                call run_hf(it)
                             endif
+                        endif
+                        call halt_timer(DiagT)
+
+                        !Construct the embedded basis
+                        call set_timer(ConstEmb)
+                        if(tThermal) then
+                            call ConstructThermalEmbedding()
                         else
-                            call run_hf(it)
+                            if(tConstructFullSchmidtBasis) then
+                                call ConstructFullSchmidtBasis()
+                            else
+                                call CalcEmbedding()
+                            endif
                         endif
-                    endif
-                    call halt_timer(DiagT)
+                        if(tWriteOut) then
+                            call writematrix(EmbeddedBasis,'EmbeddedBasis',.true.)
+                            if(tUHF) call writematrix(EmbeddedBasis_b,'BetaEmbeddedBasis',.true.)
+                        endif
+                        call halt_timer(ConstEmb)
+                        
+                        !Now transform the 1 electron quantities into the embedded basis
+                        !This should be exactly correct, i.e. we can now diagonalize the fock matrix in this basis
+                        !to get the same result. We could also check that the number of electrons adds to the correct thing
+                        call set_timer(Trans1e)
+                        call Transform1e()
+                        call halt_timer(Trans1e)
+                        
+                        call set_timer(HL_Time)
+                        !Construct the two electron integrals in the system, and solve embedded system with high-level method
+                        t2RDM = .false.
+                        if(tFCIQMC) t2RDM = .false.
+                        call SolveSystem(t2RDM)
+                        call halt_timer(HL_Time)
 
-                    !Construct the embedded basis
-                    call set_timer(ConstEmb)
-                    if(tThermal) then
-                        call ConstructThermalEmbedding()
-                    else
-                        if(tConstructFullSchmidtBasis) then
-                            call ConstructFullSchmidtBasis()
+                        if((.not.tAnderson).and.tContinueConvergence) then
+                            !Fit new potential
+                            !vloc_change (global) is updated in here to reflect the optimal change
+                            !VarVloc is a meansure of the change in the potential
+                            !ErrRDM is a measure of the initial difference in the RDMs
+                            call set_timer(Fit_v_time)
+                            call Fit_vloc(VarVloc,ErrRDM)
+
+                            if(tDebug) call writematrix(vloc_change,'vloc_change',.true.)
+
+                            !Mean vloc is actually for the old vloc for consistency with Geralds code
+                            mean_vloc = 0.0_dp
+                            do i=1,nImp
+                                mean_vloc = mean_vloc + v_loc(i,i)
+                            enddo
+                            mean_vloc = mean_vloc/real(nImp)
+                            call halt_timer(Fit_v_time)
+
+                            !Write out stats:
+                            !   Iter    E/Site  d[V]    Initial_ERR[RDM]    ERR[Filling]    mean[corr_pot]      Some RDM stuff...?
+                            write(6,"(I7,5G22.10)") it,TotalE_Imp,VarVloc,ErrRDM,FillingError,mean_vloc
+                            write(DMETfile,"(I7,7G22.10)") it,TotalE_Imp,HL_Energy,VarVloc,ErrRDM,  &
+                                Actualfilling_Imp,FillingError,mean_vloc
+
+                            !Update vloc
+                            v_loc(:,:) = v_loc(:,:) + vloc_change(:,:)
+
+                            if(VarVloc.lt.dTolDMET) then
+                                write(6,"(A)") "...correlation potential converged" 
+                                exit
+                            endif
+                        elseif(tT1SCF) then
+                            !A new self-consistency. Find the best single determinant analytically which matches the HL vector
+                            call T1SCF()
                         else
-                            call CalcEmbedding()
+                            !Write out stats:
+                            !   Iter    E/Site  d[V]    ERR[RDM]    ERR[Filling]    mean[corr_pot]      Some RDM stuff...?
+                            VarVloc = 0.0_dp
+                            ErrRDM = 0.0_dp
+                            mean_vloc = 0.0_dp
+
+                            write(6,"(I7,5G22.10)") it,TotalE_Imp,VarVloc,ErrRDM,FillingError,mean_vloc
+                            write(DMETfile,"(I7,7G22.10)") it,TotalE_Imp,HL_Energy,VarVloc,ErrRDM,  &
+                                Actualfilling_Imp,FillingError,mean_vloc
+                            call flush(6)
+
+                            exit    !Anderson model, so we do not want to iterate
                         endif
-                    endif
-                    if(tWriteOut) then
-                        call writematrix(EmbeddedBasis,'EmbeddedBasis',.true.)
-                        if(tUHF) call writematrix(EmbeddedBasis_b,'BetaEmbeddedBasis',.true.)
-                    endif
-                    call halt_timer(ConstEmb)
+
+                    enddo   !DMET convergence
+
+                    if(it.gt.iMaxIterDMET) call warning(t_r,'DMET Convergence failed - try increasing MAXITER_DMET ?')
+                        
+                    !Potentially run FCI again now to get correlation functions from 2RDMs?
+                    write(6,"(A,F10.4,A,G20.10)") "FINAL energy per site for U=",U,' is: ',TotalE_Imp
+                    call flush(6)
                     
-                    !Now transform the 1 electron quantities into the embedded basis
-                    !This should be exactly correct, i.e. we can now diagonalize the fock matrix in this basis
-                    !to get the same result. We could also check that the number of electrons adds to the correct thing
-                    call set_timer(Trans1e)
-                    call Transform1e()
-                    call halt_timer(Trans1e)
-                    
-                    call set_timer(HL_Time)
-                    !Construct the two electron integrals in the system, and solve embedded system with high-level method
-                    t2RDM = .false.
-                    if(tFCIQMC) t2RDM = .false.
-                    call SolveSystem(t2RDM)
-                    call halt_timer(HL_Time)
-
-                    if((.not.tAnderson).and.tContinueConvergence) then
-                        !Fit new potential
-                        !vloc_change (global) is updated in here to reflect the optimal change
-                        !VarVloc is a meansure of the change in the potential
-                        !ErrRDM is a measure of the initial difference in the RDMs
-                        call set_timer(Fit_v_time)
-                        call Fit_vloc(VarVloc,ErrRDM)
-
-                        if(tDebug) call writematrix(vloc_change,'vloc_change',.true.)
-
-                        !Mean vloc is actually for the old vloc for consistency with Geralds code
-                        mean_vloc = 0.0_dp
-                        do i=1,nImp
-                            mean_vloc = mean_vloc + v_loc(i,i)
-                        enddo
-                        mean_vloc = mean_vloc/real(nImp)
-                        call halt_timer(Fit_v_time)
-
-                        !Write out stats:
-                        !   Iter    E/Site  d[V]    Initial_ERR[RDM]    ERR[Filling]    mean[corr_pot]      Some RDM stuff...?
-                        write(6,"(I7,5G22.10)") it,TotalE_Imp,VarVloc,ErrRDM,FillingError,mean_vloc
-                        write(DMETfile,"(I7,7G22.10)") it,TotalE_Imp,HL_Energy,VarVloc,ErrRDM,  &
-                            Actualfilling_Imp,FillingError,mean_vloc
-
-                        !Update vloc
-                        v_loc(:,:) = v_loc(:,:) + vloc_change(:,:)
-
-                        if(VarVloc.lt.dTolDMET) then
-                            write(6,"(A)") "...correlation potential converged" 
-                            exit
+                    if(.not.tAnderson) then
+                        close(DMETfile)
+                        if(tHalfFill) then
+                            call WriteCorrPot()
                         endif
-                    elseif(tT1SCF) then
-                        !A new self-consistency. Find the best single determinant analytically which matches the HL vector
-                        call T1SCF()
-                    else
-                        !Write out stats:
-                        !   Iter    E/Site  d[V]    ERR[RDM]    ERR[Filling]    mean[corr_pot]      Some RDM stuff...?
-                        VarVloc = 0.0_dp
-                        ErrRDM = 0.0_dp
-                        mean_vloc = 0.0_dp
+                        call writematrix(v_loc,'Converged Correlation Potential',.true.)
+                    endif
+            
+                    deallocate(MeanFieldDM)
+                    if(tUHF) deallocate(MeanFieldDM_b)
 
-                        write(6,"(I7,5G22.10)") it,TotalE_Imp,VarVloc,ErrRDM,FillingError,mean_vloc
-                        write(DMETfile,"(I7,7G22.10)") it,TotalE_Imp,HL_Energy,VarVloc,ErrRDM,  &
-                            Actualfilling_Imp,FillingError,mean_vloc
-                        call flush(6)
-
-                        exit    !Anderson model, so we do not want to iterate
+                    if(tProjectHFKPnts) then
+                        call ProjectHFontoK()
                     endif
 
-                enddo   !DMET convergence
-
-                if(it.gt.iMaxIterDMET) call warning(t_r,'DMET Convergence failed - try increasing MAXITER_DMET ?')
-                    
-                !Potentially run FCI again now to get correlation functions from 2RDMs?
-                write(6,"(A,F10.4,A,G20.10)") "FINAL energy per site for U=",U,' is: ',TotalE_Imp
-                call flush(6)
-                
-                if(.not.tAnderson) then
-                    close(DMETfile)
-                    if(tHalfFill) then
-                        call WriteCorrPot()
+                    if(tKSpaceOrbs) then
+                        call GetKSpaceOrbs()
                     endif
-                    call writematrix(v_loc,'Converged Correlation Potential',.true.)
-                endif
-        
-                deallocate(MeanFieldDM)
-                if(tUHF) deallocate(MeanFieldDM_b)
 
-                if(tProjectHFKPnts) then
-                    call ProjectHFontoK()
-                endif
+                    if(tCorrNI_Spectra) then
+                        !Calculates single reference spectral functions using the correlated 1-electron hamiltonian
+                        call Correlated_SR_LR()
+                    endif
 
-                if(tKSpaceOrbs) then
-                    call GetKSpaceOrbs()
-                endif
+                    if(tLR_DMET) then
+                        !Perform linear response on the resulting DMET state
+                        call MR_LinearResponse()
+                    endif
+                    deallocate(HFOrbs)
+                    if(tUHF) deallocate(HFOrbs_b)
 
-                if(tCorrNI_Spectra) then
-                    !Calculates single reference spectral functions using the correlated 1-electron hamiltonian
-                    call Correlated_SR_LR()
-                endif
+                    !Set potential for the next occupation number, or wipe it?
+                    if(.not.tSaveCorrPot) then
+                        v_loc(:,:) = zero
+                        if(tUHF) v_loc_b(:,:) = zero
+                    endif
 
-                if(tLR_DMET) then
-                    !Perform linear response on the resulting DMET state
-                    call MR_LinearResponse()
-                endif
-                deallocate(HFOrbs)
-                if(tUHF) deallocate(HFOrbs_b)
-
-                !Set potential for the next occupation number, or wipe it?
-                if(.not.tSaveCorrPot) then
-                    v_loc(:,:) = zero
-                    if(tUHF) v_loc_b(:,:) = zero
-                endif
-
+                endif   !if DMFT
             enddo   !Loop over occupations
 
             if(.not.tHalfFill) then
