@@ -58,6 +58,8 @@ module readinput
         iHamSize_Nm1 = 0
         tCorrelatedBath = .false.
         tExactCorrPot = .false.
+        tDMFTCalc = .false.
+        tT1SCF = .false.
 
         !General LR options
         Start_Omega = 0.0_dp

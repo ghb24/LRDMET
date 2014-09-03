@@ -3,6 +3,9 @@ module solvers
     use errors, only: stop_all
     use globals
     use writedata
+    use DetToolsData
+    use DetTools
+    use DetBitOps
     implicit none
 
     contains
@@ -11,18 +14,15 @@ module solvers
     !tConverged means that the DMET is converged, and this is the last run, so calculate the 2RDM for other properties
     subroutine SolveSystem(tCreate2RDM)
         use utils, only: get_free_unit 
-        use DetToolsData, only: FCIDetList,nFCIDet
         implicit none
         logical, intent(in) :: tCreate2RDM
-        integer :: pSpaceDim,i,iunit,j,k,l,ios,i_spin,j_spin!,Pivots(4),info
+        integer :: pSpaceDim,i,iunit,j,k,l,ios,i_spin,j_spin
         character(len=256) :: cmd
         character(len=128) :: cmd3
         character(len=73) :: cmd2
         character(len=67) :: cmd1
         character(len=6) :: StrPSpace
-        real(dp) :: Emb_nElec,Hel,AFOrder!,DD_Response,ZerothH(4,4)
-!        real(dp), allocatable :: FullH1(:,:),LR_State(:)
-!        real(dp) ::DDOT,Overlap
+        real(dp) :: Emb_nElec,Hel,AFOrder
         real(dp) :: Check2eEnergy,trace
         logical :: exists
         real(dp), allocatable :: HL_2RDM_temp(:,:),temp2rdm(:,:,:,:)
@@ -548,9 +548,6 @@ module solvers
     !Calculate the FCI result for this model in the full space
     subroutine DiagFullSystem()
         use utils, only: get_free_unit,append_ext,append_ext_real
-        use DetBitOps, only: SQOperator
-        use DetToolsData
-        use DetTools, only: umatind,GenDets,GetHElement
         implicit none
         integer :: pSpaceDim,i,j,iunit,pertsitealpha,pertsitebeta,UMatSize,OrbPairs
         integer :: lWork,info,ilut,pertsite
@@ -929,20 +926,25 @@ module solvers
 
 !Generate all determinants in the FCI space and do complete diagonalization
     subroutine CompleteDiag(tCreate2RDM)
-        use DetToolsData
         use Davidson, only: Real_NonDir_Davidson
-        use DetTools, only: GetHElement,GenDets
         use utils, only: get_free_unit
         implicit none
         logical, intent(in) :: tCreate2RDM
         integer :: Nmax,ierr
-        real(dp), allocatable :: work(:),CompressHam(:)
+        real(dp), allocatable :: work(:),CompressHam(:),TransCoreHEmb(:,:),temp(:,:)
         integer, allocatable :: IndexHam(:)
         integer :: lwork,info,i,j,iSize,iunit_tmp
         logical :: texist
         character(len=*), parameter :: t_r='CompleteDiag'
 
         call CreateIntMats(tTwoElecBath=tCorrelatedBath)
+        if(tCoreH_EmbBasis) then
+            allocate(TransCoreHEmb(EmbSize,EmbSize))
+            !Transform the two-electron integrals into the HF basis of the core
+            !The routine returns the transformation matrix between the embedded basis 
+            !and coreH basis
+            call TransformIntsToCoreH(TransCoreHEmb)
+        endif
 
         !Now generate all determinants in the active space
         if(allocated(FCIDetList)) deallocate(FCIDetList)
@@ -1059,6 +1061,7 @@ module solvers
         endif
 
         if(tReadMats) then
+            if(tCoreH_EmbBasis) call stop_all(t_r,'Cannot use CoreH basis with reading in RDMs')
             inquire(file='RDM_N',exist=texist)
             if(texist) then
                 iunit_tmp = get_free_unit()
@@ -1093,6 +1096,16 @@ module solvers
                 call FindFull1RDM(1,1,.true.,HL_1RDM)
             endif
         endif
+
+        if(tCoreH_EmbBasis) then
+            !Rotate RDM back to original basis
+            if(tUHF) call stop_all(t_r,'CoreH not working with UHF')
+            allocate(temp(EmbSize,EmbSize))
+            call dgemm('n','n',EmbSize,EmbSize,EmbSize,1.0_dp,TransCoreHEmb,EmbSize,HL_1RDM,EmbSize,0.0_dp,temp,EmbSize)
+            call dgemm('n','t',EmbSize,EmbSize,EmbSize,1.0_dp,temp,EmbSize,TransCoreHEmb,EmbSize,0.0_dp,HL_1RDM,EmbSize)
+            deallocate(temp)
+        endif
+
         if(tWriteMats) then
             if(.not.(tReadMats.and.texist)) then
                 !Do not write them out again if we have just read them in!
@@ -1126,6 +1139,7 @@ module solvers
             if(allocated(HL_2RDM)) deallocate(HL_2RDM)
             allocate(HL_2RDM(EmbSize,EmbSize,EmbSize,EmbSize))
             HL_2RDM(:,:,:,:) = zero
+            if(tCoreH_EmbBasis) call stop_all(t_r,'Cannot calculate 2RDM with CoreH basis currently')
             if(tUHF) then
                 call stop_all(t_r,'Cannot calculate 2RDM with UHF currently')
             else
@@ -1133,9 +1147,161 @@ module solvers
             endif
         endif
 
+        if(tT1SCF) then
+            if(.not.tCoreH_EmbBasis) call stop_all(t_r,'Must calculate HL wavefunction in coreH basis')
+            call CalcT1Coeffs(TransCoreHEmb)
+        endif
+
         if(allocated(FCIBitList)) deallocate(FCIBitList)
+        if(allocated(TransCoreHEmb)) deallocate(TransCoreHEmb)
 
     end subroutine CompleteDiag
+
+    !Calculate the T1 matrix over the HL wavefunction expressed in the CoreH basis
+    !Find the T1 amplitudes of exp(T) which will rotate a HF wavefunction over the embedded
+    !space to a new determinant which maximally overlaps with the HL wavefunction.
+    !The T1 amplitudes of the rotation are then constructed from < HL | a^+ i | HF >.
+    !Store these T1 amplitudes over the impurity + bath space in a global structure.
+    subroutine CalcT1Coeffs(TransCoreHEmb)
+        implicit none
+        real(dp), intent(in) :: TransCoreHEmb(EmbSize,EmbSize)
+        real(dp), allocatable :: temp(:,:)
+        integer :: i,NIRef(Elec),iLutRef,RefInd,a,k,iLut
+        logical :: tSign,tSign2
+        character(*), parameter :: t_r='CalcT1Coeffs'
+
+        if(Elec.ne.(EmbSize/2)) call stop_all(t_r,'Dimensions wrong')
+        if(allocated(T1Mat)) deallocate(T1Mat)
+        allocate(T1Mat(EmbSize,EmbSize))
+        T1Mat(:,:) = zero
+
+        !First, find the 'HF' determinant
+        do i = 1,Elec
+            NIRef(i) = i
+        enddo
+        call EncodeBitDet(NIRef,Elec,iLutRef)
+        do i = 1,nFCIDet
+            if(iLutRef.eq.FCIBitList(i)) then
+                exit
+            endif
+        enddo
+        if(i.eq.(nFCIDet+1)) call stop_all(t_r,'Cannot find reference')
+        RefInd = i
+        
+        T1RotMag = zero
+
+        !Construct all single excitations
+        do a = Elec+1,EmbSize,2
+            do i = 1,Elec,2     !Run over alpha electrons
+                iLut = iLutRef
+                call SQOperator(ilut,i,tSign,.true.)
+                call SQOperator(ilut,a,tSign2,.false.)
+
+                !Now, find this det
+                do k = 1,nFCIDet
+                    if(iLut.eq.FCIBitList(k)) then
+                        !Found excitation
+                        if(tSign.neqv.tSign2) then
+                            T1Mat((i+1)/2,(a+1)/2) = -HL_Vec(k)
+                        else
+                            T1Mat((i+1)/2,(a+1)/2) = HL_Vec(k)
+                        endif
+                        T1RotMag = T1RotMag + HL_Vec(k)**2
+                    endif
+                enddo
+                if(k.eq.(nFCIDet+1)) call stop_all(t_r,'Cannot find excitation')
+
+            enddo
+        enddo
+                
+        !Now for beta beta excitation
+        do a = Elec+2,EmbSize,2
+            do i = 2,Elec,2     !Run over alpha electrons
+                iLut = iLutRef
+                call SQOperator(ilut,i,tSign,.true.)
+                call SQOperator(ilut,a,tSign2,.false.)
+
+                !Now, find this det
+                do k = 1,nFCIDet
+                    if(iLut.eq.FCIBitList(k)) then
+                        !Found excitation
+                        if(tSign.neqv.tSign2) then
+                            T1Mat(i/2,a/2) = -HL_Vec(k)
+                        else
+                            T1Mat(i/2,a/2) = HL_Vec(k)
+                        endif
+                        T1RotMag = T1RotMag + HL_Vec(k)**2
+                    endif
+                enddo
+                if(k.eq.(nFCIDet+1)) call stop_all(t_r,'Cannot find excitation')
+            enddo
+        enddo
+
+        T1RotMag = sqrt(T1RotMag)
+
+        !Now, rotate this back into the embedded basis
+
+        allocate(temp(EmbSize,EmbSize))
+        call dgemm('n','n',EmbSize,EmbSize,EmbSize,one,TransCoreHEmb,EmbSize,T1Mat,EmbSize,0.0_dp,temp,EmbSize)
+        call dgemm('n','t',EmbSize,EmbSize,EmbSize,one,temp,EmbSize,TransCoreHEmb,EmbSize,0.0_dp,T1Mat,EmbSize)
+        deallocate(temp)
+
+    end subroutine CalcT1Coeffs
+
+    !Transform integrals into the CoreH basis
+    subroutine TransformIntsToCoreH(TransCoreHEmb)
+        implicit none
+        real(dp), intent(out) :: TransCoreHEmb(EmbSize,EmbSize)
+        real(dp), allocatable :: CoreH(:,:),W(:),work(:)
+        integer :: lWork,info,i,j,k,l,alpha,twoESize
+        real(dp) :: hel
+        character(len=*), parameter :: t_r='TransformIntsToCoreH' 
+
+        write(6,*) "Transforming to Core H Basis"
+        allocate(W(EmbSize))
+        TransCoreHEmb(:,:) = Emb_h0v(:,:)
+        if(tChemPot) TransCoreHEmb(1,1) = TransCoreHEmb(1,1) - (U/2.0_dp)
+        W(:) = zero
+        allocate(work(1))
+        lWork=-1
+        info = 0
+        call dsyev('V','U',EmbSize,TransCoreHEmb,EmbSize,W,Work,lWork,info)
+        if(info.ne.0) call stop_all(t_r,'Workspace query failed')
+        lwork = int(work(1))+1
+        deallocate(work)
+        allocate(work(lwork))
+        call dsyev('V','U',EmbSize,TransCoreHEmb,EmbSize,W,Work,lWork,info)
+        if(info.ne.0) call stop_all(t_r,'Diag failed')
+        deallocate(work)
+
+        !Write out 2 electron integrals, transforming them into the TransCoreHEmb basis
+        umat(:) = zero
+        if(tAnderson) then
+            twoESize = 1
+        else
+            twoESize = nImp
+        endif
+        do i = 1,EmbSize
+            do j = 1,EmbSize
+                do k = 1,EmbSize
+                    do l = 1,EmbSize
+                        hel = 0.0_dp
+                        do alpha = 1,twoESize
+                            hel = hel + TransCoreHEmb(alpha,i)*TransCoreHEmb(alpha,j)*TransCoreHEmb(alpha,k)*TransCoreHEmb(alpha,l)
+                        enddo
+                        hel = hel * U
+                        umat(umatind(i,k,j,l)) = hel
+                    enddo
+                enddo
+            enddo
+        enddo
+        tmat(:,:) = zero
+        do i = 1,EmbSize
+            tmat(i,i) = W(i)
+        enddo
+        deallocate(W)
+
+    end subroutine TransformIntsToCoreH
 
 
     !This subroutine will fill the integral arrays, tmat and umat,
@@ -1144,8 +1310,6 @@ module solvers
     !If tComp = .true., then the 1-electron array tmat_comp is filled, and the elements complex
     !Umat is real either way
     subroutine CreateIntMats(tComp,tTwoElecBath,BathHam,cBathHam)
-        use DetToolsData
-        use DetTools, only: umatind
         implicit none
         logical, intent(in), optional :: tComp
         logical, intent(in), optional :: tTwoElecBath
@@ -1336,9 +1500,6 @@ module solvers
     end subroutine CreateIntMats
 
     subroutine FindFull1RDM(StateBra,StateKet,tGroundState,RDM,RDM_Beta)
-        use DetToolsData, only: FCIDetList,nFCIDet,FCIBitList
-        use DetTools, only: iGetExcitLevel,GetExcitation,tospat
-        use DetBitOps, only: FindBitExcitLevel
         implicit none
         real(dp) , intent(out) :: RDM(EmbSize,EmbSize)
         real(dp), intent(out), optional :: RDM_Beta(EmbSize,EmbSize)
@@ -1537,8 +1698,6 @@ module solvers
     !According to Helgakker <0|e_pqrs|0>
     !Done by running through all N^2 determinant pairs
     subroutine FindFull2RDM(StateBra,StateKet,tGroundState,RDM)
-        use DetToolsData, only: FCIDetList,nFCIDet
-        use DetTools, only: iGetExcitLevel,GetExcitation,gtid
         implicit none
         real(dp) , intent(out) :: RDM(EmbSize,EmbSize,EmbSize,EmbSize)
         integer , intent(in) :: StateBra,StateKet
@@ -1740,8 +1899,6 @@ module solvers
 
     subroutine WriteFCIDUMP()
         use utils, only: get_free_unit
-        use DetToolsData
-        use DetTools, only: umatind
         implicit none
         integer :: iunit,i,j,k,l,alpha,lWork,info,twoESize
         real(dp) :: hel
@@ -1855,8 +2012,6 @@ module solvers
     
     !Find logical size of desired compressed hamiltonian
     subroutine CountSizeCompMat(DetList,Elec,nDet,Nmax,BitDetList)
-        use DetTools, only: GetHElement,GetHElement_comp
-        use DetToolsData, only: TMat_Comp,TMat
         implicit none
         integer, intent(in) :: Elec,nDet
         integer, intent(out) :: Nmax
@@ -1932,7 +2087,6 @@ module solvers
     !Create compressed matrix form of hamiltonian from basis elements
     !DetList
     subroutine StoreCompMat(DetList,Elec,nDet,Nmax,sa,ija,BitDetList)
-        use DetTools, only: GetHElement
         implicit none
         integer, intent(in) :: Elec,nDet,Nmax
         integer, intent(in) :: DetList(Elec,nDet)
@@ -2000,7 +2154,6 @@ module solvers
     !Create compressed matrix form of hamiltonian from basis elements
     !DetList
     subroutine StoreCompMat_comp(DetList,Elec,nDet,Nmax,sa,ija,BitDetList)
-        use DetTools, only: GetHElement_comp
         implicit none
         integer, intent(in) :: Elec,nDet,Nmax
         integer, intent(in) :: DetList(Elec,nDet)

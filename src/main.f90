@@ -12,6 +12,7 @@ Program RealHub
     use Lattices
     use report  
     use DMFT
+    use T1SCF
     implicit none
 
     call init_calc()
@@ -246,7 +247,19 @@ Program RealHub
                             endif
                         elseif(tT1SCF) then
                             !A new self-consistency. Find the best single determinant analytically which matches the HL vector
-                            call T1SCF()
+                            !The T1 matrix over impurity and bath has already been created, and the magnitude of the exciataions already calculated
+
+                            call CalcErrRDMs(ErrRDM)
+                            !Write out:     Iter    E/Site  T1Conv  ErrRDM  Err[Filling]
+                            write(6,"(I7,4G22.10)") it,TotalE_Imp,T1RotMag,ErrRDM,FillingError
+                            write(DMETfile,"(I7,6G22.10)") it,TotalE_Imp,T1RotMag,HL_Energy,ErrRDM,Actualfilling_Imp,FillingError
+
+                            if(T1RotMag.lt.dTolDMET) then
+                                write(6,"(A)") "...DMET bath space converged"
+                                exit
+                            endif
+
+                            call stop_all(t_r,'End test')
                         else
                             !Write out stats:
                             !   Iter    E/Site  d[V]    ERR[RDM]    ERR[Filling]    mean[corr_pot]      Some RDM stuff...?

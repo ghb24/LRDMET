@@ -21,6 +21,8 @@ module Globals
     logical :: tSCFHF   !Perform full scf hartree--fock calculation
     logical :: tWriteOut    !Write out additional info
     logical :: tCheck   !Perform extra checks in various subroutines to ensure correct working
+    logical :: tT1SCF   !Calculate new bath space via simple rotation
+    logical :: tDMFTCalc    !Do DMFT
     logical :: tOpenMP
     integer :: max_omp_threads
     logical :: tReadSystem  !Read the system from files
@@ -134,6 +136,8 @@ module Globals
     real(dp) , allocatable :: Spectrum(:)       !Eigenvalues in case of a complete diagonalization
     real(dp) , allocatable :: J_Ints(:,:)       !Coulomb integrals over the impurity space
     real(dp) , allocatable :: X_Ints(:,:)       !Exchange integrals over the impurity space
+    real(dp) , allocatable :: T1Mat(:,:)        !Matrix over the embedded space of T1 amplitudes
+    real(dp) :: T1RotMag
 
     !Analogous Beta space arrays
     real(dp), allocatable :: v_loc_b(:,:) 

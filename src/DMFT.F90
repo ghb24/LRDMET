@@ -2,7 +2,7 @@
 !A module to do DMFT
 module DMFT
     use const
-    use DMFT_Data
+    use DMFTData
     implicit none
 
     contains

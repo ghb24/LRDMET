@@ -727,6 +727,17 @@ module fitting
 
     end subroutine Fit_vloc
 
+    subroutine CalcErrRDMs(ErrRDM)
+        implicit none
+        real(dp), intent(out) :: ErrRDM
+        real(dp) :: DiffRDM_packed(nImpCombs),DiffRDM_unpacked(nImp,nImp)
+
+        DiffRDM_unpacked = HL_1RDM(1:nImp,1:nImp) - Emb_MF_DM(1:nImp,1:nImp)
+        call ToTriangularPacked(nImp,DiffRDM_unpacked,DiffRDM_packed)
+        ErrRDM = sum(DiffRDM_packed(:)**2.0_dp)
+
+    end subroutine CalcErrRDMs
+
     !We have a function of the nImpComb v_loc_change variables, which returns a residual over EmbCombs parameters, 
     !which we want to reduce so that their summed squares is zero.
     !nx = number of variables to optimize ( = nImpCombs)
