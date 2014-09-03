@@ -1170,7 +1170,7 @@ module solvers
         logical :: tSign,tSign2
         character(*), parameter :: t_r='CalcT1Coeffs'
 
-        if(Elec.ne.(EmbSize/2)) call stop_all(t_r,'Dimensions wrong')
+        if(Elec.ne.EmbSize) call stop_all(t_r,'Dimensions wrong')
         if(allocated(T1Mat)) deallocate(T1Mat)
         allocate(T1Mat(EmbSize,EmbSize))
         T1Mat(:,:) = zero

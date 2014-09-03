@@ -265,6 +265,7 @@ module readinput
                     endif
                 endif
             case("CELLSHAPE")
+                !1 = Gerald, 2 = Square, 3 = Tilted
                 call readi(CellShape)
             case("UHF")
                 tUHF = .true.
@@ -297,6 +298,8 @@ module readinput
                 endif
             case("FITTING_STEPSIZE")
                 call readf(GS_Fit_Step)
+            case("T1_SCF")
+                tT1SCF = .true.
             case("PBC")
                 tPeriodic = .true.
             case("APBC")
@@ -754,7 +757,7 @@ module readinput
         endif
 
         !Now check for sanity and implementation of specified options
-        if(tReadSystem.or.tExactCorrPot) then
+        if(tReadSystem.or.tExactCorrPot.or.tAnderson) then
             !Ensure we don't do fitting
             tContinueConvergence = .false.
         endif
@@ -828,9 +831,6 @@ module readinput
         endif
         if(tReuse_LS.and..not.(tMinRes_NonDir.or.tGMRes_NonDir)) then
             call stop_all(t_r,'Cannot reuse first-order wavefunctions if not using iterative solver')
-        endif
-        if(tCoreH_EmbBasis.and.(tNonDirDavidson.or.tCompleteDiag)) then
-            call stop_all(t_r,'Cannot use CoreH_EmbBasis transform with complete diag or nondir-davidson')
         endif
         if(tCompressedMats.and.(.not.tNonDirDavidson)) then
             call stop_all(t_r,'Can only use compressed matrices option with non-direct davisdon solver')

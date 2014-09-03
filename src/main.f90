@@ -214,52 +214,55 @@ Program RealHub
                         call SolveSystem(t2RDM)
                         call halt_timer(HL_Time)
 
-                        if((.not.tAnderson).and.tContinueConvergence) then
-                            !Fit new potential
-                            !vloc_change (global) is updated in here to reflect the optimal change
-                            !VarVloc is a meansure of the change in the potential
-                            !ErrRDM is a measure of the initial difference in the RDMs
-                            call set_timer(Fit_v_time)
-                            call Fit_vloc(VarVloc,ErrRDM)
+                        if(tContinueConvergence) then
+                            if(tT1SCF) then
+                                !A new self-consistency. Find the best single determinant analytically which matches the HL vector
+                                !The T1 matrix over impurity and bath has already been created, and the magnitude of the exciataions already calculated
 
-                            if(tDebug) call writematrix(vloc_change,'vloc_change',.true.)
+                                call CalcErrRDMs(ErrRDM)
+                                !Write out:     Iter    E/Site  T1Conv  ErrRDM  Err[Filling]
+                                write(6,"(A)") "Iter.   E/Imp   T1RotMag    ErrRDM    ErrFill"
+                                write(6,"(I7,4G22.10)") it,TotalE_Imp,T1RotMag,ErrRDM,FillingError
+                                write(DMETfile,"(I7,6G22.10)") it,TotalE_Imp,T1RotMag,HL_Energy,ErrRDM,Actualfilling_Imp,FillingError
 
-                            !Mean vloc is actually for the old vloc for consistency with Geralds code
-                            mean_vloc = 0.0_dp
-                            do i=1,nImp
-                                mean_vloc = mean_vloc + v_loc(i,i)
-                            enddo
-                            mean_vloc = mean_vloc/real(nImp)
-                            call halt_timer(Fit_v_time)
+                                if(T1RotMag.lt.dTolDMET) then
+                                    write(6,"(A)") "...DMET bath space converged"
+                                    exit
+                                endif
 
-                            !Write out stats:
-                            !   Iter    E/Site  d[V]    Initial_ERR[RDM]    ERR[Filling]    mean[corr_pot]      Some RDM stuff...?
-                            write(6,"(I7,5G22.10)") it,TotalE_Imp,VarVloc,ErrRDM,FillingError,mean_vloc
-                            write(DMETfile,"(I7,7G22.10)") it,TotalE_Imp,HL_Energy,VarVloc,ErrRDM,  &
-                                Actualfilling_Imp,FillingError,mean_vloc
+                                call stop_all(t_r,'End test')
+                            else
+                                !Fit new potential
+                                !vloc_change (global) is updated in here to reflect the optimal change
+                                !VarVloc is a meansure of the change in the potential
+                                !ErrRDM is a measure of the initial difference in the RDMs
+                                call set_timer(Fit_v_time)
+                                call Fit_vloc(VarVloc,ErrRDM)
 
-                            !Update vloc
-                            v_loc(:,:) = v_loc(:,:) + vloc_change(:,:)
+                                if(tDebug) call writematrix(vloc_change,'vloc_change',.true.)
 
-                            if(VarVloc.lt.dTolDMET) then
-                                write(6,"(A)") "...correlation potential converged" 
-                                exit
+                                !Mean vloc is actually for the old vloc for consistency with Geralds code
+                                mean_vloc = 0.0_dp
+                                do i=1,nImp
+                                    mean_vloc = mean_vloc + v_loc(i,i)
+                                enddo
+                                mean_vloc = mean_vloc/real(nImp)
+                                call halt_timer(Fit_v_time)
+
+                                !Write out stats:
+                                !   Iter    E/Site  d[V]    Initial_ERR[RDM]    ERR[Filling]    mean[corr_pot]      Some RDM stuff...?
+                                write(6,"(I7,5G22.10)") it,TotalE_Imp,VarVloc,ErrRDM,FillingError,mean_vloc
+                                write(DMETfile,"(I7,7G22.10)") it,TotalE_Imp,HL_Energy,VarVloc,ErrRDM,  &
+                                    Actualfilling_Imp,FillingError,mean_vloc
+
+                                !Update vloc
+                                v_loc(:,:) = v_loc(:,:) + vloc_change(:,:)
+
+                                if(VarVloc.lt.dTolDMET) then
+                                    write(6,"(A)") "...correlation potential converged" 
+                                    exit
+                                endif
                             endif
-                        elseif(tT1SCF) then
-                            !A new self-consistency. Find the best single determinant analytically which matches the HL vector
-                            !The T1 matrix over impurity and bath has already been created, and the magnitude of the exciataions already calculated
-
-                            call CalcErrRDMs(ErrRDM)
-                            !Write out:     Iter    E/Site  T1Conv  ErrRDM  Err[Filling]
-                            write(6,"(I7,4G22.10)") it,TotalE_Imp,T1RotMag,ErrRDM,FillingError
-                            write(DMETfile,"(I7,6G22.10)") it,TotalE_Imp,T1RotMag,HL_Energy,ErrRDM,Actualfilling_Imp,FillingError
-
-                            if(T1RotMag.lt.dTolDMET) then
-                                write(6,"(A)") "...DMET bath space converged"
-                                exit
-                            endif
-
-                            call stop_all(t_r,'End test')
                         else
                             !Write out stats:
                             !   Iter    E/Site  d[V]    ERR[RDM]    ERR[Filling]    mean[corr_pot]      Some RDM stuff...?
