@@ -171,6 +171,12 @@ module SelfConsistentUtils
         write(6,"(A)") " *** Entering code of self-consistent optimizating of spectral functions ***"
         write(6,"(A)") ""
 
+        if(iFitStyle.eq.1) then
+            write(6,"(A)") "Converging greens function directly..."
+        else
+            write(6,"(A)") "Converging self-energy self-consistently in style of DMFT"
+        endif
+
         if(iCorrFnTag.eq.1) then
             write(6,"(A)") "Single particle greens functions to be optimized."
             if(tDiagonalSC) then

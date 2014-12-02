@@ -827,7 +827,7 @@ module LRSolvers
     subroutine CalcError(n,x,b,Error)
         integer, intent(in) :: n
         complex(dp), intent(in) :: x(n),b(n)
-        real, intent(out) :: Error
+        real(dp), intent(out) :: Error
 
         integer :: i
         complex(dp) :: ErrVec(n)

@@ -145,7 +145,8 @@ module LinearResponse
             write(6,"(A)") "Reoptimizing the ground state."
             if(tFullReoptGS.and.tOpenMP) then
                 write(6,"(A)") "Disabling OpenMP when reoptimizing ground state in dynamic bath space"
-!$              call OMP_set_num_threads(1_OMP_integer_kind)
+!!$              call OMP_set_num_threads(1_OMP_integer_kind)
+!$              call OMP_set_num_threads(1)
             endif
         endif
         if(tRemoveImpCoupsPreSchmidt) call stop_all(t_r,'Removing impurity coupling before '    &
@@ -1192,7 +1193,8 @@ module LinearResponse
             
         if(tFullReoptGS.and.tOpenMP) then
             !Return the number of OMP threads to the original value
-!$          call OMP_set_num_threads(int(max_omp_threads,OMP_integer_kind))
+!!$          call OMP_set_num_threads(int(max_omp_threads,OMP_integer_kind))
+!$          call OMP_set_num_threads(int(max_omp_threads))
         endif
         
         deallocate(Cre_0,Ann_0,Psi_0)

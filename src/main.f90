@@ -223,7 +223,8 @@ Program RealHub
                                 !Write out:     Iter    E/Site  T1Conv  ErrRDM  Err[Filling]
                                 write(6,"(A)") "Iter.   E/Imp   T1RotMag    ErrRDM    ErrFill"
                                 write(6,"(I7,4G22.10)") it,TotalE_Imp,T1RotMag,ErrRDM,FillingError
-                                write(DMETfile,"(I7,6G22.10)") it,TotalE_Imp,T1RotMag,HL_Energy,ErrRDM,Actualfilling_Imp,FillingError
+                                write(DMETfile,"(I7,6G22.10)") it,TotalE_Imp,T1RotMag,HL_Energy,ErrRDM, &
+                                        Actualfilling_Imp,FillingError
 
                                 if(T1RotMag.lt.dTolDMET) then
                                     write(6,"(A)") "...DMET bath space converged"
@@ -678,7 +679,8 @@ Program RealHub
     subroutine check_openmp
 !$      use omp_lib
         implicit none
-!$      integer(kind=OMP_integer_kind) :: maxthreads
+!!$      integer(kind=OMP_integer_kind) :: maxthreads
+!$      integer :: maxthreads
 
         tOpenMP = .false.
 !$      tOpenMP = .true.

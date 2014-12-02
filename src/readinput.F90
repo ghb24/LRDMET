@@ -151,7 +151,7 @@ module readinput
         tFullReoptGS = .false.      !Whether to reoptimize the ground state in the static + dynamic bath space
         tSC_StartwGSCorrPot = .true.    !Whether to start the selfconsistency from h0v or h0
         iFitStyle = 1                   !1 = Direct fitting. 2 = DMFT
-        tCalcRealSpectrum = .false.
+        tCalcRealSpectrum = .true. 
         tAugMinRes = .false.            !For solving an augmented problem with minres without reducing the condition number
 
     end subroutine set_defaults

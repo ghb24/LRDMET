@@ -1455,18 +1455,18 @@ module SelfConsistentLR2
         real(dp), allocatable :: LatParams(:)
         complex(dp), allocatable :: CorrFn_Lat(:,:,:),CorrFn_HL(:,:,:),CorrFn_HL_Old(:,:,:)
         complex(dp), allocatable :: SE_Fit(:,:,:),SE_New(:,:,:),DiffImpCorrFn(:,:,:)
-        complex(dp), allocatable :: CorrFn_HL_Re(:,:,:)
+        complex(dp), allocatable :: CorrFn_HL_Re(:,:,:),CorrFn_Clust(:,:,:),CorrFn_Clust_Re(:,:,:)
         real(dp), allocatable :: AllDiffs(:,:)
 
         real(dp) :: FinalDist
         integer :: i,iter,iLatParams,j,iCorrFnTag
         real(dp), parameter :: dDeltaImpThresh = 1.0e-4_dp 
-        logical, parameter :: tRemoveImpCorrs = .false.
+        logical, parameter :: tRemoveImpCorrs = .true. 
         character(len=*), parameter :: t_r='SC_Spectrum_Opt'
 
         call set_timer(SelfCon_LR)
 
-        write(6,"(A)") "Converging self-energy and static hybridization potential..."
+        write(6,"(A)") "Converging self-energy..."
 
         iCorrFnTag = 1    !1 for greens function optimization
 
@@ -1502,12 +1502,14 @@ module SelfConsistentLR2
         allocate(SE_Fit(nImp,nImp,nFitPoints))
         allocate(SE_New(nImp,nImp,nFitPoints))
         allocate(CorrFn_Lat(nImp,nImp,nFitPoints))
+        allocate(CorrFn_Clust(nImp,nImp,nFitPoints))
         allocate(CorrFn_HL(nImp,nImp,nFitPoints))
         allocate(CorrFn_HL_Old(nImp,nImp,nFitPoints))
         allocate(DiffImpCorrFn(nImp,nImp,nFitPoints))
         CorrFn_HL(:,:,:) = zzero
         if(tCalcRealSpectrum) then
             allocate(CorrFn_HL_Re(nImp,nImp,nFreq_Re))
+            allocate(CorrFn_Clust_Re(nImp,nImp,nFreq_Re))
         endif
 
         !Initially, set the self-energy to be the frequency-independent ground state correlation potential
@@ -1525,8 +1527,9 @@ module SelfConsistentLR2
             !First, calculate the lattice greens function
             call CalcLatticeSpectrum(1,nFitPoints,CorrFn_Lat,GFChemPot,tMatbrAxis=tFitMatAxis,  &
                 FreqPoints=FreqPoints,ham=h0_comp,SE=SE_Fit)
+
             call writedynamicfunction(nFitPoints,CorrFn_Lat,'G_Lat_Fit',tag=iter,    &
-                tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=tFitMatAxis)
+                tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
 
             if(tRemoveImpCorrs) then
                 !Now, calculate the bath greens function. This removes the explicit impurity correlations from the lattice greens function
@@ -1536,6 +1539,9 @@ module SelfConsistentLR2
                 enddo
                 call InvertLocalNonHermFunc(nFitPoints,CorrFn_Lat)
             endif
+            
+            call writedynamicfunction(nFitPoints,CorrFn_Lat,'G_Lat_Bath',tag=iter,    &
+                tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
 
             !CorrFn_Lat is now the *bath* greens function. We want to fit this to frequency-independent parameters
             call FitLatParams(1,CorrFn_Lat,nFitPoints,GFChemPot,iLatParams, &
@@ -1545,11 +1551,23 @@ module SelfConsistentLR2
             !Update h_lat_fit
             call LatParams_to_ham(iLatParams,LatParams,GFChemPot,h_lat_fit)
 
+            call CalcLatticeSpectrum(1,nFitPoints,CorrFn_Clust,GFChemPot,tMatbrAxis=tFitMatAxis, &
+                FreqPoints=FreqPoints,ham=h_lat_fit)
+            call writedynamicfunction(nFitPoints,CorrFn_Clust,'G_Lat_Clust',tag=iter,    &
+                tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
+
+            if(tCalcRealSpectrum) then
+                call CalcLatticeSpectrum(1,nFitPoints,CorrFn_Clust_Re,GFChemPot,.false., &
+                    ham=h_lat_fit)
+                call writedynamicfunction(nFreq_Re,CorrFn_Clust_Re,'G_Lat_Clust_Re',tag=iter,  &
+                    tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.)
+            endif
+
             !Now, use these fit parameters to calculate the new HL function
             call SchmidtGF_FromLat(CorrFn_HL,GFChemPot,nFitPoints,tFitMatAxis,  &
                 h_lat_fit,FreqPoints)
             call writedynamicfunction(nFitPoints,CorrFn_HL,'G_Imp_Fit',tag=iter,    &
-                tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=tFitMatAxis)
+                tCheckCausal=.true.,tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=tFitMatAxis,FreqPoints=FreqPoints)
             
             if(tCalcRealSpectrum) then
                 call SchmidtGF_FromLat(CorrFn_HL_Re,GFChemPot,nFreq_Re,.false.,  &
