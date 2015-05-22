@@ -1,0 +1,14 @@
+[main]
+fc = gfortran
+cxx = g++
+ld = gfortran
+libs = -llapack -lblas 
+module_flag = -J
+
+[opt]
+fflags = -O3 -fopenmp -fno-range-check -fdefault-integer-8 -fdefault-double-8   -fdefault-real-8
+cxxflags = -O3
+
+[dbg]
+fflags = -g -fbounds-check -fopenmp -Wall -Wextra -fno-range-check -fdefault-integer-8 -fbacktrace -fno-range-check
+cxxflags = -g -Wall -Wextra -fbounds-check 

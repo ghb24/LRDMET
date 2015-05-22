@@ -147,6 +147,8 @@ Program RealHub
 
                 if(tDMFTCalc) then
                     call DMFT_Driver()
+                elseif(tGF2) then
+                    call GF2_Driver()
                 else
                     if(tReadInCorrPot.or.tReadSystem) then
                         !Read in the correlation potential from another source
