@@ -29,6 +29,8 @@ module const
 
     real(dp), parameter :: RealtoMb = 8.0_dp/1048576.0_dp
     real(dp), parameter :: ComptoMb = RealtoMb*2.0_dp
+    real(dp), parameter :: RealtoGb = 8.0_dp/1073741824.0_dp
+    real(dp), parameter :: ComptoGb = RealtoGb*2.0_dp
 
     ! depsilon is the precision used to compare floating point numbers.
     real(dp), parameter :: depsilon = 1.e-8
