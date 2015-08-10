@@ -26,6 +26,7 @@ module Globals
     logical :: tOpenMP
     integer :: max_omp_threads
     logical :: tReadSystem  !Read the system from files
+    logical :: tGF2         !To do GF2 calculation
     logical :: tThermal     !Are we calculating the thermal bath?
     logical :: tSingFiss    !For the Singlet Fission project
     real(dp) :: Temperature !k_B T In units of t

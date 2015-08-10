@@ -17,11 +17,14 @@ module GF2
     !       Damping of self-energy
     !       Initial Chemical potential
     !       Damping of density matrix
-    subroutine GF2_Hub(MaxSEIter,InitialSE_GV)
+    subroutine GF2_Hub(MaxSEIter,InitialSE_GV,InitChemPot)
         implicit none
         integer, intent(in) :: MaxSEIter
         real(dp), intent(in), optional :: InitialSE_GV(:,:,:)
-        real(dp) :: LatChemPot,nExcessElec,MuThresh
+        real(dp), optional :: InitChemPot
+        real(dp) :: LatChemPot,nExcessElec,MuThresh,GMEnergy
+        real(dp) :: MF_ChemPot  !Mean-field approximation to chemical potential
+        character(len=*), parameter :: t_r='GF2_Hub'
 
         !Set up tau grids, and matsubara grids
         call SetupGrids()
@@ -38,12 +41,12 @@ module GF2
         !Construct the fock matrix and density matrix
         !Returned in globals "FockMat_GV" and "DensityMat_MF_GV"
         !Mean-field chemical potential returned in GuessChemPot
-        call GetFockandP(GuessChemPot)
+        call GetFockandP(MF_ChemPot)
         
         if(present(InitChemPot)) then
             LatChemPot = InitChemPot
         else
-            LatChemPot = GuessChemPot
+            LatChemPot = MF_ChemPot   
         endif
         write(6,*) "Chemical potential initially set to: ",LatChemPot
         
@@ -128,12 +131,13 @@ module GF2
         implicit none
         real(dp), intent(inout) :: LatChemPot       !Guess potential (should be correct for 1st iter)
         real(dp), intent(in) :: MuThresh            !Tolerance on convergence of quantities
-        real(dp), allocatable :: Initial_P_MF(:,:)  !Initial MF density matrix
-        real(dp), allocatable :: Initial_P(:,:)     !Initial correlated density
+        real(dp), allocatable :: Previous_P_MF(:,:)  !Initial MF density matrix
+        real(dp), allocatable :: Previous_P(:,:)     !Initial correlated density
         real(dp), allocatable :: P_Diag(:)
-        real(dp) :: Initial_Chempot
+        real(dp) :: Previous_Chempot
         real(dp) :: DeltaChemPot,Delta_P_MF,DeltaP,DiffP,MF_ChemPot,nExcessElec
         integer :: MicroIt,i
+        character(len=*), parameter :: t_r='ConvergeChemPot'
 
         allocate(Previous_P_MF(nSites,nSites))
         allocate(Previous_P(nSites,nSites))
@@ -144,7 +148,7 @@ module GF2
         Previous_ChemPot = LatChemPot
         MicroIt = 0
 
-        call FindDensityChanges(Previous_P_MF,Previous_P,Previous_ChemPot,LatChemPot  &
+        call FindDensityChanges(Previous_P_MF,Previous_P,Previous_ChemPot,LatChemPot,  &
             DeltaChemPot,Delta_P_MF,DeltaP,DiffP)
 
         !Write out change in chemical potential, fock matrix, correlated and MF
@@ -181,7 +185,7 @@ module GF2
         !Final calculation of greens function, density and number of electrons
         nExcessElec = ExcessElec(LatChemPot)
 
-        deallocate(Initial_Fock,Initial_P_MF,Initial_P,P_Diag)
+        deallocate(Previous_P_MF,Previous_P,P_Diag)
 
     end subroutine ConvergeChemPotAndFock
 
@@ -190,7 +194,7 @@ module GF2
     subroutine ConvergeChemPot(LatChemPot)
         implicit none
         real(dp), intent(inout) :: LatChemPot
-        real(dp) :: ChemPotLow,ChemPotHigh
+        real(dp) :: ChemPotLow,ChemPotHigh,OptChemPot
         real(dp), parameter :: ChemPotTol = 1.0e-7_dp
 
         !First, bracket the chemical potential between ChemPotLow and
@@ -200,6 +204,8 @@ module GF2
         !Brent algorithm to converge the 1D root finding exercise of converging
         !the chemical potential
         OptChemPot = zbrent(ExcessElec,ChemPotLow,ChemPotHigh,ChemPotTol)
+        !Update chemical potential
+        LatChemPot = OptChemPot
 
     end subroutine ConvergeChemPot
 
@@ -208,7 +214,7 @@ module GF2
         complex(dp), intent(in) :: GF_Tau(nSites,nSites,nImTimePoints)
         complex(dp), intent(out) :: GF_iw(nSites,nSites,nMatsubara)
         logical, intent(in) :: tGF
-        integer :: i
+        integer :: i,j
         real(dp) :: Delta_Tau
 
         !Initially, do brute force - no splining
@@ -255,7 +261,7 @@ module GF2
         implicit none
         complex(dp), intent(in) :: GF_iw(nSites,nSites,nMatsubara)
         complex(dp), intent(out) :: GF_tau(nSites,nSites,nImTimePoints)
-        logical :: intent(in) :: tGF    !GF or SE?
+        logical, intent(in) :: tGF    !GF or SE?
         integer :: i
         character(len=*), parameter :: t_r='FT_GF_MatsuToImTime'
 
@@ -324,6 +330,7 @@ module GF2
         complex(dp), optional :: GF_Matsu(nSites,nSites,nMatsubara)
         complex(dp), allocatable :: TempMat(:,:)
         integer :: i,j
+        character(len=*), parameter :: t_r='GetGSDensityFromMatsuGF'
 
         allocate(TempMat(nSites,nSites))
 
@@ -359,6 +366,7 @@ module GF2
         real(dp), allocatable :: EigenVals(:)
         real(dp), intent(in), optional :: GuessDensity(nSites)
         real(dp) :: InputDensity(nSites)
+        real(dp), allocatable :: EigenVecs(:,:),OccOrbs(:,:)
         integer :: i
 
         FockMat_GV(:,:) = h0(:,:)
@@ -479,10 +487,10 @@ module GF2
             !Build matrix
             SingleFreqMat(:,:) = - FockMat_GV(:,:) - SE_Matsu_GV(:,:,i)
             do j = 1,nSites
-                SingleFreqMat(j,j) = SingleFreqMat(j,j) + complex(LatChemPot,MatsuPoints(i),dp)
+                SingleFreqMat(j,j) = SingleFreqMat(j,j) + cmplx(LatChemPot,MatsuPoints(i),dp)
             enddo
             !Invert
-            call mat_inv(SingleFreqMat,GLat_Matsu_GV(:,:,i))
+            call mat_inv(SingleFreqMat,GLat_Matsu_GV(:,:,i),nSites)
             deallocate(SingleFreqMat)
         enddo
 !$OMP END PARALLEL DO
@@ -494,6 +502,7 @@ module GF2
         implicit none
         real(dp), intent(in) :: ChemPot
         real(dp) :: res
+        integer :: i
 
         !Build the Matsubara greens function
         call BuildMatsubaraGF(ChemPot)
@@ -533,9 +542,9 @@ module GF2
             enddo
         enddo
         
-        DeltaMu = LatChemPot - PreviousChemPot
+        DeltaMu = LatChemPot - Previous_ChemPot
 
-        PreviousChemPot = LatChemPot
+        Previous_ChemPot = LatChemPot
         PreviousP_MF(:,:) = DensityMat_MF_GV(:,:)
         PreviousP(:,:) = DensityMat_GV(:,:)
 
@@ -587,6 +596,7 @@ module GF2
         real(dp) :: zbrent
         interface
             function func(x)
+                use const, only: dp 
                 implicit none
                 real(dp), intent(in) :: x
                 real(dp) :: func
