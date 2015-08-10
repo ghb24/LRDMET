@@ -451,7 +451,7 @@ module GF2
                 if(abs(aimag(TempMat(i,j))).gt.1.0e-7_dp) then
                     !Though perhaps this is ok other than the diagonals?
                     call stop_all(t_r,'Density matrix complex')
-                elseif(abs(real(TempMat(i,j))-real(TempMat(j,i))).gt.1.0e-7_dp) then
+                elseif(abs(TempMat(i,j)-conjg(TempMat(j,i))).gt.1.0e-7_dp) then
                     call stop_all(t_r,'Density matrix not hermitian')
                 endif
             enddo
@@ -459,6 +459,9 @@ module GF2
 
         DensityMat_GV(:,:) = -2.0_dp*real(TempMat(:,:),dp)
         deallocate(TempMat)
+
+        !write(6,*) "First element: ",DensityMat_GV(1,1)
+        !call writematrix(DensityMat_GV,'Density Matrix',.true.) 
 
     end subroutine GetGSDensityFromMatsuGF
 
@@ -585,6 +588,8 @@ module GF2
         complex(dp), allocatable :: SingleFreqMat(:,:)
         integer :: i,j
 
+        !write(6,*) "Building G_Lat_iw"
+
         GLat_Matsu_GV(:,:,:) = zzero
 !$OMP PARALLEL DO PRIVATE(j,SingleFreqMat)
         do i = 1,nMatsubara
@@ -599,6 +604,11 @@ module GF2
             deallocate(SingleFreqMat)
         enddo
 !$OMP END PARALLEL DO
+
+!        do i = 1,nMatsubara
+!            write(6,*) i,MatsuPoints(i),GLat_Matsu_GV(1,1,i),SE_Matsu_GV(1,1,i)
+!        enddo
+
     end subroutine BuildMatsubaraGF
     
     !This function returns the overpopulation of the system with electrons <N> - N_desired,
@@ -622,6 +632,8 @@ module GF2
         enddo
 
         res = nElec_GV - real(NEl,dp)
+
+        !write(6,*) "ChemPot, NElec: ",ChemPot,nElec_GV
 
     end function ExcessElec
         

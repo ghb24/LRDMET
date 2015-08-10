@@ -1,70 +1,179 @@
 program matsusum
     implicit none
-    integer    :: n=1000
-    complex(8) :: zsum,matsu,ztmp,MatsuGF,zsum2
-    integer    :: k,l,m,ntau,i
-    real(8)    :: tau,scal,mu,beta,epsk,pi,tauval
+    integer, parameter :: dp = selected_real_kind(15,307)   !For double precision real numbers
+    real(dp), parameter :: zero = 0.0_dp, one = 1.0_dp
+    complex(dp), parameter :: zzero = cmplx(0.0_dp,0.0_dp,dp)
+    complex(dp), parameter :: zone = cmplx(1.0_dp,0.0_dp,dp)
+    real(dp), parameter :: pi = 3.1415926535897931_dp
 
-    zsum=0.
-    mu=1.0
-    epsk=1.0
-    tau=0.001d0
-    beta=1000.d0
+    integer :: n=2    
+    real(dp) :: ScaleImTime = 10.0_dp
+    integer :: nMatsu = 500
+    real(8) :: beta = 100.0_8
 
-    ntau = int(beta/tau)
+    integer :: nImTimePoints
+    real(dp), allocatable :: MatsuPoints(:),ImTimePoints(:)
+    real(dp) :: Delta_Tau
+    real(dp) :: h0(2,2)
+    real(dp), allocatable :: W(:),Orbs(:,:),Work(:)
+    complex(dp) :: eye(2,2)
+    integer :: lWork,info
+    real(dp) :: ChemPot
+    complex(dp), allocatable :: G_iw(:,:,:),SingleFreq(:,:),GF_Tau(:,:,:)
+    integer :: i,j,a
 
-    pi=dacos(-1.d0)
-
-    write(6,*) "Nyquist frequency: ",pi*n/beta
-
-!    write(*,*) 'PI : ', pi
-    open(77,file='MatsuGF',status='unknown')
-
-    do k = -n,n
-        matsu = CMPLX(0.d0,(pi*(2.0*k-1.0))/beta)
-        MatsuGF = 1.d0 / (matsu + cmplx(mu - epsk,0.) ) 
-        write(77,*) aimag(matsu),real(MatsuGF),aimag(MatsuGF)
+    allocate(MatsuPoints(nMatsu))
+    do i = 0,nMatsu-1
+        MatsuPoints(i+1) = (2*i+1)*pi / beta
     enddo
-    close(77)
+    write(6,"(A,I7)") "Number of matsubara frequency points set to: ",nMatsu
+    write(6,"(A,F20.10)") "Highest matsubara frequency point: ",MatsuPoints(nMatsu)
+        
+    nImTimePoints = ScaleImTime * real(nMatsu,dp) * Beta / pi
+    allocate(ImTimePoints(nImTimePoints))
+    write(6,"(A,I7)") "Number of imag-time points set to: ",nImTimePoints
 
-    open(77,file='Naive_TauGF',status='unknown')
-    do i = 0,ntau
-        tauval = i*tau
+    Delta_Tau = Beta/(nImTimePoints-1)
+    write(6,"(A,G16.5)") "Imaginary time step in grid: ",Delta_Tau
+    ImTimePoints(:) = zero
+    do i = 2,nImTimePoints
+        ImTimePoints(i) = (i-1)*Delta_Tau
+    enddo
 
-        zsum = cmplx(0.0,0.0)
-        zsum2 = cmplx(0.0,0.0)
-        do k = -n,n
-            matsu = CMPLX(0.d0,(pi*(2.0*k-1.0))/beta)
-            MatsuGF = 1.d0 / (matsu + cmplx(mu - epsk,0.) ) 
-            zsum = zsum + MatsuGF*exp(-matsu*tauval)
-            zsum2 = zsum2 + (MatsuGF - (1.0/matsu))*exp(-matsu*tauval)
+    !Form hubbard model
+    h0(1,1) = zero
+    h0(2,2) = zero
+    h0(1,2) = -one
+    h0(2,1) = -one
+
+    !diagonalize
+    allocate(Orbs(n,n))
+    Orbs(:,:) = h0(:,:)
+    allocate(W(n))
+    W(:) = 0.0_dp
+    allocate(Work(1))
+    lWork=-1
+    info=0
+    call dsyev('V','L',n,Orbs,n,W,Work,lWork,info)
+    if(info.ne.0) stop 'workspace' 
+    lwork=int(work(1))+1
+    deallocate(work)
+    allocate(work(lwork))
+    call dsyev('V','L',n,Orbs,n,W,Work,lWork,info)
+    if(info.ne.0) stop 'Diag failed'
+    deallocate(work)
+
+    write(6,*) "Eigenvalues: ",W(1),W(2)
+
+    !Half filled
+    !ChemPot = (W(1)+W(2))/2.0_dp
+    !Third full
+    ChemPot = (2.0*W(1)/3.0) + (1.0*W(2)/3.0)
+    write(6,*) "Chemical potential: ",ChemPot
+
+    allocate(G_iw(2,2,nMatsu))
+    G_iw(:,:,:) = zzero
+    !Form G0(iw)
+    do i = 1,nMatsu
+        allocate(SingleFreq(2,2))
+        SingleFreq(:,:) = -h0(:,:)
+        do j = 1,n
+            SingleFreq(j,j) = SingleFreq(j,j) + cmplx(ChemPot,MatsuPoints(i),dp)
         enddo
-        zsum = zsum / beta
-        zsum2 = (zsum2 / beta) - 0.5    !Remove the tail from the discrete sum,
-                                        !and analytically FT it
-
-        write(77,*) tauval,real(zsum),aimag(zsum),real(zsum2),aimag(zsum2)
+        !invert
+        call z_inv2(SingleFreq,G_iw(:,:,i),n)
+        deallocate(SingleFreq)
     enddo
-    close(77)
 
+    open(88,file='G_iw',status='unknown')
+    do i = 1,nMatsu
+        write(88,*) MatsuPoints(i),real(G_iw(1,1,i)),aimag(G_iw(1,1,i)),real(G_iw(2,1,i)),  &
+            aimag(G_iw(2,1,i)),real(G_iw(2,2,i)),aimag(G_iw(2,2,i)),-one/MatsuPoints(i),    &
+            aimag(G_iw(1,1,i)-(zone/cmplx(zero,MatsuPoints(i),dp)))
+    enddo
+    close(88)
 
+    !Now, try to FT
+    eye = zzero
+    do i = 1,n
+        eye(i,i) = zone
+    enddo
+    allocate(GF_Tau(n,n,nImTimePoints))
+    GF_Tau(:,:,:) = zzero
+    do a = 1,nImTimePoints
 
-!     scal=abs(matsu)*tau
+        do i = 1,nMatsu
+            GF_Tau(:,:,a) = GF_Tau(:,:,a) + exp(-cmplx(zero,MatsuPoints(i)*ImTimePoints(a),dp)) * &
+                (G_iw(:,:,i) - eye(:,:)*(one/cmplx(zero,MatsuPoints(i),dp)))
+        enddo
+        do i = 1,nMatsu
+            GF_Tau(:,:,a) = GF_Tau(:,:,a) + &
+                exp(cmplx(zero,MatsuPoints(i)*ImTimePoints(a),dp)) * &
+                (-G_iw(:,:,i) + eye(:,:)*(one/cmplx(zero,MatsuPoints(i),dp)))
+        enddo
 
-!     ztmp=MatsuGF / beta
+        GF_Tau(:,:,a) = GF_Tau(:,:,a) / Beta
 
-!     ztmp = ztmp - 1.0/matsu
+        GF_Tau(:,:,a) = GF_Tau(:,:,a) - 0.5_dp*eye(:,:)
+    enddo
 
-!     zsum = zsum + ztmp*exp(cmplx(0.0,matsu*tau))   !cmplx(cos(scal),sin(scal))
+    open(88,file='G_tau',status='unknown')
+    do i = 1,nImTimePoints
+        write(88,*) ImTimePoints(i),real(GF_Tau(1,1,i)),aimag(GF_Tau(1,1,i)),real(GF_Tau(2,1,i)),   &
+            aimag(GF_Tau(2,1,i)),real(GF_Tau(2,2,i)),aimag(GF_Tau(2,2,i))
+    enddo
+    close(88)
 
-!     write(40,*) k,real(ztmp),aimag(ztmp)
-!     write(41,*) k,real(zsum),aimag(zsum)
+    !Now, transform back and see if it matches
+    G_iw(:,:,:) = zzero
+    do i = 1,nMatsu
+        do j = 2,nImTimePoints-1
+            G_iw(:,:,i) = G_iw(:,:,i) + exp(cmplx(zero,MatsuPoints(i)*ImTimePoints(j),dp))*GF_Tau(:,:,j)
+        enddo
+        G_iw(:,:,i) = G_iw(:,:,i) + (GF_Tau(:,:,1) - GF_Tau(:,:,nImTimePoints))/2.0_dp
+        G_iw(:,:,i) = Delta_Tau*G_iw(:,:,i)
+    enddo
 
-!    end do
-
-!    write(*,*)'summation : ', zsum + 0.5
-!    write(*,*)'FERMI     : ', 1.d0/(exp(beta*(epsk-mu))+1.d0)
-
+    open(88,file='G_iw_Trans',status='unknown')
+    do i = 1,nMatsu
+        write(88,*) MatsuPoints(i),real(G_iw(1,1,i)),aimag(G_iw(1,1,i)),real(G_iw(2,1,i)),  &
+            aimag(G_iw(2,1,i)),real(G_iw(2,2,i)),aimag(G_iw(2,2,i)),-one/MatsuPoints(i),    &
+            aimag(G_iw(1,1,i)-(zone/cmplx(zero,MatsuPoints(i),dp)))
+    enddo
+    close(88)
 
 end program
 
+  SUBROUTINE z_inv2(mat,matinv,dimen)
+      implicit none
+    integer, parameter :: dp = selected_real_kind(15,307)   !For double precision real numbers
+    integer, intent(in) :: dimen
+    complex(dp), intent(in) :: mat(dimen,dimen)
+    complex(dp), dimension(dimen,dimen), intent(out) :: matinv
+    integer, dimension(dimen) :: ipiv
+    integer :: msize,nsize,lwork,info
+    complex(dp), allocatable :: cWork(:)
+
+    msize=dimen
+    nsize=dimen
+    if(msize.ne.nsize) stop 'error in z_inv2'
+    matinv(:,:) = mat(:,:)
+
+    info=0
+    call ZGETRF(msize,nsize,matinv,nsize,ipiv,info)
+    IF (INFO /= 0) then
+        write(6,*) "info: ",info
+        STOP 'Error with z_inv2 1'
+    endif
+    allocate(cWork(1))
+    lwork = -1
+    call ZGETRI(msize,matinv,msize,ipiv,cwork,lwork,info)
+    if(info.ne.0) stop 'error with workspace query in z_inv2'
+    lWork = int(real(cWork(1))) + 1
+    deallocate(cWork)
+    allocate(cWork(lWork))
+    call ZGETRI(msize,matinv,msize,ipiv,cwork,lwork,info)
+    if(info.ne.0) stop 'error with inversion in z_inv2'
+    deallocate(cWork)
+
+  end subroutine z_inv2
