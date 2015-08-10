@@ -4,6 +4,7 @@ module readinput
     use globals
     use LatticesData, only: CellShape
     use errors, only: stop_all,warning
+    use GF2Data, only: nMatsubara, Beta_Temp 
     implicit none
 
     contains
@@ -18,6 +19,7 @@ module readinput
         tReadSystem = .false.
         tHalfFill = .true. 
         tUHF = .false.
+        tGF2 = .false.
         tThermal = .false.
         tSingFiss = .false.
         nSites = 24  
@@ -187,6 +189,8 @@ module readinput
             select case(w)
             case("MODEL")
                 call ModelReadInput()
+            case("GF2")
+                call GF2ReadInput()
             case("LINEAR_RESPONSE")
                 call LRReadInput()
             case("SELF_CONSISTENCY")
@@ -204,6 +208,30 @@ module readinput
         endif
 
     end subroutine read_input
+
+    subroutine GF2ReadInput()
+        implicit none
+        logical :: teof
+        character(len=100) :: w
+        character(len=*), parameter :: t_r='GF2ReadInput'
+
+        GF: do
+            call read_line(teof)
+            if(teof) exit
+            call readu(w)
+            select case(w)
+            case("MATSUBARA_POINTS")
+                call readi(nMatsubara)
+            case("END")
+                exit
+            case default
+                write(6,"(A)") "ALLOWED KEYWORDS IN GF2 BLOCK: "
+                write(6,"(A)") "MATSUBARA_POINTS"
+                call stop_all(t_r,'Keyword '//trim(w)//' not recognized')
+            end select
+        enddo GF   
+
+    end subroutine GF2ReadInput
 
     subroutine ModelReadInput()
         implicit none
@@ -305,8 +333,9 @@ module readinput
             case("APBC")
                 tAntiPeriodic = .true.
             case("TEMPERATURE")
-                call readf(Temperature)
-                tThermal = .true.
+                !call readf(Temperature)
+                !tThermal = .true.
+                call readf(Beta_Temp)
             case("MAXITER_DMET")
                 call readi(iMaxIterDMET)
                 if(item.lt.nitems) then
@@ -434,7 +463,6 @@ module readinput
         implicit none
         logical :: teof
         character(len=100) :: w,w2
-        integer :: Ks(100),i
         character(len=*), parameter :: t_r='SC_ReadInput'
         
         tSC_LR = .true.

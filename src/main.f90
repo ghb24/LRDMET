@@ -13,6 +13,7 @@ Program RealHub
     use report  
     use DMFT
     use T1SCF
+    use GF2Driver, only: GF2_Driver
     implicit none
 
     call init_calc()

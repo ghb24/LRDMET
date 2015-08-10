@@ -1,4 +1,5 @@
 module GF2Driver
+    use GF2, only: GF2_Hub
     implicit none
 
     contains
@@ -7,7 +8,7 @@ module GF2Driver
         implicit none
 
         !Run GF2 on the full Hubbard model
-        call GF2_Hub()
+        call GF2_Hub(100)
 
     end subroutine GF2_Driver
 

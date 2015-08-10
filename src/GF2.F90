@@ -6,6 +6,7 @@ module GF2
     use utils, only: get_free_unit,append_ext_real,append_ext
     use GF2Data
     use matrixops, only: mat_inv
+    use mat_tools, only: DiagOneeOp
     use writedata
     implicit none
 
@@ -22,8 +23,12 @@ module GF2
         integer, intent(in) :: MaxSEIter
         real(dp), intent(in), optional :: InitialSE_GV(:,:,:)
         real(dp), optional :: InitChemPot
-        real(dp) :: LatChemPot,nExcessElec,MuThresh,GMEnergy
+        complex(dp), allocatable :: PreviousSE(:,:,:)
+        real(dp), allocatable :: PreviousP(:,:),IterStats(:,:)
+        real(dp) :: LatChemPot,nExcessElec,MuThresh,GMEnergy,PreviousEnergy
         real(dp) :: MF_ChemPot  !Mean-field approximation to chemical potential
+        integer :: Iter
+        real(dp), parameter :: SEThresh = 1.0e-7_dp
         character(len=*), parameter :: t_r='GF2_Hub'
 
         !Set up tau grids, and matsubara grids
@@ -58,11 +63,32 @@ module GF2
         endif
         write(6,*) "Number of electrons in initial greens function: ",nElec_GV
 
-        !Convergence threshold on chemical potential
-        MuThresh = 1.0e-6_dp
+        call CalcGMEnergy(GLat_Matsu_GV,SE_Matsu_GV,DensityMat_GV,GMEnergy)
 
-        do while(.true.)
+        PreviousEnergy = GMEnergy
+        allocate(PreviousSE(nSites,nSites,nMatsubara))
+        allocate(PreviousP(nSites,nSites))
+        PreviousSE(:,:,:) = SE_Matsu_GV(:,:,:)
+        PreviousP(:,:) = DensityMat_GV(:,:)
+
+        allocate(IterStats(6,0:MaxSEIter))
+        IterStats(:,:) = zero
+
+        write(6,"(A)") "Converging Self-Energy at the level of GF2..."
+
+        !Convergence threshold on chemical potential microiterations
+        MuThresh = 1.0e-6_dp
+        Iter = 0
+
+        call FindSEChanges(IterStats,Iter,LatChemPot,GMEnergy,PreviousEnergy,   &
+            PreviousSE,PreviousP,MaxSEIter)
+
+        do while((IterStats(3,Iter).lt.SEThresh).and.(IterStats(5,Iter).lt.SEThresh)    &
+                .and.(IterStats(6,Iter).lt.SEThresh).and.(Iter.gt.0))
             !Converge self-energy loop
+            call WriteGF2Stats(Iter,IterStats,MaxSEIter)
+            Iter = Iter + 1
+            if(Iter.gt.MaxSEIter) call stop_all(t_r,'Maximum global iterations hit')
 
             !Converge global chemical potential and Fock matrix. Returns new chemical
             !potential, and global matsubara greens function and fock matrix st.
@@ -85,15 +111,25 @@ module GF2
             call CalcGMEnergy(GLat_Matsu_GV,SE_Matsu_GV,DensityMat_GV,GMEnergy)
 
             !Test for convergence of self energy, or if hit iteration limit
+            call FindSEChanges(IterStats,Iter,LatChemPot,GMEnergy,  &
+                PreviousEnergy,PreviousSE,PreviousP,MaxSEIter)
+
         enddo
 
         !Write final energy and stats
+        call WriteGF2Stats(Iter,IterStats,MaxSEIter)
+        write(6,"(A,I6,A)") "GF2 convergence complete! Global self-energy converged in ",Iter," iterations."
 
-        !Write Self-energy(iw)
+        write(6,"(A,F17.10)") "Final Energy: ",GMEnergy
+        write(6,"(A,F17.10)") "Final Chemical Potential: ",LatChemPot
 
-        !Analytically continue G(iw) -> G(w) with Pade (and SE)
+        !TODO: Write Self-energy(iw) and restart information
 
-        !Write G(w)
+        !TODO: Analytically continue G(iw) -> G(w) with Pade (and SE)
+
+        !TODO Write G(w)
+
+        deallocate(PreviousSE,PreviousP,IterStats)
 
     end subroutine GF2_Hub
 
@@ -109,7 +145,7 @@ module GF2
         !One-electron contribution
         do i = 1,nSites
             do j = 1,nSites
-                Energy = Energy + P(j,i)*(h0(j,i) + 0.5_dp*SE_iw(j,i,nMatsubara))
+                Energy = Energy + P(j,i)*(h0(j,i) + 0.5_dp*real(SE_iw(j,i,nMatsubara),dp))
             enddo
         enddo
 
@@ -124,6 +160,63 @@ module GF2
         enddo
 
     end subroutine CalcGMEnergy
+
+    subroutine WriteGF2Stats(Iter,IterStats,MaxIter)
+        implicit none
+        integer, intent(in) :: Iter,MaxIter
+        real(dp), intent(in) :: IterStats(6,0:MaxIter)
+        integer :: i
+
+        write(6,"(A)") "  GF2: Global convergence update "
+        write(6,"(A)") "Iteration   No.Elec   Energy   Delta_E   ChemPot   Delta_SE   Delta_P"
+        do i = 0,Iter
+            write(6,"(I7,6F13.7)") Iter,IterStats(1,Iter),IterStats(2,Iter),IterStats(3,Iter),  &
+                IterStats(4,Iter),IterStats(5,Iter),IterStats(6,Iter)
+        enddo
+
+    end subroutine WriteGF2Stats
+
+    subroutine FindSEChanges(IterStats,Iter,ChemPot,E,PreviousE,PreviousSE,PreviousP,MaxIter)
+        implicit none
+        integer, intent(in) :: MaxIter
+        real(dp), intent(inout) :: IterStats(6,0:MaxIter)
+        integer, intent(in) :: Iter
+        real(dp), intent(in) :: ChemPot
+        real(dp), intent(in) :: E
+        real(dp), intent(inout) :: PreviousE
+        complex(dp), intent(inout) :: PreviousSE(nSites,nSites,nMatsubara)
+        real(dp), intent(inout) :: PreviousP(nSites,nSites)
+        integer :: i,j,k
+
+        IterStats(1,Iter) = nElec_GV
+        IterStats(2,Iter) = E
+        IterStats(3,Iter) = E - PreviousE
+        IterStats(4,Iter) = ChemPot
+        IterStats(5,Iter) = zero    !Delta_SE
+        IterStats(6,Iter) = zero    !Delta_P
+
+        do i = 1,nSites
+            do j = 1,nSites
+                IterStats(6,Iter) = IterStats(6,Iter) + &
+                    abs(DensityMat_GV(j,i) - PreviousP(j,i))
+            enddo
+        enddo
+        do i = 1,nMatsubara
+            do j = 1,nSites
+                do k = 1,nSites
+                    IterStats(5,Iter) = IterStats(5,Iter) + &
+                        abs(SE_Matsu_GV(k,j,i) - PreviousSE(k,j,i))
+                enddo
+            enddo
+        enddo
+        IterStats(5,Iter) = IterStats(5,Iter)/real(nMatsubara,dp)
+
+        !Set previous values to current values
+        PreviousE = E
+        PreviousSE(:,:,:) = SE_Matsu_GV(:,:,:)
+        PreviousP(:,:) = DensityMat_GV(:,:)
+
+    end subroutine FindSEChanges
 
     !This will converge s.t. the chemical potential, fock matrix, and
     !GLat_Matsu_GV are all consistent, and give the correct number of electrons
@@ -216,6 +309,9 @@ module GF2
         logical, intent(in) :: tGF
         integer :: i,j
         real(dp) :: Delta_Tau
+        logical :: tDum
+
+        tDum = tGF
 
         !Initially, do brute force - no splining
         Delta_Tau = Beta_Temp/(nImTimePoints-1)
@@ -223,7 +319,7 @@ module GF2
             GF_iw(:,:,i) = zzero
             
             do j = 2,nImTimePoints-1
-                GF_iw(:,:,i) = GF_iw(:,:,i) + exp(cmplx(zero,MatsuPoints(i)*ImTimePoints(j)))*GF_Tau(:,:,j)
+                GF_iw(:,:,i) = GF_iw(:,:,i) + exp(cmplx(zero,MatsuPoints(i)*ImTimePoints(j),dp))*GF_Tau(:,:,j)
             enddo
             GF_iw(:,:,i) = GF_iw(:,:,i) + (GF_Tau(:,:,1) - GF_Tau(:,:,nImTimePoints))/2.0_dp
             GF_iw(:,:,i) = Delta_Tau*GF_iw(:,:,i)
@@ -305,13 +401,13 @@ module GF2
         do i = 1,nMatsubara
             GF_Tau(:,:) = GF_Tau +  &
                 exp(-cmplx(zero,MatsuPoints(i)*TauPoint,dp)) * &
-                (GF_Matsu(:,:,i) - eye(:,:)*(one/cmplx(zero,MatsuPoints(i))) )
+                (GF_Matsu(:,:,i) - eye(:,:)*(one/cmplx(zero,MatsuPoints(i),dp)) )
         enddo
         !Negative Frequencies
         do i = 1,nMatsubara
             GF_Tau(:,:) = GF_Tau +  &
                 exp(cmplx(zero,MatsuPoints(i)*TauPoint,dp)) * &
-                (-GF_Matsu(:,:,i) + eye(:,:)*(one/cmplx(zero,MatsuPoints(i))) )
+                (-GF_Matsu(:,:,i) + eye(:,:)*(one/cmplx(zero,MatsuPoints(i),dp)) )
         enddo
 
         GF_Tau(:,:) = GF_Tau(:,:) / Beta_Temp
@@ -429,7 +525,7 @@ module GF2
 
         !The number of Im Time points is controlled by ScaleImTime which
         !oversamples to avoid aliasing
-        nImTimePoints = ScaleImTime * nMatsubara * Beta_Temp / pi
+        nImTimePoints = ScaleImTime * real(nMatsubara,dp) * Beta_Temp / pi
         allocate(ImTimePoints(nImTimePoints))
         write(6,"(A,I7)") "Number of imag-time points set to: ",nImTimePoints
 
@@ -452,7 +548,8 @@ module GF2
         if(allocated(GLat_Matsu_GV)) deallocate(GLat_Matsu_GV)
         if(allocated(GLat_Tau_GV)) deallocate(GLat_Tau_GV)
 
-        nCompMem = (nSites**2)*(nMatsubara+nImTimePoints)*2
+        ! x 3 because we allocate a 'previous' SE on the matsubara grid in a bit
+        nCompMem = (nSites**2)*(nMatsubara*3+nImTimePoints*2)
         write(6,"(A,F14.3)") "Total memory required for SE and GFs: ",nCompMem*ComptoGb
 
         allocate(SE_Matsu_GV(nSites,nSites,nMatsubara))
