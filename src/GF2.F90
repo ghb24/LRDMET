@@ -31,6 +31,10 @@ module GF2
         real(dp), parameter :: SEThresh = 1.0e-7_dp
         character(len=*), parameter :: t_r='GF2_Hub'
 
+        write(6,"(A)") ""
+        write(6,"(A)") " RUNNING GF2 CALCULATION "
+        write(6,"(A)") ""
+
         !Set up tau grids, and matsubara grids
         call SetupGrids()
         call AllocateMem_GV()
@@ -83,8 +87,8 @@ module GF2
         call FindSEChanges(IterStats,Iter,LatChemPot,GMEnergy,PreviousEnergy,   &
             PreviousSE,PreviousP,MaxSEIter)
 
-        do while((IterStats(3,Iter).lt.SEThresh).and.(IterStats(5,Iter).lt.SEThresh)    &
-                .and.(IterStats(6,Iter).lt.SEThresh).and.(Iter.gt.0))
+        do while((IterStats(3,Iter).gt.SEThresh).or.(IterStats(5,Iter).gt.SEThresh)    &
+                .or.(IterStats(6,Iter).gt.SEThresh).or.(Iter.le.0))
             !Converge self-energy loop
             call WriteGF2Stats(Iter,IterStats,MaxSEIter)
             Iter = Iter + 1
@@ -167,12 +171,14 @@ module GF2
         real(dp), intent(in) :: IterStats(6,0:MaxIter)
         integer :: i
 
+        write(6,"(A)") ""
         write(6,"(A)") "  GF2: Global convergence update "
         write(6,"(A)") "Iteration   No.Elec   Energy   Delta_E   ChemPot   Delta_SE   Delta_P"
         do i = 0,Iter
             write(6,"(I7,6F13.7)") Iter,IterStats(1,Iter),IterStats(2,Iter),IterStats(3,Iter),  &
                 IterStats(4,Iter),IterStats(5,Iter),IterStats(6,Iter)
         enddo
+        write(6,"(A)") ""
 
     end subroutine WriteGF2Stats
 
@@ -249,7 +255,8 @@ module GF2
         write(6,"(A)") "Converging chemical potential and densities..."
         write(6,"(A)") "Microiteration   No.Elec   Chempot   Delta_ChemPot   Delta_P_MF   Delta_P   Diff_P"
 
-        do while((Delta_P_MF.lt.MuThresh).and.(DeltaP.lt.MuThresh).and.(DeltaChemPot.lt.MuThresh).and.(MicroIt.gt.0))
+        do while((Delta_P_MF.gt.MuThresh).or.(DeltaP.gt.MuThresh).or.   &
+                (DeltaChemPot.gt.MuThresh).or.(MicroIt.le.0))
         
             write(6,"(I5,6F13.7)") MicroIt, nElec_GV, LatChemPot, DeltaChemPot, Delta_P_MF, DeltaP, DiffP
             MicroIt = MicroIt + 1
@@ -522,6 +529,7 @@ module GF2
             MatsuPoints(i+1) = (2*i+1)*pi / Beta_Temp
         enddo
         write(6,"(A,I7)") "Number of matsubara frequency points set to: ",nMatsubara
+        write(6,"(A,F20.10)") "Highest matsubara frequency point: ",MatsuPoints(nMatsubara)
 
         !The number of Im Time points is controlled by ScaleImTime which
         !oversamples to avoid aliasing
@@ -550,7 +558,7 @@ module GF2
 
         ! x 3 because we allocate a 'previous' SE on the matsubara grid in a bit
         nCompMem = (nSites**2)*(nMatsubara*3+nImTimePoints*2)
-        write(6,"(A,F14.3)") "Total memory required for SE and GFs: ",nCompMem*ComptoGb
+        write(6,"(A,F10.3,A)") "Total memory required for SE and GFs: ",nCompMem*ComptoGb," Gb"
 
         allocate(SE_Matsu_GV(nSites,nSites,nMatsubara))
         allocate(SE_Tau_GV(nSites,nSites,nImTimePoints))
@@ -668,6 +676,8 @@ module GF2
 
         f1 = ExcessElec(x1)
         f2 = ExcessElec(x2)
+        !write(6,*) "ChemPot1, f1: ",x1,f1
+        !write(6,*) "ChemPot2, f2: ",x2,f2
         do i = 1,50
             if(f1*f2.lt.zero) then
                 ChemPotLow = x1

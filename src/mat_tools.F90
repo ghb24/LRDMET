@@ -1732,7 +1732,7 @@ module mat_tools
         logical :: tWrapped
         character(len=*), parameter :: t_r='DiagOneEOp_r'
         
-        write(6,*) "Entered DiagOneEOp_r..."
+        !write(6,*) "Entered DiagOneEOp_r..."
 
         if(present(tRealVectors)) then
             if(.not.tRealVectors) then
@@ -2563,7 +2563,7 @@ module mat_tools
         logical :: tNetZeroMomDet
         character(len=*), parameter :: t_r='DiagOneEOp_z'
 
-        write(6,*) "Entered DiagOneEOp_z..."
+        !write(6,*) "Entered DiagOneEOp_z..."
 
         if(present(tRealVectors)) then
             tRealVectors_ = tRealVectors

@@ -215,6 +215,7 @@ module readinput
         character(len=100) :: w
         character(len=*), parameter :: t_r='GF2ReadInput'
 
+        tGF2 = .true.
         GF: do
             call read_line(teof)
             if(teof) exit
