@@ -20,6 +20,8 @@ module GF2Data
 
     real(dp), allocatable :: FockMat_GV(:,:)
     real(dp), allocatable :: DensityMat_GV(:,:) !But should this be complex? 
+    real(dp), allocatable :: DensityMat_MF_GV(:,:)
+    real(dp) :: nElec_GV
 
 
 end module GF2Data

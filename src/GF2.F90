@@ -21,20 +21,8 @@ module GF2
         implicit none
         integer, intent(in) :: MaxSEIter
         real(dp), intent(in), optional :: InitialSE_GV(:,:,:)
-        real(dp) :: LatChemPot
+        real(dp) :: LatChemPot,nExcessElec,MuThresh
 
-        !Construct the fock matrix and density matrix
-        !Returned in globals "FockMat_GV" and "DensityMat_GV"
-        !Mean-field chemical potential returned in GuessChemPot
-        call GetFockandP(GuessChemPot)
-        
-        if(present(InitChemPot)) then
-            LatChemPot = InitChemPot
-        else
-            LatChemPot = GuessChemPot
-        endif
-        write(6,*) "Chemical potential initially set to: ",LatChemPot
-        
         !Set up tau grids, and matsubara grids
         call SetupGrids()
         call AllocateMem_GV()
@@ -46,6 +34,29 @@ module GF2
             endif
             SE_Matsu_GV(:,:,:) = InitialSE_GV(:,:,:)
         endif
+        
+        !Construct the fock matrix and density matrix
+        !Returned in globals "FockMat_GV" and "DensityMat_MF_GV"
+        !Mean-field chemical potential returned in GuessChemPot
+        call GetFockandP(GuessChemPot)
+        
+        if(present(InitChemPot)) then
+            LatChemPot = InitChemPot
+        else
+            LatChemPot = GuessChemPot
+        endif
+        write(6,*) "Chemical potential initially set to: ",LatChemPot
+        
+        !This function will also build the global GF and correlated density,
+        !as well as the global number of electrons in nElec_GV
+        nExcessElec = ExcessElec(LatChemPot) 
+        if(abs(nElec_GV-(nExcessElec+real(NEl,dp))).gt.1.0e-7_dp) then
+            call stop_all(t_r,'Error in electron number')
+        endif
+        write(6,*) "Number of electrons in initial greens function: ",nElec_GV
+
+        !Convergence threshold on chemical potential
+        MuThresh = 1.0e-6_dp
 
         do while(.true.)
             !Converge self-energy loop
@@ -53,17 +64,22 @@ module GF2
             !Converge global chemical potential and Fock matrix. Returns new chemical
             !potential, and global matsubara greens function and fock matrix st.
             !electron number is correct and consistent.
-            call ConvergeChemPotAndFock(LatChemPot)
+            call ConvergeChemPotAndFock(LatChemPot,MuThresh)
 
             !FFT Greens function from iw -> tau
+            call FT_GF_MatsuToImTime(GLat_Matsu_GV,GLat_Tau_GV,.true.) 
 
             !Build the self-energy in tau space
+            call Build_SelfEnergy(GLat_Tau_GV,SE_Tau_GV)
 
             !FFT Self-energy from tau space to iw
+            call FT_GF_ImTimeToMatsu(SE_Tau_GV,SE_Matsu_GV,.false.)
 
-            !Build G(iw)
+            !Build G(iw) and density
+            nExcessElec = ExcessElec(LatChemPot)
         
-            !Calculate energy
+            !Calculate energy according to Galitskii-Migdal formula
+            call CalcGMEnergy(GLat_Matsu_GV,SE_Matsu_GV,DensityMat_GV,GMEnergy)
 
             !Test for convergence of self energy, or if hit iteration limit
         enddo
@@ -74,24 +90,98 @@ module GF2
 
         !Analytically continue G(iw) -> G(w) with Pade (and SE)
 
+        !Write G(w)
+
     end subroutine GF2_Hub
+
+    subroutine CalcGMEnergy(G_iw,SE_iw,P,Energy)
+        implicit none
+        complex(dp), intent(in) :: G_iw(nSites,nSites,nMatsubara)
+        complex(dp), intent(in) :: SE_iw(nSites,nSites,nMatsubara)
+        real(dp), intent(in) :: P(nSites,nSites)
+        real(dp), intent(out) :: Energy
+        integer :: i,j,k
+
+        Energy = zero
+        !One-electron contribution
+        do i = 1,nSites
+            do j = 1,nSites
+                Energy = Energy + P(j,i)*(h0(j,i) + 0.5_dp*SE_iw(j,i,nMatsubara))
+            enddo
+        enddo
+
+        !Two-electron contribution (sum over frequencies)
+        do i = 1,nMatsubara
+            do j = 1,nSites
+                do k = 1,nSites
+                    Energy = Energy + (2.0_dp/Beta_Temp)*(real(G_iw(k,j,i))*real(SE_iw(k,j,i)) -    &
+                        aimag(G_iw(k,j,i))*aimag(SE_iw(k,j,i)))
+                enddo
+            enddo
+        enddo
+
+    end subroutine CalcGMEnergy
 
     !This will converge s.t. the chemical potential, fock matrix, and
     !GLat_Matsu_GV are all consistent, and give the correct number of electrons
-    subroutine ConvergeChemPotAndFock(LatChemPot)
+    subroutine ConvergeChemPotAndFock(LatChemPot,MuThresh)
         implicit none
-        real(dp), intent(inout) :: LatChemPot  !Guess potential (should be correct for 1st iter)
+        real(dp), intent(inout) :: LatChemPot       !Guess potential (should be correct for 1st iter)
+        real(dp), intent(in) :: MuThresh            !Tolerance on convergence of quantities
+        real(dp), allocatable :: Initial_P_MF(:,:)  !Initial MF density matrix
+        real(dp), allocatable :: Initial_P(:,:)     !Initial correlated density
+        real(dp), allocatable :: P_Diag(:)
+        real(dp) :: Initial_Chempot
+        real(dp) :: DeltaChemPot,Delta_P_MF,DeltaP,DiffP,MF_ChemPot,nExcessElec
+        integer :: MicroIt,i
 
-        do while(Delta_Fock.lt.1.0e-7_dp)
+        allocate(Previous_P_MF(nSites,nSites))
+        allocate(Previous_P(nSites,nSites))
+        allocate(P_Diag(nSites))
+
+        Previous_P_MF(:,:) = DensityMat_MF_GV(:,:)
+        Previous_P(:,:) = DensityMat_GV(:,:)
+        Previous_ChemPot = LatChemPot
+        MicroIt = 0
+
+        call FindDensityChanges(Previous_P_MF,Previous_P,Previous_ChemPot,LatChemPot  &
+            DeltaChemPot,Delta_P_MF,DeltaP,DiffP)
+
+        !Write out change in chemical potential, fock matrix, correlated and MF
+        !P, and also the difference between the correlated and MF P.
+        write(6,"(A)") "Converging chemical potential and densities..."
+        write(6,"(A)") "Microiteration   No.Elec   Chempot   Delta_ChemPot   Delta_P_MF   Delta_P   Diff_P"
+
+        do while((Delta_P_MF.lt.MuThresh).and.(DeltaP.lt.MuThresh).and.(DeltaChemPot.lt.MuThresh).and.(MicroIt.gt.0))
+        
+            write(6,"(I5,6F13.7)") MicroIt, nElec_GV, LatChemPot, DeltaChemPot, Delta_P_MF, DeltaP, DiffP
+            MicroIt = MicroIt + 1
+            if(MicroIt.gt.50) call stop_all(t_r,'Maximum iteration number hit')
 
             !Converge the chemical potential with fixed fock matrix
             call ConvergeChemPot(LatChemPot)
 
-            !Build fock matrix from h0 and diagonal of density matrix
+            !Build fock matrix from h0 and diagonal of (correlated) density matrix
+            !Updates fock matrix, mean-field density
+            do i = 1,nSites
+                P_Diag(i) = DensityMat_GV(i,i)
+            enddo
+            !Returns the chemical potential from the mean-field density
+            call GetFockandP(MF_ChemPot,GuessDensity=P_Diag)
 
-            !What is the change in the fock matrix
+            !What is the change in the quantities (update previous ones)
+            call FindDensityChanges(Previous_P_MF,Previous_P,Previous_ChemPot,LatChemPot,  &
+                DeltaChemPot,Delta_P_MF,DeltaP,DiffP)
 
         enddo
+            
+        write(6,"(I5,6F13.7)") MicroIt, nElec_GV, LatChemPot, DeltaChemPot, Delta_P_MF, DeltaP, DiffP
+        write(6,"(A)") "*** Fock, MF and correlated densities, and chemical potential converged ***"
+    
+        !Final calculation of greens function, density and number of electrons
+        nExcessElec = ExcessElec(LatChemPot)
+
+        deallocate(Initial_Fock,Initial_P_MF,Initial_P,P_Diag)
 
     end subroutine ConvergeChemPotAndFock
 
@@ -112,6 +202,74 @@ module GF2
         OptChemPot = zbrent(ExcessElec,ChemPotLow,ChemPotHigh,ChemPotTol)
 
     end subroutine ConvergeChemPot
+
+    subroutine FT_GF_ImTimeToMatsu(GF_Tau,GF_iw,tGF)
+        implicit none
+        complex(dp), intent(in) :: GF_Tau(nSites,nSites,nImTimePoints)
+        complex(dp), intent(out) :: GF_iw(nSites,nSites,nMatsubara)
+        logical, intent(in) :: tGF
+        integer :: i
+        real(dp) :: Delta_Tau
+
+        !Initially, do brute force - no splining
+        Delta_Tau = Beta_Temp/(nImTimePoints-1)
+        do i = 1,nMatsubara
+            GF_iw(:,:,i) = zzero
+            
+            do j = 2,nImTimePoints-1
+                GF_iw(:,:,i) = GF_iw(:,:,i) + exp(cmplx(zero,MatsuPoints(i)*ImTimePoints(j)))*GF_Tau(:,:,j)
+            enddo
+            GF_iw(:,:,i) = GF_iw(:,:,i) + (GF_Tau(:,:,1) - GF_Tau(:,:,nImTimePoints))/2.0_dp
+            GF_iw(:,:,i) = Delta_Tau*GF_iw(:,:,i)
+        enddo
+
+    end subroutine FT_GF_ImTimeToMatsu
+
+    !Build the self energy in imaginary-time
+    subroutine Build_SelfEnergy(GF_Tau,SE_Tau)
+        implicit none
+        complex(dp), intent(in) :: GF_Tau(nSites,nSites,nImTimePoints)
+        complex(dp), intent(out) :: SE_Tau(nSites,nSites,nImTimePoints)
+        integer :: i,j,k,nImOpp
+        character(len=*), parameter :: t_r='Build_SelfEnergy'
+
+        SE_Tau(:,:,:) = zzero
+        do i = 1,nImTimePoints
+            nImOpp = nImTimePoints - i + 1
+            if(abs(ImTimePoints(nImOpp) - (-ImTimePoints(i)+Beta_Temp)).gt.1.0e-7_dp) then
+                call stop_all(t_r,'-tau not correctly sampled')
+            endif
+
+            do j = 1,nSites
+                do k = 1,nSites
+
+                    SE_Tau(k,j,i) = GF_Tau(k,j,i)*GF_Tau(k,j,i)*GF_Tau(j,k,nImOpp)*U*U
+
+                enddo
+            enddo
+        enddo
+
+    end subroutine Build_SelfEnergy
+
+    subroutine FT_GF_MatsuToImTime(GF_iw,GF_tau,tGF)
+        implicit none
+        complex(dp), intent(in) :: GF_iw(nSites,nSites,nMatsubara)
+        complex(dp), intent(out) :: GF_tau(nSites,nSites,nImTimePoints)
+        logical :: intent(in) :: tGF    !GF or SE?
+        integer :: i
+        character(len=*), parameter :: t_r='FT_GF_MatsuToImTime'
+
+        write(6,"(A)") "Fourier transforming matsubara greens function to imaginary time..."
+
+        if(.not.tGF) then
+            call stop_all(t_r,'Unsure how to FT SE into imaginary time')
+        endif
+
+        do i = 1,nImTimePoints
+            call MatsuToImTimeFT(GF_iw,ImTimePoints(i),GF_tau(:,:,i),tGF)
+        enddo
+
+    end subroutine FT_GF_MatsuToImTime
 
     !Fourier transform the antisymmetric Matsubara axis function GF_Matsu at tau = TauPoint
     subroutine MatsuToImTimeFT(GF_Matsu,TauPoint,GF_Tau,tGF)
@@ -220,7 +378,7 @@ module GF2
         !Calculate Density
         allocate(OccOrbs(nSites,nOcc))
         OccOrbs(:,:) = EigenVecs(:,1:nOcc)
-        call DGEMM('N','T',nSites,nSites,nOcc,2.0_dp,OccOrbs,nSites,OccOrbs,nSites,zero,DensityMat_GV,nSites)
+        call DGEMM('N','T',nSites,nSites,nOcc,2.0_dp,OccOrbs,nSites,OccOrbs,nSites,zero,DensityMat_MF_GV,nSites)
 
         GuessChemPot = (EigenVals(nOcc) + EigenVals(nOcc+1))/2.0_dp
         deallocate(OccOrbs,EigenVals,EigenVecs)
@@ -298,9 +456,11 @@ module GF2
         GLat_Matsu_GV(:,:,:) = zzero
 
         if(allocated(DensityMat_GV)) deallocate(DensityMat_GV)
+        if(allocated(DensityMat_MF_GV)) deallocate(DensityMat_MF_GV)
         if(allocated(FockMat_GV)) deallocate(FockMat_GV)
 
         allocate(DensityMat_GV(nSites,nSites))
+        allocate(DensityMat_MF_GV(nSites,nSites))
         allocate(FockMat_GV(nSites,nSites))
 
     end subroutine AllocateMem_GV
@@ -342,14 +502,45 @@ module GF2
         call GetGSDensityFromMatsuGF()
 
         !Then find the number of electrons from the density
-        nElecGF = zero
+        nElec_GV = zero
         do i = 1,nSites
-            nElecGF = nElecGF + DensityMat_GV(i,i)
+            nElec_GV = nElec_GV + DensityMat_GV(i,i)
         enddo
 
-        res = nElecGF - real(NEl,dp)
+        res = nElec_GV - real(NEl,dp)
 
     end function ExcessElec
+        
+    !Find convergence criteria on the densities and chemical potential, and
+    !then update the matrices
+    subroutine FindDensityChanges(PreviousP_MF,PreviousP,Previous_ChemPot,LatChemPot,DeltaMu,DeltaPMF,DeltaP,DiffP)
+        implicit none
+        real(dp), intent(inout) :: PreviousP_MF(nSites,nSites)
+        real(dp), intent(inout) :: PreviousP(nSites,nSites)
+        real(dp), intent(inout) :: Previous_ChemPot
+        real(dp), intent(in) :: LatChemPot
+        real(dp), intent(out) :: DeltaMu,DeltaPMF,DeltaP,DiffP
+        integer :: i,j
+
+        DeltaPMF = zero
+        DeltaP = zero
+        DiffP = zero
+        do i = 1,nSites
+            do j = 1,nSites
+                DeltaPMF = DeltaPMF + abs(DensityMat_MF_GV(j,i) - PreviousP_MF(j,i))
+                DeltaP = DeltaP + abs(DensityMat_GV(j,i) - PreviousP(j,i))
+                DiffP = DiffP + abs(DensityMat_GV(j,i) - DensityMat_MF_GV(j,i))
+            enddo
+        enddo
+        
+        DeltaMu = LatChemPot - PreviousChemPot
+
+        PreviousChemPot = LatChemPot
+        PreviousP_MF(:,:) = DensityMat_MF_GV(:,:)
+        PreviousP(:,:) = DensityMat_GV(:,:)
+
+    end subroutine FindDensityChanges
+
     
     !For given fock matrix, find a chemical potential range which brackets the
     !desired number of electrons
