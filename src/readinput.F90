@@ -4,7 +4,7 @@ module readinput
     use globals
     use LatticesData, only: CellShape
     use errors, only: stop_all,warning
-    use GF2Data, only: nMatsubara, Beta_Temp 
+    use GF2Data, only: nMatsubara, Beta_Temp, ScaleImTime 
     implicit none
 
     contains
@@ -19,7 +19,6 @@ module readinput
         tReadSystem = .false.
         tHalfFill = .true. 
         tUHF = .false.
-        tGF2 = .false.
         tThermal = .false.
         tSingFiss = .false.
         nSites = 24  
@@ -68,6 +67,12 @@ module readinput
         End_Omega = 4.05_dp
         Omega_Step = 0.1_dp
         dDelta = 0.01_dp
+
+        !GF2
+        tGF2 = .false.
+        Beta_Temp = 100.0_dp
+        nMatsubara = 250
+        ScaleImTime = 5.0_dp
 
         !SR Response
         tMFResponse = .false. 
@@ -223,11 +228,14 @@ module readinput
             select case(w)
             case("MATSUBARA_POINTS")
                 call readi(nMatsubara)
+            case("TAU_POINTS_FACTOR")
+                call readf(ScaleImTime)
             case("END")
                 exit
             case default
                 write(6,"(A)") "ALLOWED KEYWORDS IN GF2 BLOCK: "
                 write(6,"(A)") "MATSUBARA_POINTS"
+                write(6,"(A)") "TAU_POINTS_FACTOR"
                 call stop_all(t_r,'Keyword '//trim(w)//' not recognized')
             end select
         enddo GF   
