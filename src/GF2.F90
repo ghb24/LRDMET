@@ -37,6 +37,8 @@ module GF2
 
         !Set up tau grids, and matsubara grids
         call SetupGrids()
+        !Finds the uncorrelated (t0) tails, and chemical potential
+        !call FindG0ChemPot()
         call AllocateMem_GV()
 
         !Set initial self-energy if necessary
@@ -44,7 +46,7 @@ module GF2
             if(size(InitialSE_GV,3).ne.nMatsubara) then
                 call stop_all(t_r,'Input initial self-energy wrong size')
             endif
-            SE_Matsu_GV(:,:,:) = InitialSE_GV(:,:,:)
+            SE_GV%Matsu(:,:,:) = InitialSE_GV(:,:,:)
         endif
         
         !Construct the fock matrix and density matrix
@@ -61,18 +63,18 @@ module GF2
         
         !This function will also build the global GF and correlated density,
         !as well as the global number of electrons in nElec_GV
-        nExcessElec = ExcessElec(LatChemPot) 
+        nExcessElec = ExcessElec(GLat_GV,LatChemPot,.true.) 
         if(abs(nElec_GV-(nExcessElec+real(NEl,dp))).gt.1.0e-7_dp) then
             call stop_all(t_r,'Error in electron number')
         endif
         write(6,*) "Number of electrons in initial greens function: ",nElec_GV
 
-        call CalcGMEnergy(GLat_Matsu_GV,SE_Matsu_GV,DensityMat_GV,GMEnergy)
+        call CalcGMEnergy(GLat_GV,SE_GV,DensityMat_GV,GMEnergy)
 
         PreviousEnergy = GMEnergy
         allocate(PreviousSE(nSites,nSites,nMatsubara))
         allocate(PreviousP(nSites,nSites))
-        PreviousSE(:,:,:) = SE_Matsu_GV(:,:,:)
+        PreviousSE(:,:,:) = SE_GV%Matsu(:,:,:)
         PreviousP(:,:) = DensityMat_GV(:,:)
 
         allocate(IterStats(6,0:MaxSEIter))
@@ -100,19 +102,19 @@ module GF2
             call ConvergeChemPotAndFock(LatChemPot,MuThresh)
 
             !FFT Greens function from iw -> tau
-            call FT_GF_MatsuToImTime(GLat_Matsu_GV,GLat_Tau_GV,.true.) 
+            call FT_GF_MatsuToImTime(GLat_GV) 
 
             !Build the self-energy in tau space
-            call Build_SelfEnergy(GLat_Tau_GV,SE_Tau_GV)
+            call Build_SelfEnergy(GLat_GV,SE_GV)
 
             !FFT Self-energy from tau space to iw
-            call FT_GF_ImTimeToMatsu(SE_Tau_GV,SE_Matsu_GV,.false.)
+            call FT_GF_ImTimeToMatsu(SE_GV)
 
             !Build G(iw) and density
-            nExcessElec = ExcessElec(LatChemPot)
+            nExcessElec = ExcessElec(GLat_GV,LatChemPot,.true.)
         
             !Calculate energy according to Galitskii-Migdal formula
-            call CalcGMEnergy(GLat_Matsu_GV,SE_Matsu_GV,DensityMat_GV,GMEnergy)
+            call CalcGMEnergy(GLat_GV,SE_GV,DensityMat_GV,GMEnergy)
 
             !Test for convergence of self energy, or if hit iteration limit
             call FindSEChanges(IterStats,Iter,LatChemPot,GMEnergy,  &
@@ -137,10 +139,11 @@ module GF2
 
     end subroutine GF2_Hub
 
-    subroutine CalcGMEnergy(G_iw,SE_iw,P,Energy)
+    !TODO: Use tails for this
+    subroutine CalcGMEnergy(GF,SE,P,Energy)
         implicit none
-        complex(dp), intent(in) :: G_iw(nSites,nSites,nMatsubara)
-        complex(dp), intent(in) :: SE_iw(nSites,nSites,nMatsubara)
+        type(GreensFunc), intent(in) :: GF
+        type(GreensFunc), intent(in) :: SE
         real(dp), intent(in) :: P(nSites,nSites)
         real(dp), intent(out) :: Energy
         integer :: i,j,k
@@ -149,7 +152,7 @@ module GF2
         !One-electron contribution
         do i = 1,nSites
             do j = 1,nSites
-                Energy = Energy + P(j,i)*(h0(j,i) + 0.5_dp*real(SE_iw(j,i,nMatsubara),dp))
+                Energy = Energy + P(j,i)*(h0(j,i) + 0.5_dp*real(SE%Matsu(j,i,nMatsubara),dp))
             enddo
         enddo
 
@@ -157,8 +160,8 @@ module GF2
         do i = 1,nMatsubara
             do j = 1,nSites
                 do k = 1,nSites
-                    Energy = Energy + (2.0_dp/Beta_Temp)*(real(G_iw(k,j,i))*real(SE_iw(k,j,i)) -    &
-                        aimag(G_iw(k,j,i))*aimag(SE_iw(k,j,i)))
+                    Energy = Energy + (2.0_dp/Beta_Temp)*(real(GF%Matsu(k,j,i))*real(SE%Matsu(k,j,i)) -    &
+                        aimag(GF%Matsu(k,j,i))*aimag(SE%Matsu(k,j,i)))
                 enddo
             enddo
         enddo
@@ -211,7 +214,7 @@ module GF2
             do j = 1,nSites
                 do k = 1,nSites
                     IterStats(5,Iter) = IterStats(5,Iter) + &
-                        abs(SE_Matsu_GV(k,j,i) - PreviousSE(k,j,i))
+                        abs(SE_GV%Matsu(k,j,i) - PreviousSE(k,j,i))
                 enddo
             enddo
         enddo
@@ -219,7 +222,7 @@ module GF2
 
         !Set previous values to current values
         PreviousE = E
-        PreviousSE(:,:,:) = SE_Matsu_GV(:,:,:)
+        PreviousSE(:,:,:) = SE_GV%Matsu(:,:,:)
         PreviousP(:,:) = DensityMat_GV(:,:)
 
     end subroutine FindSEChanges
@@ -263,7 +266,7 @@ module GF2
             if(MicroIt.gt.50) call stop_all(t_r,'Maximum iteration number hit')
 
             !Converge the chemical potential with fixed fock matrix
-            call ConvergeChemPot(LatChemPot)
+            call ConvergeChemPot(LatChemPot,GLat_GV,.true.)
 
             !Build fock matrix from h0 and diagonal of (correlated) density matrix
             !Updates fock matrix, mean-field density
@@ -283,7 +286,7 @@ module GF2
         write(6,"(A)") "*** Fock, MF and correlated densities, and chemical potential converged ***"
     
         !Final calculation of greens function, density and number of electrons
-        nExcessElec = ExcessElec(LatChemPot)
+        nExcessElec = ExcessElec(GLat_GV,LatChemPot,.true.)
 
         deallocate(Previous_P_MF,Previous_P,P_Diag)
 
@@ -291,58 +294,56 @@ module GF2
 
     !Find chemical potential s.t. the number of electrons in the lattice GF (for
     !fixed fock matrix) is correct
-    subroutine ConvergeChemPot(LatChemPot)
+    subroutine ConvergeChemPot(LatChemPot,GF,tCorr)
         implicit none
+        type(GreensFunc), intent(inout) :: GF
+        logical, intent(in) :: tCorr
         real(dp), intent(inout) :: LatChemPot
         real(dp) :: ChemPotLow,ChemPotHigh,OptChemPot
         real(dp), parameter :: ChemPotTol = 1.0e-7_dp
 
         !First, bracket the chemical potential between ChemPotLow and
         !ChemPotHigh
-        call BracketChemPot(LatChemPot,ChemPotLow,ChemPotHigh)
+        call BracketChemPot(ExcessElec,LatChemPot,ChemPotLow,ChemPotHigh,GF,tCorr)
 
         !Brent algorithm to converge the 1D root finding exercise of converging
         !the chemical potential
-        OptChemPot = zbrent(ExcessElec,ChemPotLow,ChemPotHigh,ChemPotTol)
+        OptChemPot = zbrent(ExcessElec,ChemPotLow,ChemPotHigh,ChemPotTol,GF,tCorr)
         !Update chemical potential
         LatChemPot = OptChemPot
 
     end subroutine ConvergeChemPot
 
-    subroutine FT_GF_ImTimeToMatsu(GF_Tau,GF_iw,tGF)
+    !TODO: Fit splines
+    subroutine FT_GF_ImTimeToMatsu(GF)
         implicit none
-        complex(dp), intent(in) :: GF_Tau(nSites,nSites,nImTimePoints)
-        complex(dp), intent(out) :: GF_iw(nSites,nSites,nMatsubara)
-        logical, intent(in) :: tGF
+        type(GreensFunc), intent(inout) :: GF
         integer :: i,j
         real(dp) :: Delta_Tau
-        logical :: tDum
-
-        tDum = tGF
 
         !Initially, do brute force - no splining
         Delta_Tau = Beta_Temp/(nImTimePoints-1)
         do i = 1,nMatsubara
-            GF_iw(:,:,i) = zzero
+            GF%Matsu(:,:,i) = zzero
             
             do j = 2,nImTimePoints-1
-                GF_iw(:,:,i) = GF_iw(:,:,i) + exp(cmplx(zero,MatsuPoints(i)*ImTimePoints(j),dp))*GF_Tau(:,:,j)
+                GF%Matsu(:,:,i) = GF%Matsu(:,:,i) + exp(cmplx(zero,MatsuPoints(i)*ImTimePoints(j),dp))*GF%Tau(:,:,j)
             enddo
-            GF_iw(:,:,i) = GF_iw(:,:,i) + (GF_Tau(:,:,1) - GF_Tau(:,:,nImTimePoints))/2.0_dp
-            GF_iw(:,:,i) = Delta_Tau*GF_iw(:,:,i)
+            GF%Matsu(:,:,i) = GF%Matsu(:,:,i) + (GF%Tau(:,:,1) - GF%Tau(:,:,nImTimePoints))/2.0_dp
+            GF%Matsu(:,:,i) = Delta_Tau*GF%Matsu(:,:,i)
         enddo
 
     end subroutine FT_GF_ImTimeToMatsu
 
     !Build the self energy in imaginary-time
-    subroutine Build_SelfEnergy(GF_Tau,SE_Tau)
+    subroutine Build_SelfEnergy(GF,SE)
         implicit none
-        complex(dp), intent(in) :: GF_Tau(nSites,nSites,nImTimePoints)
-        complex(dp), intent(out) :: SE_Tau(nSites,nSites,nImTimePoints)
+        type(GreensFunc), intent(in) :: GF
+        type(GreensFunc), intent(inout) :: SE
         integer :: i,j,k,nImOpp
         character(len=*), parameter :: t_r='Build_SelfEnergy'
 
-        SE_Tau(:,:,:) = zzero
+        SE%Tau(:,:,:) = zzero
         do i = 1,nImTimePoints
             nImOpp = nImTimePoints - i + 1
             if(abs(ImTimePoints(nImOpp) - (-ImTimePoints(i)+Beta_Temp)).gt.1.0e-7_dp) then
@@ -352,7 +353,7 @@ module GF2
             do j = 1,nSites
                 do k = 1,nSites
 
-                    SE_Tau(k,j,i) = GF_Tau(k,j,i)*GF_Tau(k,j,i)*GF_Tau(j,k,nImOpp)*U*U
+                    SE%Tau(k,j,i) = GF%Tau(k,j,i)*GF%Tau(k,j,i)*GF%Tau(j,k,nImOpp)*U*U
 
                 enddo
             enddo
@@ -360,71 +361,114 @@ module GF2
 
     end subroutine Build_SelfEnergy
 
-    subroutine FT_GF_MatsuToImTime(GF_iw,GF_tau,tGF)
+    subroutine FT_GF_MatsuToImTime(GF)
         implicit none
-        complex(dp), intent(in) :: GF_iw(nSites,nSites,nMatsubara)
-        complex(dp), intent(out) :: GF_tau(nSites,nSites,nImTimePoints)
-        logical, intent(in) :: tGF    !GF or SE?
+        type(GreensFunc), intent(inout) :: GF
+        complex(dp), allocatable :: GF_tau(:,:)
         integer :: i
         character(len=*), parameter :: t_r='FT_GF_MatsuToImTime'
 
         write(6,"(A)") "Fourier transforming matsubara greens function to imaginary time..."
 
-        if(.not.tGF) then
+        if(.not.GF%tGF) then
             call stop_all(t_r,'Unsure how to FT SE into imaginary time')
         endif
 
+        allocate(GF_tau(nSites,nSites))
         do i = 1,nImTimePoints
-            call MatsuToImTimeFT(GF_iw,ImTimePoints(i),GF_tau(:,:,i),tGF)
+            call MatsuToImTimeFT(GF,ImTimePoints(i),GF_tau(:,:))
+            GF%Tau(:,:,i) = GF_tau(:,:)
         enddo
+        deallocate(GF_tau)
 
     end subroutine FT_GF_MatsuToImTime
+    
+    !Remove the GF tail as specified in C2_Coeff and C3_Coeff for
+    !a given matsubara frequency of the greens function
+    pure function GFwoTail(G_iw,w,C2,C3) result(GF)
+        implicit none
+        real(dp), intent(in) :: w
+        complex(dp), intent(in) :: G_iw(nSites,nSites)
+        real(dp), intent(in) :: C2(nSites,nSites),C3(nSites,nSites)
+        complex(dp) :: GF(nSites,nSites)
+        integer :: i
+
+        GF(:,:) = G_iw(:,:)
+        !Remove C1
+        do i = 1,nSites
+            GF(i,i) = GF(i,i) + cmplx(zero,one/w,dp)
+        enddo
+        !Remove C2
+        GF(:,:) = GF(:,:) + (zone/(w**2))*C2(:,:)
+        !Remove C3
+        GF(:,:) = GF(:,:) - cmplx(zero,one/(w**3),dp)*C3(:,:)
+
+    end function GFwoTail
 
     !Fourier transform the antisymmetric Matsubara axis function GF_Matsu at tau = TauPoint
-    subroutine MatsuToImTimeFT(GF_Matsu,TauPoint,GF_Tau,tGF)
+    subroutine MatsuToImTimeFT(GF,TauPoint,GF_Tau)
         implicit none
-        complex(dp), intent(in) :: GF_Matsu(nSites,nSites,nMatsubara)
+        type(GreensFunc), intent(in) :: GF
         real(dp), intent(in) :: TauPoint
         complex(dp), intent(out) :: GF_Tau(nSites,nSites)
-        logical, intent(in) :: tGF  !Is this for a greens function?
         complex(dp), allocatable :: eye(:,:)
         integer :: i
         character(len=*), parameter :: t_r='MatsuToImTimeFT'
 
-        if(.not.tGF) then
+        if(.not.GF%tGF) then
             !This assumes that the c1 coefficient for the 1/iw term is 1
             call stop_all(t_r,'Cannot FT from iw to tau for self-energies yet')
         endif
 
-        allocate(eye(nSites,nSites))
-        eye(:,:) = zzero
-        do i = 1,nSites
-            eye(i,i) = zone
-        enddo
-
         GF_Tau(:,:) = zzero
-        !The simplest way first, removing the 1/iw tail analytically (from the
-        !diagonals only)
-        do i = 1,nMatsubara
-            GF_Tau(:,:) = GF_Tau +  &
-                exp(-cmplx(zero,MatsuPoints(i)*TauPoint,dp)) * &
-                (GF_Matsu(:,:,i) - eye(:,:)*(one/cmplx(zero,MatsuPoints(i),dp)) )
-        enddo
+        if(tFitTails) then
+            do i = 1,nMatsubara
+                GF_Tau(:,:) = GF_Tau(:,:) +  &
+                    exp(-cmplx(zero,MatsuPoints(i)*TauPoint,dp)) * &
+                    GFwoTail(GF%Matsu(:,:,i),MatsuPoints(i),GF%C2_Coeffs,GF%C3_Coeffs)
+            enddo
+            GF_Tau(:,:) = GF_Tau(:,:) / Beta_Temp
 
-        GF_Tau(:,:) = GF_Tau(:,:) / Beta_Temp
+            !Analytically add back on contribution from tail
+            GF_Tau(:,:) = GF_Tau(:,:) +     &
+                GF%C2_Coeffs(:,:)*cmplx( ((TauPoint/2.0_dp) - Beta_Temp/4.0_dp),zero,dp) + &
+                GF%C3_Coeffs(:,:)*cmplx( (Beta_Temp*TauPoint - TauPoint**2)/4.0_dp,zero,dp)
+            !Diagonal C1 part
+            do i = 1,nSites
+                GF_Tau(i,i) = GF_Tau(i,i) - 0.5_dp
+            enddo
+        else
 
-        !Add back on the analytically FT'ed tail
-        GF_Tau(:,:) = GF_Tau(:,:) - 0.5_dp*eye(:,:)
+            allocate(eye(nSites,nSites))
+            eye(:,:) = zzero
+            do i = 1,nSites
+                eye(i,i) = zone
+            enddo
 
-        deallocate(eye)
+            !The simplest way first, removing the 1/iw tail analytically (from the
+            !diagonals only)
+            do i = 1,nMatsubara
+                GF_Tau(:,:) = GF_Tau +  &
+                    exp(-cmplx(zero,MatsuPoints(i)*TauPoint,dp)) * &
+                    (GF%Matsu(:,:,i) - eye(:,:)*(one/cmplx(zero,MatsuPoints(i),dp)) )
+            enddo
+
+            GF_Tau(:,:) = GF_Tau(:,:) / Beta_Temp
+
+            !Add back on the analytically FT'ed tail
+            GF_Tau(:,:) = GF_Tau(:,:) - 0.5_dp*eye(:,:)
+
+            deallocate(eye)
+        endif
 
     end subroutine MatsuToImTimeFT
 
     !P = -2 x G(tau = Beta)
     !Beta will always be the last imaginary time point 
-    subroutine GetGSDensityFromMatsuGF(GF_Matsu)
+    subroutine GetGSDensityFromMatsuGF(GF,PMat)
         implicit none
-        complex(dp), optional :: GF_Matsu(nSites,nSites,nMatsubara)
+        type(GreensFunc), intent(in) :: GF
+        real(dp), intent(out) :: PMat(nSites,nSites)
         complex(dp), allocatable :: TempMat(:,:)
         integer :: i,j
         character(len=*), parameter :: t_r='GetGSDensityFromMatsuGF'
@@ -434,12 +478,9 @@ module GF2
         if(abs(ImTimePoints(nImTimePoints)-Beta_Temp).gt.1.0e-8_dp) then
             call stop_all(t_r,'Error in grids')
         endif
-        if(present(GF_Matsu)) then
-            call MatsuToImTimeFT(GF_Matsu,ImTimePoints(nImTimePoints),TempMat,.true.)
-        else
-            call MatsuToImTimeFT(GLat_Matsu_GV,ImTimePoints(nImTimePoints),TempMat,.true.)
-        endif
 
+        call MatsuToImTimeFT(GF,ImTimePoints(nImTimePoints),TempMat)
+        
         do i = 1,nSites
             do j = i,nSites
                 if(abs(aimag(TempMat(i,j))).gt.1.0e-7_dp) then
@@ -451,11 +492,12 @@ module GF2
             enddo
         enddo
 
-        DensityMat_GV(:,:) = -2.0_dp*real(TempMat(:,:),dp)
+        PMat(:,:) = -2.0_dp*real(TempMat(:,:),dp)
+
         deallocate(TempMat)
+        if(tWriteOut) call writematrix(PMat,'Density Matrix',.true.) 
 
         !write(6,*) "First element: ",DensityMat_GV(1,1)
-        !call writematrix(DensityMat_GV,'Density Matrix',.true.) 
 
     end subroutine GetGSDensityFromMatsuGF
 
@@ -538,6 +580,39 @@ module GF2
         write(6,"(A,I7)") "Number of matsubara frequency points set to: ",nMatsubara
         write(6,"(A,F20.10)") "Highest matsubara frequency point: ",MatsuPoints(nMatsubara)
 
+        if(tFitTails) then
+            write(6,"(A,F11.4)") "Fitting tails of greens functions beyond matsubara frequency: ",TailStart
+            !Find fit points
+            do i = 1,nMatsubara
+                if(MatsuPoints(i).gt.-TailStart) then
+                    iTailNeg = i-1
+                    exit
+                endif
+            enddo
+            do i = nMatsubara,1,-1
+                if(MatsuPoints(i).lt.TailStart) then
+                    iTailPos = i+1
+                    exit
+                endif
+            enddo
+            if(iTailNeg.ne.(nMatsubara-iTailPos+1)) call stop_all(t_r,'Error with tails')
+            write(6,"(A,I7)") "Number of frequency points to be fit to tail of greens function: ",2*iTailNeg
+            if(iTailNeg.lt.4) then
+                call stop_all(t_r,'Number of frequency points to fit tail too small. Increase number of frequencies')
+            endif
+
+            !Calculate denominators for fitting of tails
+            c2_denom = zero
+            c3_denom = zero
+            do i = 1,iTailNeg
+                c2_denom = c2_denom + one/(MatsuPoints(i)**4)
+                c3_denom = c3_denom + one/(MatsuPoints(i)**6)
+            enddo
+            c2_denom = c2_denom * 2.0_dp
+            c3_denom = c3_denom * 2.0_dp
+
+        endif
+
         !The number of Im Time points is controlled by ScaleImTime which
         !oversamples to avoid aliasing
         nImTimePoints = nint(ScaleImTime * real(nMatsubara,dp) * Beta_Temp / pi)
@@ -552,28 +627,117 @@ module GF2
         enddo
 
     end subroutine SetupGrids
+    
+    !For a given greens function, fit the tail and fill the global
+    !data on the coefficients for the high-frequency expansion
+    subroutine FitGFTail(GF)
+        implicit none
+        type(GreensFunc), intent(inout) :: GF
+        real(dp), allocatable :: c2_num(:,:),c3_num(:,:),eye(:,:)
+        integer :: a,i,j
+        character(len=*), parameter :: t_r='FitGFTail'
+
+        if(.not.GF%tGF) then
+            call stop_all(t_r,'Not yet coded up for SEs')
+        endif
+
+        allocate(c2_num(nSites,nSites))
+        allocate(c3_num(nSites,nSites))
+        allocate(eye(nSites,nSites))
+
+        c2_num(:,:) = zero
+        c3_num(:,:) = zero
+        eye(:,:) = zero
+        do a = 1,nSites
+            eye(a,a) = one
+        enddo
+
+        do a = 1,iTailNeg
+            c2_num(:,:) = c2_num(:,:) - real(GF%Matsu(:,:,a))/(MatsuPoints(a)**2)
+            c3_num(:,:) = c3_num(:,:) + (aimag(GF%Matsu(:,:,a)) + &
+                eye(:,:)/MatsuPoints(a)) / (MatsuPoints(a)**3)
+        enddo
+        do a = iTailPos,nMatsubara
+            c2_num(:,:) = c2_num(:,:) - real(GF%Matsu(:,:,a))/(MatsuPoints(a)**2)
+            c3_num(:,:) = c3_num(:,:) + (aimag(GF%Matsu(:,:,a)) + &
+                eye(:,:)/MatsuPoints(a)) / (MatsuPoints(a)**3)
+        enddo
+
+        GF%C2_Coeffs(:,:) = c2_num(:,:) / c2_denom
+        GF%C3_Coeffs(:,:) = c3_num(:,:) / c3_denom
+
+        do i = 1,nSites
+            do j = i+1,nSites
+                if(abs(GF%C2_Coeffs(j,i)-GF%C2_Coeffs(i,j)).gt.1.0e-7_dp) then
+                    call stop_all(t_r,'C2 coefficient matrix is not symmetric')
+                endif
+                if(abs(GF%C3_Coeffs(j,i)-GF%C3_Coeffs(i,j)).gt.1.0e-7_dp) then
+                    call stop_all(t_r,'C3 coefficient matrix is not antisymmetric')
+                endif
+            enddo
+        enddo
+
+        if(tWriteOut) then
+            call writematrix(GF%C2_Coeffs,'C2 Coeffs for GF tails',.true.)
+            call writematrix(GF%C3_Coeffs,'C3 Coeffs for GF tails',.true.)
+        endif
+
+        deallocate(c2_num,c3_num,eye)
+
+    end subroutine FitGFTail
+
+    subroutine DeallocateGF(GF)
+        implicit none
+        type(GreensFunc), intent(inout) :: GF
+
+        if(allocated(GF%Matsu)) deallocate(GF%Matsu)
+        if(allocated(GF%Tau)) deallocate(GF%Tau)
+        if(allocated(GF%C0_Coeffs)) deallocate(GF%C0_Coeffs)
+        if(allocated(GF%C1_Coeffs)) deallocate(GF%C1_Coeffs)
+        if(allocated(GF%C2_Coeffs)) deallocate(GF%C2_Coeffs)
+        if(allocated(GF%C3_Coeffs)) deallocate(GF%C3_Coeffs)
+
+    end subroutine DeallocateGF
+
+    subroutine AllocateGF(GF,n,tGF)
+        implicit none
+        type(GreensFunc), intent(inout) :: GF
+        integer, intent(in) :: n
+        logical, intent(in) :: tGF
+
+        call deallocateGF(GF)
+        allocate(GF%Matsu(n,n,nMatsubara))
+        allocate(GF%Tau(n,n,nImTimePoints))
+        GF%Matsu(:,:,:) = zzero
+        GF%Tau(:,:,:) = zzero
+        GF%tGF = tGF
+        if(tFitTails) then
+            allocate(GF%C2_Coeffs(n,n))
+            allocate(GF%C3_Coeffs(n,n))
+            GF%C2_Coeffs(:,:) = zero
+            GF%C3_Coeffs(:,:) = zero
+            if(.not.tGF) then
+                !A self energy
+                allocate(GF%C0_Coeffs(n,n))
+                allocate(GF%C1_Coeffs(n,n))
+                GF%C0_Coeffs(:,:) = zero
+                GF%C1_Coeffs(:,:) = zero
+            endif
+        endif
+
+    end subroutine AllocateGF
 
     !TODO: Everything should be built and stored in kspace
     subroutine AllocateMem_GV()
         implicit none
         integer :: nCompMem
 
-        if(allocated(SE_Matsu_GV)) deallocate(SE_Matsu_GV)
-        if(allocated(SE_Tau_GV)) deallocate(SE_Tau_GV)
-        if(allocated(GLat_Matsu_GV)) deallocate(GLat_Matsu_GV)
-        if(allocated(GLat_Tau_GV)) deallocate(GLat_Tau_GV)
-
         ! x 3 because we allocate a 'previous' SE on the matsubara grid in a bit
         nCompMem = (nSites**2)*(nMatsubara*3+nImTimePoints*2)
         write(6,"(A,F10.3,A)") "Total memory required for SE and GFs: ",nCompMem*ComptoGb," Gb"
 
-        allocate(SE_Matsu_GV(nSites,nSites,nMatsubara))
-        allocate(SE_Tau_GV(nSites,nSites,nImTimePoints))
-        allocate(GLat_Matsu_GV(nSites,nSites,nMatsubara))
-        allocate(GLat_Tau_GV(nSites,nSites,nImTimePoints))
-
-        SE_Matsu_GV(:,:,:) = zzero
-        GLat_Matsu_GV(:,:,:) = zzero
+        call AllocateGF(GLat_GV,nSites,.true.)
+        call AllocateGF(SE_GV,nSites,.false.)
 
         if(allocated(DensityMat_GV)) deallocate(DensityMat_GV)
         if(allocated(DensityMat_MF_GV)) deallocate(DensityMat_MF_GV)
@@ -586,56 +750,63 @@ module GF2
     end subroutine AllocateMem_GV
 
     !TODO: Build this in k-space
-    subroutine BuildMatsubaraGF(LatChemPot)
+    subroutine BuildMatsubaraGF(GF,LatChemPot,tCorr)
         implicit none
+        type(GreensFunc), intent(inout) :: GF
         real(dp), intent(in) :: LatChemPot
+        logical, intent(in) :: tCorr
         complex(dp), allocatable :: SingleFreqMat(:,:)
         integer :: i,j
 
-        !write(6,*) "Building G_Lat_iw"
-
-        GLat_Matsu_GV(:,:,:) = zzero
+        GF%Matsu(:,:,:) = zzero
 !$OMP PARALLEL DO PRIVATE(j,SingleFreqMat)
         do i = 1,nMatsubara
             allocate(SingleFreqMat(nSites,nSites))
             !Build matrix
-            SingleFreqMat(:,:) = - FockMat_GV(:,:) - SE_Matsu_GV(:,:,i)
+            if(tCorr) then
+                SingleFreqMat(:,:) = - FockMat_GV(:,:) - SE_GV%Matsu(:,:,i)
+            else
+                SingleFreqMat(:,:) = - h0(:,:)
+            endif
             do j = 1,nSites
                 SingleFreqMat(j,j) = SingleFreqMat(j,j) + cmplx(LatChemPot,MatsuPoints(i),dp)
             enddo
             !Invert
-            call mat_inv(SingleFreqMat,GLat_Matsu_GV(:,:,i),nSites)
+            call mat_inv(SingleFreqMat,GF%Matsu(:,:,i),nSites)
             deallocate(SingleFreqMat)
         enddo
 !$OMP END PARALLEL DO
 
-!        do i = 1,nMatsubara
-!            write(6,*) i,MatsuPoints(i),GLat_Matsu_GV(1,1,i),SE_Matsu_GV(1,1,i)
-!        enddo
+        if(tFitTails) call FitGFTail(GF)
 
     end subroutine BuildMatsubaraGF
     
     !This function returns the overpopulation of the system with electrons <N> - N_desired,
-    !for a given chemical potential
-    function ExcessElec(ChemPot) result(res)
+    !for a given chemical potential.
+    function ExcessElec(GF,ChemPot,tCorr) result(res)
         implicit none
+        type(GreensFunc), intent(inout) :: GF
         real(dp), intent(in) :: ChemPot
+        logical, intent(in) :: tCorr
         real(dp) :: res
+        real(dp) :: TotElec
         integer :: i
 
         !Build the Matsubara greens function
-        call BuildMatsubaraGF(ChemPot)
+        call BuildMatsubaraGF(GF,ChemPot,tCorr)
 
         !First, find the density matrix from the Matsubara greens function
-        call GetGSDensityFromMatsuGF()
+        call GetGSDensityFromMatsuGF(GF,DensityMat_GV)
 
         !Then find the number of electrons from the density
-        nElec_GV = zero
+        TotElec = zero
         do i = 1,nSites
-            nElec_GV = nElec_GV + DensityMat_GV(i,i)
+            TotElec = TotElec + DensityMat_GV(i,i)
         enddo
 
-        res = nElec_GV - real(NEl,dp)
+        res = TotElec - real(NEl,dp)
+
+        if(tCorr) nElec_GV = TotElec
 
         !write(6,*) "ChemPot, NElec: ",ChemPot,nElec_GV
 
@@ -674,10 +845,23 @@ module GF2
     
     !For given fock matrix, find a chemical potential range which brackets the
     !desired number of electrons
-    subroutine BracketChemPot(LatChemPot,ChemPotLow,ChemPotHigh)
+    subroutine BracketChemPot(func,LatChemPot,ChemPotLow,ChemPotHigh,GF,tCorr)
         implicit none
         real(dp), intent(in) :: LatChemPot
         real(dp), intent(out) :: ChemPotLow,ChemPotHigh
+        type(GreensFunc), intent(inout) :: GF
+        logical, intent(in) :: tCorr
+        interface
+            function func(GF,x,tCorr)
+                use const, only: dp 
+                use GF2Data, only: GreensFunc
+                implicit none
+                type(GreensFunc), intent(inout) :: GF
+                real(dp), intent(in) :: x
+                logical, intent(in) :: tCorr
+                real(dp) :: func
+            end function func
+        end interface
         real(dp) :: x1,x2,f1,f2
         integer :: i
         real(dp), parameter :: fac = 1.5_dp
@@ -690,8 +874,8 @@ module GF2
         x1 = ChemPotLow
         x2 = ChemPotHigh
 
-        f1 = ExcessElec(x1)
-        f2 = ExcessElec(x2)
+        f1 = func(GF,x1,tCorr)
+        f2 = func(GF,x2,tCorr)
         !write(6,*) "ChemPot1, f1: ",x1,f1
         !write(6,*) "ChemPot2, f2: ",x2,f2
         do i = 1,50
@@ -702,10 +886,10 @@ module GF2
             endif
             if(abs(f1).lt.abs(f2)) then
                 x1 = x1+fac*(x1-x2)
-                f1 = ExcessElec(x1)
+                f1 = func(GF,x1,tCorr)
             else
                 x2 = x2+fac*(x2-x1)
-                f2 = ExcessElec(x2)
+                f2 = ExcessElec(GF,x2,tCorr)
             endif
         enddo
         call stop_all(t_r,'Couldnt manage to bracket the chemical potential')
@@ -713,15 +897,20 @@ module GF2
     end subroutine BracketChemPot
 
     !zbrent from numerical recipies
-    function zbrent(func,x1,x2,tol)
+    function zbrent(func,x1,x2,tol,GF,tCorr)
         implicit none
         real(dp), intent(in) :: x1,x2,tol
+        type(GreensFunc), intent(inout) :: GF
+        logical, intent(in) :: tCorr
         real(dp) :: zbrent
         interface
-            function func(x)
+            function func(GF,x,tCorr)
                 use const, only: dp 
+                use GF2Data, only: GreensFunc
                 implicit none
+                type(GreensFunc), intent(inout) :: GF
                 real(dp), intent(in) :: x
+                logical, intent(in) :: tCorr
                 real(dp) :: func
             end function func
         end interface
@@ -736,8 +925,8 @@ module GF2
         character(len=*), parameter :: t_r='zbrent'
         a=x1
         b=x2
-        fa=func(a)
-        fb=func(b)
+        fa=func(GF,a,tCorr)
+        fb=func(GF,b,tCorr)
         if ((fa > 0.0 .and. fb > 0.0) .or. (fa < 0.0 .and. fb < 0.0)) &
             call stop_all(t_r,'Root must be bracketed for zbrent')
         c=b
@@ -799,7 +988,7 @@ module GF2
             fa=fb
             b=b+merge(d,sign(tol1,xm), abs(d) > tol1 )
             !Evaluate new trial root.
-            fb=func(b)
+            fb=func(GF,b,tCorr)
         end do
         call stop_all(t_r,'Exceeded maximum iterations')
         zbrent=b

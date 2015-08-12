@@ -6,7 +6,7 @@ program matsusum
     complex(dp), parameter :: zone = cmplx(1.0_dp,0.0_dp,dp)
     real(dp), parameter :: pi = 3.1415926535897931_dp
 
-    logical, parameter :: tFitTail = .False.
+    logical, parameter :: tFitTail = .True. 
     real(dp) :: TailStart = 10.0_dp !Matsubara frequency where the tail starts
 
     integer :: n=2    

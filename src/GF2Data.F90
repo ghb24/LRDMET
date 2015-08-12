@@ -2,8 +2,17 @@ module GF2Data
     use const
     implicit none
 
+    real(dp) :: Beta_Temp
+
     integer :: nMatsubara
     real(dp), allocatable :: MatsuPoints(:)
+
+    !For fitting of tails
+    logical :: tFitTails
+    real(dp) :: TailStart
+    integer :: iTailNeg !End point of negative frequency tail
+    integer :: iTailPos !End point of positive frequency tail
+    real(dp) :: c2_denom, c3_denom  !Denominators for fitting
 
     !nImTimePoints = ScaleImTime * nMatsubara * Beta_Temp / pi
     integer :: nImTimePoints    
@@ -11,12 +20,18 @@ module GF2Data
     !The first point will be zero, and the last Beta_Temp
     real(dp), allocatable :: ImTimePoints(:)
 
-    real(dp) :: Beta_Temp
+    type GreensFunc
+        complex(dp), allocatable :: Matsu(:,:,:)
+        complex(dp), allocatable :: Tau(:,:,:)
+        real(dp), allocatable :: C0_Coeffs(:,:)
+        real(dp), allocatable :: C1_Coeffs(:,:)
+        real(dp), allocatable :: C2_Coeffs(:,:)
+        real(dp), allocatable :: C3_Coeffs(:,:)
+        logical :: tGF
+    end type
 
-    complex(dp), allocatable :: SE_Matsu_GV(:,:,:)
-    complex(dp), allocatable :: SE_Tau_GV(:,:,:)
-    complex(dp), allocatable :: GLat_Matsu_GV(:,:,:)
-    complex(dp), allocatable :: GLat_Tau_GV(:,:,:)
+    type(GreensFunc) GLat_GV
+    type(GreensFunc) SE_GV
 
     real(dp), allocatable :: FockMat_GV(:,:)
     real(dp), allocatable :: DensityMat_GV(:,:) !But should this be complex? 
