@@ -14,7 +14,7 @@ program matsusum
     integer :: nImTimePoints
     real(dp), allocatable :: MatsuPoints(:),ImTimePoints(:)
     real(dp) :: Delta_Tau
-    real(dp) :: h0(2,2)
+    real(dp) :: h0(2,2),NEl
     real(dp), allocatable :: W(:),Orbs(:,:),Work(:)
     complex(dp) :: eye(2,2)
     integer :: lWork,info
@@ -22,10 +22,21 @@ program matsusum
     complex(dp), allocatable :: G_iw(:,:,:),SingleFreq(:,:),GF_Tau(:,:,:)
     integer :: i,j,a
 
+    if(mod(nMatsu,2).eq.1) nMatsu = nMatsu + 1  !Should always be even to get same final point on both \pm w
+    !The first 1:nMatsu/2 are the negative frequencies.
+    !The next nMatsu/2+1:nMatsu are the positive frequencies
     allocate(MatsuPoints(nMatsu))
-    do i = 0,nMatsu-1
-        MatsuPoints(i+1) = (2*i+1)*pi / beta
+    j = 0
+    do i = -nMatsu/2,(nMatsu/2)-1
+        j = j + 1
+        MatsuPoints(j) = (2*i+1)*pi / beta
+        write(6,*) j, MatsuPoints(j) 
     enddo
+    if(j.ne.nMatsu) stop 'error here'
+    
+    !do i = 0,nMatsu-1
+    !    MatsuPoints(i+1) = (2*i+1)*pi / beta
+    !enddo
     write(6,"(A,I7)") "Number of matsubara frequency points set to: ",nMatsu
     write(6,"(A,F20.10)") "Highest matsubara frequency point: ",MatsuPoints(nMatsu)
         
@@ -66,9 +77,9 @@ program matsusum
     write(6,*) "Eigenvalues: ",W(1),W(2)
 
     !Half filled
-    !ChemPot = (W(1)+W(2))/2.0_dp
-    !Third full
-    ChemPot = (2.0*W(1)/3.0) + (1.0*W(2)/3.0)
+    ChemPot = (W(1)+W(2))/2.0_dp
+    !Third of way between gap
+    !ChemPot = (2.0*W(1)/3.0) + (1.0*W(2)/3.0)
     write(6,*) "Chemical potential: ",ChemPot
 
     allocate(G_iw(2,2,nMatsu))
@@ -106,11 +117,11 @@ program matsusum
             GF_Tau(:,:,a) = GF_Tau(:,:,a) + exp(-cmplx(zero,MatsuPoints(i)*ImTimePoints(a),dp)) * &
                 (G_iw(:,:,i) - eye(:,:)*(one/cmplx(zero,MatsuPoints(i),dp)))
         enddo
-        do i = 1,nMatsu
-            GF_Tau(:,:,a) = GF_Tau(:,:,a) + &
-                exp(cmplx(zero,MatsuPoints(i)*ImTimePoints(a),dp)) * &
-                (-G_iw(:,:,i) + eye(:,:)*(one/cmplx(zero,MatsuPoints(i),dp)))
-        enddo
+        !do i = 1,nMatsu
+        !    GF_Tau(:,:,a) = GF_Tau(:,:,a) + &
+        !        exp(cmplx(zero,MatsuPoints(i)*ImTimePoints(a),dp)) * &
+        !        (-G_iw(:,:,i) + eye(:,:)*(one/cmplx(zero,MatsuPoints(i),dp)))
+        !enddo
 
         GF_Tau(:,:,a) = GF_Tau(:,:,a) / Beta
 
@@ -123,6 +134,12 @@ program matsusum
             aimag(GF_Tau(2,1,i)),real(GF_Tau(2,2,i)),aimag(GF_Tau(2,2,i))
     enddo
     close(88)
+
+    NEl = zero
+    do i = 1,n
+        NEl = NEl + GF_Tau(i,i,nImTimePoints)
+    enddo
+    write(6,*) "Number of electrons in system: ",-2.0_dp*NEl
 
     !Now, transform back and see if it matches
     G_iw(:,:,:) = zzero
