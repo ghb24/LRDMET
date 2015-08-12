@@ -173,10 +173,10 @@ module GF2
 
         write(6,"(A)") ""
         write(6,"(A)") "  GF2: Global convergence update "
-        write(6,"(A)") "Iteration   No.Elec   Energy   Delta_E   ChemPot   Delta_SE   Delta_P"
+        write(6,"(A)") "Iteration   No.Elec      Energy       Delta_E      ChemPot      Delta_SE     Delta_P"
         do i = 0,Iter
-            write(6,"(I7,6F13.7)") Iter,IterStats(1,Iter),IterStats(2,Iter),IterStats(3,Iter),  &
-                IterStats(4,Iter),IterStats(5,Iter),IterStats(6,Iter)
+            write(6,"(I7,6F13.7)") i,IterStats(1,i),IterStats(2,i),IterStats(3,i),  &
+                IterStats(4,i),IterStats(5,i),IterStats(6,i)
         enddo
         write(6,"(A)") ""
 
@@ -253,7 +253,7 @@ module GF2
         !Write out change in chemical potential, fock matrix, correlated and MF
         !P, and also the difference between the correlated and MF P.
         write(6,"(A)") "Converging chemical potential and densities..."
-        write(6,"(A)") "Microiteration   No.Elec   Chempot   Delta_ChemPot   Delta_P_MF   Delta_P   Diff_P"
+        write(6,"(A)") "MicroIter No.Elec      Chempot   Delta_ChemPot  Delta_P_MF    Delta_P      Diff_P"
 
         do while((Delta_P_MF.gt.MuThresh).or.(DeltaP.gt.MuThresh).or.   &
                 (DeltaChemPot.gt.MuThresh).or.(MicroIt.le.0))
@@ -410,12 +410,6 @@ module GF2
                 exp(-cmplx(zero,MatsuPoints(i)*TauPoint,dp)) * &
                 (GF_Matsu(:,:,i) - eye(:,:)*(one/cmplx(zero,MatsuPoints(i),dp)) )
         enddo
-        !Negative Frequencies
-        do i = 1,nMatsubara
-            GF_Tau(:,:) = GF_Tau +  &
-                exp(cmplx(zero,MatsuPoints(i)*TauPoint,dp)) * &
-                (-GF_Matsu(:,:,i) + eye(:,:)*(one/cmplx(zero,MatsuPoints(i),dp)) )
-        enddo
 
         GF_Tau(:,:) = GF_Tau(:,:) / Beta_Temp
 
@@ -504,18 +498,19 @@ module GF2
     !                   Temperature
     !                   
     !The number of time points is hardcoded to be nFacTau x nMatsu * beta / pi
-    !nFacTau is hardcoded initially to be 20.
+    !nFacTau is hardcoded initially to be 10.
     
     !The grids are returned in:
-    !   MatsuPoints(1:nMatsubara)       [All positive frequencies only]
+    !   MatsuPoints(1:nMatsubara)       [First 1:nMatsu/2 negative, nMatsu/2+1:nMatsu positive]
     !   ImTimePoints(1:nImTimePoints)   [1 is 0 time and nImTimePoints is Beta]
 
     !TODO:  Ultimately, we don't want a uniform grid in imaginary time
     !       We want to sample low and high times more
     subroutine SetupGrids()
         implicit none
-        integer :: i
+        integer :: i,j
         real(dp) :: Delta_Tau
+        character(len=*), parameter :: t_r='SetupGrids'
 
         !Matsubara grids are defined by (2n+1)pi/beta for n = 0 -> infty
         !MatsuPoints(0) = beta/pi
@@ -527,16 +522,25 @@ module GF2
             write(6,"(A)") "Tau grid already set up. Resetting up..."
             deallocate(ImTimePoints)
         endif
+        !Number of frequency points should always be even
+        !in order to get the same final point at both \pm freqs.
+        if(mod(nMatsubara,2).eq.1) nMatsubara = nMatsubara + 1
         allocate(MatsuPoints(nMatsubara))
-        do i = 0,nMatsubara-1
-            MatsuPoints(i+1) = (2*i+1)*pi / Beta_Temp
+        !The first 1:nMatsu/2 are negative
+        !The next nMatsu/2+1:nMatsu are positive
+        j = 0
+        do i = -nMatsubara/2,(nMatsubara/2)-1
+            j = j + 1
+            MatsuPoints(j) = (2*i+1)*pi / Beta_Temp
         enddo
+        if(j.ne.nMatsubara) call stop_all(t_r,'Error in grids')
+
         write(6,"(A,I7)") "Number of matsubara frequency points set to: ",nMatsubara
         write(6,"(A,F20.10)") "Highest matsubara frequency point: ",MatsuPoints(nMatsubara)
 
         !The number of Im Time points is controlled by ScaleImTime which
         !oversamples to avoid aliasing
-        nImTimePoints = ScaleImTime * real(nMatsubara,dp) * Beta_Temp / pi
+        nImTimePoints = nint(ScaleImTime * real(nMatsubara,dp) * Beta_Temp / pi)
         allocate(ImTimePoints(nImTimePoints))
         write(6,"(A,I7)") "Number of imag-time points set to: ",nImTimePoints
 
