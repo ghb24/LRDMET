@@ -6,21 +6,54 @@ program matsusum
     complex(dp), parameter :: zone = cmplx(1.0_dp,0.0_dp,dp)
     real(dp), parameter :: pi = 3.1415926535897931_dp
 
+    logical, parameter :: tFitTail = .False.
+    real(dp) :: TailStart = 10.0_dp !Matsubara frequency where the tail starts
+
     integer :: n=2    
     real(dp) :: ScaleImTime = 10.0_dp
     integer :: nMatsu = 500
     real(8) :: beta = 100.0_8
 
-    integer :: nImTimePoints
+    integer :: nImTimePoints,iTailNeg,iTailPos
     real(dp), allocatable :: MatsuPoints(:),ImTimePoints(:)
-    real(dp) :: Delta_Tau
+    real(dp) :: Delta_Tau,w2_num,w2_denom,w3_num,w3_denom
     real(dp) :: h0(2,2),NEl
-    real(dp), allocatable :: W(:),Orbs(:,:),Work(:)
-    complex(dp) :: eye(2,2)
+    real(dp), allocatable :: W(:),Orbs(:,:),Work(:),c2_mat(:,:),c3_mat(:,:)
+    complex(dp) :: eye(2,2),tmat(2,2),tail(2,2),zmat(2,2),wtail(2,2)
     integer :: lWork,info
     real(dp) :: ChemPot
     complex(dp), allocatable :: G_iw(:,:,:),SingleFreq(:,:),GF_Tau(:,:,:)
     integer :: i,j,a
+
+    interface
+        function GFwoTail(G_iw,n,w,c2,c3) result(GF)
+            implicit none
+            integer, parameter :: dp = selected_real_kind(15,307)   !For double precision real numbers
+            real(dp), parameter :: zero = 0.0_dp, one = 1.0_dp
+            complex(dp), parameter :: zzero = cmplx(0.0_dp,0.0_dp,dp)
+            complex(dp), parameter :: zone = cmplx(1.0_dp,0.0_dp,dp)
+            integer, intent(in) :: n
+            complex(dp), intent(in) :: G_iw(n,n)
+            real(dp), intent(in) :: w
+            real(dp), intent(in), optional :: c2(n,n),c3(n,n)
+            complex(dp) :: GF(n,n)
+        end function GFwoTail
+    end interface
+    interface
+        function GFaddTail(G_iw_notail,n,w,c2,c3) result(GF)
+            implicit none
+            integer, parameter :: dp = selected_real_kind(15,307)   !For double precision real numbers
+            real(dp), parameter :: zero = 0.0_dp, one = 1.0_dp
+            complex(dp), parameter :: zzero = cmplx(0.0_dp,0.0_dp,dp)
+            complex(dp), parameter :: zone = cmplx(1.0_dp,0.0_dp,dp)
+            integer, intent(in) :: n
+            complex(dp), intent(in) :: G_iw_notail(n,n)
+            real(dp), intent(in) :: w
+            real(dp), intent(in), optional :: c2(n,n),c3(n,n)
+            complex(dp) :: GF(n,n)
+        end function GFaddTail
+    end interface
+
 
     if(mod(nMatsu,2).eq.1) nMatsu = nMatsu + 1  !Should always be even to get same final point on both \pm w
     !The first 1:nMatsu/2 are the negative frequencies.
@@ -30,15 +63,31 @@ program matsusum
     do i = -nMatsu/2,(nMatsu/2)-1
         j = j + 1
         MatsuPoints(j) = (2*i+1)*pi / beta
-        write(6,*) j, MatsuPoints(j) 
+!        write(6,*) j, MatsuPoints(j) 
     enddo
     if(j.ne.nMatsu) stop 'error here'
-    
-    !do i = 0,nMatsu-1
-    !    MatsuPoints(i+1) = (2*i+1)*pi / beta
-    !enddo
+
     write(6,"(A,I7)") "Number of matsubara frequency points set to: ",nMatsu
     write(6,"(A,F20.10)") "Highest matsubara frequency point: ",MatsuPoints(nMatsu)
+
+    if(tFitTail) then
+        !Choose fit points
+        do i = 1,nMatsu
+            if(MatsuPoints(i).gt.-TailStart) then
+                iTailNeg = i-1
+                exit
+            endif
+        enddo
+        do i = nMatsu,1,-1
+            if(MatsuPoints(i).lt.TailStart) then
+                iTailPos = i+1
+                exit
+            endif
+        enddo
+        if(iTailNeg.ne.(nMatsu-iTailPos+1)) stop 'error in tails'
+        write(6,*) "Frequency point for the start of the tail of the greens function: ",TailStart
+        write(6,*) "Number of frequency points to be fit to tail of greens function: ",2*iTailNeg
+    endif
         
     nImTimePoints = ScaleImTime * real(nMatsu,dp) * Beta / pi
     allocate(ImTimePoints(nImTimePoints))
@@ -105,28 +154,121 @@ program matsusum
     close(88)
 
     !Now, try to FT
+    allocate(GF_Tau(n,n,nImTimePoints))
+    GF_Tau(:,:,:) = zzero
     eye = zzero
     do i = 1,n
         eye(i,i) = zone
     enddo
-    allocate(GF_Tau(n,n,nImTimePoints))
-    GF_Tau(:,:,:) = zzero
-    do a = 1,nImTimePoints
 
-        do i = 1,nMatsu
-            GF_Tau(:,:,a) = GF_Tau(:,:,a) + exp(-cmplx(zero,MatsuPoints(i)*ImTimePoints(a),dp)) * &
-                (G_iw(:,:,i) - eye(:,:)*(one/cmplx(zero,MatsuPoints(i),dp)))
+    if(tFitTail) then
+
+        allocate(c2_mat(n,n))   !Fit coefficients for 1/(iw)^2 term
+        allocate(c3_mat(n,n))   !Fit coefficients for 1/(iw)^3 term
+
+        do i = 1,n
+            do j = 1,n
+
+                w2_num = zero
+                w2_denom = zero
+                w3_num = zero
+                w3_denom = zero
+                if(i.eq.j) then
+                    !Negative Frequencies
+                    do a = 1,iTailNeg
+                        w2_num = w2_num - real(G_iw(j,i,a))/(MatsuPoints(a)**2)
+                        w2_denom = w2_denom + one/(MatsuPoints(a)**4)
+                        w3_num = w3_num + (aimag(G_iw(j,i,a))+(one/MatsuPoints(a))) / (MatsuPoints(a)**3)
+                        w3_denom = w3_denom + one/(MatsuPoints(a)**6)
+                    enddo
+                    !Positive
+                    do a = iTailPos,nMatsu
+                        w2_num = w2_num - real(G_iw(j,i,a))/(MatsuPoints(a)**2)
+                        w2_denom = w2_denom + one/(MatsuPoints(a)**4)
+                        w3_num = w3_num + (aimag(G_iw(j,i,a))+(one/MatsuPoints(a))) / (MatsuPoints(a)**3)
+                        w3_denom = w3_denom + one/(MatsuPoints(a)**6)
+                    enddo
+                else
+                    !Negative Frequencies
+                    do a = 1,iTailNeg
+                        w2_num = w2_num - real(G_iw(j,i,a))/(MatsuPoints(a)**2)
+                        w2_denom = w2_denom + one/(MatsuPoints(a)**4)
+                        w3_num = w3_num + aimag(G_iw(j,i,a))/(MatsuPoints(a)**3)
+                        w3_denom = w3_denom + one/(MatsuPoints(a)**6)
+                    enddo
+                    !Positive
+                    do a = iTailPos,nMatsu
+                        w2_num = w2_num - real(G_iw(j,i,a))/(MatsuPoints(a)**2)
+                        w2_denom = w2_denom + one/(MatsuPoints(a)**4)
+                        w3_num = w3_num + aimag(G_iw(j,i,a))/(MatsuPoints(a)**3)
+                        w3_denom = w3_denom + one/(MatsuPoints(a)**6)
+                    enddo
+                endif
+                c2_mat(j,i) = w2_num/w2_denom
+                c3_mat(j,i) = w3_num/w3_denom
+            enddo
         enddo
-        !do i = 1,nMatsu
-        !    GF_Tau(:,:,a) = GF_Tau(:,:,a) + &
-        !        exp(cmplx(zero,MatsuPoints(i)*ImTimePoints(a),dp)) * &
-        !        (-G_iw(:,:,i) + eye(:,:)*(one/cmplx(zero,MatsuPoints(i),dp)))
-        !enddo
 
-        GF_Tau(:,:,a) = GF_Tau(:,:,a) / Beta
+        !Now we have the first three moments of the tail
+        write(6,*) "Coefficients for the moments of the tail: "
+        write(6,*) "C2 moment: "
+        do i = 1,n
+            do j = 1,n
+                write(6,*) i,j,c2_mat(i,j)
+            enddo
+        enddo
+        write(6,*) "C3 moment: "
+        do i = 1,n
+            do j = 1,n
+                write(6,*) i,j,c3_mat(i,j)
+            enddo
+        enddo
 
-        GF_Tau(:,:,a) = GF_Tau(:,:,a) - 0.5_dp*eye(:,:)
-    enddo
+        open(88,file='G_iw_NoTail',status='unknown')
+        do i = 1,nMatsu
+            tmat = GFwoTail(G_iw(:,:,i),n,MatsuPoints(i),c2_mat,c3_mat) 
+            wtail = GFaddTail(tmat,n,MatsuPoints(i),c2_mat,c3_mat)
+            zmat(:,:) = zero
+            tail = GFaddTail(zmat,n,MatsuPoints(i),c2_mat,c3_mat)
+            write(88,*) MatsuPoints(i),real(wtail(1,1)),aimag(wtail(1,1)),real(wtail(2,1)),  &
+                aimag(wtail(2,1)),real(wtail(2,2)),aimag(wtail(2,2)),    &
+                real(tail(1,1)),aimag(tail(1,1)),real(tail(2,1)),aimag(tail(2,1)), &
+                real(tail(2,2)),aimag(tail(2,2)), &
+                real(tmat(1,1)),aimag(tmat(1,1)),real(tmat(2,1)),aimag(tmat(2,1)), &
+                real(tmat(2,2)),aimag(tmat(2,2))
+        enddo
+        close(88)
+
+        do a = 1,nImTimePoints
+
+            do i = 1,nMatsu
+                GF_Tau(:,:,a) = GF_Tau(:,:,a) + exp(-cmplx(zero,MatsuPoints(i)*ImTimePoints(a),dp)) * &
+                    (G_iw(:,:,i) - eye(:,:)*(one/cmplx(zero,MatsuPoints(i),dp)) &
+                   + c2_mat(:,:)*(zone/MatsuPoints(i)**2)   &
+                   - c3_mat(:,:) * cmplx(zero,one/(MatsuPoints(i)**3),dp))
+            enddo
+
+            GF_Tau(:,:,a) = GF_Tau(:,:,a) / Beta
+
+            GF_Tau(:,:,a) = GF_Tau(:,:,a) - 0.5_dp*eye(:,:) +   &
+                c2_mat(:,:)*cmplx( ((ImTimePoints(a)/2.0_dp) - Beta/4.0_dp),zero,dp) &
+                + c3_mat(:,:)*cmplx( (Beta*ImTimePoints(a) - ImTimePoints(a)**2)/4.0_dp, zero,dp)
+        enddo
+
+    else
+
+        do a = 1,nImTimePoints
+
+            do i = 1,nMatsu
+                GF_Tau(:,:,a) = GF_Tau(:,:,a) + exp(-cmplx(zero,MatsuPoints(i)*ImTimePoints(a),dp)) * &
+                    (G_iw(:,:,i) - eye(:,:)*(one/cmplx(zero,MatsuPoints(i),dp)))
+            enddo
+
+            GF_Tau(:,:,a) = GF_Tau(:,:,a) / Beta
+
+            GF_Tau(:,:,a) = GF_Tau(:,:,a) - 0.5_dp*eye(:,:)
+        enddo
+    endif
 
     open(88,file='G_tau',status='unknown')
     do i = 1,nImTimePoints
@@ -160,6 +302,82 @@ program matsusum
     close(88)
 
 end program
+    
+    function GFaddTail(G_iw_notail,n,w,c2,c3) result(GF)
+        implicit none
+        integer, parameter :: dp = selected_real_kind(15,307)   !For double precision real numbers
+        real(dp), parameter :: zero = 0.0_dp, one = 1.0_dp
+        complex(dp), parameter :: zzero = cmplx(0.0_dp,0.0_dp,dp)
+        complex(dp), parameter :: zone = cmplx(1.0_dp,0.0_dp,dp)
+        integer, intent(in) :: n
+        complex(dp), intent(in) :: G_iw_notail(n,n)
+        real(dp), intent(in) :: w
+        real(dp), intent(in), optional :: c2(n,n),c3(n,n)
+        complex(dp) :: GF(n,n)
+        integer :: i,j
+
+        GF(:,:) = G_iw_notail(:,:)
+
+        !Remove C1
+        do i = 1,n
+            GF(i,i) = GF(i,i) - cmplx(zero,one/w,dp)
+        enddo
+
+        if(present(c2)) then
+            do i = 1,n
+                do j = 1,n
+                    !Remove C2
+                    GF(j,i) = GF(j,i) - cmplx(c2(j,i)/w**2,zero,dp)
+                enddo
+            enddo
+        endif
+        if(present(c3)) then
+            do i = 1,n
+                do j = 1,n
+                    GF(j,i) = GF(j,i) + cmplx(zero,c3(j,i)/w**3,dp)
+                enddo
+            enddo
+        endif
+
+    end function GFaddTail
+
+    function GFwoTail(G_iw,n,w,c2,c3) result(GF)
+        implicit none
+        integer, parameter :: dp = selected_real_kind(15,307)   !For double precision real numbers
+        real(dp), parameter :: zero = 0.0_dp, one = 1.0_dp
+        complex(dp), parameter :: zzero = cmplx(0.0_dp,0.0_dp,dp)
+        complex(dp), parameter :: zone = cmplx(1.0_dp,0.0_dp,dp)
+        integer, intent(in) :: n
+        complex(dp), intent(in) :: G_iw(n,n)
+        real(dp), intent(in) :: w
+        real(dp), intent(in), optional :: c2(n,n),c3(n,n)
+        complex(dp) :: GF(n,n)
+        integer :: i,j
+
+        GF(:,:) = G_iw(:,:)
+
+        !Remove C1
+        do i = 1,n
+            GF(i,i) = GF(i,i) + cmplx(zero,one/w,dp)
+        enddo
+
+        if(present(c2)) then
+            do i = 1,n
+                do j = 1,n
+                    !Remove C2
+                    GF(j,i) = GF(j,i) + cmplx(c2(j,i)/w**2,zero,dp)
+                enddo
+            enddo
+        endif
+        if(present(c3)) then
+            do i = 1,n
+                do j = 1,n
+                    GF(j,i) = GF(j,i) - cmplx(zero,c3(j,i)/w**3,dp)
+                enddo
+            enddo
+        endif
+
+    end function GFwoTail
 
   SUBROUTINE z_inv2(mat,matinv,dimen)
       implicit none
