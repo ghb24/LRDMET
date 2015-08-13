@@ -38,7 +38,11 @@ module GF2
         !Set up tau grids, and matsubara grids
         call SetupGrids()
         !Finds the uncorrelated (t0) tails, and chemical potential
-        !call FindG0ChemPot()
+        if(tFitTails) then
+            allocate(C2_Coeffs_GF0(nSites,nSites))
+            allocate(C3_Coeffs_GF0(nSites,nSites))
+        endif
+        call FindG0ChemPot(GF0_ChemPot,1.0e-8_dp)
         call AllocateMem_GV()
 
         !Set initial self-energy if necessary
@@ -135,6 +139,7 @@ module GF2
 
         !TODO Write G(w)
 
+        !Deallocate memory
         deallocate(PreviousSE,PreviousP,IterStats)
 
     end subroutine GF2_Hub
@@ -143,18 +148,32 @@ module GF2
     subroutine CalcGMEnergy(GF,SE,P,Energy)
         implicit none
         type(GreensFunc), intent(in) :: GF
-        type(GreensFunc), intent(in) :: SE
+        type(GreensFunc), intent(inout) :: SE
         real(dp), intent(in) :: P(nSites,nSites)
         real(dp), intent(out) :: Energy
-        integer :: i,j,k
+        complex(dp), allocatable :: SE_tail(:,:),GF_tail(:,:)
+        integer :: i,j,k,i_end
+        real(dp) :: w
 
         Energy = zero
-        !One-electron contribution
-        do i = 1,nSites
-            do j = 1,nSites
-                Energy = Energy + P(j,i)*(h0(j,i) + 0.5_dp*real(SE%Matsu(j,i,nMatsubara),dp))
+        if(tFitTails) then
+            !Sigma_infty = C2 - C2_0
+            SE%C0_Coeffs(:,:) = GF%C2_Coeffs(:,:) - C2_Coeffs_GF0(:,:)
+            !One-electron contribution
+            do i = 1,nSites
+                do j = 1,nSites
+                    Energy = Energy + P(j,i)*(h0(j,i) + 0.5_dp*SE%C0_Coeffs(j,i))
+                    !write(6,*) SE%C0_Coeffs(j,i) - real(SE%Matsu(j,i,nMatsubara),dp),SE%C0_Coeffs(j,i)
+                enddo
             enddo
-        enddo
+        else
+            !One-electron contribution
+            do i = 1,nSites
+                do j = 1,nSites
+                    Energy = Energy + P(j,i)*(h0(j,i) + 0.5_dp*real(SE%Matsu(j,i,nMatsubara),dp))
+                enddo
+            enddo
+        endif
 
         !Two-electron contribution (sum over frequencies)
         do i = 1,nMatsubara
@@ -166,7 +185,55 @@ module GF2
             enddo
         enddo
 
+        if(tFitTails.and.(MatsuEnergySumFac.gt.1.0_dp)) then
+            !Set C1 coefficients for SE
+            SE%C1_Coeffs(:,:) = C2_Coeffs_GF0(:,:)**2 - GF%C2_Coeffs(:,:)**2 + &
+                GF%C3_Coeffs(:,:) - C3_Coeffs_GF0(:,:)
+            !Fit C2 and C3 coefficients for SE
+            call FitGFTail(SE)
+
+            !Sum additional contributions from long-range tails to energy
+            allocate(GF_tail(nSites,nSites))
+            allocate(SE_tail(nSites,nSites))
+            i_end = nint(MatsuEnergySumFac*nMatsubara/2.0_dp)
+            !Positive Frequencies
+            do i = (nMatsubara/2),i_end
+                w = (2*i+1)*pi / Beta_Temp
+                call EvalTails(w,GF,SE,GF_tail,SE_tail)
+                do j = 1,nSites
+                    do k = 1,nSites
+                        Energy = Energy + (2.0_dp/Beta_Temp)*(real(GF_tail(k,j))*real(SE_tail(k,j)) -    &
+                            aimag(GF_tail(k,j))*aimag(SE_tail(k,j)))
+                    enddo
+                enddo
+            enddo
+            deallocate(SE_tail,GF_tail)
+        endif
+
     end subroutine CalcGMEnergy
+
+    pure subroutine EvalTails(w,GF,SE,GF_tail,SE_tail)
+        implicit none
+        real(dp), intent(in) :: w
+        type(GreensFunc), intent(in) :: GF,SE
+        complex(dp), intent(out) :: GF_tail(nSites,nSites)
+        complex(dp), intent(out) :: SE_tail(nSites,nSites)
+        integer :: i
+
+        GF_tail(:,:) = zzero
+        do i = 1,nSites
+            GF_tail(i,i) = -cmplx(zero,w,dp)
+        enddo
+        !C2 and C3
+        GF_tail(:,:) = GF_tail(:,:) - GF%C2_Coeffs(:,:)/cmplx(w**2,zero,dp) + &
+            GF%C3_Coeffs(:,:)*cmplx(zero,one/w**3,dp)
+
+        !SE
+        SE_tail(:,:) = SE%C0_Coeffs(:,:) - SE%C1_Coeffs(:,:)*cmplx(zero,one/w,dp) - &
+            SE%C2_Coeffs(:,:)/cmplx(w**2,zero,dp) + &
+            SE%C3_Coeffs(:,:)*cmplx(zero,one/w**3,dp)
+
+    end subroutine EvalTails
 
     subroutine WriteGF2Stats(Iter,IterStats,MaxIter)
         implicit none
@@ -238,6 +305,7 @@ module GF2
         real(dp), allocatable :: P_Diag(:)
         real(dp) :: Previous_Chempot
         real(dp) :: DeltaChemPot,Delta_P_MF,DeltaP,DiffP,MF_ChemPot,nExcessElec
+        real(dp) :: ChemPotTol
         integer :: MicroIt,i
         character(len=*), parameter :: t_r='ConvergeChemPot'
 
@@ -249,6 +317,7 @@ module GF2
         Previous_P(:,:) = DensityMat_GV(:,:)
         Previous_ChemPot = LatChemPot
         MicroIt = 0
+        ChemPotTol = MuThresh/5.0_dp
 
         call FindDensityChanges(Previous_P_MF,Previous_P,Previous_ChemPot,LatChemPot,  &
             DeltaChemPot,Delta_P_MF,DeltaP,DiffP)
@@ -263,10 +332,10 @@ module GF2
         
             write(6,"(I5,6F13.7)") MicroIt, nElec_GV, LatChemPot, DeltaChemPot, Delta_P_MF, DeltaP, DiffP
             MicroIt = MicroIt + 1
-            if(MicroIt.gt.50) call stop_all(t_r,'Maximum iteration number hit')
+            if(MicroIt.gt.500) call stop_all(t_r,'Maximum iteration number hit')
 
             !Converge the chemical potential with fixed fock matrix
-            call ConvergeChemPot(LatChemPot,GLat_GV,.true.)
+            call ConvergeChemPot(LatChemPot,GLat_GV,.true.,ChemPotTol)
 
             !Build fock matrix from h0 and diagonal of (correlated) density matrix
             !Updates fock matrix, mean-field density
@@ -292,15 +361,49 @@ module GF2
 
     end subroutine ConvergeChemPotAndFock
 
+    !Find the uncorrelated chemical potetial, and tails to the GF.
+    !These will be used to constrain the tails of the self-energy.
+    subroutine FindG0ChemPot(h0ChemPot,ChemPotTol)
+        implicit none
+        real(dp), intent(out) :: h0ChemPot
+        real(dp), intent(in) :: ChemPotTol
+        type(GreensFunc) :: GF0
+        real(dp), allocatable :: EigenVecs(:,:), EigenVals(:)
+
+        write(6,"(A)") "Converging non-interacting G0 greens function..."
+
+        !Diagonalize h0 for guess chemical potential
+        allocate(EigenVecs(nSites,nSites))
+        allocate(EigenVals(nSites))
+        EigenVecs(:,:) = h0(:,:)
+        call DiagOneEOp(EigenVecs,EigenVals,1,nSites,.false.,.true.)
+        h0ChemPot = (EigenVals(nOcc) + EigenVals(nOcc+1))/2.0_dp
+        write(6,"(A,F15.7)") "Guess non-interacting chemical potential: ",h0ChemPot
+        deallocate(EigenVals,EigenVecs)
+
+        !Now refine, and obtain the tail coefficients
+        call allocateGF(GF0,nSites,.true.)
+        call ConvergeChemPot(h0ChemPot,GF0,.false.,ChemPotTol)
+        write(6,"(A,F16.10)") "Converged non-interacting greens function chemical potential: ",h0ChemPot
+        call BuildMatsubaraGF(GF0,h0ChemPot,.false.)
+        if(tFitTails) then
+            C2_Coeffs_GF0(:,:) = GF0%C2_Coeffs(:,:)
+            C3_Coeffs_GF0(:,:) = GF0%C3_Coeffs(:,:)
+            write(6,"(A)") "Tails of non-interacting greens function found."
+        endif
+        call DeallocateGF(GF0)
+
+    end subroutine FindG0ChemPot
+
     !Find chemical potential s.t. the number of electrons in the lattice GF (for
     !fixed fock matrix) is correct
-    subroutine ConvergeChemPot(LatChemPot,GF,tCorr)
+    subroutine ConvergeChemPot(LatChemPot,GF,tCorr,ChemPotTol)
         implicit none
         type(GreensFunc), intent(inout) :: GF
         logical, intent(in) :: tCorr
         real(dp), intent(inout) :: LatChemPot
+        real(dp), intent(in) :: ChemPotTol 
         real(dp) :: ChemPotLow,ChemPotHigh,OptChemPot
-        real(dp), parameter :: ChemPotTol = 1.0e-7_dp
 
         !First, bracket the chemical potential between ChemPotLow and
         !ChemPotHigh
@@ -630,6 +733,8 @@ module GF2
     
     !For a given greens function, fit the tail and fill the global
     !data on the coefficients for the high-frequency expansion
+    !Will work for SE and GF (providing the SE C0 and C1 coeffs have been
+    !generated)
     subroutine FitGFTail(GF)
         implicit none
         type(GreensFunc), intent(inout) :: GF
@@ -637,31 +742,44 @@ module GF2
         integer :: a,i,j
         character(len=*), parameter :: t_r='FitGFTail'
 
-        if(.not.GF%tGF) then
-            call stop_all(t_r,'Not yet coded up for SEs')
-        endif
-
         allocate(c2_num(nSites,nSites))
         allocate(c3_num(nSites,nSites))
-        allocate(eye(nSites,nSites))
 
         c2_num(:,:) = zero
         c3_num(:,:) = zero
-        eye(:,:) = zero
-        do a = 1,nSites
-            eye(a,a) = one
-        enddo
 
-        do a = 1,iTailNeg
-            c2_num(:,:) = c2_num(:,:) - real(GF%Matsu(:,:,a))/(MatsuPoints(a)**2)
-            c3_num(:,:) = c3_num(:,:) + (aimag(GF%Matsu(:,:,a)) + &
-                eye(:,:)/MatsuPoints(a)) / (MatsuPoints(a)**3)
-        enddo
-        do a = iTailPos,nMatsubara
-            c2_num(:,:) = c2_num(:,:) - real(GF%Matsu(:,:,a))/(MatsuPoints(a)**2)
-            c3_num(:,:) = c3_num(:,:) + (aimag(GF%Matsu(:,:,a)) + &
-                eye(:,:)/MatsuPoints(a)) / (MatsuPoints(a)**3)
-        enddo
+        if(GF%tGF) then
+            allocate(eye(nSites,nSites))    !For the C1 coeffs
+            eye(:,:) = zero
+            do a = 1,nSites
+                eye(a,a) = one
+            enddo
+            do a = 1,iTailNeg
+                c2_num(:,:) = c2_num(:,:) - real(GF%Matsu(:,:,a))/(MatsuPoints(a)**2)
+                c3_num(:,:) = c3_num(:,:) + (aimag(GF%Matsu(:,:,a)) + &
+                    eye(:,:)/MatsuPoints(a)) / (MatsuPoints(a)**3)
+            enddo
+            do a = iTailPos,nMatsubara
+                c2_num(:,:) = c2_num(:,:) - real(GF%Matsu(:,:,a))/(MatsuPoints(a)**2)
+                c3_num(:,:) = c3_num(:,:) + (aimag(GF%Matsu(:,:,a)) + &
+                    eye(:,:)/MatsuPoints(a)) / (MatsuPoints(a)**3)
+            enddo
+            deallocate(eye)
+        else
+            !SE
+            do a = 1,iTailNeg
+                c2_num(:,:) = c2_num(:,:) - (real(GF%Matsu(:,:,a)) - GF%C0_Coeffs(:,:)) &
+                    / (MatsuPoints(a)**2)
+                c3_num(:,:) = c3_num(:,:) + (aimag(GF%Matsu(:,:,a)) + &
+                    GF%C1_Coeffs(:,:)/MatsuPoints(a)) / (MatsuPoints(a)**3)
+            enddo
+            do a = iTailPos,nMatsubara
+                c2_num(:,:) = c2_num(:,:) - (real(GF%Matsu(:,:,a)) - GF%C0_Coeffs(:,:)) &
+                    / (MatsuPoints(a)**2)
+                c3_num(:,:) = c3_num(:,:) + (aimag(GF%Matsu(:,:,a)) + &
+                    GF%C1_Coeffs(:,:)/MatsuPoints(a)) / (MatsuPoints(a)**3)
+            enddo
+        endif
 
         GF%C2_Coeffs(:,:) = c2_num(:,:) / c2_denom
         GF%C3_Coeffs(:,:) = c3_num(:,:) / c3_denom
@@ -682,7 +800,7 @@ module GF2
             call writematrix(GF%C3_Coeffs,'C3 Coeffs for GF tails',.true.)
         endif
 
-        deallocate(c2_num,c3_num,eye)
+        deallocate(c2_num,c3_num)
 
     end subroutine FitGFTail
 
@@ -790,19 +908,30 @@ module GF2
         logical, intent(in) :: tCorr
         real(dp) :: res
         real(dp) :: TotElec
+        real(dp), allocatable :: GF_Density(:,:)
         integer :: i
 
         !Build the Matsubara greens function
         call BuildMatsubaraGF(GF,ChemPot,tCorr)
 
         !First, find the density matrix from the Matsubara greens function
-        call GetGSDensityFromMatsuGF(GF,DensityMat_GV)
-
-        !Then find the number of electrons from the density
         TotElec = zero
-        do i = 1,nSites
-            TotElec = TotElec + DensityMat_GV(i,i)
-        enddo
+        if(tCorr) then
+            call GetGSDensityFromMatsuGF(GF,DensityMat_GV)
+            !Then find the number of electrons from the density
+            do i = 1,nSites
+                TotElec = TotElec + DensityMat_GV(i,i)
+            enddo
+        else
+            allocate(GF_Density(nSites,nSites))
+            call GetGSDensityFromMatsuGF(GF,GF_Density)
+
+            !Then find the number of electrons from the density
+            do i = 1,nSites
+                TotElec = TotElec + GF_Density(i,i)
+            enddo
+            deallocate(GF_Density)
+        endif
 
         res = TotElec - real(NEl,dp)
 

@@ -4,7 +4,8 @@ module readinput
     use globals
     use LatticesData, only: CellShape
     use errors, only: stop_all,warning
-    use GF2Data, only: nMatsubara, Beta_Temp, ScaleImTime, TailStart,tFitTails 
+    use GF2Data, only: nMatsubara, Beta_Temp, ScaleImTime, TailStart,tFitTails
+    use GF2Data, only: MatsuEnergySumFac
     implicit none
 
     contains
@@ -74,6 +75,7 @@ module readinput
         nMatsubara = 250
         ScaleImTime = 5.0_dp
         tFitTails = .false. !Whether to fit the w^2 and w^3 terms
+        MatsuEnergySumFac = zero
 
         !SR Response
         tMFResponse = .false. 
@@ -234,6 +236,8 @@ module readinput
             case("MATSU_TAILS")
                 tFitTails = .true.
                 call readf(TailStart)
+            case("ENERGYSUM_TAILS")
+                call readf(MatsuEnergySumFac)
             case("END")
                 exit
             case default
@@ -241,6 +245,7 @@ module readinput
                 write(6,"(A)") "MATSUBARA_POINTS"
                 write(6,"(A)") "TAU_POINTS_FACTOR"
                 write(6,"(A)") "MATSU_TAILS"
+                write(6,"(A)") "ENERGYSUM_TAILS"
                 call stop_all(t_r,'Keyword '//trim(w)//' not recognized')
             end select
         enddo GF   

@@ -13,6 +13,12 @@ module GF2Data
     integer :: iTailNeg !End point of negative frequency tail
     integer :: iTailPos !End point of positive frequency tail
     real(dp) :: c2_denom, c3_denom  !Denominators for fitting
+    real(dp) :: MatsuEnergySumFac   !How much further to sum just tails for the energy
+
+    !G0 quantities
+    real(dp) :: GF0_ChemPot
+    real(dp), allocatable :: C2_Coeffs_GF0(:,:)
+    real(dp), allocatable :: C3_Coeffs_GF0(:,:)
 
     !nImTimePoints = ScaleImTime * nMatsubara * Beta_Temp / pi
     integer :: nImTimePoints    
