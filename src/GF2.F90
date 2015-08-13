@@ -962,6 +962,9 @@ module GF2
                 DiffP = DiffP + abs(DensityMat_GV(j,i) - DensityMat_MF_GV(j,i))
             enddo
         enddo
+        DeltaPMF = DeltaPMF / real(nSites**2,dp)
+        DeltaP = DeltaP / real(nSites**2,dp)
+        DiffP = DiffP / real(nSites**2,dp)
         
         DeltaMu = LatChemPot - Previous_ChemPot
 
