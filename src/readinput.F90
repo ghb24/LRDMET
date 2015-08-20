@@ -5,7 +5,7 @@ module readinput
     use LatticesData, only: CellShape
     use errors, only: stop_all,warning
     use GF2Data, only: nMatsubara, Beta_Temp, ScaleImTime, TailStart,tFitTails
-    use GF2Data, only: MatsuEnergySumFac
+    use GF2Data, only: MatsuEnergySumFac, ScaleImTimeSpline, tSpline
     implicit none
 
     contains
@@ -76,6 +76,8 @@ module readinput
         ScaleImTime = 5.0_dp
         tFitTails = .false. !Whether to fit the w^2 and w^3 terms
         MatsuEnergySumFac = zero
+        ScaleImTimeSpline = zero
+        tSpline = .false.
 
         !SR Response
         tMFResponse = .false. 
@@ -238,6 +240,9 @@ module readinput
                 call readf(TailStart)
             case("ENERGYSUM_TAILS")
                 call readf(MatsuEnergySumFac)
+            case("SPLINE")
+                tSpline = .true.
+                call readf(ScaleImTimeSpline)
             case("END")
                 exit
             case default
@@ -246,6 +251,7 @@ module readinput
                 write(6,"(A)") "TAU_POINTS_FACTOR"
                 write(6,"(A)") "MATSU_TAILS"
                 write(6,"(A)") "ENERGYSUM_TAILS"
+                write(6,"(A)") "SPLINE"
                 call stop_all(t_r,'Keyword '//trim(w)//' not recognized')
             end select
         enddo GF   
@@ -1014,6 +1020,15 @@ module readinput
         FitLatHam%timer_name='FitLatHam'
         CalcLatSpectrum%timer_name='CalcSPSpectrum'
         CalcGrads%timer_name='CalcGrads'
+
+        !GF2
+        GF2_time%timer_name = 'GF2'
+        BuildMatGF_time%timer_name = 'BuildLatGF'
+        FT_MatToTau_time%timer_name = 'FT_MatToTau'
+        FT_TauToMat_time%timer_name = 'FT_TauToMat'
+        GMEnergy_time%timer_name = 'GMEnergy'
+        BuildSE_time%timer_name = 'BuildSE'
+        ConvergeMu_time%timer_name = 'ConvMu'
 
     end subroutine name_timers
 

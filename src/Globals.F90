@@ -311,6 +311,14 @@ module Globals
     type(timer) :: CalcLatSpectrum
     type(timer) :: FitLatHam
     type(timer) :: CalcGrads
+    !GF2 timers
+    type(timer) :: GF2_time 
+    type(timer) :: BuildMatGF_time  
+    type(timer) :: FT_MatToTau_time 
+    type(timer) :: FT_TauToMat_time 
+    type(timer) :: GMEnergy_time 
+    type(timer) :: BuildSE_time 
+    type(timer) :: ConvergeMu_time 
     !OpenMP timers for the whole thing since timer routines measure cputime, not walltime
     !real(dp) :: OpenMP_wallstart
 

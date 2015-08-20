@@ -22,7 +22,8 @@ module GF2Data
 
     !nImTimePoints = ScaleImTime * nMatsubara * Beta_Temp / pi
     integer :: nImTimePoints    
-    real(dp) :: ScaleImTime
+    real(dp) :: ScaleImTime,ScaleImTimeSpline
+    logical :: tSpline
     !The first point will be zero, and the last Beta_Temp
     real(dp), allocatable :: ImTimePoints(:)
 

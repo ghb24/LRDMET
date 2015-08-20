@@ -31,6 +31,8 @@ module GF2
         real(dp), parameter :: SEThresh = 1.0e-7_dp
         character(len=*), parameter :: t_r='GF2_Hub'
 
+        call set_timer(GF2_time)
+
         write(6,"(A)") ""
         write(6,"(A)") " RUNNING GF2 CALCULATION "
         write(6,"(A)") ""
@@ -144,6 +146,8 @@ module GF2
 
         !Deallocate memory
         deallocate(PreviousSE,PreviousP,IterStats)
+        call halt_timer(GF2_time)
+
 
     end subroutine GF2_Hub
 
@@ -157,6 +161,8 @@ module GF2
         complex(dp), allocatable :: SE_tail(:,:),GF_tail(:,:)
         integer :: i,j,k,i_end
         real(dp) :: w
+
+        call set_timer(GMEnergy_time)
 
         Energy = zero
         if(tFitTails) then
@@ -212,6 +218,8 @@ module GF2
             enddo
             deallocate(SE_tail,GF_tail)
         endif
+
+        call halt_timer(GMEnergy_time)
 
     end subroutine CalcGMEnergy
 
@@ -313,6 +321,8 @@ module GF2
         integer :: MicroIt,i
         character(len=*), parameter :: t_r='ConvergeChemPot'
 
+        call set_timer(ConvergeMu_time)
+
         allocate(Previous_P_MF(nSites,nSites))
         allocate(Previous_P(nSites,nSites))
         allocate(P_Diag(nSites))
@@ -364,6 +374,7 @@ module GF2
         nExcessElec = ExcessElec(GLat_GV,LatChemPot,.true.)
 
         deallocate(Previous_P_MF,Previous_P,P_Diag)
+        call halt_timer(ConvergeMu_time)
 
     end subroutine ConvergeChemPotAndFock
 
@@ -427,20 +438,64 @@ module GF2
     subroutine FT_GF_ImTimeToMatsu(GF)
         implicit none
         type(GreensFunc), intent(inout) :: GF
-        integer :: i,j
-        real(dp) :: Delta_Tau
+        integer :: i,j,nImTimeSplinePoints
+        real(dp) :: Delta_Tau,tau,Delta_Tau_Spline
+        complex(dp), allocatable :: SecDerivs(:,:,:)
+        complex(dp), allocatable :: FitGF(:,:)
 
-        !Initially, do brute force - no splining
-        Delta_Tau = Beta_Temp/(nImTimePoints-1)
-        do i = 1,nMatsubara
-            GF%Matsu(:,:,i) = zzero
-            
-            do j = 2,nImTimePoints-1
-                GF%Matsu(:,:,i) = GF%Matsu(:,:,i) + exp(cmplx(zero,MatsuPoints(i)*ImTimePoints(j),dp))*GF%Tau(:,:,j)
+        call set_timer(FT_TauToMat_time)
+
+        if(tSpline) then
+
+            allocate(FitGF(nSites,nSites))
+            allocate(SecDerivs(nSites,nSites,nImTimePoints))
+            call FindSplineCoeffs(GF,SecDerivs,nSites)
+
+            nImTimeSplinePoints = nint(ScaleImTimeSpline * real(nMatsubara,dp) * Beta_Temp / pi)
+            Delta_Tau_Spline = Beta_Temp/(nImTimeSplinePoints-1)
+
+            GF%Matsu(:,:,:) = zzero
+
+            do j = 2,nImTimeSplinePoints-1
+                tau = (j-1)*Delta_Tau_Spline
+                call SplineBeta(GF,SecDerivs,nSites,tau,FitGF)
+
+                do i = 1,nMatsubara
+                    GF%Matsu(:,:,i) = GF%Matsu(:,:,i) + exp(cmplx(zero,MatsuPoints(i)*tau,dp))*FitGF(:,:)
+                enddo
             enddo
-            GF%Matsu(:,:,i) = GF%Matsu(:,:,i) + (GF%Tau(:,:,1) - GF%Tau(:,:,nImTimePoints))/2.0_dp
-            GF%Matsu(:,:,i) = Delta_Tau*GF%Matsu(:,:,i)
-        enddo
+            do i = 1,nMatsubara
+                GF%Matsu(:,:,i) = GF%Matsu(:,:,i) + (GF%Tau(:,:,1) - GF%Tau(:,:,nImTimePoints))/2.0_dp
+                GF%Matsu(:,:,i) = Delta_Tau_Spline*GF%Matsu(:,:,i)
+            enddo
+
+!            do i = 1,nMatsubara
+!
+!                do j = 2,nImTimeSplinePoints-1
+!                    tau = (j-1)*Delta_Tau_Spline
+!                    call SplineBeta(GF,SecDerivs,nSites,tau,FitGF)
+!                    GF%Matsu(:,:,i) = GF%Matsu(:,:,i) + exp(cmplx(zero,MatsuPoints(i)*tau,dp))*FitGF(:,:)
+!                enddo
+!                GF%Matsu(:,:,i) = GF%Matsu(:,:,i) + (GF%Tau(:,:,1) - GF%Tau(:,:,nImTimePoints))/2.0_dp
+!                GF%Matsu(:,:,i) = Delta_Tau_Spline*GF%Matsu(:,:,i)
+!            enddo
+
+            deallocate(SecDerivs,FitGF)
+        else
+            !Do brute force - no splining
+            Delta_Tau = Beta_Temp/(nImTimePoints-1)
+            do i = 1,nMatsubara
+                GF%Matsu(:,:,i) = zzero
+                
+                do j = 2,nImTimePoints-1
+                    GF%Matsu(:,:,i) = GF%Matsu(:,:,i) + exp(cmplx(zero,MatsuPoints(i)*ImTimePoints(j),dp))*GF%Tau(:,:,j)
+                enddo
+                GF%Matsu(:,:,i) = GF%Matsu(:,:,i) + (GF%Tau(:,:,1) - GF%Tau(:,:,nImTimePoints))/2.0_dp
+                GF%Matsu(:,:,i) = Delta_Tau*GF%Matsu(:,:,i)
+            enddo
+        endif
+        
+        call halt_timer(FT_TauToMat_time)
 
     end subroutine FT_GF_ImTimeToMatsu
 
@@ -451,6 +506,8 @@ module GF2
         type(GreensFunc), intent(inout) :: SE
         integer :: i,j,k,nImOpp
         character(len=*), parameter :: t_r='Build_SelfEnergy'
+
+        call set_timer(BuildSE_time)
 
         SE%Tau(:,:,:) = zzero
         do i = 1,nImTimePoints
@@ -468,6 +525,8 @@ module GF2
             enddo
         enddo
 
+        call halt_timer(BuildSE_time)
+
     end subroutine Build_SelfEnergy
 
     subroutine FT_GF_MatsuToImTime(GF)
@@ -476,6 +535,8 @@ module GF2
         complex(dp), allocatable :: GF_tau(:,:)
         integer :: i
         character(len=*), parameter :: t_r='FT_GF_MatsuToImTime'
+
+        call set_timer(FT_MatToTau_time)
 
         write(6,"(A)") "Fourier transforming matsubara greens function to imaginary time..."
         call flush(6)
@@ -490,6 +551,8 @@ module GF2
             GF%Tau(:,:,i) = GF_tau(:,:)
         enddo
         deallocate(GF_tau)
+
+        call halt_timer(FT_MatToTau_time)
 
     end subroutine FT_GF_MatsuToImTime
     
