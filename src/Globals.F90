@@ -319,6 +319,7 @@ module Globals
     type(timer) :: GMEnergy_time 
     type(timer) :: BuildSE_time 
     type(timer) :: ConvergeMu_time 
+    type(timer) :: FitSplines_time
     !OpenMP timers for the whole thing since timer routines measure cputime, not walltime
     !real(dp) :: OpenMP_wallstart
 

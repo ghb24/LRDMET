@@ -90,7 +90,7 @@ module GF2
         call flush(6)
 
         !Convergence threshold on chemical potential microiterations
-        MuThresh = 1.0e-6_dp
+        MuThresh = 1.0e-7_dp
         Iter = 0
 
         call FindSEChanges(IterStats,Iter,LatChemPot,GMEnergy,PreviousEnergy,   &
@@ -314,10 +314,10 @@ module GF2
         real(dp), intent(in) :: MuThresh            !Tolerance on convergence of quantities
         real(dp), allocatable :: Previous_P_MF(:,:)  !Initial MF density matrix
         real(dp), allocatable :: Previous_P(:,:)     !Initial correlated density
-        real(dp), allocatable :: P_Diag(:)
+        real(dp), allocatable :: P_Diag(:),P_Diag_old(:)
         real(dp) :: Previous_Chempot
         real(dp) :: DeltaChemPot,Delta_P_MF,DeltaP,DiffP,MF_ChemPot,nExcessElec
-        real(dp) :: ChemPotTol
+        real(dp) :: ChemPotTol,DensityDamp
         integer :: MicroIt,i
         character(len=*), parameter :: t_r='ConvergeChemPot'
 
@@ -326,23 +326,32 @@ module GF2
         allocate(Previous_P_MF(nSites,nSites))
         allocate(Previous_P(nSites,nSites))
         allocate(P_Diag(nSites))
+        allocate(P_Diag_old(nSites))
+        do i = 1,nSites
+            P_Diag_old(i) = DensityMat_GV(i,i)
+        enddo
 
         Previous_P_MF(:,:) = DensityMat_MF_GV(:,:)
         Previous_P(:,:) = DensityMat_GV(:,:)
         Previous_ChemPot = LatChemPot
         MicroIt = 0
         ChemPotTol = MuThresh/5.0_dp
+        DensityDamp = 0.25_dp   !1 is complete damping, 0 is no damping
 
         call FindDensityChanges(Previous_P_MF,Previous_P,Previous_ChemPot,LatChemPot,  &
             DeltaChemPot,Delta_P_MF,DeltaP,DiffP)
 
-        !Write out change in chemical potential, fock matrix, correlated and MF
+        !Write out change in chemical potential, fock matrix, correlated
         !P, and also the difference between the correlated and MF P.
         write(6,"(A)") "Converging chemical potential and densities..."
         write(6,"(A)") "MicroIter No.Elec      Chempot   Delta_ChemPot  Delta_P_MF    Delta_P      Diff_P"
 
-        do while((Delta_P_MF.gt.MuThresh).or.(DeltaP.gt.MuThresh).or.   &
+        do while((DeltaP.gt.MuThresh).or.   &
                 (DeltaChemPot.gt.MuThresh).or.(MicroIt.le.0))
+
+            !write(6,*) "DeltaPMF: ",Delta_P_MF,MuThresh
+            !write(6,*) "DeltaP: ",DeltaP,MuThresh
+            !write(6,*) "DeltaMu: ",DeltaChemPot,MuThresh
         
             write(6,"(I5,6F13.7)") MicroIt, nElec_GV, LatChemPot, DeltaChemPot, Delta_P_MF, DeltaP, DiffP
             call flush(6)
@@ -355,8 +364,9 @@ module GF2
             !Build fock matrix from h0 and diagonal of (correlated) density matrix
             !Updates fock matrix, mean-field density
             do i = 1,nSites
-                P_Diag(i) = DensityMat_GV(i,i)
+                P_Diag(i) = (one-DensityDamp)*DensityMat_GV(i,i) + DensityDamp*P_Diag_old(i)
             enddo
+            P_Diag_old(:) = P_Diag(:)
             !Returns the chemical potential from the mean-field density
             call GetFockandP(MF_ChemPot,GuessDensity=P_Diag)
 
@@ -367,13 +377,13 @@ module GF2
         enddo
             
         write(6,"(I5,6F13.7)") MicroIt, nElec_GV, LatChemPot, DeltaChemPot, Delta_P_MF, DeltaP, DiffP
-        write(6,"(A)") "*** Fock, MF and correlated densities, and chemical potential converged ***"
+        write(6,"(A)") "*** Fock matrix, correlated density, and chemical potential converged ***"
         call flush(6)
     
         !Final calculation of greens function, density and number of electrons
         nExcessElec = ExcessElec(GLat_GV,LatChemPot,.true.)
 
-        deallocate(Previous_P_MF,Previous_P,P_Diag)
+        deallocate(Previous_P_MF,Previous_P,P_Diag,P_Diag_old)
         call halt_timer(ConvergeMu_time)
 
     end subroutine ConvergeChemPotAndFock
@@ -434,7 +444,6 @@ module GF2
 
     end subroutine ConvergeChemPot
 
-    !TODO: Fit splines
     subroutine FT_GF_ImTimeToMatsu(GF)
         implicit none
         type(GreensFunc), intent(inout) :: GF
@@ -1026,15 +1035,15 @@ module GF2
         DeltaP = zero
         DiffP = zero
         do i = 1,nSites
+            DeltaPMF = DeltaPMF + abs(DensityMat_MF_GV(i,i) - PreviousP_MF(i,i))
             do j = 1,nSites
-                DeltaPMF = DeltaPMF + abs(DensityMat_MF_GV(j,i) - PreviousP_MF(j,i))
                 DeltaP = DeltaP + abs(DensityMat_GV(j,i) - PreviousP(j,i))
                 DiffP = DiffP + abs(DensityMat_GV(j,i) - DensityMat_MF_GV(j,i))
             enddo
         enddo
-        DeltaPMF = DeltaPMF / real(nSites**2,dp)
-        DeltaP = DeltaP / real(nSites**2,dp)
-        DiffP = DiffP / real(nSites**2,dp)
+        !DeltaPMF = DeltaPMF / real(nSites,dp)
+        !DeltaP = DeltaP / real(nSites**2,dp)
+        !DiffP = DiffP / real(nSites**2,dp)
         
         DeltaMu = LatChemPot - Previous_ChemPot
 
@@ -1186,6 +1195,8 @@ module GF2
         integer, parameter :: iBoundaryOrder = 2
         character(len=*), parameter :: t_r='FindSplineCoeffs'
 
+        call set_timer(FitSplines_time)
+
         allocate(b(nImTimePoints))
         allocate(CoeffMat(nImTimePoints,nImTimePoints))
         allocate(ipiv(nImTimePoints))
@@ -1194,7 +1205,7 @@ module GF2
         DeltaTau = ImTimePoints(2) - ImTimePoints(1)
 
         do i = 1,n
-            do j = 1,n
+            do j = i,n
 
                 !First, find the difference in the second derivatives at tau=0 and beta
                 !as these are the boundary conditions
@@ -1288,13 +1299,28 @@ module GF2
                     call stop_all(t_r,'Finding splines failed')
                 endif
                 SecDerivs(j,i,:) = b(:)
+                if(i.ne.j) then
+                    SecDerivs(i,j,:) = conjg(b(:))
+                endif
 
             enddo
         enddo
+
+        do i = 1,n
+            do j = 1,n
+                do k = 1,nImTimePoints
+                    if(abs(SecDerivs(j,i,k)-conjg(SecDerivs(i,j,k))).gt.1.0e-8_dp) then
+                        call stop_all(t_r,'Second derivatives not hermitian')
+                    endif
+                enddo
+            enddo
+        enddo
+
         !do i = 1,nImTimePoints
         !    write(6,*) i,ImTimePoints(i),SecDerivs(1,1,i)
         !enddo
         deallocate(ipiv,CoeffMat,b)
+        call halt_timer(FitSplines_time)
 
     end subroutine FindSplineCoeffs
                 

@@ -1029,6 +1029,7 @@ module readinput
         GMEnergy_time%timer_name = 'GMEnergy'
         BuildSE_time%timer_name = 'BuildSE'
         ConvergeMu_time%timer_name = 'ConvMu'
+        FitSplines_time%timer_name = 'FitSplines'
 
     end subroutine name_timers
 
