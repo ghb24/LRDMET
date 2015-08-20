@@ -346,7 +346,7 @@ module GF2
         write(6,"(A)") "Converging chemical potential and densities..."
         write(6,"(A)") "MicroIter No.Elec      Chempot   Delta_ChemPot  Delta_P_MF    Delta_P      Diff_P"
 
-        do while((DeltaP.gt.MuThresh).or.   &
+        do while((DeltaP.gt.MuThresh).or.(Delta_P_MF.gt.MuThresh).or.   &
                 (DeltaChemPot.gt.MuThresh).or.(MicroIt.le.0))
 
             !write(6,*) "DeltaPMF: ",Delta_P_MF,MuThresh
@@ -377,7 +377,7 @@ module GF2
         enddo
             
         write(6,"(I5,6F13.7)") MicroIt, nElec_GV, LatChemPot, DeltaChemPot, Delta_P_MF, DeltaP, DiffP
-        write(6,"(A)") "*** Fock matrix, correlated density, and chemical potential converged ***"
+        write(6,"(A)") "*** Fock matrix, MF and correlated density, and chemical potential converged ***"
         call flush(6)
     
         !Final calculation of greens function, density and number of electrons
@@ -1041,9 +1041,9 @@ module GF2
                 DiffP = DiffP + abs(DensityMat_GV(j,i) - DensityMat_MF_GV(j,i))
             enddo
         enddo
-        !DeltaPMF = DeltaPMF / real(nSites,dp)
-        !DeltaP = DeltaP / real(nSites**2,dp)
-        !DiffP = DiffP / real(nSites**2,dp)
+        DeltaPMF = DeltaPMF / real(nSites,dp)
+        DeltaP = DeltaP / real(nSites**2,dp)
+        DiffP = DiffP / real(nSites**2,dp)
         
         DeltaMu = LatChemPot - Previous_ChemPot
 
