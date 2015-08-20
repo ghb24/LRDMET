@@ -1028,6 +1028,157 @@ module GF2
 
     end subroutine BracketChemPot
 
+    subroutine SplineBeta(GF,SecDerivs,n,Tau,GFVal)
+        implicit none
+        type(GreensFunc), intent(in) :: GF
+        integer, intent(in) :: n
+        complex(dp), intent(in) :: SecDerivs(n,n,nImTimePoints)
+        real(dp), intent(in) :: Tau
+        complex(dp), intent(out) :: GFVal(n,n)
+        !local
+        integer :: klo,khi,k
+        real(dp) :: a,b,c,d
+
+        GFVal(:,:) = zzero
+        !Bisection to find the right place
+        klo = 1
+        khi = n
+        do while (khi-klo.gt.1)
+            k = (khi+klo)/2
+            if(ImTimePoints(k).gt.Tau) then
+                khi = k
+            else
+                klo = k
+            endif
+        enddo
+        !klo and khi now bracket the value of tau
+        a = (ImTimePoints(khi)-tau)/(ImTimePoints(khi)-ImTimePoints(klo))
+        b = (tau - ImTimePoints(klo))/(ImTimePoints(khi)-ImTimePoints(klo))
+        c = (one/6.0_dp)*(a**3 - a)*((ImTimePoints(khi)-ImTimePoints(klo))**2)
+        d = (one/6.0_dp)*(b**3 - b)*((ImTimePoints(khi)-ImTimePoints(klo))**2)
+
+        GFVal(:,:) = a*GF%Tau(:,:,klo) + b*GF%Tau(:,:,khi) + &
+            c*SecDerivs(:,:,klo) + d*SecDerivs(:,:,khi)
+
+    end subroutine SplineBeta
+
+    subroutine FindSplineCoeffs(GF,SecDerivs,n)
+        implicit none
+        type(GreensFunc), intent(in) :: GF
+        integer, intent(in) :: n
+        complex(dp), intent(out) :: SecDerivs(n,n,nImTimePoints)
+        !local
+        real(dp) :: DeltaTau
+        complex(dp) :: TauDerivZero,TauDerivBeta,TauSecDerivZero,TauSecDerivBeta
+        integer :: i,j,k,info
+        integer, allocatable :: ipiv(:)
+        complex(dp), allocatable :: b(:),CoeffMat(:,:)
+        integer, parameter :: iBoundaryOrder = 2
+        character(len=*), parameter :: t_r='FindSplineCoeffs'
+
+        allocate(b(n))
+        allocate(CoeffMat(n,n))
+        allocate(ipiv(n))
+        SecDerivs(:,:,:) = zero
+
+        DeltaTau = ImTimePoints(2) - ImTimePoints(1)
+
+        do i = 1,n
+            do j = 1,n
+
+                !First, find the difference in the second derivatives at tau=0 and beta
+                !as these are the boundary conditions
+                if(iBoundaryOrder.eq.2) then
+                    !Second order: First four points (note this is the accuracy of the
+                    !derivative in the splines...)
+                    TauSecDerivZero = 2.0_dp*GF%Tau(j,i,1) - 5.0_dp*GF%Tau(j,i,2) + 4.0_dp*GF%Tau(j,i,3) - GF%Tau(j,i,4)
+                    TauSecDerivBeta = 2.0_dp*GF%Tau(j,i,nImTimePoints) - 5.0_dp*GF%Tau(j,i,nImTimePoints-1) + &
+                        4.0_dp*GF%Tau(j,i,nImTimePoints-2) - GF%Tau(j,i,nImTimePoints-3)
+                    TauDerivZero = (-3.0_dp/2.0_dp)*GF%Tau(j,i,1) + 2.0_dp*GF%Tau(j,i,2) - (1.0_dp/2.0_dp)*GF%Tau(j,i,3)
+                    TauDerivBeta = (3.0_dp/2.0_dp)*GF%Tau(j,i,nImTimePoints) - 2.0_dp*GF%Tau(j,i,nImTimePoints-1) + &
+                        (1.0_dp/2.0_dp)*GF%Tau(j,i,nImTimePoints-2)
+                elseif(iBoundaryOrder.eq.3) then
+                    !Third order: First five points
+                    TauSecDerivZero = (35.0_dp/12.0_dp)*GF%Tau(j,i,1) - (26.0_dp/3.0_dp)*GF%Tau(j,i,2) + &
+                        (19.0_dp/2.0_dp)*GF%Tau(j,i,3) - (14.0_dp/3.0_dp)*GF%Tau(j,i,4) + (11.0_dp/12.0_dp)*GF%Tau(j,i,5)
+                    TauSecDerivBeta = (35.0_dp/12.0_dp)*GF%Tau(j,i,nImTimePoints) - (26.0_dp/3.0_dp)*GF%Tau(j,i,nImTimePoints-1) + &
+                        (19.0_dp/2.0_dp)*GF%Tau(j,i,nImTimePoints-2) - (14.0_dp/3.0_dp)*GF%Tau(j,i,nImTimePoints-3) + &
+                        (11.0_dp/12.0_dp)*GF%Tau(j,i,nImTimePoints-4)
+                    TauDerivZero = (-11.0_dp/6.0_dp)*GF%Tau(j,i,1) + 3.0_dp*GF%Tau(j,i,2) - &
+                        (3.0_dp/2.0_dp)*GF%Tau(j,i,3) + (1.0_dp/3.0_dp)*GF%Tau(j,i,4)
+                    TauDerivBeta = (11.0_dp/6.0_dp)*GF%Tau(j,i,nImTimePoints) - 3.0_dp*GF%Tau(j,i,nImTimePoints-1) + &
+                        (3.0_dp/2.0_dp)*GF%Tau(j,i,nImTimePoints-2) - (1.0_dp/3.0_dp)*GF%Tau(j,i,nImTimePoints-3)
+                elseif(iBoundaryOrder.eq.4) then
+                    !Fourth order: First six points
+                    TauSecDerivZero = (15.0_dp/4.0_dp)*GF%Tau(j,i,1) - (77.0_dp/6.0_dp)*GF%Tau(j,i,2) + &
+                        (107.0_dp/6.0_dp)*GF%Tau(j,i,3) - 13.0_dp*GF%Tau(j,i,4) + (61.0_dp/12.0_dp)*GF%Tau(j,i,5) - &
+                        (5.0_dp/6.0_dp)*GF%Tau(j,i,6)
+                    TauSecDerivBeta = (15.0_dp/4.0_dp)*GF%Tau(j,i,nImTimePoints) - (77.0_dp/6.0_dp)*GF%Tau(j,i,nImTimePoints-1) + &
+                        (107.0_dp/6.0_dp)*GF%Tau(j,i,nImTimePoints-2) - 13.0_dp*GF%Tau(j,i,nImTimePoints-3) + &
+                        (61.0_dp/12.0_dp)*GF%Tau(j,i,nImTimePoints-4) - (5.0_dp/6.0_dp)*GF%Tau(j,i,nImTimePoints-5)
+                    TauDerivZero = (-25.0_dp/12.0_dp)*GF%Tau(j,i,1) + 4.0_dp*GF%Tau(j,i,2) - &
+                        3.0_dp*GF%Tau(j,i,3) + (4.0_dp/3.0_dp)*GF%Tau(j,i,4) - (1.0_dp/4.0_dp)*GF%Tau(j,i,5)
+                    TauDerivBeta = (25.0_dp/12.0_dp)*GF%Tau(j,i,nImTimePoints) - 4.0_dp*GF%Tau(j,i,nImTimePoints-1) + &
+                        3.0_dp*GF%Tau(j,i,nImTimePoints-2) - (4.0_dp/3.0_dp)*GF%Tau(j,i,nImTimePoints-3) + &
+                        (1.0_dp/4.0_dp)*GF%Tau(j,i,nImTimePoints-4)
+                elseif(iBoundaryOrder.eq.5) then
+                    !Fifth order: First seven points
+                    TauSecDerivZero = (203.0_dp/45.0_dp)*GF%Tau(j,i,1) - (87.0_dp/5.0_dp)*GF%Tau(j,i,2) + &
+                        (117.0_dp/4.0_dp)*GF%Tau(j,i,3) - (254.0_dp/9.0_dp)*GF%Tau(j,i,4) + (33.0_dp/2.0_dp)*GF%Tau(j,i,5) - &
+                        (27.0_dp/5.0_dp)*GF%Tau(j,i,6) + (137.0_dp/180.0_dp)*GF%Tau(j,i,7)
+                    TauSecDerivBeta = (203.0_dp/45.0_dp)*GF%Tau(j,i,nImTimePoints) - &
+                        (87.0_dp/5.0_dp)*GF%Tau(j,i,nImTimePoints-1) + &
+                        (117.0_dp/4.0_dp)*GF%Tau(j,i,nImTimePoints-2) - (254.0_dp/9.0_dp)*GF%Tau(j,i,nImTimePoints-3) + &
+                        (33.0_dp/2.0_dp)*GF%Tau(j,i,nImTimePoints-4) - &
+                        (27.0_dp/5.0_dp)*GF%Tau(j,i,nImTimePoints-5) + (137.0_dp/180.0_dp)*GF%Tau(j,i,nImTimePoints-6)
+                    TauDerivZero = (-137.0_dp/60.0_dp)*GF%Tau(j,i,1) + 5.0_dp*GF%Tau(j,i,2) - &
+                        5.0_dp*GF%Tau(j,i,3) + (10.0_dp/3.0_dp)*GF%Tau(j,i,4) - &
+                        (5.0_dp/4.0_dp)*GF%Tau(j,i,5) + (1.0_dp/5.0_dp)*GF%Tau(j,i,6)
+                    TauDerivBeta = (137.0_dp/60.0_dp)*GF%Tau(j,i,nImTimePoints) - 5.0_dp*GF%Tau(j,i,nImTimePoints-1) + &
+                        5.0_dp*GF%Tau(j,i,nImTimePoints-2) - (10.0_dp/3.0_dp)*GF%Tau(j,i,nImTimePoints-3) + &
+                        (5.0_dp/4.0_dp)*GF%Tau(j,i,nImTimePoints-4) - (1.0_dp/5.0_dp)*GF%Tau(j,i,nImTimePoints-5)
+                endif
+                TauSecDerivZero = TauSecDerivZero / (DeltaTau**2)
+                TauSecDerivBeta = TauSecDerivBeta / (DeltaTau**2)
+                TauDerivZero = TauDerivZero / DeltaTau
+                TauDerivBeta = TauDerivBeta / DeltaTau
+
+                CoeffMat(:,:) = zzero
+                do k = 2,n-1
+                    CoeffMat(k,k) = cmplx(4.0_dp,zero,dp)
+                    CoeffMat(k,k-1) = zone
+                    CoeffMat(k,k+1) = zone
+                enddo
+                CoeffMat(1,1) = cmplx(6.0_dp/DeltaTau,zero,dp)
+                CoeffMat(1,n) = cmplx(6.0_dp/DeltaTau,zero,dp)
+                CoeffMat(n,1) = cmplx(-2.0_dp,zero,dp)
+                CoeffMat(n,2) = cmplx(-1.0_dp,zero,dp)
+                CoeffMat(n,n) = cmplx(2.0_dp,zero,dp)
+                CoeffMat(n,n-1) = cmplx(1.0_dp,zero,dp)
+
+                do k = 2,n-1
+                    b(k) = GF%Tau(j,i,k+1) - 2.0_dp*GF%Tau(j,i,k) + GF%Tau(j,i,k-1)
+                enddo
+                b(1) = -(-TauSecDerivBeta - TauSecDerivZero)*DeltaTau
+                b(n) = -(GF%Tau(j,i,2)-GF%Tau(j,i,1) + GF%Tau(j,i,nImTimePoints) - &
+                    GF%Tau(j,i,nImTimePoints-1)) + (TauDerivBeta + TauDerivZero)*DeltaTau
+                b(:) = b(:)*(6.0_dp/(DeltaTau**2))
+
+                !Solve for spline second derivatives
+                call ZGESV(n,1,CoeffMat,n,ipiv,b,n,info)
+                if(info.ne.0) then
+                    call stop_all(t_r,'Finding splines failed')
+                endif
+                SecDerivs(j,i,:) = b(:)
+
+            enddo
+        enddo
+        deallocate(ipiv,CoeffMat,b)
+
+    end subroutine FindSplineCoeffs
+                
+
+
     !zbrent from numerical recipies
     function zbrent(func,x1,x2,tol,GF,tCorr)
         implicit none
