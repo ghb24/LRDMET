@@ -85,6 +85,7 @@ module GF2
         IterStats(:,:) = zero
 
         write(6,"(A)") "Converging Self-Energy at the level of GF2..."
+        call flush(6)
 
         !Convergence threshold on chemical potential microiterations
         MuThresh = 1.0e-6_dp
@@ -110,6 +111,8 @@ module GF2
 
             !Build the self-energy in tau space
             call Build_SelfEnergy(GLat_GV,SE_GV)
+
+            if(.false.) call TestSplineSE(SE_GV)
 
             !FFT Self-energy from tau space to iw
             call FT_GF_ImTimeToMatsu(SE_GV)
@@ -249,6 +252,7 @@ module GF2
                 IterStats(4,i),IterStats(5,i),IterStats(6,i)
         enddo
         write(6,"(A)") ""
+        call flush(6)
 
     end subroutine WriteGF2Stats
 
@@ -331,6 +335,7 @@ module GF2
                 (DeltaChemPot.gt.MuThresh).or.(MicroIt.le.0))
         
             write(6,"(I5,6F13.7)") MicroIt, nElec_GV, LatChemPot, DeltaChemPot, Delta_P_MF, DeltaP, DiffP
+            call flush(6)
             MicroIt = MicroIt + 1
             if(MicroIt.gt.500) call stop_all(t_r,'Maximum iteration number hit')
 
@@ -353,6 +358,7 @@ module GF2
             
         write(6,"(I5,6F13.7)") MicroIt, nElec_GV, LatChemPot, DeltaChemPot, Delta_P_MF, DeltaP, DiffP
         write(6,"(A)") "*** Fock, MF and correlated densities, and chemical potential converged ***"
+        call flush(6)
     
         !Final calculation of greens function, density and number of electrons
         nExcessElec = ExcessElec(GLat_GV,LatChemPot,.true.)
@@ -472,6 +478,7 @@ module GF2
         character(len=*), parameter :: t_r='FT_GF_MatsuToImTime'
 
         write(6,"(A)") "Fourier transforming matsubara greens function to imaginary time..."
+        call flush(6)
 
         if(.not.GF%tGF) then
             call stop_all(t_r,'Unsure how to FT SE into imaginary time')
@@ -1028,6 +1035,46 @@ module GF2
 
     end subroutine BracketChemPot
 
+    subroutine TestSplineSE(GF)
+        implicit none
+        type(GreensFunc), intent(in) :: GF
+        complex(dp), allocatable :: SecDerivs(:,:,:),FitGF(:,:)
+        integer :: nFineTauPoints,i
+        real(dp) :: Delta_Tau,tau
+        integer :: iunit = 93
+        character(len=*), parameter :: t_r='TestSplineSE'
+
+        allocate(SecDerivs(nSites,nSites,nImTimePoints))
+        call FindSplineCoeffs(GF,SecDerivs,nSites)
+
+        nFineTauPoints = nint(ScaleImTime*13.0_dp*real(nMatsubara,dp)*Beta_Temp / pi)
+        Delta_Tau = Beta_Temp / (nFineTauPoints-1)
+
+        open(unit=iunit,file='GF_Tau',status='unknown')
+        do i = 1,nImTimePoints
+            write(iunit,"(9G18.8)") ImTimePoints(i),real(GF%tau(1,1,i)),aimag(GF%tau(1,1,i)),real(GF%tau(2,1,i)),    &
+                aimag(GF%tau(2,1,i)),real(GF%tau(1,2,i)),aimag(GF%tau(1,2,i)),real(GF%tau(2,2,i)),aimag(GF%tau(2,2,i))
+        enddo
+        close(iunit)
+        
+        open(unit=iunit,file='GF_Tau_Spline',status='unknown')
+        allocate(FitGF(nSites,nSites))
+        call SplineBeta(GF,SecDerivs,nSites,zero,FitGF)
+        write(iunit,"(9G18.8)") zero,real(FitGF(1,1)),aimag(FitGF(1,1)),real(FitGF(2,1)),aimag(FitGF(2,1)),real(FitGF(1,2)),    &
+            aimag(FitGF(1,2)),real(FitGF(2,2)),aimag(FitGF(2,2))
+        do i = 2,nFineTauPoints
+            tau = (i-1)*Delta_Tau
+            call SplineBeta(GF,SecDerivs,nSites,tau,FitGF)
+            write(iunit,*) tau,real(FitGF(1,1)),aimag(FitGF(1,1)),real(FitGF(2,1)),aimag(FitGF(2,1)),real(FitGF(1,2)),    &
+                aimag(FitGF(1,2)),real(FitGF(2,2)),aimag(FitGF(2,2))
+        enddo
+        close(iunit)
+
+        deallocate(FitGF,SecDerivs)
+        call stop_all(t_r,'End of spline test')
+
+    end subroutine TestSplineSE
+
     subroutine SplineBeta(GF,SecDerivs,n,Tau,GFVal)
         implicit none
         type(GreensFunc), intent(in) :: GF
@@ -1042,7 +1089,7 @@ module GF2
         GFVal(:,:) = zzero
         !Bisection to find the right place
         klo = 1
-        khi = n
+        khi = nImTimePoints
         do while (khi-klo.gt.1)
             k = (khi+klo)/2
             if(ImTimePoints(k).gt.Tau) then
@@ -1076,9 +1123,9 @@ module GF2
         integer, parameter :: iBoundaryOrder = 2
         character(len=*), parameter :: t_r='FindSplineCoeffs'
 
-        allocate(b(n))
-        allocate(CoeffMat(n,n))
-        allocate(ipiv(n))
+        allocate(b(nImTimePoints))
+        allocate(CoeffMat(nImTimePoints,nImTimePoints))
+        allocate(ipiv(nImTimePoints))
         SecDerivs(:,:,:) = zero
 
         DeltaTau = ImTimePoints(2) - ImTimePoints(1)
@@ -1144,41 +1191,50 @@ module GF2
                 TauDerivBeta = TauDerivBeta / DeltaTau
 
                 CoeffMat(:,:) = zzero
-                do k = 2,n-1
+                do k = 2,nImTimePoints-1
                     CoeffMat(k,k) = cmplx(4.0_dp,zero,dp)
                     CoeffMat(k,k-1) = zone
                     CoeffMat(k,k+1) = zone
                 enddo
                 CoeffMat(1,1) = cmplx(6.0_dp/DeltaTau,zero,dp)
-                CoeffMat(1,n) = cmplx(6.0_dp/DeltaTau,zero,dp)
-                CoeffMat(n,1) = cmplx(-2.0_dp,zero,dp)
-                CoeffMat(n,2) = cmplx(-1.0_dp,zero,dp)
-                CoeffMat(n,n) = cmplx(2.0_dp,zero,dp)
-                CoeffMat(n,n-1) = cmplx(1.0_dp,zero,dp)
+                CoeffMat(1,nImTimePoints) = cmplx(6.0_dp/DeltaTau,zero,dp)
+                CoeffMat(nImTimePoints,1) = cmplx(-2.0_dp,zero,dp)
+                CoeffMat(nImTimePoints,2) = cmplx(-1.0_dp,zero,dp)
+                CoeffMat(nImTimePoints,nImTimePoints) = cmplx(2.0_dp,zero,dp)
+                CoeffMat(nImTimePoints,nImTimePoints-1) = cmplx(1.0_dp,zero,dp)
 
-                do k = 2,n-1
+                do k = 2,nImTimePoints-1
                     b(k) = GF%Tau(j,i,k+1) - 2.0_dp*GF%Tau(j,i,k) + GF%Tau(j,i,k-1)
                 enddo
                 b(1) = -(-TauSecDerivBeta - TauSecDerivZero)*DeltaTau
-                b(n) = -(GF%Tau(j,i,2)-GF%Tau(j,i,1) + GF%Tau(j,i,nImTimePoints) - &
+                b(nImTimePoints) = -(GF%Tau(j,i,2) - GF%Tau(j,i,1) + GF%Tau(j,i,nImTimePoints) - &
                     GF%Tau(j,i,nImTimePoints-1)) + (TauDerivBeta + TauDerivZero)*DeltaTau
                 b(:) = b(:)*(6.0_dp/(DeltaTau**2))
 
+                !if(i.eq.1.and.j.eq.1) then
+                !    write(6,*) "b: ",b(:)
+                !    call writematrix(CoeffMat,'CoeffMat',.true.)
+                !endif
                 !Solve for spline second derivatives
-                call ZGESV(n,1,CoeffMat,n,ipiv,b,n,info)
+                info = 0
+                call ZGESV(nImTimePoints,1,CoeffMat,nImTimePoints,ipiv,b,nImTimePoints,info)
                 if(info.ne.0) then
+                    write(6,*) "b: ",b(:)
+                    !call writematrix(CoeffMat,'CoeffMat',.true.)
+                    write(6,*) "info: ",info
                     call stop_all(t_r,'Finding splines failed')
                 endif
                 SecDerivs(j,i,:) = b(:)
 
             enddo
         enddo
+        !do i = 1,nImTimePoints
+        !    write(6,*) i,ImTimePoints(i),SecDerivs(1,1,i)
+        !enddo
         deallocate(ipiv,CoeffMat,b)
 
     end subroutine FindSplineCoeffs
                 
-
-
     !zbrent from numerical recipies
     function zbrent(func,x1,x2,tol,GF,tCorr)
         implicit none
