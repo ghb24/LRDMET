@@ -5,7 +5,7 @@ module readinput
     use LatticesData, only: CellShape
     use errors, only: stop_all,warning
     use GF2Data, only: nMatsubara, Beta_Temp, ScaleImTime, TailStart,tFitTails
-    use GF2Data, only: MatsuEnergySumFac, ScaleImTimeSpline, tSpline
+    use GF2Data, only: MatsuEnergySumFac, ScaleImTimeSpline, tSpline, GF2_MaxIter
     implicit none
 
     contains
@@ -15,6 +15,7 @@ module readinput
         implicit none
 
         !Main options
+        tDMETCalc = .false.
         tAnderson = .false. !Hubbard by default
         tChemPot = .false.
         tReadSystem = .false.
@@ -48,6 +49,7 @@ module readinput
         tContinueConvergence = .true.
         tNonDirDavidson = .false.
         tFCIQMC = .false.
+        tMP2 = .false.
         nNECICores = 0
         tCoreH_EmbBasis = .false.
         tCheck = .false.
@@ -71,6 +73,7 @@ module readinput
 
         !GF2
         tGF2 = .false.
+        GF2_MaxIter = 150
         Beta_Temp = 100.0_dp
         nMatsubara = 250
         ScaleImTime = 5.0_dp
@@ -231,6 +234,8 @@ module readinput
             if(teof) exit
             call readu(w)
             select case(w)
+            case("MAX_MACROITER")
+                call readi(GF2_MaxIter)
             case("MATSUBARA_POINTS")
                 call readi(nMatsubara)
             case("TAU_POINTS_FACTOR")
@@ -247,6 +252,7 @@ module readinput
                 exit
             case default
                 write(6,"(A)") "ALLOWED KEYWORDS IN GF2 BLOCK: "
+                write(6,"(A)") "MAX_MACROITER"
                 write(6,"(A)") "MATSUBARA_POINTS"
                 write(6,"(A)") "TAU_POINTS_FACTOR"
                 write(6,"(A)") "MATSU_TAILS"
@@ -368,9 +374,12 @@ module readinput
                 endif
             case("SCF_HF")
                 tSCFHF = .true.
+            case("MP2")
+                tMP2 = .true.
             case("KSPACE_DIAG")
                 tDiag_kspace = .true.
             case("IMPSITES")
+                tDMETCalc = .true.
                 call readi(nImp)
             case("COMPRESSMATS")
                 tCompressedMats = .true.
@@ -978,6 +987,9 @@ module readinput
         endif
         if((LatticeDim.eq.2).and.(CellShape.eq.0)) then
             call stop_all(t_r,'No Unit Cell shape specified for 2D square lattice')
+        endif
+        if(tMP2.and..not.tSCFHF) then
+            call stop_all(t_r,'To do MP2, you must do a full HF (SCF_HF option)')
         endif
 
     end subroutine check_input

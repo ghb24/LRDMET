@@ -438,12 +438,13 @@ module mat_tools
     !Run a full HF, including mean-field on-site repulsion term in the fock matrix
     !These are stored in FullHFOrbs and FullHFEnergies
     subroutine run_true_hf()
-        use DetTools, only: GetHFAntisymInt_spinorb
+        use DetTools, only: GetHFAntisymInt_spinorb,GetHFInt_spinorb
         implicit none
         real(dp) :: HEl,PDiff,fockel
         real(dp), allocatable :: Work(:),OccOrbs_HF(:,:),PMatrix_old(:,:),PMatrix(:,:)
         real(dp), allocatable :: fock(:,:),temp(:,:),h0HF(:,:)
-        integer :: i,lWork,info,ex(2,2),j,nIter
+        integer :: i,lWork,info,ex(2,2),j,nIter,a,b
+        real(dp) :: dir,exch,emp2
         logical :: tFailedSCF
         character(len=*), parameter :: t_r='run_true_hf'
 
@@ -620,6 +621,35 @@ module mat_tools
             write(6,*) "HF energy from fock eigenvalues: ",HFEnergy
 
             deallocate(h0HF)
+
+            if(tMP2) then
+                !Run MP2
+                emp2 = zero
+!$OMP PARALLEL DO REDUCTION(+:emp2) DEFAULT(SHARED) PRIVATE(j,a,b,ex,dir,exch)
+                do i = 1,nOcc
+                    do j = 1,nOcc
+                        do a = nOcc+1,nSites
+                            do b = nOcc+1,nSites
+                                ex(1,1) = i*2
+                                ex(2,1) = a*2
+                                ex(1,2) = j*2
+                                ex(2,2) = b*2
+                                dir = GetHFInt_spinorb(ex,FullHFOrbs)
+                                ex(1,1) = j*2
+                                ex(1,2) = i*2
+                                exch = GetHFInt_spinorb(ex,FullHFOrbs)
+                                exch = 2.0_dp*dir - exch
+                                exch = exch*dir
+                                emp2 = emp2 + exch / (FullHFEnergies(i) + FullHFEnergies(j) - &
+                                    FullHFEnergies(a)-FullHFEnergies(b))
+                            enddo
+                        enddo
+                    enddo
+                enddo
+!$OMP END PARALLEL DO
+                write(6,"(A,G20.13)") "MP2 correlation energy: ",emp2
+                write(6,"(A,G20.13)") "MP2 total energy:       ",HFEnergy+emp2
+            endif
         else
             deallocate(FullHFOrbs,FullHFEnergies)
             call run_hf(0)

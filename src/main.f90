@@ -146,11 +146,9 @@ Program RealHub
                     call SR_LinearResponse()
                 endif
 
-                if(tDMFTCalc) then
-                    call DMFT_Driver()
-                elseif(tGF2) then
-                    call GF2_Driver()
-                else
+                if(tGF2) call GF2_Driver()
+                if(tDMFTCalc) call DMFT_Driver()
+                if(tDMETCalc) then
                     if(tReadInCorrPot.or.tReadSystem) then
                         !Read in the correlation potential from another source
                         call read_in_corrpot()
@@ -298,9 +296,6 @@ Program RealHub
                         call writematrix(v_loc,'Converged Correlation Potential',.true.)
                     endif
             
-                    deallocate(MeanFieldDM)
-                    if(tUHF) deallocate(MeanFieldDM_b)
-
                     if(tProjectHFKPnts) then
                         call ProjectHFontoK()
                     endif
@@ -328,6 +323,8 @@ Program RealHub
                     endif
 
                 endif   !if DMFT
+                deallocate(MeanFieldDM)
+                if(tUHF) deallocate(MeanFieldDM_b)
             enddo   !Loop over occupations
 
             if(.not.tHalfFill) then

@@ -88,6 +88,8 @@ module Globals
     real(dp) :: Start_Omega_Im,End_Omega_Im,Omega_Step_Im    !Parameters for Matsubara axis sweep
     logical :: tRealSpaceSC     !Whether to attempt self-consistency on the real or matsubara axis
     logical :: tDumpFCIDUMP
+    logical :: tDMETCalc        !Do DMET calculation (if impurity specified)
+    logical :: tMP2             !Do MP2 calculation
     logical :: tAnderson        !Whether to do anderson model, rather than hubbard model
     logical :: tChemPot         !Whether to include a chemical potential of U/2 at the impurity site of the anderson model
                                 !Note that this potential only acts on the impurity site, and only acts on the interacting system.

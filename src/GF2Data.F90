@@ -2,6 +2,7 @@ module GF2Data
     use const
     implicit none
 
+    integer :: GF2_MaxIter
     real(dp) :: Beta_Temp
 
     integer :: nMatsubara

@@ -29,6 +29,7 @@ module GF2
         real(dp) :: MF_ChemPot  !Mean-field approximation to chemical potential
         integer :: Iter
         real(dp), parameter :: SEThresh = 1.0e-7_dp
+        real(dp), parameter :: SE_Damping = 0.2_dp
         character(len=*), parameter :: t_r='GF2_Hub'
 
         call set_timer(GF2_time)
@@ -101,7 +102,7 @@ module GF2
             !Converge self-energy loop
             call WriteGF2Stats(Iter,IterStats,MaxSEIter)
             Iter = Iter + 1
-            if(Iter.gt.MaxSEIter) call stop_all(t_r,'Maximum global iterations hit')
+            if(Iter.gt.MaxSEIter) exit
 
             !Converge global chemical potential and Fock matrix. Returns new chemical
             !potential, and global matsubara greens function and fock matrix st.
@@ -118,6 +119,8 @@ module GF2
 
             !FFT Self-energy from tau space to iw
             call FT_GF_ImTimeToMatsu(SE_GV)
+            !Damp update in matsubara space
+            SE_GV%Matsu(:,:,:) = (one-SE_Damping)*SE_GV%Matsu(:,:,:) + SE_Damping*PreviousSE(:,:,:)
 
             !Build G(iw) and density
             nExcessElec = ExcessElec(GLat_GV,LatChemPot,.true.)
@@ -131,9 +134,13 @@ module GF2
 
         enddo
 
-        !Write final energy and stats
-        call WriteGF2Stats(Iter,IterStats,MaxSEIter)
-        write(6,"(A,I6,A)") "GF2 convergence complete! Global self-energy converged in ",Iter," iterations."
+        if(iter.gt.MaxSEIter) then
+            write(6,"(A)") "Maximum number of iterations hit. GF2 convergence incomplete..."
+        else
+            !Write final energy and stats
+            call WriteGF2Stats(Iter,IterStats,MaxSEIter)
+            write(6,"(A,I6,A)") "GF2 convergence complete! Global self-energy converged in ",Iter," iterations."
+        endif
 
         write(6,"(A,F17.10)") "Final Energy: ",GMEnergy
         write(6,"(A,F17.10)") "Final Chemical Potential: ",LatChemPot
@@ -145,6 +152,7 @@ module GF2
         !TODO Write G(w)
 
         !Deallocate memory
+        if(tFitTails) deallocate(C2_Coeffs_GF0,C3_Coeffs_GF0)
         deallocate(PreviousSE,PreviousP,IterStats)
         call halt_timer(GF2_time)
 
@@ -185,6 +193,7 @@ module GF2
         endif
 
         !Two-electron contribution (sum over frequencies)
+!$OMP PARALLEL DO REDUCTION(+:Energy) DEFAULT(SHARED)
         do i = 1,nMatsubara
             do j = 1,nSites
                 do k = 1,nSites
@@ -193,6 +202,7 @@ module GF2
                 enddo
             enddo
         enddo
+!$OMP END PARALLEL DO
 
         if(tFitTails.and.(MatsuEnergySumFac.gt.1.0_dp)) then
             !Set C1 coefficients for SE
@@ -202,11 +212,12 @@ module GF2
             call FitGFTail(SE)
 
             !Sum additional contributions from long-range tails to energy
-            allocate(GF_tail(nSites,nSites))
-            allocate(SE_tail(nSites,nSites))
             i_end = nint(MatsuEnergySumFac*nMatsubara/2.0_dp)
             !Positive Frequencies
+!$OMP PARALLEL DO REDUCTION(+:Energy) DEFAULT(SHARED) PRIVATE(w,GF_tail,SE_tail)
             do i = (nMatsubara/2),i_end
+                allocate(GF_tail(nSites,nSites))
+                allocate(SE_tail(nSites,nSites))
                 w = (2*i+1)*pi / Beta_Temp
                 call EvalTails(w,GF,SE,GF_tail,SE_tail)
                 do j = 1,nSites
@@ -215,8 +226,9 @@ module GF2
                             aimag(GF_tail(k,j))*aimag(SE_tail(k,j)))
                     enddo
                 enddo
+                deallocate(SE_tail,GF_tail)
             enddo
-            deallocate(SE_tail,GF_tail)
+!$OMP END PARALLEL DO
         endif
 
         call halt_timer(GMEnergy_time)
@@ -275,6 +287,7 @@ module GF2
         complex(dp), intent(inout) :: PreviousSE(nSites,nSites,nMatsubara)
         real(dp), intent(inout) :: PreviousP(nSites,nSites)
         integer :: i,j,k
+        real(dp) :: tmp
 
         IterStats(1,Iter) = nElec_GV
         IterStats(2,Iter) = E
@@ -289,15 +302,18 @@ module GF2
                     abs(DensityMat_GV(j,i) - PreviousP(j,i))
             enddo
         enddo
+        tmp = zero
+!$OMP PARALLEL DO REDUCTION(+:tmp) DEFAULT(SHARED)
         do i = 1,nMatsubara
             do j = 1,nSites
                 do k = 1,nSites
-                    IterStats(5,Iter) = IterStats(5,Iter) + &
+                    tmp = tmp + &
                         abs(SE_GV%Matsu(k,j,i) - PreviousSE(k,j,i))
                 enddo
             enddo
         enddo
-        IterStats(5,Iter) = IterStats(5,Iter)/real(nMatsubara,dp)
+!$OMP END PARALLEL DO
+        IterStats(5,Iter) = tmp/real(nMatsubara,dp)
 
         !Set previous values to current values
         PreviousE = E
@@ -450,29 +466,40 @@ module GF2
         integer :: i,j,nImTimeSplinePoints
         real(dp) :: Delta_Tau,tau,Delta_Tau_Spline
         complex(dp), allocatable :: SecDerivs(:,:,:)
-        complex(dp), allocatable :: FitGF(:,:)
+        complex(dp), allocatable :: FitGF(:,:),Matsu_tmp(:,:,:)
 
         call set_timer(FT_TauToMat_time)
 
+        write(6,"(A)") "Fourier transforming imaginary-time self-energy to matsubara axis..."
+        call flush(6)
+
         if(tSpline) then
 
-            allocate(FitGF(nSites,nSites))
             allocate(SecDerivs(nSites,nSites,nImTimePoints))
             call FindSplineCoeffs(GF,SecDerivs,nSites)
 
             nImTimeSplinePoints = nint(ScaleImTimeSpline * real(nMatsubara,dp) * Beta_Temp / pi)
             Delta_Tau_Spline = Beta_Temp/(nImTimeSplinePoints-1)
 
-            GF%Matsu(:,:,:) = zzero
+            allocate(Matsu_tmp(nSites,nSites,nMatsubara))
+            Matsu_tmp(:,:,:) = zzero
+            !GF%Matsu(:,:,:) = zzero
 
+!$OMP PARALLEL DO REDUCTION(+:Matsu_tmp) DEFAULT(SHARED) PRIVATE(tau,i,FitGF)
             do j = 2,nImTimeSplinePoints-1
+                allocate(FitGF(nSites,nSites))
                 tau = (j-1)*Delta_Tau_Spline
                 call SplineBeta(GF,SecDerivs,nSites,tau,FitGF)
 
                 do i = 1,nMatsubara
-                    GF%Matsu(:,:,i) = GF%Matsu(:,:,i) + exp(cmplx(zero,MatsuPoints(i)*tau,dp))*FitGF(:,:)
+                    Matsu_tmp(:,:,i) = Matsu_tmp(:,:,i) + exp(cmplx(zero,MatsuPoints(i)*tau,dp))*FitGF(:,:)
+                    !GF%Matsu(:,:,i) = GF%Matsu(:,:,i) + exp(cmplx(zero,MatsuPoints(i)*tau,dp))*FitGF(:,:)
                 enddo
+                deallocate(FitGF)
             enddo
+!$OMP END PARALLEL DO
+            GF%Matsu(:,:,:) = Matsu_tmp(:,:,:)
+            deallocate(Matsu_tmp)
             do i = 1,nMatsubara
                 GF%Matsu(:,:,i) = GF%Matsu(:,:,i) + (GF%Tau(:,:,1) - GF%Tau(:,:,nImTimePoints))/2.0_dp
                 GF%Matsu(:,:,i) = Delta_Tau_Spline*GF%Matsu(:,:,i)
@@ -489,16 +516,25 @@ module GF2
 !                GF%Matsu(:,:,i) = Delta_Tau_Spline*GF%Matsu(:,:,i)
 !            enddo
 
-            deallocate(SecDerivs,FitGF)
+            deallocate(SecDerivs)
         else
             !Do brute force - no splining
             Delta_Tau = Beta_Temp/(nImTimePoints-1)
+            !GF%Matsu(:,:,:) = zzero
+            allocate(Matsu_tmp(nSites,nSites,nMatsubara))
+            Matsu_tmp(:,:,:) = zzero
+!$OMP PARALLEL DO REDUCTION(+:Matsu_tmp) DEFAULT(SHARED)
             do i = 1,nMatsubara
-                GF%Matsu(:,:,i) = zzero
                 
                 do j = 2,nImTimePoints-1
-                    GF%Matsu(:,:,i) = GF%Matsu(:,:,i) + exp(cmplx(zero,MatsuPoints(i)*ImTimePoints(j),dp))*GF%Tau(:,:,j)
+                    !GF%Matsu(:,:,i) = GF%Matsu(:,:,i) + exp(cmplx(zero,MatsuPoints(i)*ImTimePoints(j),dp))*GF%Tau(:,:,j)
+                    Matsu_tmp(:,:,i) = Matsu_tmp(:,:,i) + exp(cmplx(zero,MatsuPoints(i)*ImTimePoints(j),dp))*GF%Tau(:,:,j)
                 enddo
+            enddo
+!$OMP END PARALLEL DO
+            GF%Matsu(:,:,:) = Matsu_tmp(:,:,:)
+            deallocate(Matsu_tmp)
+            do i = 1,nMatsubara
                 GF%Matsu(:,:,i) = GF%Matsu(:,:,i) + (GF%Tau(:,:,1) - GF%Tau(:,:,nImTimePoints))/2.0_dp
                 GF%Matsu(:,:,i) = Delta_Tau*GF%Matsu(:,:,i)
             enddo
@@ -519,6 +555,7 @@ module GF2
         call set_timer(BuildSE_time)
 
         SE%Tau(:,:,:) = zzero
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(nImOpp)
         do i = 1,nImTimePoints
             nImOpp = nImTimePoints - i + 1
             if(abs(ImTimePoints(nImOpp) - (-ImTimePoints(i)+Beta_Temp)).gt.1.0e-7_dp) then
@@ -533,6 +570,7 @@ module GF2
                 enddo
             enddo
         enddo
+!$OMP END PARALLEL DO
 
         call halt_timer(BuildSE_time)
 
@@ -554,12 +592,14 @@ module GF2
             call stop_all(t_r,'Unsure how to FT SE into imaginary time')
         endif
 
-        allocate(GF_tau(nSites,nSites))
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(GF_tau)
         do i = 1,nImTimePoints
+            allocate(GF_tau(nSites,nSites))
             call MatsuToImTimeFT(GF,ImTimePoints(i),GF_tau(:,:))
             GF%Tau(:,:,i) = GF_tau(:,:)
+            deallocate(GF_tau)
         enddo
-        deallocate(GF_tau)
+!$OMP END PARALLEL DO
 
         call halt_timer(FT_MatToTau_time)
 
@@ -669,6 +709,8 @@ module GF2
                     !Though perhaps this is ok other than the diagonals?
                     call stop_all(t_r,'Density matrix complex')
                 elseif(abs(TempMat(i,j)-conjg(TempMat(j,i))).gt.1.0e-7_dp) then
+                    write(6,*) "i,j: ",i,j
+                    write(6,*) TempMat(i,j),TempMat(j,i)
                     call stop_all(t_r,'Density matrix not hermitian')
                 endif
             enddo
@@ -1197,14 +1239,16 @@ module GF2
 
         call set_timer(FitSplines_time)
 
-        allocate(b(nImTimePoints))
-        allocate(CoeffMat(nImTimePoints,nImTimePoints))
-        allocate(ipiv(nImTimePoints))
         SecDerivs(:,:,:) = zero
 
         DeltaTau = ImTimePoints(2) - ImTimePoints(1)
 
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(j,TauSecDerivZero,TauSecDerivBeta,TauDerivZero,TauDerivBeta), &
+!$OMP&  PRIVATE(CoeffMat,b,ipiv,info)
         do i = 1,n
+            allocate(b(nImTimePoints))
+            allocate(CoeffMat(nImTimePoints,nImTimePoints))
+            allocate(ipiv(nImTimePoints))
             do j = i,n
 
                 !First, find the difference in the second derivatives at tau=0 and beta
@@ -1304,8 +1348,11 @@ module GF2
                 endif
 
             enddo
+            deallocate(ipiv,CoeffMat,b)
         enddo
+!$OMP END PARALLEL DO
 
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(j,k)
         do i = 1,n
             do j = 1,n
                 do k = 1,nImTimePoints
@@ -1315,11 +1362,11 @@ module GF2
                 enddo
             enddo
         enddo
+!$OMP END PARALLEL DO
 
         !do i = 1,nImTimePoints
         !    write(6,*) i,ImTimePoints(i),SecDerivs(1,1,i)
         !enddo
-        deallocate(ipiv,CoeffMat,b)
         call halt_timer(FitSplines_time)
 
     end subroutine FindSplineCoeffs
