@@ -565,7 +565,7 @@ module GF2
             do j = 1,nSites
                 do k = 1,nSites
 
-                    SE%Tau(k,j,i) = GF%Tau(k,j,i)*GF%Tau(k,j,i)*GF%Tau(j,k,nImOpp)*U*U
+                    SE%Tau(k,j,i) = -GF%Tau(k,j,i)*GF%Tau(k,j,i)*GF%Tau(j,k,nImOpp)*U*U
 
                 enddo
             enddo
