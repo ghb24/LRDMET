@@ -565,7 +565,8 @@ module GF2
             do j = 1,nSites
                 do k = 1,nSites
 
-                    SE%Tau(k,j,i) = -GF%Tau(k,j,i)*GF%Tau(k,j,i)*GF%Tau(j,k,nImOpp)*U*U
+                    !Should this have a minus sign? The G(-tau) = -G(Beta-tau) cancels the minus sign
+                    SE%Tau(k,j,i) = GF%Tau(k,j,i)*GF%Tau(k,j,i)*GF%Tau(j,k,nImOpp)*U*U
 
                 enddo
             enddo
