@@ -242,7 +242,7 @@ module GF2
                 call EvalTails(w,GF,SE,GF_tail,SE_tail)
                 do j = 1,nSites
                     do k = 1,nSites
-                        Energy = Energy + (2.0_dp/Beta_Temp)*(real(GF_tail(k,j))*real(SE_tail(k,j)) -    &
+                        Energy = Energy + (2.0_dp/Beta_Temp)*(real(GF_tail(k,j))*(real(SE_tail(k,j))-SE%C0_Coeffs(k,j)) -    &
                             aimag(GF_tail(k,j))*aimag(SE_tail(k,j)))
                     enddo
                 enddo
@@ -1380,8 +1380,10 @@ module GF2
         do i = 1,n
             do j = 1,n
                 do k = 1,nImTimePoints
-                    if(abs(SecDerivs(j,i,k)-conjg(SecDerivs(i,j,k))).gt.1.0e-8_dp) then
-                        call stop_all(t_r,'Second derivatives not hermitian')
+                    if(abs(SecDerivs(j,i,k)-conjg(SecDerivs(i,j,k))).gt.1.0e-7_dp) then
+                        write(6,*) "i,j,k: ",i,j,k
+                        write(6,*) SecDerivs(j,i,k),SecDerivs(i,j,k)
+                        call warning(t_r,'Second derivatives not hermitian')
                     endif
                 enddo
             enddo
