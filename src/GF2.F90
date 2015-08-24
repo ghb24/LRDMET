@@ -142,7 +142,8 @@ module GF2
             write(6,"(A,I6,A)") "GF2 convergence complete! Global self-energy converged in ",Iter," iterations."
         endif
 
-        write(6,"(A,F17.10)") "Final Energy: ",GMEnergy
+        write(6,"(A,F17.10)") "Final GF2 Energy: ",GMEnergy
+        write(6,"(A,F17.10)") "Non-iterated GF2 Energy: ",IterStats(2,1)
         write(6,"(A,F17.10)") "Final Chemical Potential: ",LatChemPot
 
         !TODO: Write Self-energy(iw) and restart information
@@ -201,7 +202,8 @@ module GF2
         do i = 1,nMatsubara
             do j = 1,nSites
                 do k = 1,nSites
-                    Energy = Energy + (2.0_dp/Beta_Temp)*(real(GF%Matsu(k,j,i))*real(SE%Matsu(k,j,i)) -    &
+                    Energy = Energy + (2.0_dp/Beta_Temp)*(real(GF%Matsu(k,j,i))*(real(SE%Matsu(k,j,i))-SE%C0_Coeffs(k,j)) -    &
+                    !Energy = Energy + (one/Beta_Temp)*(real(GF%Matsu(k,j,i))*real(SE%Matsu(k,j,i)) -    &
                         aimag(GF%Matsu(k,j,i))*aimag(SE%Matsu(k,j,i)))
                 enddo
             enddo
