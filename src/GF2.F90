@@ -179,15 +179,19 @@ module GF2
             !One-electron contribution
             do i = 1,nSites
                 do j = 1,nSites
-                    Energy = Energy + P(j,i)*(h0(j,i) + 0.5_dp*SE%C0_Coeffs(j,i))
                     !write(6,*) SE%C0_Coeffs(j,i) - real(SE%Matsu(j,i,nMatsubara),dp),SE%C0_Coeffs(j,i)
+                    !Energy = Energy + 0.5_dp*P(j,i)*(h0(j,i) + FockMat_GV(j,i))
+                    Energy = Energy + 0.5_dp*P(j,i)*(h0(j,i) + FockMat_GV(j,i) + SE%C0_Coeffs(j,i))
                 enddo
             enddo
         else
             !One-electron contribution
             do i = 1,nSites
                 do j = 1,nSites
-                    Energy = Energy + P(j,i)*(h0(j,i) + 0.5_dp*real(SE%Matsu(j,i,nMatsubara),dp))
+                    !Assume SE(infty) is zero (all static contributions to self
+                    !energy included in the fock matrix)
+                    !Energy = Energy + P(j,i)*(h0(j,i) + 0.5_dp*real(SE%Matsu(j,i,nMatsubara),dp))
+                    Energy = Energy + 0.5_dp*P(j,i)*(h0(j,i) + FockMat_GV(j,i))
                 enddo
             enddo
         endif
@@ -567,6 +571,7 @@ module GF2
 
                     !Should this have a minus sign? The G(-tau) = -G(Beta-tau) cancels the minus sign
                     SE%Tau(k,j,i) = GF%Tau(k,j,i)*GF%Tau(k,j,i)*GF%Tau(j,k,nImOpp)*U*U
+                    !SE%Tau(k,j,i) = GF%Tau(k,j,i)*GF%Tau(k,j,i)*GF%Tau(k,j,i)*U*U
 
                 enddo
             enddo
@@ -744,6 +749,7 @@ module GF2
         endif
         do i = 1,nSites
             FockMat_GV(i,i) = FockMat_GV(i,i) + U*InputDensity(i)/2.0_dp
+            !if(abs(InputDensity(i)-one).gt.1.0e-4_dp) write(6,*) "Warning: symmetry broken",i,InputDensity(i)
         enddo
         allocate(EigenVecs(nSites,nSites))
         allocate(EigenVals(nSites))
