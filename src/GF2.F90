@@ -27,6 +27,7 @@ module GF2
         real(dp), allocatable :: PreviousP(:,:),IterStats(:,:)
         real(dp) :: LatChemPot,nExcessElec,MuThresh,GMEnergy,PreviousEnergy
         real(dp) :: MF_ChemPot  !Mean-field approximation to chemical potential
+        real(dp) :: GMEnergy_2
         integer :: Iter
         real(dp), parameter :: SEThresh = 1.0e-7_dp
         real(dp), parameter :: SE_Damping = 0.2_dp
@@ -76,7 +77,7 @@ module GF2
         endif
         write(6,*) "Number of electrons in initial greens function: ",nElec_GV
 
-        call CalcGMEnergy(GLat_GV,SE_GV,DensityMat_GV,GMEnergy)
+        call CalcGMEnergy(GLat_GV,SE_GV,DensityMat_GV,GMEnergy,GMEnergy_2)
 
         PreviousEnergy = GMEnergy
         allocate(PreviousSE(nSites,nSites,nMatsubara))
@@ -84,7 +85,7 @@ module GF2
         PreviousSE(:,:,:) = SE_GV%Matsu(:,:,:)
         PreviousP(:,:) = DensityMat_GV(:,:)
 
-        allocate(IterStats(6,0:MaxSEIter))
+        allocate(IterStats(7,0:MaxSEIter))
         IterStats(:,:) = zero
 
         write(6,"(A)") "Converging Self-Energy at the level of GF2..."
@@ -94,7 +95,7 @@ module GF2
         MuThresh = 1.0e-7_dp
         Iter = 0
 
-        call FindSEChanges(IterStats,Iter,LatChemPot,GMEnergy,PreviousEnergy,   &
+        call FindSEChanges(IterStats,Iter,LatChemPot,GMEnergy,GMEnergy_2,PreviousEnergy,   &
             PreviousSE,PreviousP,MaxSEIter)
 
         do while((IterStats(3,Iter).gt.SEThresh).or.(IterStats(5,Iter).gt.SEThresh)    &
@@ -126,10 +127,10 @@ module GF2
             nExcessElec = ExcessElec(GLat_GV,LatChemPot,.true.)
         
             !Calculate energy according to Galitskii-Migdal formula
-            call CalcGMEnergy(GLat_GV,SE_GV,DensityMat_GV,GMEnergy)
+            call CalcGMEnergy(GLat_GV,SE_GV,DensityMat_GV,GMEnergy,GMEnergy_2)
 
             !Test for convergence of self energy, or if hit iteration limit
-            call FindSEChanges(IterStats,Iter,LatChemPot,GMEnergy,  &
+            call FindSEChanges(IterStats,Iter,LatChemPot,GMEnergy,GMEnergy_2,  &
                 PreviousEnergy,PreviousSE,PreviousP,MaxSEIter)
 
         enddo
@@ -160,20 +161,23 @@ module GF2
 
     end subroutine GF2_Hub
 
-    !TODO: Use tails for this
-    subroutine CalcGMEnergy(GF,SE,P,Energy)
+    !Calc energy in two different ways
+    subroutine CalcGMEnergy(GF,SE,P,Energy,Energy_2)
         implicit none
         type(GreensFunc), intent(in) :: GF
         type(GreensFunc), intent(inout) :: SE
         real(dp), intent(in) :: P(nSites,nSites)
-        real(dp), intent(out) :: Energy
+        real(dp), intent(out) :: Energy, Energy_2
         complex(dp), allocatable :: SE_tail(:,:),GF_tail(:,:)
+        complex(dp) :: Energy_2c
         integer :: i,j,k,i_end
         real(dp) :: w
+        real(dp), parameter :: dBroad=1.0e-5_dp
 
         call set_timer(GMEnergy_time)
 
         Energy = zero
+        Energy_2c = zzero
         if(tFitTails) then
             !Sigma_infty = C2 - C2_0
             SE%C0_Coeffs(:,:) = GF%C2_Coeffs(:,:) - C2_Coeffs_GF0(:,:)
@@ -198,10 +202,17 @@ module GF2
         endif
 
         !Two-electron contribution (sum over frequencies)
-!$OMP PARALLEL DO REDUCTION(+:Energy) DEFAULT(SHARED)
+!$OMP PARALLEL DO REDUCTION(+:Energy,Energy_2c) DEFAULT(SHARED)
         do i = 1,nMatsubara
             do j = 1,nSites
                 do k = 1,nSites
+                    if(j.eq.k) then
+                        Energy_2c = Energy_2c + exp(cmplx(zero,MatsuPoints(i)*dBroad,dp))* &
+                            (FockMat_GV(k,j)+cmplx(zero,MatsuPoints(i),dp))*GF%Matsu(k,j,i)
+                    else
+                        Energy_2c = Energy_2c + exp(cmplx(zero,MatsuPoints(i)*dBroad,dp))* &
+                            FockMat_GV(k,j)*GF%Matsu(k,j,i)
+                    endif
                     Energy = Energy + (2.0_dp/Beta_Temp)*(real(GF%Matsu(k,j,i))*(real(SE%Matsu(k,j,i))-SE%C0_Coeffs(k,j)) -    &
                     !Energy = Energy + (one/Beta_Temp)*(real(GF%Matsu(k,j,i))*real(SE%Matsu(k,j,i)) -    &
                         aimag(GF%Matsu(k,j,i))*aimag(SE%Matsu(k,j,i)))
@@ -209,6 +220,9 @@ module GF2
             enddo
         enddo
 !$OMP END PARALLEL DO
+        Energy_2c = Energy_2c/Beta_Temp
+        Energy_2 = real(Energy_2c,dp)
+!        write(6,*) "Energy 2: ",Energy_2c
 
         if(tFitTails.and.(MatsuEnergySumFac.gt.1.0_dp)) then
             !Set C1 coefficients for SE
@@ -267,28 +281,28 @@ module GF2
     subroutine WriteGF2Stats(Iter,IterStats,MaxIter)
         implicit none
         integer, intent(in) :: Iter,MaxIter
-        real(dp), intent(in) :: IterStats(6,0:MaxIter)
+        real(dp), intent(in) :: IterStats(7,0:MaxIter)
         integer :: i
 
         write(6,"(A)") ""
         write(6,"(A)") "  GF2: Global convergence update "
-        write(6,"(A)") "Iteration   No.Elec      Energy       Delta_E      ChemPot      Delta_SE     Delta_P"
+        write(6,"(A)") "Iteration   No.Elec      Energy       Delta_E      ChemPot      Delta_SE     Delta_P   E_2"
         do i = 0,Iter
-            write(6,"(I7,6F13.7)") i,IterStats(1,i),IterStats(2,i),IterStats(3,i),  &
-                IterStats(4,i),IterStats(5,i),IterStats(6,i)
+            write(6,"(I7,7F13.7)") i,IterStats(1,i),IterStats(2,i),IterStats(3,i),  &
+                IterStats(4,i),IterStats(5,i),IterStats(6,i),IterStats(7,i)
         enddo
         write(6,"(A)") ""
         call flush(6)
 
     end subroutine WriteGF2Stats
 
-    subroutine FindSEChanges(IterStats,Iter,ChemPot,E,PreviousE,PreviousSE,PreviousP,MaxIter)
+    subroutine FindSEChanges(IterStats,Iter,ChemPot,E,E_2,PreviousE,PreviousSE,PreviousP,MaxIter)
         implicit none
         integer, intent(in) :: MaxIter
-        real(dp), intent(inout) :: IterStats(6,0:MaxIter)
+        real(dp), intent(inout) :: IterStats(7,0:MaxIter)
         integer, intent(in) :: Iter
         real(dp), intent(in) :: ChemPot
-        real(dp), intent(in) :: E
+        real(dp), intent(in) :: E,E_2
         real(dp), intent(inout) :: PreviousE
         complex(dp), intent(inout) :: PreviousSE(nSites,nSites,nMatsubara)
         real(dp), intent(inout) :: PreviousP(nSites,nSites)
@@ -301,6 +315,7 @@ module GF2
         IterStats(4,Iter) = ChemPot
         IterStats(5,Iter) = zero    !Delta_SE
         IterStats(6,Iter) = zero    !Delta_P
+        IterStats(7,Iter) = E_2
 
         do i = 1,nSites
             do j = 1,nSites
