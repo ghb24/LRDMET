@@ -171,7 +171,7 @@ module GF2
         complex(dp), allocatable :: SE_tail(:,:),GF_tail(:,:)
         complex(dp) :: Energy_2c
         integer :: i,j,k,i_end
-        real(dp) :: w
+        real(dp) :: w,E_2e
         real(dp), parameter :: dBroad=1.0e-5_dp
 
         call set_timer(GMEnergy_time)
@@ -202,7 +202,8 @@ module GF2
         endif
 
         !Two-electron contribution (sum over frequencies)
-!$OMP PARALLEL DO REDUCTION(+:Energy,Energy_2c) DEFAULT(SHARED)
+        E_2e = zero
+!$OMP PARALLEL DO REDUCTION(+:E_2e,Energy_2c) DEFAULT(SHARED)
         do i = 1,nMatsubara
             do j = 1,nSites
                 do k = 1,nSites
@@ -213,8 +214,7 @@ module GF2
                         Energy_2c = Energy_2c + exp(cmplx(zero,MatsuPoints(i)*dBroad,dp))* &
                             FockMat_GV(k,j)*GF%Matsu(k,j,i)
                     endif
-                    Energy = Energy + (2.0_dp/Beta_Temp)*(real(GF%Matsu(k,j,i))*(real(SE%Matsu(k,j,i))-SE%C0_Coeffs(k,j)) -    &
-                    !Energy = Energy + (one/Beta_Temp)*(real(GF%Matsu(k,j,i))*real(SE%Matsu(k,j,i)) -    &
+                    E_2e = E_2e + (real(GF%Matsu(k,j,i))*(real(SE%Matsu(k,j,i))-SE%C0_Coeffs(k,j)) -    &
                         aimag(GF%Matsu(k,j,i))*aimag(SE%Matsu(k,j,i)))
                 enddo
             enddo
@@ -222,6 +222,7 @@ module GF2
 !$OMP END PARALLEL DO
         Energy_2c = Energy_2c/Beta_Temp
         Energy_2 = real(Energy_2c,dp)
+        Energy = Energy + E_2e*(2.0_dp/Beta_Temp)
 !        write(6,*) "Energy 2: ",Energy_2c
 
         if(tFitTails.and.(MatsuEnergySumFac.gt.1.0_dp)) then
