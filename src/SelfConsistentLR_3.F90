@@ -29,6 +29,8 @@ module SelfConsistentLR3
 
         call set_timer(SelfCon_LR)
 
+        write(6,"(A)") "Entering quasiparticle self-consistent DMET..."
+
         !TODO:  Non-contracted bath space
         !       Fit results to Pade to remove broadening from self-energy, and
         !           ensure we don't need to include exactly the frequency points of
@@ -54,6 +56,12 @@ module SelfConsistentLR3
         tReuse_LS = .false.
 
         call SetChemPot(GFChemPot)
+        write(6,"(A,G20.15)") "Chemical potential set to: ",GFChemPot
+        if(tSC_StartwGSCorrPot) then
+            write(6,"(A)") "Starting from correlation potential from ground-state calculation..."
+        else
+            write(6,"(A)") "Starting from bare lattice hamiltonian..."
+        endif
 
         !Let h be complex to allow for easier integration with previous code
         allocate(h_lat_fit(nSites,nSites))
