@@ -7,6 +7,7 @@ module LRDriver
     use globals
     use SelfConsistentLR
     use SelfConsistentLR2
+    use SelfConsistentLR3
     implicit none
 
     contains
@@ -84,7 +85,8 @@ module LRDriver
 !                call SC_FitLatticeGF_Im()
 !            else
             if(iFitStyle.eq.1) then
-                call SC_Spectrum_Opt()
+                !call SC_Spectrum_Opt()
+                call SC_Spectrum_Static() 
             else
                 call SC_Spectrum_Opt_DMFT()
             endif

@@ -1316,6 +1316,65 @@ module SelfConsistentUtils
 
     end subroutine SetFreqPoints
 
+    !This will set the number and values of the frequency points, which will
+    !include the values in Vals array
+    subroutine SetReFreqPoints(Vals,nFreq)
+        implicit none
+        real(dp), intent(in) :: Vals(nSites)
+        integer, intent(out) :: nFreq
+
+        !First count the original points
+        nFreq = 0
+        OmegaVal = 0
+        do while(.true.)
+            call GetNextOmega(Omega,OmegaVal,.false.)
+            if(OmegaVal.lt.0) exit
+            nFreq = nFreq + 1
+        enddo
+
+        write(6,"(A,I7)") "Total number of real-frequency points from uniform grid: ",nFreq
+        nFreq = nFreq + nSites
+        write(6,"(A,I7)") "Total number of real-frequency points from lattice spectrum "   &
+            //"(not removing degeneracies): ",nSites
+        write(6,"(A,I7)") "Total number of real frequency points: ", nFreq
+
+        write(6,*) ""
+        write(6,"(A,F20.10,A,F20.10)") "Range of uniform grid: ",Start_Omega," to ",End_Omega
+        write(6,"(A,F20.10,A,F20.10)") "Range of lattice spectrum: ",Vals(1)," to ",Vals(nSites)
+
+        tFitMatAxis = .false.
+        nFitPoints = nFreq
+        allocate(FreqPoints(nFitPoints))
+        allocate(LatFreqs(nSites))
+        LatFreqs(:) = 0
+        OmegaVal = 0
+        CurrLatVal = 1
+        i = 1
+        do while(.true.)
+            call GetNextOmega(Omega,OmegaVal,.false.)
+            if(OmegaVal.lt.0) exit
+            if(CurrLatVal.le.nSites) then
+                do while(Omega.gt.Vals(CurrLatVal))
+                    FreqPoints(i) = Vals(CurrLatVal)
+                    LatFreqs(CurrLatVal) = i
+                    i = i + 1
+                    CurrLatVal = CurrLatVal + 1
+                    if(CurrLatVal.gt.nSites) exit
+                enddo
+            endif
+            FreqPoints(i) = Omega
+            i = i + 1
+        enddo
+        !Add in remaining points
+        FreqPoints(i:nFreq) = Vals(CurrLatVal:nSites)
+
+        write(6,*) "Frequency points: "
+        do i = 1,nFreq
+            write(6,"(I6,F20.10)") i,FreqPoints(i)
+        enddo
+
+    end subroutine SetReFreqPoints
+
     !Write out the isotropic average, and individual elements of a dynamic function in the impurity space.
     subroutine writedynamicfunction(n,Func,FileRoot,tag,tCheckCausal,tCheckOffDiagHerm,tWarn,tMatbrAxis,ErrMat,FreqPoints)
         implicit none
