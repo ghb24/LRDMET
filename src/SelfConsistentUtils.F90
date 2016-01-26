@@ -3,6 +3,7 @@ module SelfConsistentUtils
     use errors
     use Globals
     use utils, only: get_free_unit,append_ext
+    use timing
     use SC_Data
     use mat_tools, only: MakeBlockHermitian
     use mat_tools, only: Add_Nonlocal_comp_inplace,var_to_couplingind
@@ -12,6 +13,197 @@ module SelfConsistentUtils
     implicit none
 
     contains
+    
+    subroutine CalcLatticeSpectrum(iCorrFn,n,CorrFn,mu,tMatbrAxis,iLatParams,LatParams,FreqPoints,ham,SE)
+        implicit none
+        integer, intent(in) :: iCorrFn,n
+        complex(dp), intent(out) :: CorrFn(nImp,nImp,n)
+        real(dp), intent(in) :: mu
+        logical, intent(in), optional :: tMatbrAxis
+        integer, intent(in), optional :: iLatParams
+        real(dp), intent(in), optional :: LatParams(:)
+        real(dp), intent(in), optional :: FreqPoints(n)
+        complex(dp), intent(in), optional :: ham(nSites,nSites)
+        complex(dp), intent(in), optional :: SE(nImp,nImp,n)
+
+        integer :: i,j,k,ind_1,ind_2
+        real(dp) :: Omega
+        complex(dp), allocatable :: KBlocks(:,:,:)
+        complex(dp) :: InvMat(nImp,nImp),InvMat2(nImp,nImp),num(nImp,nImp)
+        logical :: tMatbrAxis_,tSelfEnergy
+        character(len=*), parameter :: t_r='CalcLatticeSpectrum'
+
+        call set_timer(CalcLatSpectrum)
+
+        if((.not.present(LatParams)).and.(.not.present(ham))) then
+            call stop_all(t_r,'No hamiltonian in real or lattice parameters passed in')
+        endif
+        if(present(LatParams).and.(present(ham))) then
+            call stop_all(t_r,'Lattice parameters and hamiltonian present - which one to use?!')
+        endif
+        if(present(LatParams).and.(.not.present(iLatParams))) then
+            call stop_all(t_r,'Lattice parameters sent in, but not suze')
+        endif
+        if(present(SE)) then
+            tSelfEnergy = .true.
+        else
+            tSelfEnergy = .false.
+        endif
+        if(present(tMatbrAxis)) then
+            tMatbrAxis_=tMatbrAxis
+        else
+            tMatbrAxis_=.false.
+        endif
+
+        allocate(KBlocks(nImp,nImp,nKPnts))
+
+        CorrFn = zzero
+        KBlocks = zzero
+
+        if(present(LatParams)) then
+            call LatParams_to_KBlocks(iLatParams,LatParams,mu,KBlocks)
+        elseif(present(ham)) then
+            call ham_to_KBlocks(ham,KBlocks)
+        else
+            call stop_all(t_r,'No hamiltonian (r or k space) read in')
+        endif
+
+!        call LatParams_to_ham(iLatParams,LatParams,mu,hamtmp)
+!        allocate(EVecs(nImp,nImp,nKPnts))
+!        allocate(EVals(nSites))
+!        call KBlocks_to_diag(KBlocks,EVecs,EVals)
+!        call writematrix(hamtmp,'real space ham',.true.)
+!        call writevector(EVals,'EVals')
+!        deallocate(EVecs,EVals)
+!        hamtmp = zzero
+!        do i = 1,nKPnts
+!            ind_1 = ((i-1)*nImp) + 1
+!            ind_2 = nImp*i
+!            hamtmp(ind_1:ind_2,ind_1:ind_2) = KBlocks(:,:,i)
+!        enddo
+!        compval = zzero
+!        do i = 1,nSites
+!            do j = 1,nSites
+!                compval = compval + RtoK_Rot(1,i)*hamtmp(i,j)*dconjg(RtoK_Rot(2,j))
+!            enddo
+!        enddo
+!        write(6,*) "Element 1,2 of ham: ",compval
+
+!        do i = 1,nKPnts
+!            write(6,*) "KBlock: ",i
+!            call writematrix(KBlocks(:,:,i),'k-ham',.true.)
+!        enddo
+!
+!        allocate(EVecs(nImp,nImp,nKPnts))
+!        allocate(EVals(nSites))
+!        call KBlocks_to_diag(KBlocks,EVecs,EVals)
+!        write(6,*) "EVals from calculation of lattice GF: "
+!        do i = 1,nSites
+!            write(6,*) i,EVals(i)
+!        enddo
+!        deallocate(EVecs,EVals)
+
+!$OMP PARALLEL DO PRIVATE(Omega,InvMat,InvMat2,ind_1,ind_2,num)
+        do i = 1,n
+!        i = 0
+!        do while(.true.)
+!            if(present(FreqPoints)) then
+!                call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis_,nFreqPoints=n,FreqPoints=FreqPoints)
+!            else
+!                call GetNextOmega(Omega,i,tMatbrAxis=tMatbrAxis_)
+!            endif
+!            if(i.lt.0) exit
+!            if(i.gt.n) call stop_all(t_r,'Too many freq points')
+            if(present(FreqPoints)) then
+                call GetOmega(Omega,i,tMatbrAxis_,FreqPoints=FreqPoints)
+            else
+                call GetOmega(Omega,i,tMatbrAxis_)
+            endif
+
+            do k = 1,nKPnts 
+
+                InvMat(:,:) = - KBlocks(:,:,k)
+                if(tSelfEnergy) then
+                    InvMat(:,:) = InvMat(:,:) - SE(:,:,n)
+                endif
+
+!                write(6,"(A,I6,A,2G25.10)") "For kpoint: ",k," h Off diagonal matrix element: ",InvMat(1,2)
+!                write(6,"(A,I6,A,G25.10)") "For kpoint: ",k," h Off diagonal hermiticity: ",abs(InvMat(1,2)-dconjg(InvMat(2,1)))
+                if(iCorrFn.eq.1) then
+                    !Greens function
+                    do j = 1,nImp
+                        if(tMatbrAxis_) then
+                            InvMat(j,j) = InvMat(j,j) + cmplx(mu,Omega,dp)
+                        else
+                            !To get the off-diagonals to be hermitian, we have to be careful with the sign of the broadening.
+                            !Do not worry about this for the moment, because for the diagonals it should be fine, and we are not fitting the real spectrum atm.
+!                            if(Omega.gt.zero) then
+                                InvMat(j,j) = InvMat(j,j) + cmplx(Omega + mu,dDelta,dp)
+!                            else
+!                                InvMat(j,j) = InvMat(j,j) + cmplx(Omega + mu,-dDelta,dp)
+!                            endif
+                        endif
+                    enddo
+                    call mat_inv(InvMat,InvMat2,nImp)
+                
+!                    call writematrix(InvMat2,'Inverse matrix from mat_inv',.true.)
+!                    write(6,"(A,I6,A,G25.10)") "For kpoint: ",k," (w-h)^-1 Off diagonal hermiticity: ",abs(InvMat2(1,2)-dconjg(InvMat2(2,1)))
+!                    do ii = 1,nImp
+!                        do jj = 1,nImp
+!                            if(ii.eq.jj) then
+!                                cycle
+!                            else
+!                                if(abs(aimag(InvMat2(ii,jj))+aimag(InvMat2(jj,ii))).gt.1.0e-6_dp) then
+!                                    call writematrix(InvMat,'Mat',.true.)
+!                                    call writematrix(InvMat2,'InvMat',.true.)
+!                                    write(6,*) "Omega: ",Omega
+!                                    write(6,*) "k: ",k
+!                                    write(6,*) "Error is: ",abs(aimag(InvMat2(ii,jj))+aimag(InvMat2(jj,ii)))
+!                                endif
+!                            endif
+!                        enddo
+!                    enddo
+                    ind_1 = ((k-1)*nImp) + 1
+                    ind_2 = nImp*k
+
+        !            C * C^+ here?  For 1 imp, should be |RtoK_Rot(1,k)|^2
+!                    call ZGEMM('N','C',nImp,nImp,nImp,zone,RtoK_Rot(1:nImp,ind_1:ind_2),nImp,   &
+!                        RtoK_Rot(1:nImp,ind_1:ind_2),nImp,zzero,num,nImp)
+!                    CorrFn(:,:,i) = CorrFn(:,:,i) + ( InvMat2(:,:) * num(:,:) )
+                    !Use InvMat as a temporary storage
+                    InvMat(:,:) = RtoK_Rot(1:nImp,ind_1:ind_2)
+                    call ZGEMM('N','C',nImp,nImp,nImp,zone,InvMat2,nImp,InvMat,nImp,    &
+                        zzero,num,nImp)
+                    call ZGEMM('N','N',nImp,nImp,nImp,zone,InvMat,nImp,num,nImp,  &
+                        zone,CorrFn(:,:,i),nImp)
+                    
+!                    write(6,"(A,I6,A,2G25.10)") "For kpoint: ",k," G real space Off diagonal matrix element: ",GFContrib(1,2)
+!                    write(6,"(A,I6,A,G25.10)") "For kpoint: ",k," G real space Off diagonal hermiticity: ",abs(GFContrib(1,2)-dconjg(GFContrib(2,1)))
+!                    CorrFn(:,:,i) = CorrFn(:,:,i) + GFContrib(:,:)
+                        
+                else
+                    call stop_all(t_r,'Cannot deal with non-greens functions right now')
+                endif
+            enddo
+!            tr_gf = zzero
+!            do j = 1,nImp
+!                tr_gf = tr_gf + CorrFn(j,j,i)
+!            enddo
+!            tr_gf = tr_gf / nImp
+!            write(6,*) "kspaceLatGF: ",Omega,-aimag(tr_gf),-aimag(CorrFn(1,1,i)),-aimag(CorrFn(2,2,i)),-aimag(CorrFn(3,3,i)),-aimag(CorrFn(4,4,i))
+        enddo
+!$OMP END PARALLEL DO
+
+!        if(iCorrFn.eq.1) then
+            !num term Equivalent to below for one impurity
+            !CorrFn(:,:,:) = CorrFn(:,:,:) / real(nKPnts,dp)
+!        endif
+
+        deallocate(KBlocks)
+        call set_timer(CalcLatSpectrum)
+
+    end subroutine CalcLatticeSpectrum
+        
 
     !Calculate and write out the bandstructure
     !If SelfEnergy specified, include the self-energy contribution (therefore a correlated bandstructure)
@@ -1318,10 +1510,14 @@ module SelfConsistentUtils
 
     !This will set the number and values of the frequency points, which will
     !include the values in Vals array
-    subroutine SetReFreqPoints(Vals,nFreq)
+    subroutine SetReFreqPoints(Vals,nFreq,LatFreqs)
         implicit none
         real(dp), intent(in) :: Vals(nSites)
         integer, intent(out) :: nFreq
+        integer, intent(out) :: LatFreqs(nSites)
+        integer :: OmegaVal,CurrLatVal,i
+        real(dp) :: Omega
+        character(len=*), parameter :: t_r='SetReFreqPoints'
 
         !First count the original points
         nFreq = 0
@@ -1343,9 +1539,10 @@ module SelfConsistentUtils
         write(6,"(A,F20.10,A,F20.10)") "Range of lattice spectrum: ",Vals(1)," to ",Vals(nSites)
 
         tFitMatAxis = .false.
-        nFitPoints = nFreq
-        allocate(FreqPoints(nFitPoints))
-        allocate(LatFreqs(nSites))
+        if(.not.allocated(FreqPoints)) then
+            allocate(FreqPoints(nFreq))
+        endif
+        FreqPoints(:) = zero
         LatFreqs(:) = 0
         OmegaVal = 0
         CurrLatVal = 1

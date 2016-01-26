@@ -16,13 +16,15 @@ module SelfConsistentLR3
     subroutine SC_Spectrum_Static()
         implicit none
         real(dp) :: GFChemPot
-        integer :: nFitPoints,i,j,nFreq,iter
+        integer :: i,j,nFreq,iter
         complex(dp), allocatable :: h_lat_fit(:,:)
-        complex(dp), allocatable :: LatVecs(:,:),Latt_CorrFn(:,:,:),CorrFn_HL(:,:,:)
-        complex(dp), allocatable :: Prev_CorrFn_HL(:,:,:),Prev_Latt_CorrFn(:,:,:)
+        complex(dp), allocatable :: LatVecs(:,:),Lat_CorrFn(:,:,:),CorrFn_HL(:,:,:)
+        complex(dp), allocatable :: Prev_CorrFn_HL(:,:,:),Prev_Lat_CorrFn(:,:,:)
         complex(dp), allocatable :: SE_Update(:,:,:),UpdatePotential(:,:),TotalPotential(:,:)
         complex(dp), allocatable :: ctemp(:,:),LatSelfEnergy_i(:,:),LatSelfEnergy_j(:,:)
         real(dp), allocatable :: AllDiffs(:,:),LatVals(:) 
+        integer, allocatable :: LatFreqs(:)
+        real(dp), parameter :: dDeltaImpThresh = 1.0e-4_dp
         character(len=*), parameter :: t_r='SC_Spectrum_Static'
 
         call set_timer(SelfCon_LR)
@@ -65,7 +67,7 @@ module SelfConsistentLR3
                     h_lat_fit(j,i) = cmplx(h0(j,i),zero,dp)
                 endif 
             enddo
-            if(.not.tSC_StartwGSCorrPot) h_lat_fit(i,i) = h_lat_fit(i,i) + mu    !Add chemical potential
+            if(.not.tSC_StartwGSCorrPot) h_lat_fit(i,i) = h_lat_fit(i,i) + GFChemPot    !Add chemical potential
         enddo
 
         allocate(LatVals(nSites))
@@ -74,18 +76,21 @@ module SelfConsistentLR3
         LatVals(:) = zero
         call DiagOneEOp(LatVecs,LatVals,nImp,nSites,tDiag_kspace,.false.)
 
+        !LatFreqs tells you which frequency point corresponds to which
+        !eigenvalue of the lattice
+        allocate(LatFreqs(nSites))
         !nFreq should not change in this version of SetReFreqPoints
-        call SetReFreqPoints(LatVals,nFreq)
+        call SetReFreqPoints(LatVals,nFreq,LatFreqs)
 
-        allocate(Latt_CorrFn(nImp,nImp,nFitPoints))
-        allocate(CorrFn_HL(nImp,nImp,nFitPoints))
+        allocate(Lat_CorrFn(nImp,nImp,nFreq))
+        allocate(CorrFn_HL(nImp,nImp,nFreq))
 
-        allocate(Prev_CorrFn_HL(nImp,nImp,nFitPoints))
-        allocate(Prev_Latt_CorrFn(nImp,nImp,nFitPoints))
+        allocate(Prev_CorrFn_HL(nImp,nImp,nFreq))
+        allocate(Prev_Lat_CorrFn(nImp,nImp,nFreq))
 
-        allocate(SE_Update(nImp,nImp,nFitPoints))
-        Latt_CorrFn(:,:,:) = zzero ; CorrFn_HL(:,:,:) = zzero
-        Prev_CorrFn_HL(:,:,:) = zzero ; Prev_Latt_CorrFn(:,:,:) = zzero
+        allocate(SE_Update(nImp,nImp,nFreq))
+        Lat_CorrFn(:,:,:) = zzero ; CorrFn_HL(:,:,:) = zzero
+        Prev_CorrFn_HL(:,:,:) = zzero ; Prev_Lat_CorrFn(:,:,:) = zzero
         SE_Update(:,:,:) = zzero
 
         allocate(UpdatePotential(nSites,nSites))
@@ -99,23 +104,23 @@ module SelfConsistentLR3
         do while(.not.tSkip_Lattice_Fit)
             iter = iter + 1
 
-            if(iter.ne.1) call SetReFreqPoints(LatVals,nFreq)
+            if(iter.ne.1) call SetReFreqPoints(LatVals,nFreq,LatFreqs)
         
-            call CalcLatticeSpectrum(1,nFitPoints,Lat_CorrFn,GFChemPot,tMatbrAxis=.false.,    &
+            call CalcLatticeSpectrum(1,nFreq,Lat_CorrFn,GFChemPot,tMatbrAxis=.false.,    &
                 Freqpoints=FreqPoints,ham=h_lat_fit)
             
-            call writedynamicfunction(nFitPoints,Lat_CorrFn,'Initial_G_Lat',tCheckCausal=.true.,   &
+            call writedynamicfunction(nFreq,Lat_CorrFn,'Initial_G_Lat',tCheckCausal=.true.,   &
                 tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=.false.,FreqPoints=FreqPoints)
 
-            call SchmidtGF_FromLat(CorrFn_HL,GFChemPot,nFitPoints,tFitMatAxis,h_lat_fit,FreqPoints)
+            call SchmidtGF_FromLat(CorrFn_HL,GFChemPot,nFreq,tFitMatAxis,h_lat_fit,FreqPoints)
 
-            call writedynamicfunction(nFitPoints,CorrFn_HL,'G_Imp',tag=iter,tCheckCausal=.true.,  &
+            call writedynamicfunction(nFreq,CorrFn_HL,'G_Imp',tag=iter,tCheckCausal=.true.,  &
                 tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=.false.,FreqPoints=FreqPoints)
             
             !Now use Dysons equation: Sigma = G_lat^-1 - G_HL^-1
             SE_Update(:,:,:) = Lat_CorrFn(:,:,:)
-            call InvertLocalNonHermFunc(nFitPoints,SE_Update)
-            call InvertLocalNonHermFunc(nFitPoints,CorrFn_HL)
+            call InvertLocalNonHermFunc(nFreq,SE_Update)
+            call InvertLocalNonHermFunc(nFreq,CorrFn_HL)
             SE_Update(:,:,:) = SE_Update(:,:,:) - CorrFn_HL(:,:,:)
             
             allocate(LatSelfEnergy_i(nSites,nSites))
@@ -191,17 +196,17 @@ module SelfConsistentLR3
 
             !What is change in update potential and G (Use SE_Update to store
             !differences)
-            AllDiffs(1,iter) = sum(abs(UpdatePotential(:,:))*dconjg(UpdatePotential(:,:))) / real(nSites,dp)
+            AllDiffs(1,iter) = sum(real(UpdatePotential(:,:)*dconjg(UpdatePotential(:,:)))) / real(nSites,dp)
             SE_Update(:,:,:) = Prev_CorrFn_HL(:,:,:) - CorrFn_HL(:,:,:)
             SE_Update(:,:,:) = SE_Update(:,:,:) * dconjg(SE_Update(:,:,:))
             AllDiffs(2,iter) = sum(real(SE_Update(:,:,:),dp))
-            SE_Update(:,:,:) = Prev_Latt_CorrFn(:,:,:) - Latt_CorrFn(:,:,:)
+            SE_Update(:,:,:) = Prev_Lat_CorrFn(:,:,:) - Lat_CorrFn(:,:,:)
             SE_Update(:,:,:) = SE_Update(:,:,:) * dconjg(SE_Update(:,:,:))
             AllDiffs(3,iter) = sum(real(SE_Update(:,:,:),dp))
 
             !Update previous correlation functions
             Prev_CorrFn_HL(:,:,:) = CorrFn_HL(:,:,:)
-            Prev_Latt_CorrFn(:,:,:) = Latt_CorrFn(:,:,:)
+            Prev_Lat_CorrFn(:,:,:) = Lat_CorrFn(:,:,:)
 
             write(6,"(A)") ""
             write(6,"(A,I7,A)") "***   COMPLETED MACROITERATION ",iter," ***"
@@ -225,10 +230,10 @@ module SelfConsistentLR3
 
         enddo
 
-        call writedynamicfunction(nFitPoints,CorrFn_HL,'G_HL_Final',tCheckCausal=.true., &
+        call writedynamicfunction(nFreq,CorrFn_HL,'G_HL_Final',tCheckCausal=.true., &
             tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=.false.,FreqPoints=FreqPoints)
         
-        call writedynamicfunction(nFitPoints,Lat_CorrFn,'G_Lat_Final',tCheckCausal=.true., &
+        call writedynamicfunction(nFreq,Lat_CorrFn,'G_Lat_Final',tCheckCausal=.true., &
             tCheckOffDiagHerm=.true.,tWarn=.true.,tMatbrAxis=.false.,FreqPoints=FreqPoints)
 
         !Calculate final self-energy
@@ -239,8 +244,8 @@ module SelfConsistentLR3
 
         !Calculate the bandstructure
 
-        deallocate(h_lat_fit,LatVals,LatVecs,Latt_CorrFn,CorrFn_HL,Prev_CorrFn_HL,Prev_Latt_CorrFn)
-        deallocate(UpdatePotential,TotalPotential,AllDiffs,SE_Update)
+        deallocate(h_lat_fit,LatVals,LatVecs,Lat_CorrFn,CorrFn_HL,Prev_CorrFn_HL,Prev_Lat_CorrFn)
+        deallocate(UpdatePotential,TotalPotential,AllDiffs,SE_Update,LatFreqs)
 
         call halt_timer(SelfCon_LR)
 
