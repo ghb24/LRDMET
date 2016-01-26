@@ -77,7 +77,7 @@ module LinearResponse
         integer :: pertsite,OmegaVal,nGSSpace,mem,mem2,Nmax_Lin_p,Nmax_Lin_h
         integer :: minres_unit,Nmax_N,Nmax_Nm1,Nmax_Np1,Nmax_Coup_Create,Nmax_Coup_Ann
         real(dp) :: Omega,mu,SpectralWeight,Prev_Spec,Error_GF
-        real(dp) :: GSEnergy,MinResErr
+        real(dp) :: GSEnergy,MinResErr,Prev_Omega
         complex(dp) :: ResponseFn,tempel,ni_lr,matel
         complex(dp) :: zdotc,VNorm,CNorm,SelfE(nImp,nImp)
         logical :: tParity,tFirst,tCompLatHam
@@ -1171,13 +1171,15 @@ module LinearResponse
 !            write(6,"(A,F13.7)") "Response function value: ",-aimag(ResponseFn)
 
             if(.not.tFirst) then
-                if(tMatbrAxis) then
-                    SpectralWeight = SpectralWeight + Omega_Step_Im*(Prev_Spec-aimag(ResponseFn))/(2.0_dp*pi)
-                else
-                    SpectralWeight = SpectralWeight + Omega_Step*(Prev_Spec-aimag(ResponseFn))/(2.0_dp*pi)
-                endif
-                Prev_Spec = -aimag(ResponseFn)
+!                if(tMatbrAxis) then
+!                    SpectralWeight = SpectralWeight + Omega_Step_Im*(Prev_Spec-aimag(ResponseFn))/(2.0_dp*pi)
+!                else
+!                    SpectralWeight = SpectralWeight + Omega_Step*(Prev_Spec-aimag(ResponseFn))/(2.0_dp*pi)
+!                endif
+                SpectralWeight = SpectralWeight + (Omega - Prev_Omega)*(Prev_Spec-aimag(ResponseFn))/(2.0_dp*pi)
             endif
+            Prev_Spec = -aimag(ResponseFn)
+            Prev_Omega = Omega
 
             write(iunit,"(8G22.10,2I7)") Omega,real(ResponseFn),-aimag(ResponseFn), &
                 HL_Energy,GSEnergy,real(ni_lr),-aimag(ni_lr),    &

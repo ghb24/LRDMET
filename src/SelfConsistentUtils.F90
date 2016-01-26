@@ -1515,7 +1515,7 @@ module SelfConsistentUtils
         real(dp), intent(in) :: Vals(nSites)
         integer, intent(out) :: nFreq
         integer, intent(out) :: LatFreqs(nSites)
-        integer :: OmegaVal,CurrLatVal,i
+        integer :: OmegaVal,CurrLatVal,i,j
         real(dp) :: Omega
         character(len=*), parameter :: t_r='SetReFreqPoints'
 
@@ -1564,6 +1564,10 @@ module SelfConsistentUtils
         enddo
         !Add in remaining points
         FreqPoints(i:nFreq) = Vals(CurrLatVal:nSites)
+        do j = i,nFreq
+            LatFreqs(CurrLatVal) = j
+            CurrLatVal = CurrLatVal + 1
+        enddo
 
         write(6,*) "Frequency points: "
         do i = 1,nFreq
@@ -1589,7 +1593,7 @@ module SelfConsistentUtils
         character(64) :: filename
         logical :: tCheckOffDiagHerm_,tCheckCausal_,tWarn_,tMatbrAxis_
         integer :: iunit,i,j,k,imp1,imp2
-        real(dp) :: Omega,Prev_Spec,SpectralWeight
+        real(dp) :: Omega,Prev_Spec,SpectralWeight,Prev_Omega
         complex(dp) :: IsoAv,IsoErr
         character(len=*), parameter :: t_r='writedynamicfunction'
 
@@ -1680,13 +1684,15 @@ module SelfConsistentUtils
                 write(iunit,"(5G25.10)") Omega,real(IsoAv,dp),aimag(IsoAv),real(IsoErr,dp),aimag(IsoErr)
             else
                 if(i.ne.1) then
-                    if(tMatbrAxis_) then
-                        SpectralWeight = SpectralWeight + Omega_Step_Im*(Prev_Spec-aimag(IsoAv))/(2.0_dp*pi)
-                    else
-                        SpectralWeight = SpectralWeight + Omega_Step*(Prev_Spec-aimag(IsoAv))/(2.0_dp*pi)
-                    endif
-                    Prev_Spec = -aimag(IsoAv)
+!                    if(tMatbrAxis_) then
+!                        SpectralWeight = SpectralWeight + Omega_Step_Im*(Prev_Spec-aimag(IsoAv))/(2.0_dp*pi)
+!                    else
+!                        SpectralWeight = SpectralWeight + Omega_Step*(Prev_Spec-aimag(IsoAv))/(2.0_dp*pi)
+!                    endif
+                    SpectralWeight = SpectralWeight + (Omega - Prev_Omega)*(Prev_Spec-aimag(IsoAv))/(2.0_dp*pi)
                 endif
+                Prev_Spec = -aimag(IsoAv)
+                Prev_Omega = Omega
                 write(iunit,"(3G25.10)",advance='no') Omega,real(IsoAv,dp),aimag(IsoAv)
                 do imp1=1,nImp
                     do imp2=1,nImp
