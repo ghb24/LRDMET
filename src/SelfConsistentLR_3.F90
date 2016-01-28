@@ -5,6 +5,7 @@ module SelfConsistentLR3
     use LinearResponse
     use globals
     use utils, only: get_free_unit,append_ext_real,append_ext
+    use lattices, only: zero_localpot_comp
     use SC_Data                  
     use SelfConsistentUtils
     use matrixops, only: mat_inv
@@ -23,22 +24,34 @@ module SelfConsistentLR3
         complex(dp), allocatable :: SE_Update(:,:,:),UpdatePotential(:,:),TotalPotential(:,:)
         complex(dp), allocatable :: ctemp(:,:),LatSelfEnergy_i(:,:),LatSelfEnergy_j(:,:)
         complex(dp), allocatable :: CorrFn_HL_Inv(:,:,:),HalfContract_i(:),HalfContract_j(:)
-        complex(dp) :: Ei_ij_val,Ei_ji_val,Ej_ij_val,Ej_ji_val,ZDOTC
+        complex(dp) :: Ei_ij_val,Ei_ji_val,Ej_ij_val,Ej_ji_val,ZDOTC,MeanImpDiag
+        real(dp) :: MaxOffLocalEl
         real(dp), allocatable :: AllDiffs(:,:),LatVals(:) 
         integer, allocatable :: LatFreqs(:)
-        real(dp), parameter :: dDeltaImpThresh = 1.0e-9_dp
+        real(dp), parameter :: dDeltaImpThresh = 1.0e-7_dp
         character(len=*), parameter :: t_r='SC_Spectrum_Static'
 
         call set_timer(SelfCon_LR)
 
         write(6,"(A)") "Entering quasiparticle self-consistent DMET..."
 
+        !TODO:  Is potential local?
+        !       How tight should convergence be?
+        !       Damp potential, instead of/as well as self energy?
+        !       Consistent gaps?
+        !       Optimize for larger lattices
+        !       Ground state energy from potential (via lat GF, imp GF and ground-state DMET)
+        !       Get retarded greens function for the spectrum
+        !       Update chemical potential correctly
+        !       Constraints on correlation potential to aid convergence
+        !           (real diags, hermitian, diagonals average to zero? Translationally invariant)
+
         !TODO:  Non-contracted bath space
         !       Fit results to Pade to remove broadening from self-energy, and
         !           ensure we don't need to include exactly the frequency points of
         !           the one-electron eigenvalues.
         !       Are there advantages to imaginary-frequency self-consistency?
-        !       Thermal quantities
+        !       Thermal quantities with contracted ground state space
         !       Reintroduce frequency dependence into self-consistency (perhaps only into potential?)
         !       Get energy from greens function! (imp or lattice?)
         !       Care with the sign of the broadening
@@ -114,7 +127,12 @@ module SelfConsistentLR3
         allocate(TotalPotential(nSites,nSites))
         TotalPotential(:,:) = zzero
 
-        allocate(AllDiffs(3,0:iMaxIter_MacroFit+1))
+        !1: Change in correlation potential
+        !2: Change in impurity greens function
+        !3: Change in lattice greens function
+        !4: Largest off-local part of correlation potential
+        !5: Mean diagonal of local part of correlation potential
+        allocate(AllDiffs(5,0:iMaxIter_MacroFit+1))
         AllDiffs(:,:) = zero
            
         if(.false.) then
@@ -227,7 +245,6 @@ module SelfConsistentLR3
             !Rotate the new static potential (Update Potential) to the AO basis
             call ZGEMM('N','N',nSites,nSites,nSites,zone,LatVecs,nSites,UpdatePotential,nSites,zzero,ctemp,nSites)
             call ZGEMM('N','C',nSites,nSites,nSites,zone,ctemp,nSites,LatVecs,nSites,zzero,UpdatePotential,nSites)
-            deallocate(ctemp)
             deallocate(LatSelfEnergy_i,LatSelfEnergy_j)
             deallocate(HalfContract_i,HalfContract_j)
 
@@ -239,12 +256,29 @@ module SelfConsistentLR3
                 enddo
             enddo
 
-            !Is Update potential local?!
             call writematrix(UpdatePotential,'Update potential in the AO basis',.true.)
 
             !Add new potential to lattice hamiltonian
             h_lat_fit(:,:) = h_lat_fit(:,:) + UpdatePotential(:,:)
             TotalPotential(:,:) = TotalPotential(:,:) + UpdatePotential(:,:)
+            
+            !Is Update potential local?!
+            ctemp(:,:) = TotalPotential(:,:)
+            call zero_localpot_comp(ctemp)
+            MaxOffLocalEl = zero
+            do i = 1,nSites
+                do j = 1,nSites
+                    if(abs(ctemp(j,i)).gt.MaxOffLocalEl) MaxOffLocalEl = abs(ctemp(j,i))
+                enddo
+            enddo
+            AllDiffs(4,iter) = MaxOffLocalEl 
+            MeanImpDiag = TotalPotential(1,1)
+            do i = 2,nImp
+                MeanImpDiag = MeanImpDiag + TotalPotential(i,i)
+            enddo
+            AllDiffs(5,iter) = abs(MeanImpDiag / nImp )
+            !write(6,*) "Largest off-local part of the correlation potential: ",MaxOffLocalEl
+            deallocate(ctemp)
 
             !Rediagonalize
             LatVecs(:,:) = h_lat_fit(:,:)
@@ -253,7 +287,7 @@ module SelfConsistentLR3
 
             !What is change in update potential and G (Use SE_Update to store
             !differences)
-            AllDiffs(1,iter) = sum(real(UpdatePotential(:,:)*dconjg(UpdatePotential(:,:)))) / real(nSites,dp)
+            AllDiffs(1,iter) = sum(real(UpdatePotential(:,:)*dconjg(UpdatePotential(:,:)))) / real(nSites**2,dp)
             SE_Update(:,:,:) = Prev_CorrFn_HL(:,:,:) - CorrFn_HL(:,:,:)
             SE_Update(:,:,:) = SE_Update(:,:,:) * dconjg(SE_Update(:,:,:))
             AllDiffs(2,iter) = sum(real(SE_Update(:,:,:),dp))
@@ -267,9 +301,9 @@ module SelfConsistentLR3
 
             write(6,"(A)") ""
             write(6,"(A,I7,A)") "***   COMPLETED MACROITERATION ",iter," ***"
-            write(6,"(A)") "     Iter.  PotentialChange   Delta_GF_Imp(iw)    Delta_GF_Lat(iw)"
+            write(6,"(A)") "     Iter.  PotentialChange   Delta_GF_Imp(iw)    Delta_GF_Lat(iw)   MaxOff-local_v     MeanDiag_v"
             do i = 0,iter
-                write(6,"(I7,3G20.13)") i,AllDiffs(1,i),AllDiffs(2,i),AllDiffs(3,i)
+                write(6,"(I7,5G20.13)") i,AllDiffs(1,i),AllDiffs(2,i),AllDiffs(3,i),AllDiffs(4,i),AllDiffs(5,i)
             enddo
             write(6,"(A)") ""
             call flush(6)

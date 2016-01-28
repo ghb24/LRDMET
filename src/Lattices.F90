@@ -1073,6 +1073,78 @@ module Lattices
         endif
 
     end subroutine add_localpot_comp_inplace
+    
+    !Zero out all local parts of a one-electron hamiltonian
+    subroutine zero_localpot_comp(ham)
+        implicit none
+        complex(dp) , intent(inout) :: ham(nSites,nSites)
+        complex(dp), allocatable :: temp(:,:)
+        integer :: i,j,k,a,b,indi,indj
+
+        if(tReadSystem) then
+!            core_v(:,:) = core_v(:,:)
+            return
+        endif
+
+        if(LatticeDim.eq.1) then
+            !Construct new hamiltonian which is block diagonal in the local potential
+            do k=0,(nSites/nImp)-1
+                do i=1,nImp
+                    do j=1,nImp
+                        ham((k*nImp)+i,(k*nImp)+j)=zzero
+                    enddo
+                enddo
+            enddo
+        elseif(LatticeDim.eq.2) then
+
+            if(CellShape.eq.1) then
+
+                allocate(temp(nSites,nSites))
+                temp(:,:) = ham(:,:)
+                call Mat_to_lattice_order_comp(temp)
+
+                ham(:,:) = temp(:,:)
+                !Tile through space
+                do i = 1,nSites
+                    do j = 1,nSites
+                        !TD_Imp_Lat gives the element of the v_loc which should be added here
+                        !(Row major)
+                        if(TD_Imp_Lat(j,i).ne.0) then
+
+                            !Convert these into the actual values of each dimension
+                            b = mod(TD_Imp_Lat(j,i)-1,nImp) + 1
+                            a = ((TD_Imp_Lat(j,i)-1)/nImp) + 1
+                            !write(6,*) TD_Imp_Lat(j,i),
+                            !write(6,*) "a: ",a
+                            !write(6,*) "b: ",b
+
+                            ham(j,i) = zzero
+                        endif
+                    enddo
+                enddo
+
+                !Transform both core_v and core back to the impurity ordering
+                call Mat_to_imp_order_comp(ham)
+                deallocate(temp)
+            else
+                !2D Square lattice
+                do k = 1,iImpRepeats
+                    do i = 1,nImp
+                        Indi = StripedImpIndices(i,k)
+                        do j = 1,nImp
+                            Indj = StripedImpIndices(j,k)
+
+                            ham(indj,indi) = zzero 
+
+                        enddo
+                    enddo
+                enddo
+
+
+            endif
+        endif
+
+    end subroutine zero_localpot_comp
 
     !Add a *complex* local potential striped across a *real* hamiltonian 
     !(only possible with translational invariance)
