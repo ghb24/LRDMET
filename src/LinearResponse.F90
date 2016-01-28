@@ -1032,7 +1032,7 @@ module LinearResponse
                         if(tMatbrAxis) then
                             LinearSystemc_h(i) = LinearSystemc_h(i) +  cmplx(GFChemPot-GSEnergy,Omega,dp)
                         else
-                            LinearSystemc_h(i) = LinearSystemc_h(i) + cmplx(Omega+GFChemPot-GSEnergy,dDelta,dp)
+                            LinearSystemc_h(i) = LinearSystemc_h(i) + cmplx(Omega+GFChemPot-GSEnergy,-dDelta,dp)
                         endif
                     enddo
                 else
@@ -1040,7 +1040,7 @@ module LinearResponse
                         if(tMatbrAxis) then
                             LinearSystem_h(i,i) = cmplx(GFChemPot-GSEnergy,Omega,dp) + LinearSystem_h(i,i)
                         else
-                            LinearSystem_h(i,i) = cmplx(Omega+GFChemPot-GSEnergy,dDelta,dp) + LinearSystem_h(i,i)
+                            LinearSystem_h(i,i) = cmplx(Omega+GFChemPot-GSEnergy,-dDelta,dp) + LinearSystem_h(i,i)
                         endif
                     enddo
                 endif
@@ -10048,8 +10048,10 @@ module LinearResponse
                     HFPertBasis_Ann_Ket(i,pertsite) = dconjg(latvecs(pertsite,i)) / cmplx(GFChemPot-latvals(i),Omega,dp)
                     HFPertBasis_Ann_Bra(i,pertsite) = latvecs(pertsite,i) / cmplx(GFChemPot-latvals(i),-Omega,dp)
                 else
-                    HFPertBasis_Ann_Ket(i,pertsite) = dconjg(latvecs(pertsite,i)) / cmplx(Omega+GFChemPot-latvals(i),dDelta,dp)
-                    HFPertBasis_Ann_Bra(i,pertsite) = latvecs(pertsite,i) / cmplx(Omega+GFChemPot-latvals(i),-dDelta,dp)
+                    !HFPertBasis_Ann_Ket(i,pertsite) = dconjg(latvecs(pertsite,i)) / cmplx(Omega+GFChemPot-latvals(i),dDelta,dp)
+                    !HFPertBasis_Ann_Bra(i,pertsite) = latvecs(pertsite,i) / cmplx(Omega+GFChemPot-latvals(i),-dDelta,dp)
+                    HFPertBasis_Ann_Ket(i,pertsite) = dconjg(latvecs(pertsite,i)) / cmplx(Omega+GFChemPot-latvals(i),-dDelta,dp)
+                    HFPertBasis_Ann_Bra(i,pertsite) = latvecs(pertsite,i) / cmplx(Omega+GFChemPot-latvals(i),dDelta,dp)
                 endif
             enddo
             do a = nOcc+1,nSites

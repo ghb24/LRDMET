@@ -4,6 +4,7 @@ module SelfConsistentUtils
     use Globals
     use utils, only: get_free_unit,append_ext
     use timing
+    use mat_tools, only: DiagOneEOp
     use SC_Data
     use mat_tools, only: MakeBlockHermitian
     use mat_tools, only: Add_Nonlocal_comp_inplace,var_to_couplingind
@@ -26,9 +27,10 @@ module SelfConsistentUtils
         complex(dp), intent(in), optional :: ham(nSites,nSites)
         complex(dp), intent(in), optional :: SE(nImp,nImp,n)
 
-        integer :: i,j,k,ind_1,ind_2
+        integer :: i,j,k,l,ind_1,ind_2
         real(dp) :: Omega
-        complex(dp), allocatable :: KBlocks(:,:,:)
+        complex(dp), allocatable :: KBlocks(:,:,:),LatVecs(:,:)
+        real(dp), allocatable :: LatVals(:)
         complex(dp) :: InvMat(nImp,nImp),InvMat2(nImp,nImp),num(nImp,nImp)
         logical :: tMatbrAxis_,tSelfEnergy
         character(len=*), parameter :: t_r='CalcLatticeSpectrum'
@@ -54,6 +56,38 @@ module SelfConsistentUtils
         else
             tMatbrAxis_=.false.
         endif
+
+!        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!
+!
+!        allocate(LatVecs(nSites,nSites))
+!        allocate(LatVals(nSites))
+!        LatVecs = ham
+!        call DiagOneEOp(LatVecs,LatVals,nImp,nSites,tDiag_kspace,.false.)
+!        CorrFn = zzero
+!        do i = 1,n
+!            if(present(FreqPoints)) then
+!                call GetOmega(Omega,i,tMatbrAxis_,FreqPoints=FreqPoints)
+!            else
+!                call GetOmega(Omega,i,tMatbrAxis_)
+!            endif
+!            do j = 1,nImp
+!                do k = 1,nImp
+!                    do l = 1,nSites
+!                        if(Omega.gt.zero) then
+!                            CorrFn(j,k,i) = CorrFn(j,k,i) + LatVecs(j,l)*conjg(LatVecs(k,l))/(cmplx(Omega+mu-LatVals(l),dDelta,dp))
+!                        else
+!                            CorrFn(j,k,i) = CorrFn(j,k,i) + LatVecs(j,l)*conjg(LatVecs(k,l))/(cmplx(Omega+mu-LatVals(l),-dDelta,dp))
+!                        endif
+!                    enddo
+!                enddo
+!            enddo
+!        enddo
+!        deallocate(LatVecs,LatVals)
+!        return
+!
+!
+!        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
         allocate(KBlocks(nImp,nImp,nKPnts))
 
@@ -137,11 +171,11 @@ module SelfConsistentUtils
                         else
                             !To get the off-diagonals to be hermitian, we have to be careful with the sign of the broadening.
                             !Do not worry about this for the moment, because for the diagonals it should be fine, and we are not fitting the real spectrum atm.
-!                            if(Omega.gt.zero) then
+                            if(Omega.gt.zero) then
                                 InvMat(j,j) = InvMat(j,j) + cmplx(Omega + mu,dDelta,dp)
-!                            else
-!                                InvMat(j,j) = InvMat(j,j) + cmplx(Omega + mu,-dDelta,dp)
-!                            endif
+                            else
+                                InvMat(j,j) = InvMat(j,j) + cmplx(Omega + mu,-dDelta,dp)
+                            endif
                         endif
                     enddo
                     call mat_inv(InvMat,InvMat2,nImp)
@@ -288,7 +322,7 @@ module SelfConsistentUtils
                     !Construct the matrix
                     Mat(:,:) = - KBlocks(:,:,k) - SelfEnergy(:,:,i)
                     do j = 1,nImp
-                        Mat(j,j) = Mat(j,j) + cmplx(Omega + mu,dDelta)
+                        Mat(j,j) = Mat(j,j) + cmplx(Omega + mu,dDelta,dp)
                     enddo
                     call mat_inv(Mat,MatInv,nImp)
 
@@ -1510,9 +1544,9 @@ module SelfConsistentUtils
 
     !This will set the number and values of the frequency points, which will
     !include the values in Vals array
-    subroutine SetReFreqPoints(Vals,nFreq,LatFreqs)
+    subroutine SetReFreqPoints(Vals,mu,nFreq,LatFreqs)
         implicit none
-        real(dp), intent(in) :: Vals(nSites)
+        real(dp), intent(in) :: Vals(nSites),mu
         integer, intent(out) :: nFreq
         integer, intent(out) :: LatFreqs(nSites)
         integer :: OmegaVal,CurrLatVal,i,j
@@ -1551,8 +1585,8 @@ module SelfConsistentUtils
             call GetNextOmega(Omega,OmegaVal,.false.)
             if(OmegaVal.lt.0) exit
             if(CurrLatVal.le.nSites) then
-                do while(Omega.gt.Vals(CurrLatVal))
-                    FreqPoints(i) = Vals(CurrLatVal)
+                do while(Omega.gt.(Vals(CurrLatVal)-mu))
+                    FreqPoints(i) = Vals(CurrLatVal)-mu
                     LatFreqs(CurrLatVal) = i
                     i = i + 1
                     CurrLatVal = CurrLatVal + 1
@@ -1563,7 +1597,7 @@ module SelfConsistentUtils
             i = i + 1
         enddo
         !Add in remaining points
-        FreqPoints(i:nFreq) = Vals(CurrLatVal:nSites)
+        FreqPoints(i:nFreq) = Vals(CurrLatVal:nSites)-mu
         do j = i,nFreq
             LatFreqs(CurrLatVal) = j
             CurrLatVal = CurrLatVal + 1
@@ -1693,7 +1727,7 @@ module SelfConsistentUtils
                 endif
                 Prev_Spec = -aimag(IsoAv)
                 Prev_Omega = Omega
-                write(iunit,"(3G25.10)",advance='no') Omega,real(IsoAv,dp),aimag(IsoAv)
+                write(iunit,"(3G25.10)",advance='no') Omega,real(IsoAv,dp),-aimag(IsoAv)/pi
                 do imp1=1,nImp
                     do imp2=1,nImp
                         write(iunit,"(2G25.10)",advance='no') real(Func(imp2,imp1,i),dp),aimag(Func(imp2,imp1,i))
@@ -1833,7 +1867,7 @@ module SelfConsistentUtils
         endif
         !klo and khi now bracket the value of x
         h = xa(khi)-xa(klo)
-        if(h.eq.zero) call stop_all(t_r,'bad xa input in splint. kpoints should be distinct')
+        if(abs(h).lt.eps) call stop_all(t_r,'bad xa input in splint. kpoints should be distinct')
         !Evaluate spline
         a = (xa(khi)-x)/h
         b = (x-xa(klo))/h
@@ -2194,7 +2228,7 @@ module SelfConsistentUtils
 
         !Now, rotate the block back into real space using the same eigenvectors
         allocate(ham_real_2(nSites,nSites))
-        ham_real_2(:,:) = zzero
+        ham_real_2(:,:) = zero
         do i = 1,nSites
             ham_real_2(i,i) = vals(i)
         enddo
