@@ -22,8 +22,7 @@ module SelfConsistentLR3
         complex(dp), allocatable :: LatVecs(:,:),Lat_CorrFn(:,:,:),CorrFn_HL(:,:,:)
         complex(dp), allocatable :: Prev_CorrFn_HL(:,:,:),Prev_Lat_CorrFn(:,:,:)
         complex(dp), allocatable :: SE_Update(:,:,:),UpdatePotential(:,:),TotalPotential(:,:)
-        complex(dp), allocatable :: ctemp(:,:),LatSelfEnergy_i(:,:),LatSelfEnergy_j(:,:)
-        complex(dp), allocatable :: CorrFn_HL_Inv(:,:,:),HalfContract_i(:),HalfContract_j(:)
+        complex(dp), allocatable :: CorrFn_HL_Inv(:,:,:)
         complex(dp) :: Ei_ij_val,Ei_ji_val,Ej_ij_val,Ej_ji_val,ZDOTC,MeanImpDiag
         real(dp) :: MaxOffLocalEl
         real(dp), allocatable :: AllDiffs(:,:),LatVals(:) 
@@ -35,11 +34,17 @@ module SelfConsistentLR3
 
         write(6,"(A)") "Entering quasiparticle self-consistent DMET..."
 
-        !TODO:  Is potential local?
+        !TODO:  Write out potential so it can be read back in later on (changing U)
+        !       Don't have to start from GS-DMET - find appropriate mu
         !       How tight should convergence be?
+        !       Purify potential via imposition of permutational symmetry
         !       Damp potential, instead of/as well as self energy?
         !       Consistent gaps?
-        !       Optimize for larger lattices
+        !       Look into using self-energy directly again with FD functions to
+        !           seperate hole and particle
+        !       Optimize for larger lattices (+ hermiticity constraints)
+        !       Spread spectrum to couple to higher poles - then optimize
+        !           (broadening, or more likely by changing effective t)
         !       Ground state energy from potential (via lat GF, imp GF and ground-state DMET)
         !       Get retarded greens function for the spectrum
         !       Update chemical potential correctly
@@ -169,8 +174,7 @@ module SelfConsistentLR3
             SE_Update(:,:,:) = Damping_SE*(SE_Update(:,:,:) - CorrFn_HL_Inv(:,:,:))
 
             if(.false.) then
-                !Test - is the lattice greens function with the self energy
-                !*exactly* the same as the HL greens function?
+                !Test - write out the lattice greens function with the self energy
                 call writedynamicfunction(nFreq,SE_Update,'SE_Imp',tag=iter,tCheckCausal=.false., &
                     tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.,FreqPoints=FreqPoints)
 
@@ -180,89 +184,17 @@ module SelfConsistentLR3
                 call writedynamicfunction(nFreq,CorrFn_HL_Inv,'G_Lat_wSE',tag=iter,tCheckCausal=.false., &
                     tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.,FreqPoints=FreqPoints)
             endif
-            
-            allocate(LatSelfEnergy_i(nSites,nSites))
-            allocate(LatSelfEnergy_j(nSites,nSites))
-            allocate(ctemp(nSites,nSites))
-            allocate(HalfContract_i(nSites))
-            allocate(HalfContract_j(nSites))
-            UpdatePotential(:,:) = zzero
-            !Use Quasi-particle self-consistency to find best static, hermitian
-            !potential approximation to the value: IS THIS LOCAL?
-            do i = 1,nSites
-                
-!                write(6,"(A,I7)") "Site: ",i
-!                call flush(6)
-                !Find the energy according to this orbital
-                !This is the frequency of the FreqPoints(LatFreqs(i))
-                if(abs(FreqPoints(LatFreqs(i))-(LatVals(i)-GFChemPot)).gt.1.0e-7_dp) then
-                    write(6,*) i,LatFreqs(i),FreqPoints(LatFreqs(i)),LatVals(i)
-                    call stop_all(t_r,'Error in assigning frequencies')
-                endif
 
-                !Stripe the self energy from the LatFreqs(i) local self energy
-                !across the lattice
-                LatSelfEnergy_i(:,:) = zzero
-                call add_localpot_comp_inplace(LatSelfEnergy_i,SE_Update(:,:,LatFreqs(i)),.true.)
+            call QPSC_UpdatePotential(nFreq,LatFreqs,GFChemPot,LatVals,LatVecs,SE_Update,UpdatePotential)
 
-                !Rotate the ij and ji elements of LatSelfEnergy to the MO basis
-!                call ZGEMV('C',nSites,nSites,zone,LatSelfEnergy_i,nSites,LatVecs(:,i),1,zzero,HalfContract_i,1)
-                call ZGEMM('C','N',nSites,nSites,nSites,zone,LatVecs,nSites,LatSelfEnergy_i,nSites,zzero,ctemp,nSites)
-                call ZGEMM('N','N',nSites,nSites,nSites,zone,ctemp,nSites,LatVecs,nSites,zzero,LatSelfEnergy_i,nSites)
-
-                do j = 1,nSites
-                    !Find the energy according to this orbital
-                    !This is the frequency of the FreqPoints(LatFreqs(i))
-                    if(abs(FreqPoints(LatFreqs(j))-(LatVals(j)-GFChemPot)).gt.1.0e-7_dp) then
-                        call stop_all(t_r,'Error in assigning frequencies')
-                    endif
-                
-                    !call ZGEMV('C',nSites,nSites,zone,LatSelfEnergy_i,nSites,LatVecs(:,j),1,zzero,HalfContract_j,1)
-                    !Ei_ij_val = zdotc(nSites,HalfContract_i,1,LatVecs(:,j),1)
-                    !Ei_ji_val = zdotc(nSites,HalfContract_j,1,LatVecs(:,i),1)
-
-                    !Stripe the self energy from the LatFreqs(i) local self energy
-                    !across the lattice
-                    LatSelfEnergy_j(:,:) = zzero
-                    call add_localpot_comp_inplace(LatSelfEnergy_j,SE_Update(:,:,LatFreqs(j)),.true.)
-
-                    !Rotate LatSelfEnergy to the MO basis
-                    call ZGEMM('C','N',nSites,nSites,nSites,zone,LatVecs,nSites,LatSelfEnergy_j,nSites,zzero,ctemp,nSites)
-                    call ZGEMM('N','N',nSites,nSites,nSites,zone,ctemp,nSites,LatVecs,nSites,zzero,LatSelfEnergy_j,nSites)
-!                    call ZGEMV('C',nSites,nSites,zone,LatSelfEnergy_j,nSites,LatVecs(:,i),1,zzero,HalfContract_i,1)
-!                    call ZGEMV('C',nSites,nSites,zone,LatSelfEnergy_j,nSites,LatVecs(:,j),1,zzero,HalfContract_j,1)
-!                    Ej_ij_val = zdotc(nSites,HalfContract_i,1,LatVecs(:,j),1)
-!                    Ej_ji_val = zdotc(nSites,HalfContract_j,1,LatVecs(:,i),1)
-                    
-                    !Add to the update potential
-                    UpdatePotential(i,j) = 0.25_dp * (LatSelfEnergy_i(i,j) + conjg(LatSelfEnergy_i(j,i))    &
-                        + LatSelfEnergy_j(i,j) + conjg(LatSelfEnergy_j(j,i)) )
-!                    UpdatePotential(i,j) = 0.25_dp * (Ei_ij_val + conjg(Ei_ji_val)    &
-!                        + Ej_ij_val + conjg(Ej_ji_val) )
-                enddo
-            enddo
-
-            !Rotate the new static potential (Update Potential) to the AO basis
-            call ZGEMM('N','N',nSites,nSites,nSites,zone,LatVecs,nSites,UpdatePotential,nSites,zzero,ctemp,nSites)
-            call ZGEMM('N','C',nSites,nSites,nSites,zone,ctemp,nSites,LatVecs,nSites,zzero,UpdatePotential,nSites)
-            deallocate(LatSelfEnergy_i,LatSelfEnergy_j)
-            deallocate(HalfContract_i,HalfContract_j)
-
-            do i = 1,nSites
-                do j = 1,nSites
-                    if(abs(UpdatePotential(j,i)-conjg(UpdatePotential(i,j))).gt.1.0e-8_dp) then
-                        call stop_all(t_r,'Update potential not hermitian')
-                    endif
-                enddo
-            enddo
-
-            call writematrix(UpdatePotential,'Update potential in the AO basis',.true.)
+            !call writematrix(UpdatePotential,'Update potential in the AO basis',.true.)
 
             !Add new potential to lattice hamiltonian
             h_lat_fit(:,:) = h_lat_fit(:,:) + UpdatePotential(:,:)
             TotalPotential(:,:) = TotalPotential(:,:) + UpdatePotential(:,:)
             
             !Is Update potential local?!
+            allocate(ctemp(nSites,nSites))
             ctemp(:,:) = TotalPotential(:,:)
             call zero_localpot_comp(ctemp)
             MaxOffLocalEl = zero
@@ -326,6 +258,10 @@ module SelfConsistentLR3
         
         call writedynamicfunction(nFreq,Lat_CorrFn,'G_Lat_Final',tCheckCausal=.false., &
             tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.,FreqPoints=FreqPoints)
+            
+        if(nSites.lt.15) then
+            call writematrix(TotalPotential,'Final potential in the AO basis',.true.)
+        endif
 
         !Calculate final self-energy
 
@@ -341,5 +277,130 @@ module SelfConsistentLR3
         call halt_timer(SelfCon_LR)
 
     end subroutine SC_Spectrum_Static
+            
+    subroutine QPSC_UpdatePotential(nFreq,LatFreqs,GFChemPot,LatVals,LatVecs,SE_Update,UpdatePotential)
+        implicit none
+        complex(dp), intent(out) :: UpdatePotential(nSites,nSites)
+        integer, intent(in) :: LatFreqs(nSites),nFreq
+        real(dp), intent(in) :: GFChemPot,LatVals(nSites)
+        complex(dp), intent(in) :: LatVecs(nSites,nSites),SE_Update(nImp,nImp,nFreq)
+        !local
+        complex(dp), allocatable :: ctemp(:,:),HalfContract_i(:)
+        complex(dp), allocatable :: HalfContract_j(:),LatSelfEnergy_i(:,:)
+        complex(dp), allocatable :: LatSelfEnergy_j(:,:)
+        complex(dp) :: Ei_ij_val,Ei_ji_val,zdotc
+        integer :: i,j
+        character(len=*), parameter :: t_r='QPSC_UpdatePotential'
+    
+        UpdatePotential(:,:) = zzero
+
+        allocate(HalfContract_i(nSites))
+        allocate(HalfContract_j(nSites))
+        allocate(LatSelfEnergy_i(nSites,nSites))
+        if(.true.) then
+            allocate(LatSelfEnergy_j(nSites,nSites))
+            allocate(ctemp(nSites,nSites))
+            !Use Quasi-particle self-consistency to find best static, hermitian
+            !potential approximation to the value: IS THIS LOCAL?
+            do i = 1,nSites
+                
+!                write(6,"(A,I7)") "Site: ",i
+!                call flush(6)
+                !Find the energy according to this orbital
+                !This is the frequency of the FreqPoints(LatFreqs(i))
+                if(abs(FreqPoints(LatFreqs(i))-(LatVals(i)-GFChemPot)).gt.1.0e-7_dp) then
+                    write(6,*) i,LatFreqs(i),FreqPoints(LatFreqs(i)),LatVals(i)
+                    call stop_all(t_r,'Error in assigning frequencies')
+                endif
+
+                !Stripe the self energy from the LatFreqs(i) local self energy
+                !across the lattice
+                LatSelfEnergy_i(:,:) = zzero
+                call add_localpot_comp_inplace(LatSelfEnergy_i,SE_Update(:,:,LatFreqs(i)),.true.)
+
+                !Rotate the ij and ji elements of LatSelfEnergy to the MO basis
+!                call ZGEMV('C',nSites,nSites,zone,LatSelfEnergy_i,nSites,LatVecs(:,i),1,zzero,HalfContract_i,1)
+                call ZGEMM('C','N',nSites,nSites,nSites,zone,LatVecs,nSites,LatSelfEnergy_i,nSites,zzero,ctemp,nSites)
+                call ZGEMM('N','N',nSites,nSites,nSites,zone,ctemp,nSites,LatVecs,nSites,zzero,LatSelfEnergy_i,nSites)
+
+                do j = 1,nSites
+                    !Find the energy according to this orbital
+                    !This is the frequency of the FreqPoints(LatFreqs(i))
+                    if(abs(FreqPoints(LatFreqs(j))-(LatVals(j)-GFChemPot)).gt.1.0e-7_dp) then
+                        call stop_all(t_r,'Error in assigning frequencies')
+                    endif
+                
+                    !call ZGEMV('C',nSites,nSites,zone,LatSelfEnergy_i,nSites,LatVecs(:,j),1,zzero,HalfContract_j,1)
+                    !Ei_ij_val = zdotc(nSites,HalfContract_i,1,LatVecs(:,j),1)
+                    !Ei_ji_val = zdotc(nSites,HalfContract_j,1,LatVecs(:,i),1)
+
+                    !Stripe the self energy from the LatFreqs(i) local self energy
+                    !across the lattice
+                    LatSelfEnergy_j(:,:) = zzero
+                    call add_localpot_comp_inplace(LatSelfEnergy_j,SE_Update(:,:,LatFreqs(j)),.true.)
+
+                    !Rotate LatSelfEnergy to the MO basis
+                    call ZGEMM('C','N',nSites,nSites,nSites,zone,LatVecs,nSites,LatSelfEnergy_j,nSites,zzero,ctemp,nSites)
+                    call ZGEMM('N','N',nSites,nSites,nSites,zone,ctemp,nSites,LatVecs,nSites,zzero,LatSelfEnergy_j,nSites)
+!                    call ZGEMV('C',nSites,nSites,zone,LatSelfEnergy_j,nSites,LatVecs(:,i),1,zzero,HalfContract_i,1)
+!                    call ZGEMV('C',nSites,nSites,zone,LatSelfEnergy_j,nSites,LatVecs(:,j),1,zzero,HalfContract_j,1)
+!                    Ej_ij_val = zdotc(nSites,HalfContract_i,1,LatVecs(:,j),1)
+!                    Ej_ji_val = zdotc(nSites,HalfContract_j,1,LatVecs(:,i),1)
+                    
+                    !Add to the update potential
+                    UpdatePotential(i,j) = 0.25_dp * (LatSelfEnergy_i(i,j) + conjg(LatSelfEnergy_i(j,i))    &
+                        + LatSelfEnergy_j(i,j) + conjg(LatSelfEnergy_j(j,i)) )
+!                    UpdatePotential(i,j) = 0.25_dp * (Ei_ij_val + conjg(Ei_ji_val)    &
+!                        + Ej_ij_val + conjg(Ej_ji_val) )
+                enddo
+            enddo
+
+            !Rotate the new static potential (Update Potential) to the AO basis
+            call ZGEMM('N','N',nSites,nSites,nSites,zone,LatVecs,nSites,UpdatePotential,nSites,zzero,ctemp,nSites)
+            call ZGEMM('N','C',nSites,nSites,nSites,zone,ctemp,nSites,LatVecs,nSites,zzero,UpdatePotential,nSites)
+            deallocate(ctemp,LatSelfEnergy_j)
+
+            do i = 1,nSites
+                do j = 1,nSites
+                    if(abs(UpdatePotential(j,i)-conjg(UpdatePotential(i,j))).gt.1.0e-8_dp) then
+                        call stop_all(t_r,'Update potential not hermitian')
+                    endif
+                enddo
+            enddo
+        else
+            !Do it cheaper!
+
+            do i = 1,nSites
+
+                if(abs(FreqPoints(LatFreqs(i))-(LatVals(i)-GFChemPot)).gt.1.0e-7_dp) then
+                    write(6,*) i,LatFreqs(i),FreqPoints(LatFreqs(i)),LatVals(i)
+                    call stop_all(t_r,'Error in assigning frequencies')
+                endif
+
+                !Stripe the self energy from the LatFreqs(i) local self energy
+                !across the lattice
+                LatSelfEnergy_i(:,:) = zzero
+                call add_localpot_comp_inplace(LatSelfEnergy_i,SE_Update(:,:,LatFreqs(i)),.true.)
+
+                !TODO: Do this in k-space
+                call ZGEMV('C',nSites,nSites,nSites,zone,LatSelfEnergy_i,nSites,LatVecs(:,i),1,zzero,HalfContract_i,1)
+                call ZGEMV('N',nSites,nSites,nSites,zone,LatSelfEnergy_i,nSites,LatVecs(:,i),1,zzero,HalfContract_j,1)
+
+                do j = 1,nSites
+                    !TODO: skip if not in same kpoint 
+
+                    Ei_ji_val = zdotc(nSites,LatVecs(:,j),1,HalfContract_j,1)
+                    Ei_ij_val = zdotc(nSites,HalfContract_i,1,LatVecs(:,j),1)
+
+                    UpdatePotential(i,j) = UpdatePotential(i,j) + 0.25_dp*(Ei_ij_val+conjg(Ei_ji_val))
+                    UpdatePotential(j,i) = UpdatePotential(j,i) + 0.25_dp*(conjg(Ei_ij_val)+Ei_ji_val)
+                enddo
+            enddo
+
+        endif
+        deallocate(LatSelfEnergy_i)
+        deallocate(HalfContract_i,HalfContract_j)
+
+    end subroutine QPSC_UpdatePotential
                 
 end module SelfConsistentLR3
