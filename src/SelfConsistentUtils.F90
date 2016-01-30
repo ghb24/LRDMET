@@ -15,7 +15,7 @@ module SelfConsistentUtils
 
     contains
     
-    subroutine CalcLatticeSpectrum(iCorrFn,n,CorrFn,mu,tMatbrAxis,iLatParams,LatParams,FreqPoints,ham,SE)
+    subroutine CalcLatticeSpectrum(iCorrFn,n,CorrFn,mu,tMatbrAxis,iLatParams,LatParams,FreqPoints,ham,SE,tRetarded)
         implicit none
         integer, intent(in) :: iCorrFn,n
         complex(dp), intent(out) :: CorrFn(nImp,nImp,n)
@@ -26,13 +26,14 @@ module SelfConsistentUtils
         real(dp), intent(in), optional :: FreqPoints(n)
         complex(dp), intent(in), optional :: ham(nSites,nSites)
         complex(dp), intent(in), optional :: SE(nImp,nImp,n)
+        logical, intent(in), optional :: tRetarded
 
         integer :: i,j,k,l,ind_1,ind_2
         real(dp) :: Omega
         complex(dp), allocatable :: KBlocks(:,:,:),LatVecs(:,:)
         real(dp), allocatable :: LatVals(:)
         complex(dp) :: InvMat(nImp,nImp),InvMat2(nImp,nImp),num(nImp,nImp)
-        logical :: tMatbrAxis_,tSelfEnergy
+        logical :: tMatbrAxis_,tSelfEnergy,tRetarded_
         character(len=*), parameter :: t_r='CalcLatticeSpectrum'
 
         call set_timer(CalcLatSpectrum)
@@ -55,6 +56,11 @@ module SelfConsistentUtils
             tMatbrAxis_=tMatbrAxis
         else
             tMatbrAxis_=.false.
+        endif
+        if(.not.present(tRetarded)) then
+            tRetarded_ = .false. !calculate the time-ordered greens function
+        else
+            tRetarded_ = tRetarded
         endif
 
 !        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -171,10 +177,14 @@ module SelfConsistentUtils
                         else
                             !To get the off-diagonals to be hermitian, we have to be careful with the sign of the broadening.
                             !Do not worry about this for the moment, because for the diagonals it should be fine, and we are not fitting the real spectrum atm.
-                            if(Omega.gt.zero) then
-                                InvMat(j,j) = InvMat(j,j) + cmplx(Omega + mu,dDelta,dp)
+                            if(tRetarded_) then
+                                    InvMat(j,j) = InvMat(j,j) + cmplx(Omega + mu,dDelta,dp)
                             else
-                                InvMat(j,j) = InvMat(j,j) + cmplx(Omega + mu,-dDelta,dp)
+                                if(Omega.gt.zero) then
+                                    InvMat(j,j) = InvMat(j,j) + cmplx(Omega + mu,dDelta,dp)
+                                else
+                                    InvMat(j,j) = InvMat(j,j) + cmplx(Omega + mu,-dDelta,dp)
+                                endif
                             endif
                         endif
                     enddo

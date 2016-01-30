@@ -30,7 +30,7 @@ module LinearResponse
     !Calculate linear response for charged excitations - add the hole creation to particle creation
     !This is a routine to accept a complex hermitian lattice matrix, and construct the appropriate basis to work in. 
     !The hamiltonian will necessarily be fit across all the parts of the lattice apart from impurity & its coupling
-    subroutine SchmidtGF_FromLat(G_Mat,GFChemPot,nESteps,tMatbrAxis,cham,FreqPoints,Lat_G_Mat)
+    subroutine SchmidtGF_FromLat(G_Mat,GFChemPot,nESteps,tMatbrAxis,cham,FreqPoints,Lat_G_Mat,tRetarded)
         implicit none
         integer, intent(in) :: nESteps
         real(dp), intent(in) :: GFChemPot
@@ -39,6 +39,7 @@ module LinearResponse
         complex(dp), intent(in) :: cham(nSites,nSites)    !A complex (hermitian) lattice hamiltonian
         real(dp), intent(in), optional :: FreqPoints(nESteps)
         complex(dp), intent(out), optional :: Lat_G_Mat(nImp,nImp,nESteps)  !An optional lattice greens function calculated in this routine
+        logical, intent(in), optional :: tRetarded
 
         complex(dp) :: NILRMat_Cre(nImp,nImp),NILRMat_Ann(nImp,nImp)
         real(dp), allocatable :: LatVals(:)
@@ -80,11 +81,22 @@ module LinearResponse
         real(dp) :: GSEnergy,MinResErr,Prev_Omega
         complex(dp) :: ResponseFn,tempel,ni_lr,matel
         complex(dp) :: zdotc,VNorm,CNorm,SelfE(nImp,nImp)
-        logical :: tParity,tFirst,tCompLatHam
+        logical :: tParity,tFirst,tCompLatHam,tRetarded_
         character(64) :: filename,filename2
         character(len=*), parameter :: t_r='SchmidtGF_FromLat'
         
         call set_timer(LR_EC_GF_Precom)
+
+        if(present(tRetarded)) then
+            tRetarded_ = tRetarded
+        else
+            tRetarded_ = .false.
+        endif
+        if(tRetarded_) then
+            write(6,"(A)") "Calculating the retarded greens function..."
+        else
+            write(6,"(A)") "Calculating the time-ordered greens function..."
+        endif
 
         G_Mat(:,:,:) = zzero
         if(present(Lat_G_Mat)) Lat_G_Mat(:,:,:) = zzero
@@ -587,7 +599,7 @@ module LinearResponse
             call FindNI_Charged_FitLat(Omega,GFChemPot,NILRMat_Cre,NILRMat_Ann,tMatbrAxis,cham,LatVals,LatVecs, &
                 VirtStart,CoreEnd,SPGF_Cre_Ket,SPGF_Cre_Bra,SPGF_Ann_Ket,SPGF_Ann_Bra,HFRes_Ann_Ket,    &
                 HFRes_Cre_Ket,HFRes_Ann_Bra,HFRes_Cre_Bra,temp,temp2,temp3,Core_SchmidtB,   &
-                Virt_SchmidtB,Core_latvecs,Virt_latvecs)
+                Virt_SchmidtB,Core_latvecs,Virt_latvecs,tRetarded_)
             
             !Construct useful intermediates, using zgemm
             !sum_a Gc_a^* F_ax (Creation)
@@ -1032,7 +1044,11 @@ module LinearResponse
                         if(tMatbrAxis) then
                             LinearSystemc_h(i) = LinearSystemc_h(i) +  cmplx(GFChemPot-GSEnergy,Omega,dp)
                         else
-                            LinearSystemc_h(i) = LinearSystemc_h(i) + cmplx(Omega+GFChemPot-GSEnergy,-dDelta,dp)
+                            if(tRetarded_) then
+                                LinearSystemc_h(i) = LinearSystemc_h(i) + cmplx(Omega+GFChemPot-GSEnergy,dDelta,dp)
+                            else
+                                LinearSystemc_h(i) = LinearSystemc_h(i) + cmplx(Omega+GFChemPot-GSEnergy,-dDelta,dp)
+                            endif
                         endif
                     enddo
                 else
@@ -1040,7 +1056,11 @@ module LinearResponse
                         if(tMatbrAxis) then
                             LinearSystem_h(i,i) = cmplx(GFChemPot-GSEnergy,Omega,dp) + LinearSystem_h(i,i)
                         else
-                            LinearSystem_h(i,i) = cmplx(Omega+GFChemPot-GSEnergy,-dDelta,dp) + LinearSystem_h(i,i)
+                            if(tRetarded_) then
+                                LinearSystem_h(i,i) = cmplx(Omega+GFChemPot-GSEnergy,dDelta,dp) + LinearSystem_h(i,i)
+                            else
+                                LinearSystem_h(i,i) = cmplx(Omega+GFChemPot-GSEnergy,-dDelta,dp) + LinearSystem_h(i,i)
+                            endif
                         endif
                     enddo
                 endif
@@ -10003,12 +10023,12 @@ module LinearResponse
     subroutine FindNI_Charged_FitLat(Omega,GFChemPot,NILRMat_Cre,NILRMat_Ann,tMatbrAxis,ham,latvals,latvecs,    &
         VirtStart,CoreEnd,SPGF_Cre_Ket,SPGF_Cre_Bra,SPGF_Ann_Ket,SPGF_Ann_Bra,HFPertBasis_Ann_Ket,  &
         HFPertBasis_Cre_Ket,HFPertBasis_Ann_Bra,HFPertBasis_Cre_Bra,temp,temp2,temp3,   &
-        Core_SchmidtB,Virt_SchmidtB,Core_latvecs,Virt_latvecs)
+        Core_SchmidtB,Virt_SchmidtB,Core_latvecs,Virt_latvecs,tRetarded_)
         implicit none
         real(dp), intent(in) :: Omega,GFChemPot
         integer, intent(in) :: VirtStart,CoreEnd
         complex(dp), intent(out) :: NILRMat_Cre(nImp,nImp),NILRMat_Ann(nImp,nImp)
-        logical, intent(in) :: tMatbrAxis
+        logical, intent(in) :: tMatbrAxis,tRetarded_
         complex(dp), intent(in) :: ham(nSites,nSites)
         real(dp), intent(in) :: latvals(nSites)
         complex(dp), intent(in) :: latvecs(nSites,nSites)
@@ -10048,10 +10068,13 @@ module LinearResponse
                     HFPertBasis_Ann_Ket(i,pertsite) = dconjg(latvecs(pertsite,i)) / cmplx(GFChemPot-latvals(i),Omega,dp)
                     HFPertBasis_Ann_Bra(i,pertsite) = latvecs(pertsite,i) / cmplx(GFChemPot-latvals(i),-Omega,dp)
                 else
-                    !HFPertBasis_Ann_Ket(i,pertsite) = dconjg(latvecs(pertsite,i)) / cmplx(Omega+GFChemPot-latvals(i),dDelta,dp)
-                    !HFPertBasis_Ann_Bra(i,pertsite) = latvecs(pertsite,i) / cmplx(Omega+GFChemPot-latvals(i),-dDelta,dp)
-                    HFPertBasis_Ann_Ket(i,pertsite) = dconjg(latvecs(pertsite,i)) / cmplx(Omega+GFChemPot-latvals(i),-dDelta,dp)
-                    HFPertBasis_Ann_Bra(i,pertsite) = latvecs(pertsite,i) / cmplx(Omega+GFChemPot-latvals(i),dDelta,dp)
+                    if(tRetarded_) then
+                        HFPertBasis_Ann_Ket(i,pertsite) = dconjg(latvecs(pertsite,i)) / cmplx(Omega+GFChemPot-latvals(i),dDelta,dp)
+                        HFPertBasis_Ann_Bra(i,pertsite) = latvecs(pertsite,i) / cmplx(Omega+GFChemPot-latvals(i),-dDelta,dp)
+                    else
+                        HFPertBasis_Ann_Ket(i,pertsite) = dconjg(latvecs(pertsite,i)) / cmplx(Omega+GFChemPot-latvals(i),-dDelta,dp)
+                        HFPertBasis_Ann_Bra(i,pertsite) = latvecs(pertsite,i) / cmplx(Omega+GFChemPot-latvals(i),dDelta,dp)
+                    endif
                 endif
             enddo
             do a = nOcc+1,nSites
