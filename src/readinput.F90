@@ -6,6 +6,7 @@ module readinput
     use errors, only: stop_all,warning
     use GF2Data, only: nMatsubara, Beta_Temp, ScaleImTime, TailStart,tFitTails
     use GF2Data, only: MatsuEnergySumFac, ScaleImTimeSpline, tSpline, GF2_MaxIter
+    use SC_Data, only: tReadChemPot
     implicit none
 
     contains
@@ -168,6 +169,7 @@ module readinput
         iFitStyle = 1                   !1 = Direct fitting. 2 = DMFT
         tCalcRealSpectrum = .true. 
         tAugMinRes = .false.            !For solving an augmented problem with minres without reducing the condition number
+        tReadChemPot = .false.
 
     end subroutine set_defaults
 

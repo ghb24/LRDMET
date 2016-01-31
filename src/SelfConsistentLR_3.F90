@@ -34,6 +34,12 @@ module SelfConsistentLR3
 
         write(6,"(A)") "Entering quasiparticle self-consistent DMET..."
 
+        !1) Reading and writing
+        !2) Option to read mu or not
+        !3) Test damping (for 2 imp)
+        !4) Spread h0 spectrum
+        !5) All elements of potential converged to 0.1%, or change is less than 1e-4
+
         !To TEST: Converge 2-imp
         !           Sensitivity to initial conditions, broadening
         !         Can we get uncoupled peaks by fiddling with the initial potential?
@@ -42,6 +48,7 @@ module SelfConsistentLR3
         !       Don't have to start from GS-DMET - find appropriate mu
         !       How tight should convergence be?
         !       Purify potential via imposition of translational symmetry
+        !           Look at all the LatParams/KBlocks etc stuff
         !       Damp potential, instead of/as well as self energy?
         !       Consistent gaps?
         !       Look into using self-energy directly again with FD functions to
@@ -50,7 +57,6 @@ module SelfConsistentLR3
         !       Spread spectrum to couple to higher poles - then optimize
         !           (broadening, or more likely by changing effective t)
         !       Ground state energy from potential (via lat GF, imp GF and ground-state DMET)
-        !       Get retarded greens function for the spectrum
         !       Update chemical potential correctly
         !       Constraints on correlation potential to aid convergence
         !           (real diags, hermitian, diagonals average to zero? Translationally invariant)
@@ -79,28 +85,11 @@ module SelfConsistentLR3
         tPrecond_MinRes = .false.
         tReuse_LS = .false.
 
-        call SetChemPot(GFChemPot)
-        write(6,"(A,G20.15)") "Chemical potential set to: ",GFChemPot
-        if(tSC_StartwGSCorrPot) then
-            write(6,"(A)") "Starting from correlation potential from ground-state calculation..."
-        else
-            write(6,"(A)") "Starting from bare lattice hamiltonian..."
-        endif
-
         !Let h be complex to allow for easier integration with previous code
         allocate(h_lat_fit(nSites,nSites))
-        h_lat_fit(:,:) = zzero
-        !Do we want to start from a prior GS DMET calculation, or 
-        do i = 1,nSites
-            do j = 1,nSites
-                if(tSC_StartwGSCorrPot) then
-                    h_lat_fit(j,i) = cmplx(h0v(j,i),zero,dp)
-                else
-                    h_lat_fit(j,i) = cmplx(h0(j,i),zero,dp)
-                endif 
-            enddo
-!            if(.not.tSC_StartwGSCorrPot) h_lat_fit(i,i) = h_lat_fit(i,i) + GFChemPot    !Add chemical potential
-        enddo
+        allocate(TotalPotential(nSites,nSites))
+        call InitLatticePotential(h_lat_fit,TotalPotential,GFChemPot)
+
 
         !NI_ChemPot is fixed for the calculation as a shift for the grid
         NI_ChemPot = GFChemPot
@@ -133,8 +122,6 @@ module SelfConsistentLR3
         SE_Update(:,:,:) = zzero
 
         allocate(UpdatePotential(nSites,nSites))
-        allocate(TotalPotential(nSites,nSites))
-        TotalPotential(:,:) = zzero
 
         !1: Change in correlation potential
         !2: Change in impurity greens function
@@ -254,6 +241,7 @@ module SelfConsistentLR3
                 write(6,"(A,G20.13)") "Correlation potential changing by less than: ",dDeltaImpThresh
                 exit
             endif
+            call WriteLatHamil(h_lat_fit,GFChemPot,'LatticePotential',tag=iter)
 
         enddo
 
@@ -285,12 +273,146 @@ module SelfConsistentLR3
         call writedynamicfunction(nFreq,CorrFn_HL,'G_Imp_Ret_Final',tCheckCausal=.true.,  &
             tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.,FreqPoints=FreqPoints)
 
+        call WriteLatHamil(h_lat_fit,GFChemPot,'LatticePotential_Final')
+
         deallocate(h_lat_fit,LatVals,LatVecs,Lat_CorrFn,CorrFn_HL,Prev_CorrFn_HL,Prev_Lat_CorrFn)
         deallocate(UpdatePotential,TotalPotential,AllDiffs,SE_Update,LatFreqs,CorrFn_HL_Inv)
 
         call halt_timer(SelfCon_LR)
 
     end subroutine SC_Spectrum_Static
+
+    subroutine InitLatticePotential(h_lat,TotalPotential,GFChemPot)
+        implicit none
+        complex(dp), intent(out) :: h_lat(nSites,nSites),TotalPotential(nSites,nSites)
+        real(dp), intent(out) :: GFChemPot
+        !
+        integer :: i,j
+        real(dp) :: mu
+        logical :: exists
+    
+        h_lat(:,:) = zzero
+        TotalPotential(:,:) = zzero
+
+        if(tReadCouplings) then
+
+            !Read in change from h0
+            write(6,"(A)") "Reading lattice correlation potential from file..."
+            call ReadLatHam(h_lat,mu)
+            do i = 1,nSites
+                do j = 1,nSites
+                    TotalPotential(j,i) = h_lat(j,i) - h0(j,i)
+                enddo
+            enddo
+        else
+
+            if(tSC_StartwGSCorrPot) then
+                write(6,"(A)") "Starting from correlation potential from ground-state calculation..."
+            else
+                write(6,"(A)") "Starting from bare lattice hamiltonian..."
+            endif
+
+            !Do we want to start from a prior GS DMET calculation, or 
+            do i = 1,nSites
+                do j = 1,nSites
+                    if(tSC_StartwGSCorrPot) then
+                        h_lat(j,i) = cmplx(h0v(j,i),zero,dp)
+                        TotalPotential(j,i) = cmplx(h0v(j,i)-h0(j,i),zero,dp)
+                    else
+                        h_lat(j,i) = cmplx(h0(j,i),zero,dp)
+                    endif 
+                enddo
+            enddo
+    
+        endif
+            
+        if(tReadChempot.and.tReadCouplings) then
+            write(6,"(A)") "Taking initial chemical potential for system from file..."
+            GFChemPot = mu
+        else
+            call SetChemPot(GFChemPot)
+        endif
+
+        write(6,"(A,G20.15)") "Chemical potential set to: ",GFChemPot
+
+    end subroutine InitLatticePotential
+
+    subroutine WriteLatHamil(h_lat,mu,FileRoot,tag)
+        implicit none
+        complex(dp), intent(in) :: h_lat(nSites,nSites)
+        real(dp), intent(in) :: mu
+        character(len=*), intent(in), optional :: FileRoot
+        integer, intent(in), optional :: tag
+        !
+        integer :: i,j,iunit
+        character(64) :: FileRoot_
+        character(64) :: filename
+        character(len=*), parameter :: t_r='WriteLatHamil'
+
+        write(6,"(A)") "Writing lattice hamiltonian..."
+        iunit = get_free_unit()
+
+        if(present(FileRoot)) then
+            FileRoot_ = FileRoot
+        else
+            FileRoot_ = 'LatticeHamiltonian'
+        endif
+
+        if(present(tag)) then
+            call append_ext(FileRoot_,tag,filename)
+        else
+            filename = FileRoot_ 
+        endif
+        open(unit=iunit,file=filename,status='unknown')
+
+        write(iunit,"(3I8)") nSites,nImp,LatticeDim
+        write(iunit,"(F25.10)") mu
+        do i = 1,nSites
+            do j = 1,i
+                write(iunit,*) h_lat(j,i)
+            enddo
+        enddo
+        close(iunit)
+
+    end subroutine WriteLatHamil
+
+    subroutine ReadLatHam(LatHam,mu)
+        implicit none
+        complex(dp), intent(out) :: LatHam(nSites,nSites)
+        real(dp), intent(out) :: mu
+        !
+        logical :: lexists
+        integer :: iunit,nImp_,nSites_,LatticeDim_,i,j
+        character(len=*), parameter :: t_r='ReadLatHam'
+
+        LatHam(:,:) = zzero
+        write(6,"(A)") "Reading lattice hamiltonian from file..."
+        iunit=get_free_unit()
+        inquire(file='LatticeHamiltonian',exist=lexists)
+        if(.not.lexists) then
+            call stop_all(t_r,'LatticeHamiltonian file does not exist to read in...')
+        endif
+        open(unit=iunit,file='LatticeHamiltonian',status='old')
+        read(iunit,*) nSites_,nImp_,LatticeDim_
+        if(nSites_.ne.nSites) then
+            call stop_all(t_r,'Number of sites not consistent')
+        endif
+        if(nImp_.ne.nImp) then
+            call stop_all(t_r,'Number of impurities not consistent')
+        endif
+        if(LatticeDim_.ne.LatticeDim) then
+            call stop_all(t_r,'Dimension of lattice not consistent')
+        endif
+        read(iunit,*) mu
+        do i = 1,nSites
+            do j = 1,i
+                read(iunit,*) LatHam(j,i)
+                LatHam(i,j) = conjg(LatHam(j,i))
+            enddo
+        enddo
+        close(iunit)
+
+    end subroutine ReadLatHam
             
     subroutine QPSC_UpdatePotential(nFreq,LatFreqs,GFChemPot,LatVals,LatVecs,SE_Update,UpdatePotential)
         implicit none
