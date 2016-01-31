@@ -34,6 +34,7 @@ module SelfConsistentLR3
 
         write(6,"(A)") "Entering quasiparticle self-consistent DMET..."
 
+        !1) Try with retarded greens function
         !1) Reading and writing
         !2) Option to read mu or not
         !3) Test damping (for 2 imp)
@@ -61,7 +62,9 @@ module SelfConsistentLR3
         !       Constraints on correlation potential to aid convergence
         !           (real diags, hermitian, diagonals average to zero? Translationally invariant)
 
-        !TODO:  Non-contracted bath space
+        !TODO:  Non-contracted GS bath space: Once we have this, we can have frequency-dependent (complex?) self-consistency
+        !           as we can construct the GS bath as the static limit of the self-energy from the GS density, and keep the GS fixed in this space
+        !           What then is the potential in the bath space: Static part of self energy?
         !       Fit results to Pade to remove broadening from self-energy, and
         !           ensure we don't need to include exactly the frequency points of
         !           the one-electron eigenvalues.
@@ -323,7 +326,7 @@ module SelfConsistentLR3
                         TotalPotential(j,i) = cmplx(h0v(j,i)-h0(j,i),zero,dp)
                     else
                         h_lat(j,i) = cmplx(h0(j,i),zero,dp)
-                        if(i.eq.j) then 
+                        if(i.eq.j.and.tHalfFill) then 
                             h_lat(i,i) = U/2.0_dp
                         else
                             if(tStretchNILatticeHam) h_lat(j,i) = h_lat(j,i)*dStretchNILatticeHam
