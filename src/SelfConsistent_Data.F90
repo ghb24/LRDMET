@@ -8,6 +8,10 @@ module SC_Data
     real(dp) :: SCF_mu
     integer :: SCF_iCorrFn
     logical :: tReadChemPot !Do we read the chemical potential from the file too? 
+
+    !Stretch initial hamiltonian?
+    logical :: tStretchNILatticeHam
+    real(dp) :: dStretchNILatticeHam
     
     integer, allocatable :: KBlock_to_KInd(:)       !Map from Kpoint index to sampled kpoint index
     integer, allocatable :: KInd_to_KBlock(:)       !Map from sampled kpoint to physical kpoint index

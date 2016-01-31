@@ -310,6 +310,9 @@ module SelfConsistentLR3
                 write(6,"(A)") "Starting from correlation potential from ground-state calculation..."
             else
                 write(6,"(A)") "Starting from bare lattice hamiltonian..."
+                if(tStretchNILatticeHam) then
+                    write(6,"(A,F10.4)") "Introducing lattice hamiltonian with stretch coefficient: ",dStretchNILatticeHam
+                endif
             endif
 
             !Do we want to start from a prior GS DMET calculation, or 
@@ -320,6 +323,11 @@ module SelfConsistentLR3
                         TotalPotential(j,i) = cmplx(h0v(j,i)-h0(j,i),zero,dp)
                     else
                         h_lat(j,i) = cmplx(h0(j,i),zero,dp)
+                        if(i.eq.j) then 
+                            h_lat(i,i) = U/2.0_dp
+                        else
+                            if(tStretchNILatticeHam) h_lat(j,i) = h_lat(j,i)*dStretchNILatticeHam
+                        endif
                     endif 
                 enddo
             enddo
