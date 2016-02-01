@@ -7,6 +7,7 @@ module readinput
     use GF2Data, only: nMatsubara, Beta_Temp, ScaleImTime, TailStart,tFitTails
     use GF2Data, only: MatsuEnergySumFac, ScaleImTimeSpline, tSpline, GF2_MaxIter
     use SC_Data, only: tReadChemPot,tStretchNILatticeHam,dStretchNILatticeHam
+    use SC_Data, only: PotentialUpdateDamping
     implicit none
 
     contains
@@ -172,6 +173,7 @@ module readinput
         tReadChemPot = .false.          !Read in the chemical potential from previous calculation?
         tStretchNILatticeHam = .false.  !Stretch the non-interacting lattice bandwidth?
         dStretchNILatticeHam = one
+        PotentialUpdateDamping = one
 
     end subroutine set_defaults
 
@@ -595,8 +597,11 @@ module readinput
                 call readi(iReuse_SE)
             case("MANYBODY_SELFENERGY")
                 tNoHL_SE = .false.
-            case("DAMPING")
+            case("SE_DAMPING")
                 call readf(Damping_SE)
+            case("POT_UPDATE_DAMPING")
+                !Damp the QPSC Updates
+                call readf(PotentialUpdateDamping)
             case("SELFENERGY_ITERATIONS")
                 call readi(max_SE_iter)
             case("LATTICEGF_MULTIPLIER")

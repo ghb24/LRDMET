@@ -14,6 +14,9 @@ module SelfConsistentLR3
 
     contains
 
+        !Qus for Mark:  Why Time ordered
+        !               If outside spectrum?
+
     subroutine SC_Spectrum_Static()
         implicit none
         real(dp) :: GFChemPot,NI_ChemPot
@@ -27,23 +30,25 @@ module SelfConsistentLR3
         real(dp) :: MaxOffLocalEl
         real(dp), allocatable :: AllDiffs(:,:),LatVals(:) 
         integer, allocatable :: LatFreqs(:)
-        real(dp), parameter :: dDeltaImpThresh = 1.0e-7_dp
+        real(dp), parameter :: dDeltaImpThresh = 1.0e-6_dp
+        logical, parameter :: tRetarded = .false.
         character(len=*), parameter :: t_r='SC_Spectrum_Static'
 
         call set_timer(SelfCon_LR)
 
         write(6,"(A)") "Entering quasiparticle self-consistent DMET..."
 
-        !1) Try with retarded greens function
+        !Make movie
         !1) Reading and writing
-        !2) Option to read mu or not
         !3) Test damping (for 2 imp)
+        !2) Option to read mu or not
         !4) Spread h0 spectrum
         !5) All elements of potential converged to 0.1%, or change is less than 1e-4
 
         !To TEST: Converge 2-imp
         !           Sensitivity to initial conditions, broadening
         !         Can we get uncoupled peaks by fiddling with the initial potential?
+        !         DIIS?
 
         !TODO:  Write out potential so it can be read back in later on (changing U)
         !       Don't have to start from GS-DMET - find appropriate mu
@@ -93,7 +98,6 @@ module SelfConsistentLR3
         allocate(TotalPotential(nSites,nSites))
         call InitLatticePotential(h_lat_fit,TotalPotential,GFChemPot)
 
-
         !NI_ChemPot is fixed for the calculation as a shift for the grid
         NI_ChemPot = GFChemPot
 
@@ -104,7 +108,7 @@ module SelfConsistentLR3
         call DiagOneEOp(LatVecs,LatVals,nImp,nSites,tDiag_kspace,.false.)
         !Note that the chemical potential is *not* included in the definition of h 
 
-        call writevector(LatVals,'LatVals')
+        !call writevector(LatVals,'LatVals')
 
         !LatFreqs tells you which frequency point corresponds to which
         !eigenvalue of the lattice
@@ -134,28 +138,20 @@ module SelfConsistentLR3
         allocate(AllDiffs(5,0:iMaxIter_MacroFit+1))
         AllDiffs(:,:) = zero
            
-        if(.false.) then
-            call CalcLatticeSpectrum(1,nFreq,Lat_CorrFn,GFChemPot,tMatbrAxis=.false.,    &
-                Freqpoints=FreqPoints,ham=h_lat_fit)
-                
-            call writedynamicfunction(nFreq,Lat_CorrFn,'G_Lat',tag=iter,tCheckCausal=.false.,   &
-                tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.,FreqPoints=FreqPoints)
-        endif
-
         iter = 0
         do while(.not.tSkip_Lattice_Fit)
             iter = iter + 1
 
             if(iter.ne.1) call SetReFreqPoints(LatVals,NI_ChemPot,nFreq,LatFreqs)
-            call writevector(LatFreqs,'LatFreqs')
+            !call writevector(LatFreqs,'LatFreqs')
         
             call CalcLatticeSpectrum(1,nFreq,Lat_CorrFn,GFChemPot,tMatbrAxis=.false.,    &
-                Freqpoints=FreqPoints,ham=h_lat_fit)
+                Freqpoints=FreqPoints,ham=h_lat_fit,tRetarded=tRetarded)
             
             call writedynamicfunction(nFreq,Lat_CorrFn,'G_Lat',tag=iter,tCheckCausal=.false.,   &
                 tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.,FreqPoints=FreqPoints)
 
-            call SchmidtGF_FromLat(CorrFn_HL,GFChemPot,nFreq,tFitMatAxis,h_lat_fit,FreqPoints)
+            call SchmidtGF_FromLat(CorrFn_HL,GFChemPot,nFreq,tFitMatAxis,h_lat_fit,FreqPoints,tRetarded=tRetarded)
 
             call writedynamicfunction(nFreq,CorrFn_HL,'G_Imp',tag=iter,tCheckCausal=.false.,  &
                 tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.,FreqPoints=FreqPoints)
@@ -173,7 +169,7 @@ module SelfConsistentLR3
                     tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.,FreqPoints=FreqPoints)
 
                 call CalcLatticeSpectrum(1,nFreq,CorrFn_HL_Inv,GFChemPot,tMatbrAxis=.false., &
-                    FreqPoints=FreqPoints,ham=h_lat_fit,SE=SE_Update)
+                    FreqPoints=FreqPoints,ham=h_lat_fit,SE=SE_Update,tRetarded=tRetarded)
 
                 call writedynamicfunction(nFreq,CorrFn_HL_Inv,'G_Lat_wSE',tag=iter,tCheckCausal=.false., &
                     tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.,FreqPoints=FreqPoints)
@@ -214,6 +210,7 @@ module SelfConsistentLR3
             !What is change in update potential and G (Use SE_Update to store
             !differences)
             AllDiffs(1,iter) = sum(real(UpdatePotential(:,:)*dconjg(UpdatePotential(:,:)))) / real(nSites**2,dp)
+            AllDiffs(1,iter) = AllDiffs(1,iter) / PotentialUpdateDamping
             SE_Update(:,:,:) = Prev_CorrFn_HL(:,:,:) - CorrFn_HL(:,:,:)
             SE_Update(:,:,:) = SE_Update(:,:,:) * dconjg(SE_Update(:,:,:))
             AllDiffs(2,iter) = sum(real(SE_Update(:,:,:),dp))
@@ -244,7 +241,7 @@ module SelfConsistentLR3
                 write(6,"(A,G20.13)") "Correlation potential changing by less than: ",dDeltaImpThresh
                 exit
             endif
-            call WriteLatHamil(h_lat_fit,GFChemPot,'LatticePotential',tag=iter)
+            call WriteLatHamil(h_lat_fit,GFChemPot,'LatticeHamiltonian',tag=iter)
 
         enddo
 
@@ -276,7 +273,7 @@ module SelfConsistentLR3
         call writedynamicfunction(nFreq,CorrFn_HL,'G_Imp_Ret_Final',tCheckCausal=.true.,  &
             tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.,FreqPoints=FreqPoints)
 
-        call WriteLatHamil(h_lat_fit,GFChemPot,'LatticePotential_Final')
+        call WriteLatHamil(h_lat_fit,GFChemPot,'LatticeHamiltonian_Final')
 
         deallocate(h_lat_fit,LatVals,LatVecs,Lat_CorrFn,CorrFn_HL,Prev_CorrFn_HL,Prev_Lat_CorrFn)
         deallocate(UpdatePotential,TotalPotential,AllDiffs,SE_Update,LatFreqs,CorrFn_HL_Inv)
@@ -312,7 +309,7 @@ module SelfConsistentLR3
             if(tSC_StartwGSCorrPot) then
                 write(6,"(A)") "Starting from correlation potential from ground-state calculation..."
             else
-                write(6,"(A)") "Starting from bare lattice hamiltonian..."
+                write(6,"(A)") "Starting from bare lattice hamiltonian, with Fock potential..."
                 if(tStretchNILatticeHam) then
                     write(6,"(A,F10.4)") "Introducing lattice hamiltonian with stretch coefficient: ",dStretchNILatticeHam
                 endif
@@ -327,6 +324,7 @@ module SelfConsistentLR3
                     else
                         h_lat(j,i) = cmplx(h0(j,i),zero,dp)
                         if(i.eq.j.and.tHalfFill) then 
+                            !TODO: Do proper fock potential
                             h_lat(i,i) = U/2.0_dp
                         else
                             if(tStretchNILatticeHam) h_lat(j,i) = h_lat(j,i)*dStretchNILatticeHam
@@ -571,6 +569,9 @@ module SelfConsistentLR3
                 UpdatePotential(i,j) = 0.5_dp*(UpdatePotential(i,j) + conjg(UpdatePotential(j,i)))
             enddo
         enddo
+
+        !Potentially damp the update
+        UpdatePotential(:,:) = PotentialUpdateDamping*UpdatePotential(:,:)
 
         deallocate(ctemp,LatSelfEnergy_i)
         deallocate(HalfContract_i,HalfContract_j)

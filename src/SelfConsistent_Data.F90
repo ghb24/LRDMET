@@ -12,6 +12,9 @@ module SC_Data
     !Stretch initial hamiltonian?
     logical :: tStretchNILatticeHam
     real(dp) :: dStretchNILatticeHam
+
+    !Damp the QPSC Updates
+    real(dp) :: PotentialUpdateDamping
     
     integer, allocatable :: KBlock_to_KInd(:)       !Map from Kpoint index to sampled kpoint index
     integer, allocatable :: KInd_to_KBlock(:)       !Map from sampled kpoint to physical kpoint index

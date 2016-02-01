@@ -1613,10 +1613,10 @@ module SelfConsistentUtils
             CurrLatVal = CurrLatVal + 1
         enddo
 
-        write(6,*) "Frequency points: "
-        do i = 1,nFreq
-            write(6,"(I6,F20.10)") i,FreqPoints(i)
-        enddo
+        !write(6,*) "Frequency points: "
+        !do i = 1,nFreq
+        !    write(6,"(I6,F20.10)") i,FreqPoints(i)
+        !enddo
 
     end subroutine SetReFreqPoints
 
