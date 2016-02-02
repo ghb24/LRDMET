@@ -1257,7 +1257,7 @@ module SelfConsistentUtils
     subroutine KBlocks_to_diag(KBlocks,EVecs,EVals)
         complex(dp), intent(in) :: KBlocks(nImp,nImp,nKPnts)
         complex(dp), intent(out) :: EVecs(nImp,nImp,nKPnts)
-        complex(dp), intent(out) :: EVals(nSites)
+        real(dp), intent(out) :: EVals(nSites)
         complex(dp) :: KBlock(nImp,nImp)
         complex(dp), allocatable :: cWork(:)
         real(dp) :: Bands_k(nImp)
@@ -1286,7 +1286,7 @@ module SelfConsistentUtils
             deallocate(cWork)
 
             do i = 1,nImp
-                EVals(((k-1)*nImp)+i) = cmplx(Bands_k(i),zero,dp)
+                EVals(((k-1)*nImp)+i) = Bands_k(i)
             enddo
 
         enddo
@@ -2317,5 +2317,64 @@ module SelfConsistentUtils
             f(i) = -f(i)/(one-f(i)**2)
         enddo
     end subroutine ScaleFreqPointsWeights
+
+    function binary_search_real (arr, val, thresh) &
+                                 result(pos)
+
+        real(dp), intent(in) :: arr(:)
+        real(dp), intent(in) :: val
+        real(dp), intent(in) :: thresh
+        integer :: pos
+
+        integer :: hi, lo
+
+        ! The search range
+        lo = lbound(arr,1)
+        hi = ubound(arr,1)
+
+        ! Account for poor usage (i.e. array len == 0)
+        if (hi < lo) then
+            pos = -lo
+            return
+        endif
+
+        ! Narrow the search range down in steps.
+        do while (hi /= lo)
+            pos = int(real(hi + lo,sp) / 2_sp)
+
+            if (abs(arr(pos) - val) < thresh) then
+                exit
+            else if (val > arr(pos)) then
+                ! val is "greater" than arr(:len,pos).
+                ! The lowest position val can take is hence pos + 1 (i.e. if
+                ! val is greater than pos by smaller than pos + 1).
+                lo = pos + 1
+            else
+                ! arr(:,pos) is "greater" than val.
+                ! The highest position val can take is hence pos (i.e. if val is
+                ! smaller than pos but greater than pos - 1).  This is why
+                ! we differ slightly from a standard binary search (where lo
+                ! is set to be pos+1 and hi to be pos-1 accordingly), as
+                ! a standard binary search assumes that the element you are
+                ! searching for actually appears in the array being
+                ! searched...
+                hi = pos
+            endif
+        enddo
+
+        ! If we have narrowed down to one position, and it is not the item,
+        ! then return -pos to indicate that the item is not present, but that
+        ! this is the location it should be in.
+        if (hi == lo) then
+            if (abs(arr(hi) - val) < thresh) then
+                pos = hi
+            else if (val > arr(hi)) then
+                pos = -hi - 1
+            else
+                pos = -hi
+            endif
+        endif
+
+    end function binary_search_real
 
 end module SelfConsistentUtils

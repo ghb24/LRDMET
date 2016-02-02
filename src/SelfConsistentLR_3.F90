@@ -16,6 +16,8 @@ module SelfConsistentLR3
 
         !Qus for Mark:  Why Time ordered
         !               If outside spectrum?
+        !               Self-consistency scheme
+        !               DIIS?
 
     subroutine SC_Spectrum_Static()
         implicit none
@@ -31,7 +33,7 @@ module SelfConsistentLR3
         real(dp), allocatable :: AllDiffs(:,:),LatVals(:) 
         integer, allocatable :: LatFreqs(:)
         real(dp), parameter :: dDeltaImpThresh = 1.0e-6_dp
-        logical, parameter :: tRetarded = .false.
+        logical, parameter :: tRetarded = .true. 
         character(len=*), parameter :: t_r='SC_Spectrum_Static'
 
         call set_timer(SelfCon_LR)
@@ -51,6 +53,7 @@ module SelfConsistentLR3
         !         DIIS?
 
         !TODO:  Write out potential so it can be read back in later on (changing U)
+        !       Redo, s.t. only ever store 1-electron hamiltonians over k-blocks
         !       Don't have to start from GS-DMET - find appropriate mu
         !       How tight should convergence be?
         !       Purify potential via imposition of translational symmetry
@@ -175,7 +178,7 @@ module SelfConsistentLR3
                     tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.,FreqPoints=FreqPoints)
             endif
 
-            call QPSC_UpdatePotential(nFreq,LatFreqs,GFChemPot,LatVals,LatVecs,SE_Update,UpdatePotential)
+            call QPSC_UpdatePotential(nFreq,LatFreqs,GFChemPot,h_lat_fit,LatVals,LatVecs,SE_Update,UpdatePotential)
 
             !call writematrix(UpdatePotential,'Update potential in the AO basis',.true.)
 
@@ -263,6 +266,8 @@ module SelfConsistentLR3
         !Write out G + self-energy for final bit (to match greens functions?)
 
         !Calculate the bandstructure
+
+        call WriteImpLatCouplings(TotalPotential)
         
         !Calculate the retarded greens function for the spectrum
         call CalcLatticeSpectrum(1,nFreq,Lat_CorrFn,GFChemPot,tMatbrAxis=.false.,    &
@@ -281,6 +286,32 @@ module SelfConsistentLR3
         call halt_timer(SelfCon_LR)
 
     end subroutine SC_Spectrum_Static
+
+    subroutine WriteImpLatCouplings(h)
+        implicit none
+        complex(dp), intent(in) :: h(nSites,nSites)
+        integer :: iunit,step,ind,i
+
+        !TODO: Test for translational invariance
+        write(6,"(A)") "Writing impurity lattice couplings..."
+        iunit = get_free_unit()
+        open(unit=iunit,file='ImpLatCouplings',status='unknown')
+
+        do step = 0,nSites-1
+            write(iunit,"(I8)",advance='no') step
+            do i = 1,nImp-1
+                ind = mod(i+step,nSites)
+                if(ind.eq.0) ind = nSites
+                write(iunit,"(2G25.13)",advance='no') h(i,ind)
+            enddo
+            ind = mod(nImp+step,nSites)
+            if(ind.eq.0) ind = nSites
+            write(iunit,"(2G20.13)") h(nImp,ind)
+        enddo
+
+        close(iunit)
+
+    end subroutine WriteImpLatCouplings
 
     subroutine InitLatticePotential(h_lat,TotalPotential,GFChemPot)
         implicit none
@@ -423,28 +454,32 @@ module SelfConsistentLR3
 
     end subroutine ReadLatHam
             
-    subroutine QPSC_UpdatePotential(nFreq,LatFreqs,GFChemPot,LatVals,LatVecs,SE_Update,UpdatePotential)
+    subroutine QPSC_UpdatePotential(nFreq,LatFreqs,GFChemPot,ham,LatVals,LatVecs,SE_Update,UpdatePotential)
         implicit none
         complex(dp), intent(out) :: UpdatePotential(nSites,nSites)
         integer, intent(in) :: LatFreqs(nSites),nFreq
         real(dp), intent(in) :: GFChemPot,LatVals(nSites)
         complex(dp), intent(in) :: LatVecs(nSites,nSites),SE_Update(nImp,nImp,nFreq)
+        complex(dp), intent(in) :: ham(nSites,nSites)
         !local
+        real(dp), allocatable :: EVals(:)
+        complex(dp), allocatable :: EVecs(:,:,:),SE_K(:,:),SE_K_k(:,:),Pot_k(:,:,:)
+        complex(dp), allocatable :: KBlocks(:,:,:),ctemp_vec(:)
         complex(dp), allocatable :: ctemp(:,:),HalfContract_i(:)
         complex(dp), allocatable :: HalfContract_j(:),LatSelfEnergy_i(:,:)
-        complex(dp), allocatable :: LatSelfEnergy_j(:,:)
+        complex(dp), allocatable :: LatSelfEnergy_j(:,:),ctemp2(:,:)
         complex(dp) :: Ei_ij_val,Ei_ji_val,zdotc
-        integer :: i,j,k
+        integer :: i,j,k,l,m,ind_1,ind_2,nval,nval_k,pos,pos_k
         character(len=*), parameter :: t_r='QPSC_UpdatePotential'
     
         UpdatePotential(:,:) = zzero
 
-        allocate(HalfContract_i(nSites))
-        allocate(HalfContract_j(nSites))
-        allocate(LatSelfEnergy_i(nSites,nSites))
-        allocate(ctemp(nSites,nSites))
         if(.false.) then
             allocate(LatSelfEnergy_j(nSites,nSites))
+            allocate(HalfContract_i(nSites))
+            allocate(HalfContract_j(nSites))
+            allocate(LatSelfEnergy_i(nSites,nSites))
+            allocate(ctemp(nSites,nSites))
             !Use Quasi-particle self-consistency to find best static, hermitian
             !potential approximation to the value: IS THIS LOCAL?
             do i = 1,nSites
@@ -512,55 +547,175 @@ module SelfConsistentLR3
                     endif
                 enddo
             enddo
+            deallocate(ctemp,LatSelfEnergy_i)
+            deallocate(HalfContract_i,HalfContract_j)
+
+
         else
             !Do it cheaper!
+            if(.true.) then
+            !if(.not.tDiag_kspace) then
+                allocate(HalfContract_i(nSites))
+                allocate(HalfContract_j(nSites))
+                allocate(LatSelfEnergy_i(nSites,nSites))
+                allocate(ctemp(nSites,nSites))
 
-            do i = 1,nSites
+                do i = 1,nSites
 
-                if(abs(FreqPoints(LatFreqs(i))-(LatVals(i)-GFChemPot)).gt.1.0e-7_dp) then
-                    write(6,*) i,LatFreqs(i),FreqPoints(LatFreqs(i)),LatVals(i)
-                    call stop_all(t_r,'Error in assigning frequencies')
-                endif
-
-                !Stripe the self energy from the LatFreqs(i) local self energy
-                !across the lattice
-                LatSelfEnergy_i(:,:) = zzero
-                call add_localpot_comp_inplace(LatSelfEnergy_i,SE_Update(:,:,LatFreqs(i)),.true.)
-
-                !TODO: Do this in k-space
-                call ZGEMV('C',nSites,nSites,zone,LatSelfEnergy_i,nSites,LatVecs(:,i),1,zzero,HalfContract_i,1)
-                call ZGEMV('N',nSites,nSites,zone,LatSelfEnergy_i,nSites,LatVecs(:,i),1,zzero,HalfContract_j,1)
-
-                do j = 1,nSites
-                    !TODO: skip if not in same kpoint 
-
-                    Ei_ji_val = zzero
-                    Ei_ij_val = zzero
-                    do k = 1,nSites
-                        Ei_ji_val = Ei_ji_val + conjg(LatVecs(k,j))*HalfContract_j(k)
-                        Ei_ij_val = Ei_ij_val + conjg(HalfContract_i(k))*LatVecs(k,j)
-                    enddo
-                    !Ei_ji_val = zdotc(nSites,LatVecs(:,j),1,HalfContract_j,1)
-                    !Ei_ij_val = zdotc(nSites,HalfContract_i,1,LatVecs(:,j),1)
-
-                    UpdatePotential(i,j) = UpdatePotential(i,j) + 0.25_dp*(Ei_ij_val+conjg(Ei_ji_val))
-                    UpdatePotential(j,i) = UpdatePotential(j,i) + 0.25_dp*(conjg(Ei_ij_val)+Ei_ji_val)
-                enddo
-            enddo
-            
-            !Rotate the new static potential (Update Potential) to the AO basis
-            !TODO: Do this in k-space
-            call ZGEMM('N','N',nSites,nSites,nSites,zone,LatVecs,nSites,UpdatePotential,nSites,zzero,ctemp,nSites)
-            call ZGEMM('N','C',nSites,nSites,nSites,zone,ctemp,nSites,LatVecs,nSites,zzero,UpdatePotential,nSites)
-
-            do i = 1,nSites
-                do j = 1,nSites
-                    if(abs(UpdatePotential(j,i)-conjg(UpdatePotential(i,j))).gt.1.0e-8_dp) then
-                        call stop_all(t_r,'Update potential not hermitian')
+                    if(abs(FreqPoints(LatFreqs(i))-(LatVals(i)-GFChemPot)).gt.1.0e-7_dp) then
+                        write(6,*) i,LatFreqs(i),FreqPoints(LatFreqs(i)),LatVals(i)
+                        call stop_all(t_r,'Error in assigning frequencies')
                     endif
-                enddo
-            enddo
 
+                    !Stripe the self energy from the LatFreqs(i) local self energy
+                    !across the lattice
+                    LatSelfEnergy_i(:,:) = zzero
+                    call add_localpot_comp_inplace(LatSelfEnergy_i,SE_Update(:,:,LatFreqs(i)),.true.)
+
+                    !TODO: Do this in k-space
+                    call ZGEMV('C',nSites,nSites,zone,LatSelfEnergy_i,nSites,LatVecs(:,i),1,zzero,HalfContract_i,1)
+                    call ZGEMV('N',nSites,nSites,zone,LatSelfEnergy_i,nSites,LatVecs(:,i),1,zzero,HalfContract_j,1)
+
+                    do j = 1,nSites
+                        !TODO: skip if not in same kpoint 
+
+                        Ei_ji_val = zzero
+                        Ei_ij_val = zzero
+                        do k = 1,nSites
+                            Ei_ji_val = Ei_ji_val + conjg(LatVecs(k,j))*HalfContract_j(k)
+                            Ei_ij_val = Ei_ij_val + conjg(HalfContract_i(k))*LatVecs(k,j)
+                        enddo
+                        !Ei_ji_val = zdotc(nSites,LatVecs(:,j),1,HalfContract_j,1)
+                        !Ei_ij_val = zdotc(nSites,HalfContract_i,1,LatVecs(:,j),1)
+
+                        UpdatePotential(i,j) = UpdatePotential(i,j) + 0.25_dp*(Ei_ij_val+conjg(Ei_ji_val))
+                        UpdatePotential(j,i) = UpdatePotential(j,i) + 0.25_dp*(conjg(Ei_ij_val)+Ei_ji_val)
+                    enddo
+                enddo
+                
+                !Rotate the new static potential (Update Potential) to the AO basis
+                !TODO: Do this in k-space
+                call ZGEMM('N','N',nSites,nSites,nSites,zone,LatVecs,nSites,UpdatePotential,nSites,zzero,ctemp,nSites)
+                call ZGEMM('N','C',nSites,nSites,nSites,zone,ctemp,nSites,LatVecs,nSites,zzero,UpdatePotential,nSites)
+
+                do i = 1,nSites
+                    do j = 1,nSites
+                        if(abs(UpdatePotential(j,i)-conjg(UpdatePotential(i,j))).gt.1.0e-8_dp) then
+                            call stop_all(t_r,'Update potential not hermitian')
+                        endif
+                    enddo
+                enddo
+
+                deallocate(ctemp,LatSelfEnergy_i)
+                deallocate(HalfContract_i,HalfContract_j)
+
+            else
+                !Do it all in kspace 
+                !TODO: Parallelize over kpoints (ensure calls are not
+                !parallelized themselves...)
+                !This is only really worth it if h0 and sigma are always kept in
+                !kspace...
+                allocate(KBlocks(nImp,nImp,nKPnts))
+                allocate(EVals(nSites))
+                allocate(EVecs(nImp,nImp,nKPnts))
+                allocate(ctemp(nSites,nImp))
+                allocate(SE_K(nImp,nImp))
+                allocate(LatSelfEnergy_i(nSites,nSites))
+                allocate(LatSelfEnergy_j(nSites,nSites))
+                allocate(SE_K_k(nImp,nImp))
+                allocate(ctemp_vec(nImp))
+                allocate(ctemp2(nImp,nImp))
+
+                allocate(Pot_k(nImp,nImp,nKPnts))
+                Pot_k(:,:,:) = zzero
+
+                call ham_to_KBlocks(ham,KBlocks)
+                call KBlocks_to_diag(KBlocks,EVecs,EVals)
+                deallocate(KBlocks)
+
+                do i = 1,nKPnts
+                    ind_1 = ((i-1)*nImp) + 1
+                    ind_2 = nImp*i
+                    do j = 1,nImp
+                        nval = ((i-1)*nImp)+j
+
+                        pos = binary_search_real(FreqPoints,EVals(nval)-GFChemPot,1.0e-8_dp)
+                        if(pos.lt.1) call stop_all(t_r,'Eigenvalue not found in frequency list')
+
+                        LatSelfEnergy_i(:,:) = zzero
+                        call add_localpot_comp_inplace(LatSelfEnergy_i,SE_Update(:,:,pos),.true.)
+
+                        !Rotate to kpoint i
+                        call ZGEMM('N','N',nSites,nImp,nSites,zone,LatSelfEnergy_i,nSites,RtoK_Rot(:,ind_1:ind_2),  &
+                            nSites,zzero,ctemp,nSites)
+                        call ZGEMM('C','N',nImp,nImp,nSites,zone,RtoK_Rot(:,ind_1:ind_2),nSites,ctemp,nSites,   &
+                            zzero,SE_K,nImp)
+
+                        !Take the hermitian part of SE_K
+                        ctemp2(:,:) = zzero 
+                        do l = 1,nImp
+                            do m = 1,nImp
+                                ctemp2(l,m) = SE_K(l,m) + conjg(SE_K(m,l))
+                            enddo
+                        enddo
+                        SE_K(:,:) = ctemp2(:,:) * 0.5_dp
+                        
+                        do k = 1,nImp
+                            !Other functions at the same kpoint
+                            nval_k = ((i-1)*nImp)+k
+
+                            pos_k = binary_search_real(FreqPoints,EVals(nval_k)-GFChemPot,1.0e-8_dp)
+                            if(pos_k.lt.1) call stop_all(t_r,'Eigenvalue k not found in frequency list')
+
+                            if(j.eq.k) then
+                                SE_K_k(:,:) = SE_K(:,:)
+                            else
+                                LatSelfEnergy_j(:,:) = zzero
+                                call add_localpot_comp_inplace(LatSelfEnergy_j,SE_Update(:,:,pos_k),.true.)
+
+                                call ZGEMM('N','N',nSites,nImp,nSites,zone,LatSelfEnergy_j,nSites,  &
+                                    RtoK_Rot(:,ind_1:ind_2),nSites,zzero,ctemp,nSites)
+                                call ZGEMM('C','N',nImp,nImp,nSites,zone,RtoK_Rot(:,ind_1:ind_2),nSites,    &
+                                    ctemp,nSites,zzero,SE_K_k,nImp)
+
+                                !Take hermitian part
+                                ctemp2(:,:) = zzero
+                                do l = 1,nImp
+                                    do m = 1,nImp
+                                        ctemp2(l,m) = SE_K_k(l,m) + conjg(SE_K_k(m,l))
+                                    enddo
+                                enddo
+                                SE_K_k(:,:) = ctemp2(:,:) * 0.5_dp
+                            endif
+
+                            call ZGEMV('N',nImp,nImp,cmplx(0.5_dp,zero,dp),SE_K_k,nImp,EVecs(:,k,i),1,zzero,ctemp_vec,1)
+                            call ZGEMV('N',nImp,nImp,cmplx(0.5_dp,zero,dp),SE_K,nImp,EVecs(:,k,i),1,zone,ctemp_vec,1)
+                            do l = 1,nImp
+                                Pot_k(j,k,i) = Pot_k(j,k,i) + conjg(EVecs(l,j,i))*ctemp_vec(l)
+                            enddo
+                        enddo
+                    enddo
+                enddo
+                deallocate(EVals)
+                deallocate(EVecs)
+                deallocate(SE_K)
+                deallocate(SE_K_k)
+                deallocate(ctemp_vec,ctemp2)
+                deallocate(LatSelfEnergy_i,LatSelfEnergy_j)
+
+                !Now, rotate Pot_k into real space.
+                do k = 1,nKPnts
+                    ind_1 = ((k-1)*nImp) + 1
+                    ind_2 = nImp*k
+                    !call writematrix(Pot_k(:,:,k),'UpdatePotential_k',.true.)
+                    call ZGEMM('N','N',nSites,nImp,nImp,zone,RtoK_Rot(:,ind_1:ind_2),nSites,Pot_k(:,:,k),nImp,zzero,    &
+                        ctemp,nSites)
+                    call ZGEMM('N','C',nSites,nSites,nImp,zone,ctemp,nSites,RtoK_Rot(:,ind_1:ind_2),nSites,zone,    &
+                        UpdatePotential,nSites)
+                enddo
+                !call writematrix(UpdatePotential,'UpdatePotential_AO',.true.)
+                deallocate(ctemp)
+            endif
         endif
 
         !Just to ensure - hermitise the potential
@@ -572,9 +727,6 @@ module SelfConsistentLR3
 
         !Potentially damp the update
         UpdatePotential(:,:) = PotentialUpdateDamping*UpdatePotential(:,:)
-
-        deallocate(ctemp,LatSelfEnergy_i)
-        deallocate(HalfContract_i,HalfContract_j)
 
     end subroutine QPSC_UpdatePotential
                 
