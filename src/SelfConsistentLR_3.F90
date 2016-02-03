@@ -290,6 +290,8 @@ module SelfConsistentLR3
 
         call WriteLatHamil(h_lat_fit,GFChemPot,'LatticeHamiltonian_Final')
 
+        call writevector(LatVals,'Final lattice eigenvalues')
+
         deallocate(h_lat_fit,LatVals,LatVecs,Lat_CorrFn,CorrFn_HL,Prev_CorrFn_HL,Prev_Lat_CorrFn)
         deallocate(UpdatePotential,TotalPotential,AllDiffs,SE_Update,LatFreqs,CorrFn_HL_Inv)
 
