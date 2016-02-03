@@ -252,7 +252,7 @@ module SelfConsistentLR3
                 write(6,"(A,G20.13)") "Correlation potential changing by less than: ",dDeltaImpThresh
                 exit
             endif
-            call WriteLatHamil(h_lat_fit,GFChemPot,'LatticeHamiltonian',tag=iter)
+            !call WriteLatHamil(h_lat_fit,GFChemPot,'LatticeHamiltonian',tag=iter)
 
         enddo
 
@@ -277,14 +277,16 @@ module SelfConsistentLR3
 
         call WriteImpLatCouplings(TotalPotential)
         
-        !Calculate the retarded greens function for the spectrum
-        call CalcLatticeSpectrum(1,nFreq,Lat_CorrFn,GFChemPot,tMatbrAxis=.false.,    &
-            Freqpoints=FreqPoints,ham=h_lat_fit,tRetarded=.true.)
-        call writedynamicfunction(nFreq,Lat_CorrFn,'G_Lat_Ret_Final',tCheckCausal=.true.,   &
-            tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.,FreqPoints=FreqPoints)
-        call SchmidtGF_FromLat(CorrFn_HL,GFChemPot,nFreq,tFitMatAxis,h_lat_fit,FreqPoints,tRetarded=.true.)
-        call writedynamicfunction(nFreq,CorrFn_HL,'G_Imp_Ret_Final',tCheckCausal=.true.,  &
-            tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.,FreqPoints=FreqPoints)
+        if(.not.tRetarded) then
+            !Calculate the retarded greens function for the spectrum
+            call CalcLatticeSpectrum(1,nFreq,Lat_CorrFn,GFChemPot,tMatbrAxis=.false.,    &
+                Freqpoints=FreqPoints,ham=h_lat_fit,tRetarded=.true.)
+            call writedynamicfunction(nFreq,Lat_CorrFn,'G_Lat_Ret_Final',tCheckCausal=.true.,   &
+                tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.,FreqPoints=FreqPoints)
+            call SchmidtGF_FromLat(CorrFn_HL,GFChemPot,nFreq,tFitMatAxis,h_lat_fit,FreqPoints,tRetarded=.true.)
+            call writedynamicfunction(nFreq,CorrFn_HL,'G_Imp_Ret_Final',tCheckCausal=.true.,  &
+                tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.,FreqPoints=FreqPoints)
+        endif
 
         call WriteLatHamil(h_lat_fit,GFChemPot,'LatticeHamiltonian_Final')
 
