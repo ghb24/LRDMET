@@ -675,10 +675,10 @@ module SelfConsistentLR3
                         !hermitian) it should just be real everywhere
                         do l = 1,nImp
                             do m = 1,nImp
-                                if(abs(SE_Update(m,l,pos)-SE_Update(l,m,pos)).gt.1.0e-8_dp) then
+                                if(abs(SE_Update(m,l,pos)-SE_Update(l,m,pos)).gt.1.0e-5_dp) then
                                     write(6,*) l,m,EVals(nval)-GFChemPot
                                     write(6,*) SE_Update(m,l,pos),SE_Update(l,m,pos)
-                                    call stop_all(t_r,'Self energy not symmetric')
+                                    call warning(t_r,'Self energy not quite symmetric')
                                 endif
                                 SE_K(m,l) = cmplx(0.5_dp*(real(SE_Update(m,l,pos),dp)+real(SE_Update(l,m,pos),dp)),zero,dp)
                             enddo
