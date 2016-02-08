@@ -14,12 +14,6 @@ module SelfConsistentLR3
 
     contains
 
-        !Qus for Mark:  Why hermitian part, not just real part 
-        !               If outside spectrum?
-        !               Self-consistency scheme
-        !               DIIS?
-        !               Fully converge potential each iteration?
-
     subroutine SC_Spectrum_Static()
         implicit none
         real(dp) :: GFChemPot,NI_ChemPot
@@ -41,50 +35,24 @@ module SelfConsistentLR3
 
         write(6,"(A)") "Entering quasiparticle self-consistent DMET..."
 
-        !Make movie
-        !1) Reading and writing
-        !3) Test damping (for 2 imp)
-        !2) Option to read mu or not
-        !4) Spread h0 spectrum
-        !5) All elements of potential converged to 0.1%, or change is less than 1e-4
+        !TODO:  
+        !       o Only ever store 1-electron hamiltonians over k-blocks
+        !       o DIIS for extrapolating potential
+        !       o Uncontracted bath space
+        !       o Ground state energy from Migdal
+        !       o Optimize chemical potential
+        !       o Constraints on potential (real diags, ph sym?)
+        !       o Choice of potential in bath and bath/imp coupling?
+        !           - Frequency dependent hermitian in bath?
+        !           - Non-hermitian, frequency-dependent in bath
+        !           - U in coupling terms?
+        !           - Non-hermitian in contracted system?
 
-        !To TEST: Converge 2-imp
-        !           Sensitivity to initial conditions, broadening
-        !         Can we get uncoupled peaks by fiddling with the initial potential?
-        !         DIIS?
-
-        !TODO:  Write out potential so it can be read back in later on (changing U)
-        !       Redo, s.t. only ever store 1-electron hamiltonians over k-blocks
-        !       Don't have to start from GS-DMET - find appropriate mu
-        !       How tight should convergence be?
-        !       Purify potential via imposition of translational symmetry
-        !           Look at all the LatParams/KBlocks etc stuff
-        !       Damp potential, instead of/as well as self energy?
-        !       Consistent gaps?
-        !       Look into using self-energy directly again with FD functions to
-        !           seperate hole and particle
-        !       Find and transform the potential in k-space 
-        !       Spread spectrum to couple to higher poles - then optimize
-        !           (broadening, or more likely by changing effective t)
-        !       Ground state energy from potential (via lat GF, imp GF and ground-state DMET)
-        !       Update chemical potential correctly
-        !       Constraints on correlation potential to aid convergence
-        !           (real diags, hermitian, diagonals average to zero? Translationally invariant)
-
-        !TODO:  Non-contracted GS bath space: Once we have this, we can have frequency-dependent (complex?) self-consistency
-        !           as we can construct the GS bath as the static limit of the self-energy from the GS density, and keep the GS fixed in this space
-        !           What then is the potential in the bath space: Static part of self energy?
-        !       Fit results to Pade to remove broadening from self-energy, and
-        !           ensure we don't need to include exactly the frequency points of
-        !           the one-electron eigenvalues.
-        !       Are there advantages to imaginary-frequency self-consistency?
-        !       Thermal quantities with contracted ground state space
-        !       Reintroduce frequency dependence into self-consistency (perhaps only into potential?)
-        !       Get energy from greens function! (imp or lattice?)
-        !       Care with the sign of the broadening
-        !       G(iw) is antisymmetric - efficiency gain
-        !       Self-consistent optimization of chemical potential?
-        !       Include self-energy at the end?
+        !Speculative:
+        !       o How to include non-hermitian parts of self-energy?
+        !       o Non-hermitian and/or frequency dependent potential in dynamic
+        !               bath space
+        !       o Contracted GS space: Thermal
 
         tFitPoints_Legendre = .false.
         tFitRealFreq = .true.
@@ -317,11 +285,11 @@ module SelfConsistentLR3
             do i = 1,nImp-1
                 ind = mod(i+step,nSites)
                 if(ind.eq.0) ind = nSites
-                write(iunit,"(2G25.13)",advance='no') h(i,ind)
+                write(iunit,"(2G30.13)",advance='no') h(i,ind)
             enddo
             ind = mod(nImp+step,nSites)
             if(ind.eq.0) ind = nSites
-            write(iunit,"(2G20.13)") h(nImp,ind)
+            write(iunit,"(2G30.13)") h(nImp,ind)
         enddo
 
         close(iunit)
