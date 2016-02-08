@@ -13,6 +13,8 @@ module SC_Data
     logical :: tStretchNILatticeHam
     real(dp) :: dStretchNILatticeHam
 
+    real(dp) :: dSelfConsConv
+
     !Damp the QPSC Updates
     real(dp) :: PotentialUpdateDamping
     

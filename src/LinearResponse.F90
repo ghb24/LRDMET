@@ -517,6 +517,10 @@ module LinearResponse
 
         !TODO: Sort out intermediates assuming hermitian contraction coefficients to halve storage
 
+        !Work out which frequencies should be skipped from freqpoints and
+        !construct new array
+!        call ConstructNonDegenerateFreqs(FreqPoints
+
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(Omega,VNorm,tempel,CNorm,info,ierr,NILRMat_Cre,NILRMat_Ann),                &
 !$OMP&  PRIVATE(SPGF_Cre_Bra,SPGF_Cre_Ket,SPGF_Ann_Bra,SPGF_Ann_Ket,Gc_a_F_ax_Bra),    &
 !$OMP&  PRIVATE(Gc_a_F_ax_Ket,Gc_b_F_ab,Ga_i_F_xi_Bra,Ga_i_F_xi_Ket,Ga_i_F_ij),  &

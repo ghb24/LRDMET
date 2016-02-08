@@ -7,7 +7,7 @@ module readinput
     use GF2Data, only: nMatsubara, Beta_Temp, ScaleImTime, TailStart,tFitTails
     use GF2Data, only: MatsuEnergySumFac, ScaleImTimeSpline, tSpline, GF2_MaxIter
     use SC_Data, only: tReadChemPot,tStretchNILatticeHam,dStretchNILatticeHam
-    use SC_Data, only: PotentialUpdateDamping
+    use SC_Data, only: PotentialUpdateDamping,dSelfConsConv
     implicit none
 
     contains
@@ -174,6 +174,7 @@ module readinput
         tStretchNILatticeHam = .false.  !Stretch the non-interacting lattice bandwidth?
         dStretchNILatticeHam = one
         PotentialUpdateDamping = one
+        dSelfConsConv = 1.0e-5_dp
 
     end subroutine set_defaults
 
@@ -554,6 +555,8 @@ module readinput
                 endif
             case("MAXITER_LATTICEFIT")
                 call readi(iMaxFitMicroIter)
+            case("SC_CONV")
+                call readf(dSelfConsConv)
             case("MAXITER_MACROFIT")
                 call readi(iMaxIter_MacroFit)
                 if(iMaxIter_MacroFit.eq.0) tSkip_Lattice_Fit = .true.

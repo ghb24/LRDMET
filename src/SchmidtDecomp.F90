@@ -25,6 +25,7 @@ module SchmidtDecomp
         real(dp) :: norm
         real(dp), allocatable :: energies(:),ProjOverlapEVals(:),rWork(:)
         integer :: i,j,k,lWork,info,nbath,nVirt
+        real(dp), parameter :: SchmidtCutoff = 5.0e-9_dp
         character(len=*), parameter :: t_r='SchmidtDecompose_C'
 
         write(6,"(A)") "Schmidt decomposing new complex matrix..."
@@ -83,7 +84,7 @@ module SchmidtDecomp
             !Check overlap matrix is hermitian
             do i = 1,nOcc
                 do j = i+1,nOcc
-                    if(abs(ProjOverlap(i,j)-dconjg(ProjOverlap(j,i))).gt.1.0e-8_dp) then
+                    if(abs(ProjOverlap(i,j)-dconjg(ProjOverlap(j,i))).gt.SchmidtCutoff) then
                         call writematrix(ProjOverlap,'projected overlap matrix for occupied orbitals',.true.)
                         write(6,*) "i,j: ",i,j
                         write(6,*) "ProjOverlap(i,j): ",ProjOverlap(i,j)
@@ -91,7 +92,7 @@ module SchmidtDecomp
                         call stop_all(t_r,'matrix not hermitian')
                     endif
                 enddo
-                if(abs(aimag(ProjOverlap(i,i))).gt.1.0e-8_dp) then
+                if(abs(aimag(ProjOverlap(i,i))).gt.SchmidtCutoff) then
                     call stop_all(t_r,'matrix not diagonal real')
                 endif
             enddo
@@ -120,11 +121,15 @@ module SchmidtDecomp
         !We should only have nImp non-zero evals
         nbath = 0
         do i = 1,nOcc
-            if(abs(ProjOverlapEVals(i)).gt.1.0e-7_dp) then
+            if(abs(ProjOverlapEVals(i)).gt.SchmidtCutoff) then
                 nbath = nbath + 1
             endif
         enddo
-        if(nbath.ne.nImp) call stop_all(t_r,'error here')
+        if(nbath.ne.nImp) then
+            write(6,*) "Number of bath orbitals found to be: ",nbath
+            write(6,*) "Impurity sites becoming wholly virtual/occupied in nature"
+            call stop_all(t_r,'error here')
+        endif
 
         !Now rotate original occ space into new entangled basis
         allocate(RotOccOrbs(nSites,nOcc))
@@ -137,7 +142,7 @@ module SchmidtDecomp
             do j = 1,nSites
                 normc = normc + dconjg(RotOccOrbs(j,i))*RotOccOrbs(j,i)
             enddo
-            if(abs(aimag(normc)).gt.1.0e-8_dp) then
+            if(abs(aimag(normc)).gt.SchmidtCutoff) then
                 write(6,*) "norm for bath orbitals: ",normc
                 call stop_all(t_r,'complex norm?')
             endif
@@ -163,11 +168,11 @@ module SchmidtDecomp
                 enddo
 !                Overlap = ZDOTC(nSites,RotOccOrbs(:,i),1,RotOccOrbs(:,j),1)
                 if(i.eq.j) then
-                    if(abs(Overlap-zone).gt.1.0e-7_dp) then
+                    if(abs(Overlap-zone).gt.SchmidtCutoff) then
                         call stop_all(t_r,'Bath orbitals not normalized set')
                     endif
                 else
-                    if(abs(Overlap).gt.1.0e-7_dp) then
+                    if(abs(Overlap).gt.SchmidtCutoff) then
                         call stop_all(t_r,'Bath orbitals not orthogonal set')
                     endif
                 endif
@@ -183,7 +188,7 @@ module SchmidtDecomp
                     Overlap = Overlap + dconjg(RotOccOrbs(k,i))*RotOccOrbs(k,j)
                 enddo
 !                Overlap = ZDOTC(nSites,RotOccOrbs(:,i),1,RotOccOrbs(:,j),1)
-                if(abs(Overlap).gt.1.0e-7_dp) then
+                if(abs(Overlap).gt.SchmidtCutoff) then
                     call stop_all(t_r,'bath orbitals with core not orthogonal set')
                 endif
             enddo
@@ -229,7 +234,7 @@ module SchmidtDecomp
 
         nbath = 0   !Count the number of virtual functions which span the space of the embedded system
         do i=1,nVirt
-            if(abs(ProjOverlapEVals(i)).gt.1.0e-7_dp) then
+            if(abs(ProjOverlapEVals(i)).gt.SchmidtCutoff) then
                 nbath = nbath + 1
             endif
         enddo
@@ -253,7 +258,7 @@ module SchmidtDecomp
                     Overlap = Overlap + dconjg(ImpurityOrbs(k,i))*VirtSpace(k,j)
                 enddo
 !                Overlap = ZDOTC(nSites,ImpurityOrbs(:,i),1,VirtSpace(:,j),1)
-                if(abs(Overlap).gt.1.0e-7_dp) then
+                if(abs(Overlap).gt.SchmidtCutoff) then
                     call stop_all(t_r,'virtual orbitals not orthogonal to impurity orbitals')
                 endif
             enddo
@@ -266,7 +271,7 @@ module SchmidtDecomp
                     Overlap = Overlap + dconjg(RotOccOrbs(k,i))*VirtSpace(k,j)
                 enddo
 !                Overlap = ZDOTC(nSites,RotOccOrbs(:,i),1,VirtSpace(:,j),1)
-                if(abs(Overlap).gt.1.0e-7_dp) then
+                if(abs(Overlap).gt.SchmidtCutoff) then
                     if(i.gt.(nOcc-nImp)) then
                         call stop_all(t_r,'virtual orbitals not orthogonal to bath orbitals')
                     else
@@ -303,9 +308,9 @@ module SchmidtDecomp
 !            call writematrix(temp,'Test of unitarity of HF to Schmidt Transform',.true.)
             do i=1,nSites
                 do j=1,nSites
-                    if((i.ne.j).and.(abs(temp(i,j)).gt.1.0e-7_dp)) then
+                    if((i.ne.j).and.(abs(temp(i,j)).gt.SchmidtCutoff)) then
                         call stop_all(t_r,'Transformation matrix not unitary')
-                    elseif((i.eq.j).and.(abs(temp(i,j)-zone).gt.1.0e-7)) then
+                    elseif((i.eq.j).and.(abs(temp(i,j)-zone).gt.SchmidtCutoff)) then
                         call stop_all(t_r,'Transformation matrix not unitary')
                     endif
                 enddo
@@ -339,7 +344,7 @@ module SchmidtDecomp
 !       Calculate the non-interacting core energy of the DMET wavefunction
         CoreEnergy = zero
         do i = 1,nOcc-nImp
-            if(abs(aimag(FockSchmidt_c(i,i))).gt.1.0e-7_dp) then
+            if(abs(aimag(FockSchmidt_c(i,i))).gt.SchmidtCutoff) then
                 write(6,*) "i: ",i
                 write(6,*) "FockSchmidt_c(i,i): ",FockSchmidt_c(i,i)
                 call writematrix(FockSchmidt_c,'FockSchmidt',.true.)
@@ -388,19 +393,19 @@ module SchmidtDecomp
 
             do i = 1,nSites
                 do j = i+1,nSites
-                    if(abs(temp(i,j)).gt.1.0e-8_dp) then
+                    if(abs(temp(i,j)).gt.SchmidtCutoff) then
                         call stop_all(t_r,'Schmidt transform not unitary')
-                    elseif(abs(temp(j,i)).gt.1.0e-8_dp) then
+                    elseif(abs(temp(j,i)).gt.SchmidtCutoff) then
                         call stop_all(t_r,'Schmidt transform not unitary 2')
                     endif
-                    if(abs(FockSchmidt_c(i,j)-dconjg(FockSchmidt_c(j,i))).gt.1.0e-8_dp) then
+                    if(abs(FockSchmidt_c(i,j)-dconjg(FockSchmidt_c(j,i))).gt.SchmidtCutoff) then
                         call stop_all(t_r,'FockSchmidt_c not hermitian')
                     endif
                 enddo
-                if(abs(aimag(FockSchmidt_c(i,i))).gt.1.0e-8_dp) then
+                if(abs(aimag(FockSchmidt_c(i,i))).gt.SchmidtCutoff) then
                     call stop_all(t_r,'FockSchmidt_c not diagonal real')
                 endif
-                if(abs(temp(i,i)-zone).gt.1.0e-8_dp) then
+                if(abs(temp(i,i)-zone).gt.SchmidtCutoff) then
                     call stop_all(t_r,'Schmidt transform not unitary')
                 endif
             enddo

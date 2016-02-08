@@ -33,8 +33,8 @@ module SelfConsistentLR3
         real(dp) :: MaxOffLocalEl
         real(dp), allocatable :: AllDiffs(:,:),LatVals(:) 
         integer, allocatable :: LatFreqs(:)
-        real(dp), parameter :: dDeltaImpThresh = 1.0e-5_dp
         logical, parameter :: tRetarded = .true. 
+        logical, parameter :: tIncFullSigmaGF0 = .false.
         character(len=*), parameter :: t_r='SC_Spectrum_Static'
 
         call set_timer(SelfCon_LR)
@@ -149,8 +149,10 @@ module SelfConsistentLR3
             if(iter.ne.1) call SetReFreqPoints(LatVals,NI_ChemPot,nFreq,LatFreqs)
             !call writevector(LatFreqs,'LatFreqs')
         
-            call CalcLatticeSpectrum(1,nFreq,Lat_CorrFn,GFChemPot,tMatbrAxis=.false.,    &
-                Freqpoints=FreqPoints,ham=h_lat_fit,tRetarded=tRetarded)
+            if(.not.tIncFullSigmaGF0.or.(iter.eq.1)) then
+                call CalcLatticeSpectrum(1,nFreq,Lat_CorrFn,GFChemPot,tMatbrAxis=.false.,    &
+                    Freqpoints=FreqPoints,ham=h_lat_fit,tRetarded=tRetarded)
+            endif
             
             call writedynamicfunction(nFreq,Lat_CorrFn,'G_Lat',tag=iter,tCheckCausal=.false.,   &
                 tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.,FreqPoints=FreqPoints)
@@ -167,13 +169,6 @@ module SelfConsistentLR3
             call InvertLocalNonHermFunc(nFreq,CorrFn_HL_Inv)
             SE_Update(:,:,:) = Damping_SE*(SE_Update(:,:,:) - CorrFn_HL_Inv(:,:,:))
 
-            !do i = 1,nFreq
-            !    write(6,*) "For frequency: ",FreqPoints(i)
-            !    call writematrix(Lat_CorrFn(:,:,i),'Lattice GF',.true.)
-            !    call writematrix(CorrFn_HL(:,:,i),'Imp GF',.true.)
-            !    call writematrix(SE_Update(:,:,i),'Self Energy',.true.)
-            !enddo
-
             if(.false.) then
                 !Test - write out the lattice greens function with the self energy
                 call writedynamicfunction(nFreq,SE_Update,'SE_Imp',tag=iter,tCheckCausal=.false., &
@@ -186,9 +181,17 @@ module SelfConsistentLR3
                     tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.,FreqPoints=FreqPoints)
             endif
 
+            !Find hermitian potential which best approximates the real part of
+            !the self-energy
             call QPSC_UpdatePotential(nFreq,LatFreqs,GFChemPot,h_lat_fit,LatVals,LatVecs,SE_Update,UpdatePotential)
 
-            !call writematrix(UpdatePotential,'Update potential in the AO basis',.true.)
+            if(tIncFullSigmaGF0) then
+                !Before updating h_lat_fit, find the lattice greens function with
+                !the full self-energy - i.e. what we would want if we could fully
+                !update h
+                call CalcLatticeSpectrum(1,nFreq,Lat_CorrFn,GFChemPot,tMatbrAxis=.false., &
+                    FreqPoints=FreqPoints,ham=h_lat_fit,SE=SE_Update,tRetarded=tRetarded)
+            endif
 
             !Add new potential to lattice hamiltonian
             h_lat_fit(:,:) = h_lat_fit(:,:) + UpdatePotential(:,:)
@@ -247,9 +250,9 @@ module SelfConsistentLR3
                 exit
             endif
 
-            if(AllDiffs(1,iter).lt.dDeltaImpThresh) then
+            if(AllDiffs(1,iter).lt.dSelfConsConv) then
                 write(6,"(A)") "Success! Static potential converged"
-                write(6,"(A,G20.13)") "Correlation potential changing by less than: ",dDeltaImpThresh
+                write(6,"(A,G20.13)") "Correlation potential changing by less than: ",dSelfConsConv
                 exit
             endif
             !call WriteLatHamil(h_lat_fit,GFChemPot,'LatticeHamiltonian',tag=iter)
@@ -343,6 +346,10 @@ module SelfConsistentLR3
             write(6,"(A)") "Reading lattice correlation potential from file..."
             call ReadLatHam(h_lat,mu)
             do i = 1,nSites
+                if(tHalfFill) then
+                    !Do proper fock potenital
+                    h_lat(i,i) = U/2.0_dp
+                endif
                 do j = 1,nSites
                     TotalPotential(j,i) = h_lat(j,i) - h0(j,i)
                 enddo
