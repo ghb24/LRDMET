@@ -29,6 +29,7 @@ module SelfConsistentLR3
         integer, allocatable :: LatFreqs(:)
         logical, parameter :: tRetarded = .true. 
         logical, parameter :: tIncFullSigmaGF0 = .false.
+        logical, parameter :: tBandStructureConv = .true.
         character(len=*), parameter :: t_r='SC_Spectrum_Static'
 
         call set_timer(SelfCon_LR)
@@ -52,7 +53,8 @@ module SelfConsistentLR3
         !       o How to include non-hermitian parts of self-energy?
         !       o Non-hermitian and/or frequency dependent potential in dynamic
         !               bath space
-        !       o Contracted GS space: Thermal
+        !       o Contracted GS space: Thermal. Take GS density for bath from
+        !           *correlated* wavefunction? Also solves Van Voohis problem.
 
         tFitPoints_Legendre = .false.
         tFitRealFreq = .true.
@@ -164,6 +166,18 @@ module SelfConsistentLR3
             !Add new potential to lattice hamiltonian
             h_lat_fit(:,:) = h_lat_fit(:,:) + UpdatePotential(:,:)
             TotalPotential(:,:) = TotalPotential(:,:) + UpdatePotential(:,:)
+
+            if(tBandStructureConv) then
+                !Calculate the bandstructure by including the imaginary only
+                !part of the local self-energy, along with the lattice
+                !bandstructure
+                !First, remove the real part of the self-energy
+                do i = 1,nFreq
+                    SE_Update(:,:,i) = cmplx(zero,aimag(SE_Update(:,:,i))/Damping_SE,dp)
+                enddo
+                call CalcBandstructure(nFreq,GFChemPot,'Bands',tag=iter,h_lat=h_lat_fit, &
+                    SelfEnergy=SE_Update,FreqPoints=FreqPoints)
+            endif
             
             !Is Update potential local?!
             allocate(ctemp(nSites,nSites))
@@ -233,6 +247,24 @@ module SelfConsistentLR3
         call writedynamicfunction(nFreq,Lat_CorrFn,'G_Lat_Final',tCheckCausal=.false., &
             tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.,FreqPoints=FreqPoints)
             
+        !Calculate the bandstructure by including the imaginary only
+        !part of the local self-energy, along with the lattice
+        !bandstructure
+
+        !Get Final Self-energy
+        !Now use Dysons equation: Sigma = G_lat^-1 - G_HL^-1
+        SE_Update(:,:,:) = Lat_CorrFn(:,:,:)
+        call InvertLocalNonHermFunc(nFreq,SE_Update)
+        CorrFn_HL_Inv(:,:,:) = CorrFn_HL(:,:,:)
+        call InvertLocalNonHermFunc(nFreq,CorrFn_HL_Inv)
+        SE_Update(:,:,:) = (SE_Update(:,:,:) - CorrFn_HL_Inv(:,:,:))
+        !First, remove the real part of the self-energy, which is already
+        !(approximatly) in the lattice
+        do i = 1,nFreq
+            SE_Update(:,:,i) = cmplx(zero,aimag(SE_Update(:,:,i)),dp)
+        enddo
+        call CalcBandstructure(nFreq,GFChemPot,'Bands_Final',h_lat=h_lat_fit, &
+            SelfEnergy=SE_Update,FreqPoints=FreqPoints)
             
         if(nSites.lt.15) then
             call writematrix(TotalPotential,'Final potential in the AO basis',.true.)

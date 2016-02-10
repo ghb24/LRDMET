@@ -276,9 +276,9 @@ module SelfConsistentUtils
 
         write(6,*) "Calculating bandstructure..."
 
-        if(present(SelfEnergy).and.present(h_lat)) then
-            call stop_all(t_r,'Both a lattice hamiltonian and a self-energy specified. Doesnt seem right')
-        endif
+        !if(present(SelfEnergy).and.present(h_lat)) then
+        !    call stop_all(t_r,'Both a lattice hamiltonian and a self-energy specified. Doesnt seem right')
+        !endif
 
         !Open file
         if(present(tag)) then
