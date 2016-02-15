@@ -82,10 +82,69 @@ module SchmidtDecomp
                         real(Orbs(imp,i)*conjg(Orbs(imp,i)),dp)/((Omega-energies(i)+mu)**2 + dDelta**2)
                 enddo
             endif
-            !Calc particle factor
+
+            HoleVec(:) = zzero
             if(tMatbrAxis_) then
+                do i = 1,nOcc
+                    HoleVec(:) = HoleVec(:) + Orbs(:,i)*(conjg(Orbs(imp,i)) / cmplx(- energies(i) + mu,Omega))
+                enddo
             else
+                if(tRetarded_) then
+                    do i = 1,nOcc
+                        HoleVec(:) = HoleVec(:) + Orbs(:,i)*(conjg(Orbs(imp,i)) / cmplx(Omega - energies(i) + mu,dDelta))
+                    enddo
+                else
+                    do i = 1,nOcc
+                        HoleVec(:) = HoleVec(:) + Orbs(:,i)*(conjg(Orbs(imp,i)) / cmplx(Omega - energies(i) + mu,-dDelta))
+                    enddo
+                endif
             endif
+
+            !Construct first-order response density
+            Response_Dens(:,:) = zzero
+            do i = nImp+1,nSites
+                do j = nImp+1,nSites
+                    Response_Dens(j-nImp,i-nImp) = HoleFac * GS_Density(j,i) - HoleVec(j)*conjg(HoleVec(i))
+                enddo
+            enddo
+
+            !Diagonalize this response density
+
+
+            !Now for the particle bath for this impurity response
+            !Calc particle factor
+            PartFac = zero
+            if(tMatbrAxis_) then
+                do i = nOcc+1,nSites
+                    PartFac = PartFac + real(Orbs(imp,i)*conjg(Orbs(imp,i)),dp) / &
+                        ((mu-energies(i))**2 + Omega**2)
+                enddo
+            else
+                do i = nOcc+1,nSites
+                    PartFac = PartFac + real(Orbs(imp,i)*conjg(Orbs(imp,i)),dp) / &
+                        ((Omega+mu-energies(i))**2 + dDelta**2)
+                enddo
+            endif
+
+            PartVec(:) = zzero
+            if(tMatbrAxis_) then
+                do i = nOcc+1,nSites
+                    PartVec(:) = PartVec(:) + Orbs(:,i)*(Orbs(imp,i)/cmplx(mu-energies(i),-Omega))
+                enddo
+            else
+                do i = nOcc+1,nSites
+                    PartVec(:) = PartVec(:) + Orbs(:,i)*(Orbs(imp,i)/cmplx(Omega+mu-energies(i),-dDelta))
+                enddo
+            endif
+            
+            !Construct first-order response density for particle response
+            Response_Dens(:,:) = zzero
+            do i = nImp+1,nSites
+                do j = nImp+1,nSites
+                    Response_Dens(j-nImp,i-nImp) = PartFac * GS_Density(j,i) + PartVec(j)*conjg(PartVec(i))
+                enddo
+            enddo
+
         enddo
 
 
