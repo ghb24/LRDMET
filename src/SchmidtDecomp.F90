@@ -8,6 +8,97 @@ module SchmidtDecomp
 
     contains
 
+    subroutine GFDynamicSD_1orb_C(matc,mu,Omega,StaticBath,DynamicBath_part,DynamicOrbs_hole,tMatbrAxis,tRetarded,vals,vecs)
+        use mat_tools, only: DiagOneeOp
+        implicit none
+        complex(dp), intent(in) :: matc(nSites,nSites)
+        real(dp), intent(in) :: mu
+        real(dp), intent(in) :: Omega
+        complex(dp), intent(in) :: StaticBath(nSites,nImp)
+        complex(dp), intent(out) :: DynamicBath_part(nSites,nImp)
+        complex(dp), intent(out) :: DynamicBath_hole(nSites,nImp)
+        logical, intent(in), optional :: tMatbrAxis
+        logical, intent(in), optional :: tRetarded
+        real(dp), intent(in), optional :: vals(nSites)
+        complex(dp), intent(in), optional :: vecs(nSites,nSites)
+        !local
+        logical :: tMatbrAxis_,tRetarded_
+        complex(dp), allocatable :: orbs(:,:)
+        real(dp), allocatable :: energies(:)
+
+        if(present(tMatbrAxis)) then
+            tMatbrAxis_ = tMatbrAxis
+        else
+            tMatbrAxis_ = .false.
+        endif
+        if(present(tRetarded)) then
+            tRetarded_ = tRetarded
+        else
+            tRetarded_ = .true.
+        endif
+
+        if(tUHF) call stop_all(t_r,'Cannot currently deal with UHF')
+
+        do i = 1,nSites
+            do j = i+1,nSites
+                if(abs(matc(i,j)-dconjg(matc(j,i))).gt.1.0e-8_dp) then
+                    call writematrix(matc,'matrix',.true.)
+                    call stop_all(t_r,'matrix not hermitian')
+                endif
+            enddo
+            if(abs(aimag(matc(i,i))).gt.1.0e-8_dp) then
+                call stop_all(t_r,'matrix not diagonal real')
+            endif
+        enddo
+
+        allocate(orbs(nSites,nSites))
+        allocate(energies(nSites))
+        if(present(vals)) then
+            !Lattice matrix has already been diagonalized
+            energies(:) = vals(:)
+            orbs(:,:) = vecs(:,:)
+        else
+            orbs(:,:) = matc(:,:)
+            energies(:) = zero
+            call DiagOneEOp(Orbs,Energies,nImp,nSites,tDiag_kspace)
+        endif
+
+        !First, create ground-state density
+        allocate(GS_Density(nSites,nSites))
+        GS_Density(:,:) = zzero
+        call ZGEMM('N','C',nSites,nSites,nOcc,cmplx(2.0_dp,0.0_dp,dp),Orbs(:,1:nOcc),nSites,Orbs(:,1:nOcc),nSites,zzero,GS_Density,nSites)
+
+        do imp = 1,nImp
+            !Calc hole factor
+            HoleFac = zero
+            if(tMatbrAxis_) then
+                do i = 1,nOcc
+                    HoleFac = HoleFac +     &
+                        real(Orbs(imp,i)*conjg(Orbs(imp,i)),dp)/((-energies(i)+mu)**2 + Omega**2)
+                enddo
+            else
+                do i = 1,nOcc
+                    HoleFac = HoleFac +     &
+                        real(Orbs(imp,i)*conjg(Orbs(imp,i)),dp)/((Omega-energies(i)+mu)**2 + dDelta**2)
+                enddo
+            endif
+            !Calc particle factor
+            if(tMatbrAxis_) then
+            else
+            endif
+        enddo
+
+
+
+
+
+
+    end subroutine GFDynamicSD_1orb_C
+        
+
+        !dDelta
+
+
     !Schmidt decompose a determinant resulting from a complex one-electron hamiltonian passed in, including virtual and core spaces.
     subroutine SchmidtDecompose_C(matc,vals,vecs)
         use mat_tools, only: DiagOneeOp

@@ -137,7 +137,7 @@ module SelfConsistentLR3
             call InvertLocalNonHermFunc(nFreq,SE_Update)
             CorrFn_HL_Inv(:,:,:) = CorrFn_HL(:,:,:)
             call InvertLocalNonHermFunc(nFreq,CorrFn_HL_Inv)
-            SE_Update(:,:,:) = Damping_SE*(SE_Update(:,:,:) - CorrFn_HL_Inv(:,:,:))
+            SE_Update(:,:,:) = SE_Update(:,:,:) - CorrFn_HL_Inv(:,:,:)
 
             if(.false.) then
                 !Test - write out the lattice greens function with the self energy
@@ -151,8 +151,17 @@ module SelfConsistentLR3
                     tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.,FreqPoints=FreqPoints)
             endif
 
+            if(tBandStructureConv) then
+                !Calculate the bandstructure by including the
+                !local self-energy, along with the lattice
+                !bandstructure
+                call CalcBandstructure(nFreq,GFChemPot,'Bands',tag=iter,h_lat=h_lat_fit, &
+                    SelfEnergy=SE_Update,FreqPoints=FreqPoints)
+            endif
+
             !Find hermitian potential which best approximates the real part of
             !the self-energy
+            SE_Update(:,:,:) = SE_Update(:,:,:) * Damping_SE    !Damp the self-energy update
             call QPSC_UpdatePotential(nFreq,LatFreqs,GFChemPot,h_lat_fit,LatVals,LatVecs,SE_Update,UpdatePotential)
 
             if(tIncFullSigmaGF0) then
@@ -166,18 +175,6 @@ module SelfConsistentLR3
             !Add new potential to lattice hamiltonian
             h_lat_fit(:,:) = h_lat_fit(:,:) + UpdatePotential(:,:)
             TotalPotential(:,:) = TotalPotential(:,:) + UpdatePotential(:,:)
-
-            if(tBandStructureConv) then
-                !Calculate the bandstructure by including the imaginary only
-                !part of the local self-energy, along with the lattice
-                !bandstructure
-                !First, remove the real part of the self-energy
-                do i = 1,nFreq
-                    SE_Update(:,:,i) = cmplx(zero,aimag(SE_Update(:,:,i))/Damping_SE,dp)
-                enddo
-                call CalcBandstructure(nFreq,GFChemPot,'Bands',tag=iter,h_lat=h_lat_fit, &
-                    SelfEnergy=SE_Update,FreqPoints=FreqPoints)
-            endif
             
             !Is Update potential local?!
             allocate(ctemp(nSites,nSites))
