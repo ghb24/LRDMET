@@ -8,7 +8,8 @@ module SchmidtDecomp
 
     contains
 
-    subroutine GFDynamicSD_1orb_C(matc,mu,Omega,StaticBath,DynamicBath_part,DynamicOrbs_hole,tMatbrAxis,tRetarded,vals,vecs)
+    subroutine GFDynamicSD_1orb_C(matc,mu,Omega,StaticBath,DynamicBath_part,    &
+            DynamicBath_hole,tMatbrAxis,tRetarded,vals,vecs)
         use mat_tools, only: DiagOneeOp
         implicit none
         complex(dp), intent(in) :: matc(nSites,nSites)
@@ -23,8 +24,16 @@ module SchmidtDecomp
         complex(dp), intent(in), optional :: vecs(nSites,nSites)
         !local
         logical :: tMatbrAxis_,tRetarded_
-        complex(dp), allocatable :: orbs(:,:)
-        real(dp), allocatable :: energies(:)
+        complex(dp), allocatable :: orbs(:,:),GS_Density(:,:),HoleVec(:),PartVec(:)
+        complex(dp), allocatable :: Response_Dens(:,:),cWork(:),DynBathMO(:)
+        complex(dp), allocatable :: OrthogDynBath(:,:)
+        real(dp), allocatable :: energies(:),rWork(:),Res_Dens_EVals(:)
+        real(dp) :: HoleFac,PartFac,maxeval 
+        integer :: i,j,imp,nHoleBathOrbs,nPartBathOrbs,info,lwork,k
+        integer :: ibathorb
+        complex(dp) :: ovlp
+        real(dp), parameter :: EigBathCutoff = 1.0e-7_dp
+        character(len=*), parameter :: t_r='GFDynamicSD_1orb_C'
 
         if(present(tMatbrAxis)) then
             tMatbrAxis_ = tMatbrAxis
@@ -66,13 +75,14 @@ module SchmidtDecomp
         !First, create ground-state density
         allocate(GS_Density(nSites,nSites))
         GS_Density(:,:) = zzero
-        call ZGEMM('N','C',nSites,nSites,nOcc,cmplx(2.0_dp,0.0_dp,dp),Orbs(:,1:nOcc),nSites,Orbs(:,1:nOcc),nSites,zzero,GS_Density,nSites)
+        call ZGEMM('N','C',nSites,nSites,nOcc,cmplx(2.0_dp,0.0_dp,dp),Orbs(:,1:nOcc),   &
+            nSites,Orbs(:,1:nOcc),nSites,zzero,GS_Density,nSites)
 
         allocate(HoleVec(nSites))
         allocate(PartVec(nSites))
-        EnvSites = nSites - nImp
-        allocate(Response_Dens(EnvSites,EnvSites))
-        allocate(Res_Dens_EVals(EnvSites))
+        allocate(Response_Dens(nSites,nSites))
+        allocate(Res_Dens_EVals(nSites))
+        allocate(DynBathMO(nSites))
 
         do imp = 1,nImp
             !Calc hole factor
@@ -106,45 +116,85 @@ module SchmidtDecomp
                 endif
             endif
 
-            !Construct first-order response density
+            !Construct first-order response density in the environment
             Response_Dens(:,:) = zzero
             do i = nImp+1,nSites
                 do j = nImp+1,nSites
-                    Response_Dens(j-nImp,i-nImp) = HoleFac * GS_Density(j,i) - HoleVec(j)*conjg(HoleVec(i))
+                    Response_Dens(j,i) = HoleFac * GS_Density(j,i) - HoleVec(j)*conjg(HoleVec(i))
                 enddo
             enddo
 
             !Diagonalize this response density
             !Check hermitian
-            do i = 1,EnvSites
-                do j = 1,EnvSites
+            do i = 1,nSites
+                do j = 1,nSites
                     if(abs(Response_Dens(j,i)-conjg(Response_Dens(i,j))).gt.1.0e-8_dp) then
                         call stop_all(t_r,'Density not hermitian')
                     endif
                 enddo
             enddo
             Res_Dens_EVals(:) = zero
-            allocate(Work(1))
+            allocate(cWork(1))
+            allocate(rWork(max(1,3*nSites-2)))
             lWork = -1
             info = 0
-            call dsyev('V','U',EnvSites,Response_Dens,EnvSites,Res_Dens_EVals,Work,lWork,info)
+            call zheev('V','U',nSites,Response_Dens,nSites,Res_Dens_EVals,cWork,lWork,rWork,info)
             if(info.ne.0) call stop_all(t_r,'Workspace query failed')
-            lwork = int(work(1))+1
-            deallocate(work) ; allocate(work(lwork))
-            call dsyev('V','U',EnvSites,Response_Dens,EnvSites,Res_Dens_EVals,Work,lWork,info)
+            lwork = int(abs(cwork(1)))+1
+            deallocate(cwork) ; allocate(cwork(lwork))
+            call zheev('V','U',nSites,Response_Dens,nSites,Res_Dens_EVals,cWork,lWork,rWork,info)
             if(info.ne.0) call stop_all(t_r,'Diagonalization failed')
-            deallocate(work)
+            deallocate(cwork,rwork)
 
-            !How many non-zero eigenvalues are there?
-            call writevector(Res_Dens_EVals,'Hole Response density eigenvalue distribution')
+            !How many non-zero, non-max eigenvalues are there?
+            !call writevector(Res_Dens_EVals,'Hole Response density eigenvalue distribution')
 
+            maxeval = Res_Dens_EVals(nSites)
             nHoleBathOrbs = 0
-            do i = 1,EnvSites
-                if(abs(Res_Dens_EVals(i)).gt.EigBathCutoff) then
+            do i = 1,nSites
+                if((abs(Res_Dens_EVals(i)).gt.EigBathCutoff).and.   &
+                    (abs(Res_Dens_EVals(i)-maxeval).gt.EigBathCutoff)) then
                     nHoleBathOrbs = nHoleBathOrbs + 1
                 endif
             enddo
-            write(6,"(A,I7)") "Number of dynamic bath orbitals for response of impurity ",imp," : ",nHoleBathOrbs
+            write(6,"(A,I6,A,I7)") "Number of dynamic bath orbitals for hole response of impurity ",imp," : ",nHoleBathOrbs
+
+            !Orthonormalize against static bath space
+            allocate(OrthogDynBath(nSites,nHoleBathOrbs))
+            ibathorb = 0
+            do i = 1,nSites
+                if((abs(Res_Dens_EVals(i)).gt.EigBathCutoff).and.   &
+                    (abs(Res_Dens_EVals(i)-maxeval).gt.EigBathCutoff))then
+
+                    ibathorb = ibathorb + 1
+
+                    OrthogDynBath(:,ibathorb) = Response_Dens(:,i)
+
+                    do j = 1,nImp
+                        ovlp = dot_product(StaticBath(:,j),Response_Dens(:,i))
+                        OrthogDynBath(:,ibathorb) = OrthogDynBath(:,ibathorb) - ovlp*StaticBath(:,j)
+                    enddo
+                    write(6,*) "Norm of hole dynamic bath orbital after orthog: ",i,    &
+                        dot_product(OrthogDynBath(:,ibathorb),OrthogDynBath(:,ibathorb))
+
+                    !Renormalize
+                    ovlp = dot_product(OrthogDynBath(:,ibathorb),OrthogDynBath(:,ibathorb))
+                    OrthogDynBath(:,ibathorb) = OrthogDynBath(:,ibathorb)*(one/sqrt(real(ovlp)))
+                endif
+            enddo
+                 
+            do i = 1,nHoleBathOrbs
+                !Occupied or virtual?
+                call ZGEMV('C',nSites,nSites,zone,Orbs,nSites,OrthogDynBath(:,i),1,zzero,DynBathMO,1)
+                write(6,*) "Norm of hole dynamic bath orbital ",i,dot_product(OrthogDynBath(:,i),OrthogDynBath(:,i))
+                write(6,*) "Overlap of hole dynamic bath orbital ",i," with occupied space: ",sum(abs(DynBathMO(1:nOcc)))
+                write(6,*) "Overlap of hole dynamic bath orbital ",i," with virtual space: ",sum(abs(DynBathMO(nOcc+1:nSites)))
+                do j = 1,nImp
+                    write(6,*) "Overlap of hole dynamic bath orbital ",i," with static bath space ",    &
+                        j," : ",dot_product(StaticBath(:,j),OrthogDynBath(:,i))
+                enddo
+            enddo
+            deallocate(OrthogDynBath)
 
             !if(nHoleBathOrbs.ne.1) then
             !    call stop_all(t_r,'Too many dynamic bath orbitals
@@ -182,54 +232,89 @@ module SchmidtDecomp
             Response_Dens(:,:) = zzero
             do i = nImp+1,nSites
                 do j = nImp+1,nSites
-                    Response_Dens(j-nImp,i-nImp) = PartFac * GS_Density(j,i) + PartVec(j)*conjg(PartVec(i))
+                    Response_Dens(j,i) = PartFac * GS_Density(j,i) + PartVec(j)*conjg(PartVec(i))
                 enddo
             enddo
             
             !Diagonalize this response density
             !Check hermitian
-            do i = 1,EnvSites
-                do j = 1,EnvSites
+            do i = 1,nSites
+                do j = 1,nSites
                     if(abs(Response_Dens(j,i)-conjg(Response_Dens(i,j))).gt.1.0e-8_dp) then
                         call stop_all(t_r,'Density not hermitian')
                     endif
                 enddo
             enddo
             Res_Dens_EVals(:) = zero
-            allocate(Work(1))
+            allocate(cWork(1))
+            allocate(rWork(max(1,3*nSites-2)))
             lWork = -1
             info = 0
-            call dsyev('V','U',EnvSites,Response_Dens,EnvSites,Res_Dens_EVals,Work,lWork,info)
+            call zheev('V','U',nSites,Response_Dens,nSites,Res_Dens_EVals,cWork,lWork,rWork,info)
             if(info.ne.0) call stop_all(t_r,'Workspace query failed')
-            lwork = int(work(1))+1
-            deallocate(work) ; allocate(work(lwork))
-            call dsyev('V','U',EnvSites,Response_Dens,EnvSites,Res_Dens_EVals,Work,lWork,info)
+            lwork = int(abs(cwork(1)))+1
+            deallocate(cwork) ; allocate(cwork(lwork))
+            call zheev('V','U',nSites,Response_Dens,nSites,Res_Dens_EVals,cWork,lWork,rWork,info)
             if(info.ne.0) call stop_all(t_r,'Diagonalization failed')
-            deallocate(work)
+            deallocate(cwork,rwork)
 
             !How many non-zero eigenvalues are there?
-            call writevector(Res_Dens_EVals,'Particle Response density eigenvalue distribution')
+            !call writevector(Res_Dens_EVals,'Particle Response density eigenvalue distribution')
 
-            nHBathOrbs = 0
-            do i = 1,EnvSites
-                if(abs(Res_Dens_EVals(i)).gt.EigBathCutoff) then
-                    nHoleBathOrbs = nHoleBathOrbs + 1
+            maxeval = Res_Dens_EVals(nSites)
+            nPartBathOrbs = 0
+            do i = 1,nSites
+                if((abs(Res_Dens_EVals(i)).gt.EigBathCutoff).and.   &
+                    (abs(Res_Dens_EVals(i)-maxeval).gt.EigBathCutoff))then
+                    nPartBathOrbs = nPartBathOrbs + 1
                 endif
             enddo
-            write(6,"(A,I7)") "Number of dynamic bath orbitals for response of impurity ",imp," : ",nHoleBathOrbs
+            write(6,"(A,I6,A,I7)") "Number of dynamic bath orbitals for particle response of impurity ",imp," : ",nPartBathOrbs
 
-            !if(nHoleBathOrbs.ne.1) then
+            !Orthonormalize against static bath space
+            allocate(OrthogDynBath(nSites,nPartBathOrbs))
+            ibathorb = 0
+            do i = 1,nSites
+                if((abs(Res_Dens_EVals(i)).gt.EigBathCutoff).and.   &
+                    (abs(Res_Dens_EVals(i)-maxeval).gt.EigBathCutoff))then
+                    
+                    ibathorb = ibathorb + 1
+
+                    OrthogDynBath(:,ibathorb) = Response_Dens(:,i)
+                    
+                    do j = 1,nImp
+                        ovlp = dot_product(StaticBath(:,j),Response_Dens(:,i))
+                        OrthogDynBath(:,ibathorb) = OrthogDynBath(:,ibathorb) - ovlp*StaticBath(:,j)
+                    enddo
+
+                    !Renormalize
+                    ovlp = dot_product(OrthogDynBath(:,ibathorb),OrthogDynBath(:,ibathorb))
+                    OrthogDynBath(:,ibathorb) = OrthogDynBath(:,ibathorb)*(one/sqrt(real(ovlp)))
+                endif
+            enddo
+
+            do i = 1,nPartBathOrbs
+                !Occupied or virtual?
+                call ZGEMV('C',nSites,nSites,zone,Orbs,nSites,OrthogDynBath(:,i),1,zzero,DynBathMO,1)
+                write(6,*) "Norm of particle dynamic bath orbital ",i,dot_product(OrthogDynBath(:,i),OrthogDynBath(:,i))
+                write(6,*) "Overlap of particle dynamic bath orbital ",i," with occupied space: ",sum(abs(DynBathMO(1:nOcc)))
+                write(6,*) "Overlap of particle dynamic bath orbital ",i," with virtual space: ",sum(abs(DynBathMO(nOcc+1:nSites)))
+                do j = 1,nImp
+                    write(6,*) "Overlap of particle dynamic bath orbital ",i," with static bath space ",    &
+                        j," : ",dot_product(StaticBath(:,j),OrthogDynBath(:,i))
+                enddo
+            enddo
+            deallocate(OrthogDynBath)
+
+
+            !if(nPartBathOrbs.ne.1) then
             !    call stop_all(t_r,'Too many dynamic bath orbitals
             !endif
 
             !Now, put this bath orbital in the array to be returned
 
         enddo
-
-
-
-
-
+        deallocate(DynBathMO)
 
     end subroutine GFDynamicSD_1orb_C
         

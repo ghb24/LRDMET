@@ -16,7 +16,7 @@ module LinearResponse
     use DetTools, only: tospat,umatind,gendets,GetHElement,gtid,iGetExcitLevel,GetExcitation
     use DetBitOps, only: DecodeBitDet,SQOperator,CountBits
     use solvers, only: CreateIntMats,CountSizeCompMat,StoreCompMat
-    use SchmidtDecomp, only: SchmidtDecompose_C
+    use SchmidtDecomp, only: SchmidtDecompose_C,GFDynamicSD_1orb_C
     use fitting, only: Fit_SE
     use sort_mod, only: sort_int
     use sort_mod_c_a_c_a_c, only: Order_zgeev_vecs 
@@ -26,6 +26,79 @@ module LinearResponse
     integer :: CVIndex,AVIndex,CAIndex
     
     contains
+
+    subroutine ImpGF_OneEDynamicBath(G_Mat,GFChemPot,nESteps,tMatbrAxis,cham,FreqPoints,Lat_G_Mat,tRetarded)
+        implicit none
+        integer, intent(in) :: nESteps
+        real(dp), intent(in) :: GFChemPot
+        complex(dp), intent(out) :: G_Mat(nImp,nImp,nESteps)
+        logical, intent(in) :: tMatbrAxis
+        complex(dp), intent(in) :: cham(nSites,nSites)    !A complex (hermitian) lattice hamiltonian
+        real(dp), intent(in), optional :: FreqPoints(nESteps)
+        complex(dp), intent(out), optional :: Lat_G_Mat(nImp,nImp,nESteps)  !An optional lattice greens function calculated in this routine
+        logical, intent(in), optional :: tRetarded
+        !local
+        logical :: tRetarded_
+        real(dp) :: Omega
+        integer :: OmegaVal
+        real(dp), allocatable :: LatVals(:)
+        complex(dp), allocatable :: LatVecs(:,:),StatBath(:,:)
+        complex(dp), allocatable :: DynBath_Part(:,:), DynBath_Hole(:,:)
+        character(len=*), parameter :: t_r='ImpGF_OneEDynamicBath'
+        
+        call set_timer(LR_EC_GF_Precom)
+
+        if(present(tRetarded)) then
+            tRetarded_ = tRetarded
+        else
+            tRetarded_ = .false.
+        endif
+        if(tRetarded_) then
+            write(6,"(A)") "Calculating the retarded greens function with single-particle dynamic bath space..."
+        else
+            write(6,"(A)") "Calculating the time-ordered greens function with single-partile dynamic bath space..."
+        endif
+        
+        !Lets diagonalize the lattice hamiltonian.
+        allocate(LatVals(nSites))
+        allocate(LatVecs(nSites,nSites))
+        LatVecs(:,:) = cham(:,:)
+        LatVals(:) = zero
+        call DiagOneEOp(LatVecs,LatVals,nImp,nSites,tDiag_kspace,.false.)
+
+        !This will construct a complex rotation matrix from AO -> Schmidt basis called FullSchmidtBasis_c
+        !In addition, it will create a matrix, FockSchmidt_c, which is the full lattice h in the schmidt basis
+        call SchmidtDecompose_C(cham,LatVals,LatVecs)
+        allocate(StatBath(nSites,nImp))
+        StatBath(:,:) = FullSchmidtBasis_c(:,nOcc+1:nOcc+nImp)
+
+        allocate(DynBath_Part(nSites,nImp))
+        allocate(DynBath_Hole(nSites,nImp))
+
+        do OmegaVal = 1,nESteps
+            if(present(FreqPoints)) then
+                call GetOmega(Omega,OmegaVal,tMatbrAxis,FreqPoints=FreqPoints)
+            else
+                call GetOmega(Omega,OmegaVal,tMatbrAxis)
+            endif
+            if(.not.tOpenMP) call set_timer(LR_EC_GF_HBuild)
+        
+            if(tMatbrAxis) then
+                write(6,"(A,F14.6)") "Calculating linear response for imaginary frequency: ",Omega   !,OMP_get_thread_num()
+            else
+                write(6,"(A,F14.6)") "Calculating linear response for frequency: ",Omega !,OMP_get_thread_num()
+            endif
+
+            call GFDynamicSD_1orb_C(cham,GFChemPot,Omega,StatBath,  &
+                DynBath_Part,DynBath_Hole,tMatbrAxis=tMatbrAxis,tRetarded=tRetarded_,   &
+                vals=LatVals,vecs=LatVecs)
+
+        enddo
+
+        deallocate(DynBath_Part,DynBath_Hole)
+        deallocate(LatVals,LatVecs,StatBath)
+
+    end subroutine ImpGF_OneEDynamicBath
     
     !Calculate linear response for charged excitations - add the hole creation to particle creation
     !This is a routine to accept a complex hermitian lattice matrix, and construct the appropriate basis to work in. 

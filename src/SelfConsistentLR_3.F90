@@ -30,6 +30,7 @@ module SelfConsistentLR3
         logical, parameter :: tRetarded = .true. 
         logical, parameter :: tIncFullSigmaGF0 = .false.
         logical, parameter :: tBandStructureConv = .true.
+        logical, parameter :: tUncontract_DynBath = .true.
         character(len=*), parameter :: t_r='SC_Spectrum_Static'
 
         call set_timer(SelfCon_LR)
@@ -127,7 +128,11 @@ module SelfConsistentLR3
             call writedynamicfunction(nFreq,Lat_CorrFn,'G_Lat',tag=iter,tCheckCausal=.false.,   &
                 tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.,FreqPoints=FreqPoints)
 
-            call SchmidtGF_FromLat(CorrFn_HL,GFChemPot,nFreq,tFitMatAxis,h_lat_fit,FreqPoints,tRetarded=tRetarded)
+            if(tUncontract_DynBath) then
+                call ImpGF_OneEDynamicBath(CorrFn_HL,GFChemPot,nFreq,tFitMatAxis,h_lat_fit,FreqPoints,tRetarded=tRetarded)
+            else
+                call SchmidtGF_FromLat(CorrFn_HL,GFChemPot,nFreq,tFitMatAxis,h_lat_fit,FreqPoints,tRetarded=tRetarded)
+            endif
 
             call writedynamicfunction(nFreq,CorrFn_HL,'G_Imp',tag=iter,tCheckCausal=.false.,  &
                 tCheckOffDiagHerm=.false.,tWarn=.true.,tMatbrAxis=.false.,FreqPoints=FreqPoints)
