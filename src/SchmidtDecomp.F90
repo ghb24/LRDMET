@@ -68,6 +68,12 @@ module SchmidtDecomp
         GS_Density(:,:) = zzero
         call ZGEMM('N','C',nSites,nSites,nOcc,cmplx(2.0_dp,0.0_dp,dp),Orbs(:,1:nOcc),nSites,Orbs(:,1:nOcc),nSites,zzero,GS_Density,nSites)
 
+        allocate(HoleVec(nSites))
+        allocate(PartVec(nSites))
+        EnvSites = nSites - nImp
+        allocate(Response_Dens(EnvSites,EnvSites))
+        allocate(Res_Dens_EVals(EnvSites))
+
         do imp = 1,nImp
             !Calc hole factor
             HoleFac = zero
@@ -109,7 +115,42 @@ module SchmidtDecomp
             enddo
 
             !Diagonalize this response density
+            !Check hermitian
+            do i = 1,EnvSites
+                do j = 1,EnvSites
+                    if(abs(Response_Dens(j,i)-conjg(Response_Dens(i,j))).gt.1.0e-8_dp) then
+                        call stop_all(t_r,'Density not hermitian')
+                    endif
+                enddo
+            enddo
+            Res_Dens_EVals(:) = zero
+            allocate(Work(1))
+            lWork = -1
+            info = 0
+            call dsyev('V','U',EnvSites,Response_Dens,EnvSites,Res_Dens_EVals,Work,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'Workspace query failed')
+            lwork = int(work(1))+1
+            deallocate(work) ; allocate(work(lwork))
+            call dsyev('V','U',EnvSites,Response_Dens,EnvSites,Res_Dens_EVals,Work,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'Diagonalization failed')
+            deallocate(work)
 
+            !How many non-zero eigenvalues are there?
+            call writevector(Res_Dens_EVals,'Hole Response density eigenvalue distribution')
+
+            nHoleBathOrbs = 0
+            do i = 1,EnvSites
+                if(abs(Res_Dens_EVals(i)).gt.EigBathCutoff) then
+                    nHoleBathOrbs = nHoleBathOrbs + 1
+                endif
+            enddo
+            write(6,"(A,I7)") "Number of dynamic bath orbitals for response of impurity ",imp," : ",nHoleBathOrbs
+
+            !if(nHoleBathOrbs.ne.1) then
+            !    call stop_all(t_r,'Too many dynamic bath orbitals
+            !endif
+
+            !Now, put this bath orbital in the array to be returned
 
             !Now for the particle bath for this impurity response
             !Calc particle factor
@@ -144,6 +185,44 @@ module SchmidtDecomp
                     Response_Dens(j-nImp,i-nImp) = PartFac * GS_Density(j,i) + PartVec(j)*conjg(PartVec(i))
                 enddo
             enddo
+            
+            !Diagonalize this response density
+            !Check hermitian
+            do i = 1,EnvSites
+                do j = 1,EnvSites
+                    if(abs(Response_Dens(j,i)-conjg(Response_Dens(i,j))).gt.1.0e-8_dp) then
+                        call stop_all(t_r,'Density not hermitian')
+                    endif
+                enddo
+            enddo
+            Res_Dens_EVals(:) = zero
+            allocate(Work(1))
+            lWork = -1
+            info = 0
+            call dsyev('V','U',EnvSites,Response_Dens,EnvSites,Res_Dens_EVals,Work,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'Workspace query failed')
+            lwork = int(work(1))+1
+            deallocate(work) ; allocate(work(lwork))
+            call dsyev('V','U',EnvSites,Response_Dens,EnvSites,Res_Dens_EVals,Work,lWork,info)
+            if(info.ne.0) call stop_all(t_r,'Diagonalization failed')
+            deallocate(work)
+
+            !How many non-zero eigenvalues are there?
+            call writevector(Res_Dens_EVals,'Particle Response density eigenvalue distribution')
+
+            nHBathOrbs = 0
+            do i = 1,EnvSites
+                if(abs(Res_Dens_EVals(i)).gt.EigBathCutoff) then
+                    nHoleBathOrbs = nHoleBathOrbs + 1
+                endif
+            enddo
+            write(6,"(A,I7)") "Number of dynamic bath orbitals for response of impurity ",imp," : ",nHoleBathOrbs
+
+            !if(nHoleBathOrbs.ne.1) then
+            !    call stop_all(t_r,'Too many dynamic bath orbitals
+            !endif
+
+            !Now, put this bath orbital in the array to be returned
 
         enddo
 
